@@ -1,6 +1,6 @@
 ## メモ
 
-```
+```python
 # 最終的にはこの形で使用
 from pycae.api import solve_plane_strain_from_label_maps
 u_map = solve_plane_strain_from_label_maps(
@@ -18,7 +18,7 @@ u_map = solve_plane_strain_from_label_maps(
 
 ## サンプルコード
 
-```
+```python
 # 別途pymesh(pymes)をインストール必要
 # http://elnhub.is.sei.co.jp:8929/analysis/osaka/cae2g/nishioka/pymes
 import sys, os
