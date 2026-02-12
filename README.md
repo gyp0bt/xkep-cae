@@ -10,16 +10,18 @@
 
 線形弾性・平面ひずみソルバーが実装済み。
 Q4/TRI3/TRI6/Q4_BBAR要素、Abaqusベンチマーク完了。
-Phase 1（アーキテクチャ再構成）完了。
+Phase 1（アーキテクチャ再構成）完了。Protocol API に一本化済み（レガシーAPI削除）。
 Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
 Abaqus .inp パーサー自前実装済み（pymesh代替）。
+Q4要素のD行列バグ修正済み。
 
 次のマイルストーン: Phase 2.3 Timoshenko梁（3D空間）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
-- [実装状況](docs/status/status-004.md) — 最新のステータス
+- [実装状況](docs/status/status-005.md) — 最新のステータス
+- [status-004](docs/status/status-004.md) — Phase 2.1/2.2 梁要素 & Abaqusパーサー
 - [status-003](docs/status/status-003.md) — リネーム & Phase 1 完了
 - [status-002](docs/status/status-002.md) — Phase 1 アーキテクチャ再構成
 - [status-001](docs/status/status-001.md) — プロジェクト棚卸しとロードマップ策定
@@ -45,26 +47,26 @@ ruff format xkep_cae/ tests/
 
 ## 使用方法
 
-### レガシーAPI（関数ベース）
+### 高レベルAPI（ラベルベース）
 
 ```python
-from xkep_cae.api import solve_plane_strain_from_label_maps
+from xkep_cae.api import solve_plane_strain
 
-u_map = solve_plane_strain_from_label_maps(
-    elem_tri6=elem_arr,
+u_map = solve_plane_strain(
     node_coord_array=nodes,
-    node_label_df_mapping=node_label_df_mapping,
-    node_label_load_mapping=node_label_load_mapping,
+    node_label_df_mapping={1: (False, False), 2: (False, False)},
+    node_label_load_mapping={5: (1.0, 0.0)},
     E=200e3,
     nu=0.3,
     thickness=1.0,
+    elem_quads=elem_q4,
+    elem_tris=elem_t3,
 )
 ```
 
-### Protocol API（クラスベース）
+### Protocol API（低レベル）
 
 ```python
-import numpy as np
 from xkep_cae.elements.quad4 import Quad4PlaneStrain
 from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.materials.elastic import PlaneStrainElastic
@@ -72,22 +74,31 @@ from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.solver import solve_displacement
 
-# 材料・要素のオブジェクト生成
 mat = PlaneStrainElastic(E=200e3, nu=0.3)
-q4 = Quad4PlaneStrain()
-t3 = Tri3PlaneStrain()
 
-# アセンブリ
 K = assemble_global_stiffness(
     nodes_xy,
-    [(q4, conn_q4), (t3, conn_t3)],
+    [(Quad4PlaneStrain(), conn_q4), (Tri3PlaneStrain(), conn_t3)],
     mat,
     thickness=1.0,
 )
 
-# 境界条件適用 → ソルブ
 Kbc, fbc = apply_dirichlet(K, f, fixed_dofs)
 u, info = solve_displacement(Kbc, fbc)
+```
+
+### 梁要素
+
+```python
+from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+from xkep_cae.materials.beam_elastic import BeamElastic1D
+from xkep_cae.sections.beam import BeamSection2D
+
+sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+beam = EulerBernoulliBeam2D(section=sec)
+mat = BeamElastic1D(E=200e3)
+
+K = assemble_global_stiffness(nodes_xy, [(beam, conn)], mat)
 ```
 
 ## 依存ライブラリ

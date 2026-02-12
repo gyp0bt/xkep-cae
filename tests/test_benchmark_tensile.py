@@ -1,9 +1,11 @@
+"""引張試験ベンチマーク: Protocol ベース API."""
+
 from __future__ import annotations
 
 import numpy as np
 from scipy.sparse import lil_matrix
 
-from xkep_cae.api import solve_plane_strain_from_label_maps
+from xkep_cae.api import solve_plane_strain
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.elements.tri6 import tri6_ke_plane_strain
 from xkep_cae.materials.elastic import constitutive_plane_strain
@@ -26,15 +28,14 @@ def test_square1_tensile():
     node_label_df_mapping = {10: (False, False), 11: (False, False)}
     node_label_load_mapping = {12: (0.0, 1.0), 13: (0.0, 1.0)}
 
-    u_map = solve_plane_strain_from_label_maps(
-        elem_quads=elem_quads,
-        elem_tris=None,
+    u_map = solve_plane_strain(
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
         E=200e3,
         nu=0.3,
         thickness=1.0,
+        elem_quads=elem_quads,
     )
     assert 12 in u_map
     ux, uy = u_map[12]
@@ -57,15 +58,14 @@ def test_tri1_tensile():
     node_label_df_mapping = {10: (False, False), 11: (False, False)}
     node_label_load_mapping = {12: (0.0, 1.0)}
 
-    u_map = solve_plane_strain_from_label_maps(
-        elem_quads=None,
-        elem_tris=elem_tris,
+    u_map = solve_plane_strain(
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
         E=200e3,
         nu=0.3,
         thickness=1.0,
+        elem_tris=elem_tris,
     )
     assert 12 in u_map
 
@@ -88,15 +88,15 @@ def test_square_tri_mixed_tensile():
     node_label_df_mapping = {1: (False, False), 2: (False, False)}
     node_label_load_mapping = {5: (0.0, 1.0)}
 
-    u_map = solve_plane_strain_from_label_maps(
-        elem_quads=elem_quads,
-        elem_tris=elem_tris,
+    u_map = solve_plane_strain(
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
         E=200e3,
         nu=0.3,
         thickness=1.0,
+        elem_quads=elem_quads,
+        elem_tris=elem_tris,
     )
     assert 4 in u_map
     assert 5 in u_map

@@ -1,21 +1,22 @@
-"""Protocol ベースの要素・材料・アセンブリのテスト.
-
-既存の関数ベースAPIと同じ結果が得られることを検証する。
-"""
+"""Protocol ベースの要素・材料・アセンブリのテスト."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from xkep_cae.assembly import assemble_global_stiffness, assemble_global_stiffness_mixed
+from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.core.constitutive import ConstitutiveProtocol
 from xkep_cae.core.element import ElementProtocol
+from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
 from xkep_cae.elements.quad4 import Quad4PlaneStrain
 from xkep_cae.elements.quad4_bbar import Quad4BBarPlaneStrain
 from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.elements.tri6 import Tri6PlaneStrain
+from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.materials.elastic import PlaneStrainElastic
+from xkep_cae.sections.beam import BeamSection2D
 from xkep_cae.solver import solve_displacement
 
 
@@ -29,8 +30,8 @@ def test_protocol_isinstance():
         assert isinstance(obj, ElementProtocol), f"{cls.__name__} is not ElementProtocol"
 
 
-def test_generic_assembly_matches_legacy_quad4():
-    """汎用アセンブリがQ4レガシー版と同じ結果を出すこと"""
+def test_assembly_quad4():
+    """Q4単体のアセンブリテスト"""
     nodes = np.array(
         [
             [0.0, 0.0],
@@ -42,28 +43,21 @@ def test_generic_assembly_matches_legacy_quad4():
     mat = PlaneStrainElastic(10.0, 0.25)
     conn = np.array([[0, 1, 2, 3]])
 
-    K_new = assemble_global_stiffness(
+    K = assemble_global_stiffness(
         nodes,
         [(Quad4PlaneStrain(), conn)],
         mat,
         thickness=1.0,
         show_progress=False,
     )
-    K_old = assemble_global_stiffness_mixed(
-        nodes,
-        conn,
-        None,
-        None,
-        10.0,
-        0.25,
-        t=1.0,
-        show_progress=False,
-    )
-    assert np.allclose(K_new.toarray(), K_old.toarray(), atol=1e-10)
+    assert K.shape == (8, 8)
+    Kd = K.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-12)
+    assert np.linalg.eigvalsh(Kd).min() > -1e-10
 
 
-def test_generic_assembly_matches_legacy_tri3():
-    """汎用アセンブリがTRI3レガシー版と同じ結果を出すこと"""
+def test_assembly_tri3():
+    """TRI3単体のアセンブリテスト"""
     nodes = np.array(
         [
             [0.0, 0.0],
@@ -74,28 +68,20 @@ def test_generic_assembly_matches_legacy_tri3():
     mat = PlaneStrainElastic(5.0, 0.3)
     conn = np.array([[0, 1, 2]])
 
-    K_new = assemble_global_stiffness(
+    K = assemble_global_stiffness(
         nodes,
         [(Tri3PlaneStrain(), conn)],
         mat,
         thickness=1.0,
         show_progress=False,
     )
-    K_old = assemble_global_stiffness_mixed(
-        nodes,
-        None,
-        conn,
-        None,
-        5.0,
-        0.3,
-        t=1.0,
-        show_progress=False,
-    )
-    assert np.allclose(K_new.toarray(), K_old.toarray(), atol=1e-10)
+    assert K.shape == (6, 6)
+    Kd = K.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-12)
 
 
-def test_generic_assembly_matches_legacy_tri6():
-    """汎用アセンブリがTRI6レガシー版と同じ結果を出すこと"""
+def test_assembly_tri6():
+    """TRI6単体のアセンブリテスト"""
     nodes = np.array(
         [
             [0.0, 0.0],
@@ -109,24 +95,16 @@ def test_generic_assembly_matches_legacy_tri6():
     mat = PlaneStrainElastic(200e3, 0.3)
     conn = np.array([[0, 1, 2, 3, 4, 5]])
 
-    K_new = assemble_global_stiffness(
+    K = assemble_global_stiffness(
         nodes,
         [(Tri6PlaneStrain(), conn)],
         mat,
         thickness=1.0,
         show_progress=False,
     )
-    K_old = assemble_global_stiffness_mixed(
-        nodes,
-        None,
-        None,
-        conn,
-        200e3,
-        0.3,
-        t=1.0,
-        show_progress=False,
-    )
-    assert np.allclose(K_new.toarray(), K_old.toarray(), atol=1e-10)
+    assert K.shape == (12, 12)
+    Kd = K.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-10)
 
 
 def test_generic_assembly_mixed_solve():
@@ -167,3 +145,93 @@ def test_generic_assembly_mixed_solve():
 
     free = np.setdiff1d(np.arange(ndof), fixed_dofs)
     assert np.allclose(u[free], u_true[free], rtol=1e-10, atol=1e-10)
+
+
+def test_assembly_beam_eb():
+    """EB梁のassemble_global_stiffnessアセンブリテスト（片持ち梁解析解比較）"""
+    E = 200e3
+    A = 100.0
+    I_val = 833.333
+    L_total = 1000.0
+    n_elems = 10
+    P = 1.0
+
+    sec = BeamSection2D(A=A, I=I_val)
+    beam = EulerBernoulliBeam2D(section=sec)
+    mat = BeamElastic1D(E=E)
+
+    # メッシュ生成
+    n_nodes = n_elems + 1
+    s = np.linspace(0, L_total, n_nodes)
+    nodes = np.column_stack([s, np.zeros(n_nodes)])
+    conn = np.column_stack([np.arange(n_elems), np.arange(1, n_nodes)])
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(beam, conn)],
+        mat,
+        show_progress=False,
+    )
+
+    ndof = 3 * n_nodes
+    assert K.shape == (ndof, ndof)
+
+    Kd = K.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-10)
+
+    # 先端集中荷重 → ソルブ
+    f = np.zeros(ndof)
+    f[3 * n_elems + 1] = P
+
+    fixed_dofs = np.array([0, 1, 2], dtype=int)
+    Kbc, fbc = apply_dirichlet(K, f, fixed_dofs, 0.0)
+    u, info = solve_displacement(Kbc, fbc, size_threshold=4000)
+
+    # 解析解: δ_tip = PL³/(3EI)
+    delta_analytical = P * L_total**3 / (3.0 * E * I_val)
+    delta_fem = u[3 * n_elems + 1]
+    assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
+
+
+def test_assembly_beam_timo():
+    """Timoshenko梁のassemble_global_stiffnessアセンブリテスト（片持ち梁解析解比較）"""
+    E = 200e3
+    nu = 0.3
+    A = 100.0
+    I_val = 833.333
+    L_total = 100.0
+    n_elems = 20
+    P = 1.0
+    kappa = 5.0 / 6.0
+    G = E / (2.0 * (1.0 + nu))
+
+    sec = BeamSection2D(A=A, I=I_val)
+    beam = TimoshenkoBeam2D(section=sec, kappa=kappa)
+    mat = BeamElastic1D(E=E, nu=nu)
+
+    n_nodes = n_elems + 1
+    s = np.linspace(0, L_total, n_nodes)
+    nodes = np.column_stack([s, np.zeros(n_nodes)])
+    conn = np.column_stack([np.arange(n_elems), np.arange(1, n_nodes)])
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(beam, conn)],
+        mat,
+        show_progress=False,
+    )
+
+    ndof = 3 * n_nodes
+    assert K.shape == (ndof, ndof)
+
+    f = np.zeros(ndof)
+    f[3 * n_elems + 1] = P
+
+    fixed_dofs = np.array([0, 1, 2], dtype=int)
+    Kbc, fbc = apply_dirichlet(K, f, fixed_dofs, 0.0)
+    u, info = solve_displacement(Kbc, fbc, size_threshold=4000)
+
+    # 解析解: δ_tip = PL³/(3EI) + PL/(κGA)
+    delta_analytical = P * L_total**3 / (3.0 * E * I_val) + P * L_total / (kappa * G * A)
+    delta_fem = u[3 * n_elems + 1]
+    assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10

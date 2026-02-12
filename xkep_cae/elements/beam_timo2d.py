@@ -175,14 +175,14 @@ class TimoshenkoBeam2D:
         self,
         coords: np.ndarray,
         material: ConstitutiveProtocol,
-        thickness: float = 0.0,
+        thickness: float | None = None,
     ) -> np.ndarray:
         """全体座標系の剛性行列を返す.
 
         Args:
             coords: (2, 2) 節点座標
             material: 構成則（E, nu を保持。tangent() が E を返す）
-            thickness: 未使用（平面要素との互換性のため保持）
+            thickness: 未使用（梁要素では断面特性で管理）
 
         Returns:
             Ke: (6, 6) 全体座標系の剛性行列

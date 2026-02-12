@@ -34,14 +34,14 @@ class ElementProtocol(Protocol):
         self,
         coords: np.ndarray,
         material: ConstitutiveProtocol,
-        thickness: float,
+        thickness: float | None = None,
     ) -> np.ndarray:
         """局所剛性行列を計算する.
 
         Args:
             coords: 要素節点座標 (nnodes, ndim)
             material: 構成則オブジェクト
-            thickness: 厚み（平面要素用）
+            thickness: 厚み（平面要素用）。梁要素等では None。
 
         Returns:
             Ke: (ndof, ndof) 局所剛性行列
