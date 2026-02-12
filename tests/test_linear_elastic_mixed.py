@@ -1,7 +1,4 @@
 from __future__ import annotations
-import sys, os
-
-sys.path.append(os.getcwd())
 import numpy as np
 import scipy.sparse as sp
 

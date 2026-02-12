@@ -1,14 +1,17 @@
-import sys, os
-
-sys.path.append(os.getcwd())
-
-import pandas as pd
-from pycae.api import solve_plane_strain_from_label_maps
+from __future__ import annotations
+import pytest
 import numpy as np
-from pymesh import mesher
+
+pymesh = pytest.importorskip("pymesh", reason="pymeshが必要なテスト")
 
 
-def _test_sample1(mesh_filepath: str):
+@pytest.mark.external
+def test_cutter_sample1():
+    """実メッシュ（pymesh依存）でのQ4/TRI3混在ソルブ"""
+    from pymesh import mesher
+    from pycae.api import solve_plane_strain_from_label_maps
+
+    mesh_filepath = "mesh_cutter_sample1.inp"
     mesh = mesher(mesh_filepath, verbose=False)
     elem_arr = mesh.get_element_array(allow_polymorphism=True, invalid_node=0)
     if np.isin(0, elem_arr):
@@ -30,7 +33,6 @@ def _test_sample1(mesh_filepath: str):
     gmove = mesh.get_node_labels_with_nset("gmove")
 
     node_label_df_mapping = {i: (False, False) for i in gfix}
-
     node_label_load_mapping = {i: (1.0e-3, 0.0) for i in gmove}
 
     u_map = solve_plane_strain_from_label_maps(
@@ -39,37 +41,6 @@ def _test_sample1(mesh_filepath: str):
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
-        E=200e3,
-        nu=0.3,
-        thickness=1.0,
+        E=200e3, nu=0.3, thickness=1.0,
     )
-
-    org_node_coord = mesh.get_node_coord()
-    new_node_coord = org_node_coord.copy()
-    for k, uv in u_map.items():
-        new_node_coord[k][0] += uv[0] * 1000.0
-        new_node_coord[k][1] += uv[1] * 1000.0
-    mesh.update_node_coord(new_node_coord)
-    mesh.dump(mesh_filepath[:-4] + ".result.inp", to_caeap=True)
-
-    print("sample 1")
-    print(u_map[1])
-    return u_map[1]
-
-
-if __name__ == "__main__":
-    data = dict(u=[])
-    mesh_filepath = "mesh_cutter_sample1.inp"
-    uv = _test_sample1(mesh_filepath)
-    data["u"].append(uv[0])
-    data["u"].append(uv[1])
-    mesh_filepath = "mesh_cutter_sample2.inp"
-    uv = _test_sample1(mesh_filepath)
-    data["u"].append(uv[0])
-    data["u"].append(uv[1])
-    mesh_filepath = "mesh_cutter_sample3.inp"
-    uv = _test_sample1(mesh_filepath)
-    data["u"].append(uv[0])
-    data["u"].append(uv[1])
-    df = pd.DataFrame(data)
-    print(df.to_csv())
+    assert 1 in u_map

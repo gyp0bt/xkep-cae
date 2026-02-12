@@ -18,3 +18,21 @@ def constitutive_plane_strain(E: float, nu: float) -> np.ndarray:
         [[lam + 2.0 * mu, lam, 0.0], [lam, lam + 2.0 * mu, 0.0], [0.0, 0.0, mu]],
         dtype=float,
     )
+
+
+class PlaneStrainElastic:
+    """平面ひずみ線形弾性構成則（ConstitutiveProtocol適合）.
+
+    Args:
+        E: ヤング率
+        nu: ポアソン比
+    """
+
+    def __init__(self, E: float, nu: float) -> None:
+        self.E = E
+        self.nu = nu
+        self._D = constitutive_plane_strain(E, nu)
+
+    def tangent(self, strain: np.ndarray | None = None) -> np.ndarray:
+        """弾性テンソル D を返す（線形なのでstrainに依存しない）."""
+        return self._D

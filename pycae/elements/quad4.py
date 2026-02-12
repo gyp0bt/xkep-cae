@@ -1,6 +1,9 @@
 from __future__ import annotations
-from typing import Tuple
+from typing import Tuple, TYPE_CHECKING
 import numpy as np
+
+if TYPE_CHECKING:
+    from pycae.core.constitutive import ConstitutiveProtocol
 
 
 def quad4_ke_plane_strain(
@@ -64,3 +67,27 @@ def quad4_ke_plane_strain(
         Ke += (B.T @ D_tmp @ B) * detJ * t
 
     return Ke
+
+
+class Quad4PlaneStrain:
+    """Q4双線形四角形要素（平面ひずみ）（ElementProtocol適合）."""
+
+    ndof_per_node: int = 2
+    nnodes: int = 4
+    ndof: int = 8
+
+    def local_stiffness(
+        self,
+        coords: np.ndarray,
+        material: ConstitutiveProtocol,
+        thickness: float,
+    ) -> np.ndarray:
+        D = material.tangent()
+        return quad4_ke_plane_strain(coords, D, thickness)
+
+    def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
+        edofs = np.empty(self.ndof, dtype=np.int64)
+        for i, n in enumerate(node_indices):
+            edofs[2 * i] = 2 * n
+            edofs[2 * i + 1] = 2 * n + 1
+        return edofs
