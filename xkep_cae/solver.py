@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Optional, Dict, Any, Tuple, Literal
+
 import time
+from typing import Any
 
 import numpy as np
 import scipy.sparse as sp
@@ -59,7 +60,7 @@ def solve_displacement(
     # ここからpyamg主体
     try:
         import pyamg  # type: ignore
-    except Exception as e:
+    except Exception:
         use_pyamg = False
 
     if not use_pyamg:

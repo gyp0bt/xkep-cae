@@ -1,9 +1,11 @@
 from __future__ import annotations
-from typing import Literal, TYPE_CHECKING
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
-    from pycae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.constitutive import ConstitutiveProtocol
 
 
 def quad4_ke_plane_strain_bbar(
@@ -94,7 +96,7 @@ def quad4_ke_plane_strain_bbar(
     # 2回目ループで B̄ を使って Ke を積分
     Ke = np.zeros((8, 8), dtype=float)
 
-    for gp_idx, ((xi, eta), detJ) in enumerate(zip(gauss_points, detJ_arr)):
+    for gp_idx, ((_xi, _eta), detJ) in enumerate(zip(gauss_points, detJ_arr, strict=True)):
         B = B_arr[gp_idx]  # (3,8)
         b_m_i = b_m[gp_idx]  # (8,)
 

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pycae"
+name = "xkep-cae"
 version = "0.1.0"
 description = "ニッチドメイン問題を解くための自作有限要素ソルバー基盤"
 readme = "README.md"
@@ -19,6 +19,7 @@ amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
 dev = [
     "pytest>=7.0",
+    "ruff>=0.4",
 ]
 
 [tool.pytest.ini_options]
@@ -27,5 +28,25 @@ markers = [
     "external: pymesh等の外部依存が必要なテスト",
 ]
 
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+]
+ignore = [
+    "E501",  # line length (formatterに任せる)
+]
+
+[tool.ruff.format]
+quote-style = "double"
+
 [tool.hatch.build.targets.wheel]
-packages = ["pycae"]
+packages = ["xkep_cae"]

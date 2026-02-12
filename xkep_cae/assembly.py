@@ -1,13 +1,17 @@
 from __future__ import annotations
-from typing import Optional
-import numpy as np
-import scipy.sparse as sp
+
 import time
 
-from .materials.elastic import constitutive_plane_strain
+import numpy as np
+import scipy.sparse as sp
+
+from xkep_cae.core.constitutive import ConstitutiveProtocol
+from xkep_cae.core.element import ElementProtocol
+
 from .elements.quad4 import quad4_ke_plane_strain
 from .elements.tri3 import tri3_ke_plane_strain
 from .elements.tri6 import tri6_ke_plane_strain  # ★追加
+from .materials.elastic import constitutive_plane_strain
 
 
 def _edofs_for_quad4(n1: int, n2: int, n3: int, n4: int) -> np.ndarray:
@@ -106,7 +110,7 @@ def print_progress(
     bar = "#" * filled + "-" * (bar_length - filled)
     percent = ratio * 100.0
 
-    text = f"\r{prefix} [{bar}] {current}/{total} ({percent:5.1f}% in {time.time()-t0:5.2f} sec)"
+    text = f"\r{prefix} [{bar}] {current}/{total} ({percent:5.1f}% in {time.time() - t0:5.2f} sec)"
     print(text, end="", flush=True)
 
     if current >= total:
@@ -115,9 +119,9 @@ def print_progress(
 
 def _assemble_global_stiffness_mixed_legacy(
     nodes_xy: np.ndarray,
-    conn_quads: Optional[np.ndarray],
-    conn_tris: Optional[np.ndarray],
-    conn_tri6: Optional[np.ndarray],
+    conn_quads: np.ndarray | None,
+    conn_tris: np.ndarray | None,
+    conn_tri6: np.ndarray | None,
     E: float,
     nu: float,
     t: float = 1.0,
@@ -143,10 +147,7 @@ def _assemble_global_stiffness_mixed_legacy(
         num_elem_tris=n_t3,
         num_elem_tri6=n_t6,
     )
-    print(
-        f"[assemble] estimated K memory ~ {mem_GB:.2f} GB "
-        f"({mem_bytes // (1024**2)} MB)"
-    )
+    print(f"[assemble] estimated K memory ~ {mem_GB:.2f} GB ({mem_bytes // (1024**2)} MB)")
 
     elem_counter = 0
     progress_step = max(1, n_total // 100)  # 1% ごとくらい
@@ -161,9 +162,7 @@ def _assemble_global_stiffness_mixed_legacy(
             _eKe_scatter_lil(K_lil, edofs, Ke)
 
             elem_counter += 1
-            if show_progress and (
-                elem_counter % progress_step == 0 or elem_counter == n_total
-            ):
+            if show_progress and (elem_counter % progress_step == 0 or elem_counter == n_total):
                 print_progress(elem_counter, n_total, t0=t0, prefix="Assemble K")
 
     # --- TRI3 ---
@@ -178,9 +177,7 @@ def _assemble_global_stiffness_mixed_legacy(
             _eKe_scatter_lil(K_lil, edofs, Ke)
 
             elem_counter += 1
-            if show_progress and (
-                elem_counter % progress_step == 0 or elem_counter == n_total
-            ):
+            if show_progress and (elem_counter % progress_step == 0 or elem_counter == n_total):
                 print_progress(elem_counter, n_total, t0=t0, prefix="Assemble K")
 
     # --- TRI6 ---
@@ -211,9 +208,7 @@ def _assemble_global_stiffness_mixed_legacy(
             _eKe_scatter_lil(K_lil, edofs, Ke)
 
             elem_counter += 1
-            if show_progress and (
-                elem_counter % progress_step == 0 or elem_counter == n_total
-            ):
+            if show_progress and (elem_counter % progress_step == 0 or elem_counter == n_total):
                 print_progress(elem_counter, n_total, t0=t0, prefix="Assemble K")
 
     return K_lil.tocsr()
@@ -301,7 +296,7 @@ def assemble_global_stiffness_mixed(
         elapsed = time.time() - t0
         print(
             f"\rAssemble K [{bar}] {elem_counter}/{n_total} "
-            f"({ratio*100:5.1f}% in {elapsed:5.2f} sec)",
+            f"({ratio * 100:5.1f}% in {elapsed:5.2f} sec)",
             end="",
             flush=True,
         )
@@ -389,9 +384,7 @@ def assemble_global_stiffness_mixed(
         conn_tri6_int = conn_tri6.astype(int, copy=False)
         for row in conn_tri6_int:
             n1, n2, n3, n4, n5, n6 = row[-6:]
-            Ke = tri6_ke_plane_strain(
-                nodes_xy[[n1, n2, n3, n4, n5, n6], :], D, t
-            )  # (12,12)
+            Ke = tri6_ke_plane_strain(nodes_xy[[n1, n2, n3, n4, n5, n6], :], D, t)  # (12,12)
             edofs = np.array(
                 [
                     2 * n1,
@@ -441,9 +434,6 @@ def assemble_global_stiffness_mixed(
 # Protocol ベース汎用アセンブリ（Phase 1.3 追加）
 # =====================================================================
 
-from pycae.core.element import ElementProtocol
-from pycae.core.constitutive import ConstitutiveProtocol
-
 
 def assemble_global_stiffness(
     nodes_xy: np.ndarray,
@@ -477,10 +467,7 @@ def assemble_global_stiffness(
     ndof_total = ndof_per_node * N
 
     # nnz見積もり
-    nnz_est = sum(
-        elem.ndof * elem.ndof * len(conn)
-        for elem, conn in element_groups
-    )
+    nnz_est = sum(elem.ndof * elem.ndof * len(conn) for elem, conn in element_groups)
     nnz_est = max(nnz_est, 1)
 
     rows = np.empty(nnz_est, dtype=np.int64)
@@ -499,7 +486,7 @@ def assemble_global_stiffness(
         block_nnz = m * m
 
         for row in conn_int:
-            node_ids = row[-elem.nnodes:]
+            node_ids = row[-elem.nnodes :]
             coords = nodes_xy[node_ids]
             Ke = elem.local_stiffness(coords, material, thickness)
             edofs = elem.dof_indices(node_ids)
@@ -517,9 +504,7 @@ def assemble_global_stiffness(
             k += block_nnz
 
             elem_counter += 1
-            if show_progress and (
-                elem_counter % progress_step == 0 or elem_counter == n_total
-            ):
+            if show_progress and (elem_counter % progress_step == 0 or elem_counter == n_total):
                 ratio = elem_counter / n_total
                 bar_len = 40
                 filled = int(bar_len * ratio)
@@ -527,14 +512,13 @@ def assemble_global_stiffness(
                 elapsed = time.time() - t0
                 print(
                     f"\rAssemble K [{bar}] {elem_counter}/{n_total} "
-                    f"({ratio*100:5.1f}% in {elapsed:5.2f} sec)",
-                    end="", flush=True,
+                    f"({ratio * 100:5.1f}% in {elapsed:5.2f} sec)",
+                    end="",
+                    flush=True,
                 )
                 if elem_counter == n_total:
                     print()
 
-    K = sp.csr_matrix(
-        (data[:k], (rows[:k], cols[:k])), shape=(ndof_total, ndof_total)
-    )
+    K = sp.csr_matrix((data[:k], (rows[:k], cols[:k])), shape=(ndof_total, ndof_total))
     K.sum_duplicates()
     return K

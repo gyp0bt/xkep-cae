@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import Tuple, TYPE_CHECKING
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
-    from pycae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.constitutive import ConstitutiveProtocol
 
 
-def quad4_ke_plane_strain(
-    node_xy: np.ndarray, D: np.ndarray, t: float = 1.0
-) -> np.ndarray:
+def quad4_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> np.ndarray:
     """Q4一次要素（平面歪み）の局所剛性マトリクスを返す。
 
     Args:
@@ -31,13 +31,9 @@ def quad4_ke_plane_strain(
     gauss = [(-g, -g), (g, -g), (g, g), (-g, g)]
     Ke = np.zeros((8, 8), dtype=float)
 
-    def dN_dxi_eta(xi: float, eta: float) -> Tuple[np.ndarray, np.ndarray]:
-        dN_dxi = 0.25 * np.array(
-            [-(1 - eta), +(1 - eta), +(1 + eta), -(1 + eta)], dtype=float
-        )
-        dN_deta = 0.25 * np.array(
-            [-(1 - xi), -(1 + xi), +(1 + xi), +(1 - xi)], dtype=float
-        )
+    def dN_dxi_eta(xi: float, eta: float) -> tuple[np.ndarray, np.ndarray]:
+        dN_dxi = 0.25 * np.array([-(1 - eta), +(1 - eta), +(1 + eta), -(1 + eta)], dtype=float)
+        dN_deta = 0.25 * np.array([-(1 - xi), -(1 + xi), +(1 + xi), +(1 - xi)], dtype=float)
         return dN_dxi, dN_deta
 
     for xi, eta in gauss:

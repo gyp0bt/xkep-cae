@@ -1,16 +1,17 @@
 from __future__ import annotations
+
 import numpy as np
 from scipy.sparse import lil_matrix
 
-from pycae.api import solve_plane_strain_from_label_maps
-from pycae.elements.tri6 import tri6_ke_plane_strain
-from pycae.materials.elastic import constitutive_plane_strain
-from pycae.bc import apply_dirichlet
-from pycae.solver import solve_displacement
+from xkep_cae.api import solve_plane_strain_from_label_maps
+from xkep_cae.bc import apply_dirichlet
+from xkep_cae.elements.tri6 import tri6_ke_plane_strain
+from xkep_cae.materials.elastic import constitutive_plane_strain
+from xkep_cae.solver import solve_displacement
 
 
-def test_square1_tensile():
-    """Q4単位正方形 引張試験"""
+def test_square1_shear():
+    """Q4単位正方形 せん断試験"""
     nodes = np.array(
         [
             [10, 0.0, 0.0],
@@ -23,7 +24,7 @@ def test_square1_tensile():
     elem_quads = np.array([[10, 11, 12, 13]], dtype=int)
 
     node_label_df_mapping = {10: (False, False), 11: (False, False)}
-    node_label_load_mapping = {12: (0.0, 1.0), 13: (0.0, 1.0)}
+    node_label_load_mapping = {13: (1.0, 0.0)}
 
     u_map = solve_plane_strain_from_label_maps(
         elem_quads=elem_quads,
@@ -31,16 +32,17 @@ def test_square1_tensile():
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
-        E=200e3, nu=0.3, thickness=1.0,
+        E=200e3,
+        nu=0.3,
+        thickness=1.0,
     )
     assert 12 in u_map
-    ux, uy = u_map[12]
+    ux, _ = u_map[12]
     assert isinstance(ux, float)
-    assert isinstance(uy, float)
 
 
-def test_tri1_tensile():
-    """TRI3単体 引張試験"""
+def test_tri1_shear():
+    """TRI3単体 せん断試験"""
     nodes = np.array(
         [
             [10, 0.0, 0.0],
@@ -52,7 +54,7 @@ def test_tri1_tensile():
     elem_tris = np.array([[10, 11, 12]], dtype=int)
 
     node_label_df_mapping = {10: (False, False), 11: (False, False)}
-    node_label_load_mapping = {12: (0.0, 1.0)}
+    node_label_load_mapping = {12: (1.0, 0.0)}
 
     u_map = solve_plane_strain_from_label_maps(
         elem_quads=None,
@@ -60,13 +62,15 @@ def test_tri1_tensile():
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
-        E=200e3, nu=0.3, thickness=1.0,
+        E=200e3,
+        nu=0.3,
+        thickness=1.0,
     )
     assert 12 in u_map
 
 
-def test_square_tri_mixed_tensile():
-    """Q4+TRI3混在メッシュ 引張試験"""
+def test_square_tri_mixed_shear():
+    """Q4+TRI3混在メッシュ せん断試験"""
     nodes = np.array(
         [
             [1, 0.0, 0.0, 0.0],
@@ -81,7 +85,7 @@ def test_square_tri_mixed_tensile():
     elem_tris = np.array([[3, 4, 5]], dtype=int)
 
     node_label_df_mapping = {1: (False, False), 2: (False, False)}
-    node_label_load_mapping = {5: (0.0, 1.0)}
+    node_label_load_mapping = {5: (1.0, 0.0)}
 
     u_map = solve_plane_strain_from_label_maps(
         elem_quads=elem_quads,
@@ -89,14 +93,16 @@ def test_square_tri_mixed_tensile():
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
-        E=200e3, nu=0.3, thickness=1.0,
+        E=200e3,
+        nu=0.3,
+        thickness=1.0,
     )
     assert 4 in u_map
     assert 5 in u_map
 
 
-def test_tri6_tensile():
-    """TRI6単体 引張試験"""
+def test_tri6_shear():
+    """TRI6単体 せん断試験"""
     nodes = np.array(
         [
             [10, 0.0, 0.0],
@@ -115,7 +121,7 @@ def test_tri6_tensile():
         11: (False, False),
         13: (False, False),
     }
-    node_label_load_mapping = {12: (0.0, 1.0)}
+    node_label_load_mapping = {12: (1.0, 0.0)}
 
     D = constitutive_plane_strain(200e3, 0.3)
     t = 1.0
@@ -135,8 +141,8 @@ def test_tri6_tensile():
         edofs.extend([2 * i, 2 * i + 1])
     edofs = np.array(edofs, dtype=int)
 
-    for ii, I in enumerate(edofs):
-        K[I, edofs] += Ke[ii, :]
+    for ii, row_dof in enumerate(edofs):
+        K[row_dof, edofs] += Ke[ii, :]
     K = K.tocsr()
 
     f = np.zeros(ndof, dtype=float)
@@ -161,5 +167,5 @@ def test_tri6_tensile():
     out = {lab: (uN2[label_to_idx[lab], 0], uN2[label_to_idx[lab], 1]) for lab in labels}
 
     assert 12 in out
-    _, uy = out[12]
-    assert uy > 0.0, "TRI6の頂点12はy方向正の変位を持つべき"
+    ux, _ = out[12]
+    assert ux > 0.0, "TRI6の頂点12はx方向正の変位を持つべき"

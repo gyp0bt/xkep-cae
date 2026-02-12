@@ -1,9 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Tuple
-import numpy as np
-import scipy.sparse as sp
 
-from typing import Dict, Tuple, Optional
 import numpy as np
 import scipy.sparse as sp
 
@@ -39,9 +35,7 @@ def assemble_K_from_arrays_mixed(
         and (elem_tris is None or len(elem_tris) == 0)
         and (elem_tri6 is None or len(elem_tri6) == 0)  # ★ TRI6 もチェック
     ):
-        raise ValueError(
-            "要素が空です。Q4 / TRI3 / TRI6 のいずれかを指定してください。"
-        )
+        raise ValueError("要素が空です。Q4 / TRI3 / TRI6 のいずれかを指定してください。")
 
     labels = node_coord_array[:, 0].astype(int)
     if np.unique(labels).size != labels.size:
@@ -58,8 +52,8 @@ def assemble_K_from_arrays_mixed(
     used_labels = np.unique(np.concatenate(used))
     used_labels.sort()
 
-    label_to_row: dict[int, int] = {int(l): i for i, l in enumerate(labels)}
-    label_to_new: dict[int, int] = {int(l): i for i, l in enumerate(used_labels)}
+    label_to_row: dict[int, int] = {int(lab): i for i, lab in enumerate(labels)}
+    label_to_new: dict[int, int] = {int(lab): i for i, lab in enumerate(used_labels)}
 
     # nodes_xy（内部インデックス順）
     nodes_xy = np.empty((used_labels.size, 2), dtype=float)
@@ -102,18 +96,18 @@ def assemble_K_from_arrays_mixed(
 
 
 def solve_plane_strain_from_label_maps(
-    elem_quads: Optional[np.ndarray],
-    elem_tris: Optional[np.ndarray],
+    elem_quads: np.ndarray | None,
+    elem_tris: np.ndarray | None,
     node_coord_array: np.ndarray,
-    node_label_df_mapping: Dict[int, Tuple[bool, bool]],
-    node_label_load_mapping: Dict[int, Tuple[float, float]],
+    node_label_df_mapping: dict[int, tuple[bool, bool]],
+    node_label_load_mapping: dict[int, tuple[float, float]],
     E: float,
     nu: float,
     *,
     thickness: float = 1.0,
     size_threshold: int = 4000,
-    elem_tri6: Optional[np.ndarray] = None,  # ★追加（kw-only）
-) -> Dict[int, Tuple[float, float]]:
+    elem_tri6: np.ndarray | None = None,  # ★追加（kw-only）
+) -> dict[int, tuple[float, float]]:
     """ラベル指定の境界条件・荷重から、ラベル→変位のマッピングを解く高レベルAPI.
 
     Q4 / TRI3 / TRI6 混在の平面歪み・線形弾性を仮定する。
@@ -143,7 +137,7 @@ def solve_plane_strain_from_label_maps(
     used_labels.sort()  # 内部インデックス順を決める
 
     # ラベル → 内部節点インデックス
-    label_to_index: Dict[int, int] = {int(lab): i for i, lab in enumerate(used_labels)}
+    label_to_index: dict[int, int] = {int(lab): i for i, lab in enumerate(used_labels)}
 
     # -----------------------------
     # 2) 全体剛性 K を構築（既存API使用）
@@ -201,14 +195,12 @@ def solve_plane_strain_from_label_maps(
     from .solver import solve_displacement
 
     Kbc, fbc = apply_dirichlet(K, f, fixed_dofs_arr, values=0.0)
-    u, info = solve_displacement(
-        Kbc, fbc, size_threshold=size_threshold, use_pyamg=True
-    )
+    u, info = solve_displacement(Kbc, fbc, size_threshold=size_threshold, use_pyamg=True)
 
     # -----------------------------
     # 6) 解ベクトル → ラベル辞書へマッピング
     # -----------------------------
-    node_label_displacement_mapping: Dict[int, Tuple[float, float]] = {}
+    node_label_displacement_mapping: dict[int, tuple[float, float]] = {}
     uN2 = u.reshape(-1, 2)  # (Nnode_used, 2)
 
     for lab, idx in label_to_index.items():
