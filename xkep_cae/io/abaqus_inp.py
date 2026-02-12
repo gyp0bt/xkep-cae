@@ -1,0 +1,337 @@
+"""Abaqus .inp ファイルのパーサー.
+
+pymesh 代替として、Abaqus入力ファイルの以下のセクションを読み込む:
+  - *NODE: 節点座標
+  - *ELEMENT: 要素接続配列
+  - *NSET: ノードセット
+
+対応要素タイプ:
+  - CPS3, CPE3: 3節点三角形（TRI3）
+  - CPS4, CPS4R, CPE4, CPE4R: 4節点四角形（Q4）
+  - CPS6, CPE6: 6節点三角形（TRI6）
+  - B21, B22: 2節点/3節点梁要素（2D）
+  - B31, B32: 2節点/3節点梁要素（3D）
+
+制限事項:
+  - *INCLUDE はサポートしない
+  - パーツ/インスタンス構造（*PART, *INSTANCE）はサポートしない
+  - 継続行（末尾カンマ）は要素行のみ対応
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class AbaqusNode:
+    """Abaqus節点データ."""
+
+    label: int
+    x: float
+    y: float
+    z: float = 0.0
+
+
+@dataclass
+class AbaqusElementGroup:
+    """同一タイプの要素グループ.
+
+    Attributes:
+        elem_type: 要素タイプ文字列（例: "CPS4R", "CPE3"）
+        elset: 要素セット名（オプション）
+        elements: [(label, [node1, node2, ...]), ...]
+    """
+
+    elem_type: str
+    elset: str | None = None
+    elements: list[tuple[int, list[int]]] = field(default_factory=list)
+
+
+@dataclass
+class AbaqusMesh:
+    """パース結果を保持するデータクラス.
+
+    pymesh互換のインタフェースを提供する。
+    """
+
+    nodes: list[AbaqusNode] = field(default_factory=list)
+    element_groups: list[AbaqusElementGroup] = field(default_factory=list)
+    nsets: dict[str, list[int]] = field(default_factory=dict)
+
+    def get_node_coord_array(self) -> list[dict[str, float]]:
+        """節点座標をpymesh互換の辞書リストで返す.
+
+        Returns:
+            [{"label": int, "x": float, "y": float, "z": float}, ...]
+        """
+        return [{"label": n.label, "x": n.x, "y": n.y, "z": n.z} for n in self.nodes]
+
+    def get_node_labels_with_nset(self, nset_name: str) -> list[int]:
+        """指定ノードセットのラベルリストを返す.
+
+        Args:
+            nset_name: ノードセット名（大文字小文字区別なし）
+
+        Returns:
+            ノードラベルのリスト
+
+        Raises:
+            KeyError: ノードセットが見つからない場合
+        """
+        key = nset_name.upper()
+        for name, labels in self.nsets.items():
+            if name.upper() == key:
+                return labels
+        raise KeyError(
+            f"ノードセット '{nset_name}' が見つかりません。利用可能: {list(self.nsets.keys())}"
+        )
+
+    def get_element_array(
+        self,
+        allow_polymorphism: bool = False,
+        invalid_node: int = 0,
+    ) -> list[list[int]]:
+        """要素接続配列をpymesh互換の形式で返す.
+
+        Args:
+            allow_polymorphism: Trueの場合、異なる節点数の要素を混在可能にする。
+                短い要素はinvalid_nodeでパディングされる。
+            invalid_node: パディングに使用する無効節点値
+
+        Returns:
+            [[label, n1, n2, ...], ...] の2次元リスト
+        """
+        all_elements: list[tuple[int, list[int]]] = []
+        for group in self.element_groups:
+            all_elements.extend(group.elements)
+
+        if not all_elements:
+            return []
+
+        max_nodes = max(len(nodes) for _, nodes in all_elements)
+
+        result: list[list[int]] = []
+        for label, nodes in all_elements:
+            row = [label] + nodes
+            if allow_polymorphism and len(nodes) < max_nodes:
+                row.extend([invalid_node] * (max_nodes - len(nodes)))
+            result.append(row)
+
+        return result
+
+
+def _parse_keyword_options(line: str) -> dict[str, str]:
+    """キーワード行のオプションを辞書にパースする.
+
+    例: "*ELEMENT, TYPE=CPS4R, ELSET=solid" →
+        {"TYPE": "CPS4R", "ELSET": "solid"}
+
+    Args:
+        line: キーワード行（*で始まる）
+
+    Returns:
+        オプション辞書（キーは大文字正規化）
+    """
+    parts = line.split(",")
+    options: dict[str, str] = {}
+    for part in parts[1:]:
+        part = part.strip()
+        if "=" in part:
+            key, val = part.split("=", 1)
+            options[key.strip().upper()] = val.strip()
+        elif part:
+            # 値なしオプション（例: GENERATE）
+            options[part.upper()] = ""
+    return options
+
+
+def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
+    """Abaqus .inp ファイルを読み込む.
+
+    Args:
+        filepath: .inp ファイルのパス
+
+    Returns:
+        AbaqusMesh オブジェクト
+    """
+    filepath = Path(filepath)
+    if not filepath.exists():
+        raise FileNotFoundError(f"ファイルが見つかりません: {filepath}")
+
+    mesh = AbaqusMesh()
+
+    with filepath.open("r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+
+    idx = 0
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+
+        # 空行・コメント行をスキップ
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+
+        # キーワード行
+        if line.startswith("*"):
+            keyword = line.split(",")[0].strip().upper()
+
+            if keyword == "*NODE":
+                idx = _parse_node_section(lines, idx + 1, mesh)
+            elif keyword == "*ELEMENT":
+                opts = _parse_keyword_options(line)
+                idx = _parse_element_section(lines, idx + 1, opts, mesh)
+            elif keyword == "*NSET":
+                opts = _parse_keyword_options(line)
+                idx = _parse_nset_section(lines, idx + 1, opts, mesh)
+            else:
+                idx += 1
+        else:
+            idx += 1
+
+    return mesh
+
+
+def _parse_node_section(
+    lines: list[str],
+    start_idx: int,
+    mesh: AbaqusMesh,
+) -> int:
+    """*NODE セクションをパースする.
+
+    形式: label, x, y [, z]
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = line.split(",")
+        label = int(parts[0].strip())
+        x = float(parts[1].strip())
+        y = float(parts[2].strip()) if len(parts) > 2 else 0.0
+        z = float(parts[3].strip()) if len(parts) > 3 else 0.0
+
+        mesh.nodes.append(AbaqusNode(label=label, x=x, y=y, z=z))
+        idx += 1
+
+    return idx
+
+
+def _parse_element_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*ELEMENT セクションをパースする.
+
+    形式: label, n1, n2, ...
+    継続行（前の行が末尾カンマ）にも対応。
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    elem_type = opts.get("TYPE", "UNKNOWN")
+    elset = opts.get("ELSET")
+
+    group = AbaqusElementGroup(elem_type=elem_type, elset=elset)
+    idx = start_idx
+    n_lines = len(lines)
+
+    accumulated = ""
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        # 継続行の処理
+        accumulated += line
+        if accumulated.endswith(","):
+            # まだ続きがある
+            idx += 1
+            continue
+
+        # 完全な行をパース
+        parts = [p.strip() for p in accumulated.split(",") if p.strip()]
+        label = int(parts[0])
+        node_ids = [int(p) for p in parts[1:]]
+        group.elements.append((label, node_ids))
+        accumulated = ""
+        idx += 1
+
+    # 最後の累積行がある場合
+    if accumulated.strip():
+        parts = [p.strip() for p in accumulated.split(",") if p.strip()]
+        if parts:
+            label = int(parts[0])
+            node_ids = [int(p) for p in parts[1:]]
+            group.elements.append((label, node_ids))
+
+    mesh.element_groups.append(group)
+    return idx
+
+
+def _parse_nset_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*NSET セクションをパースする.
+
+    2つの形式に対応:
+    1. 通常: ノードラベルのカンマ区切りリスト
+    2. GENERATE: start, end, step
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    nset_name = opts.get("NSET", "UNNAMED")
+    is_generate = "GENERATE" in opts
+
+    labels: list[int] = mesh.nsets.get(nset_name, [])
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+
+        if is_generate:
+            # GENERATE: start, end [, step]
+            start = int(parts[0])
+            end = int(parts[1])
+            step = int(parts[2]) if len(parts) > 2 else 1
+            labels.extend(range(start, end + 1, step))
+        else:
+            # 通常: ラベルのリスト
+            labels.extend(int(p) for p in parts)
+
+        idx += 1
+
+    mesh.nsets[nset_name] = labels
+    return idx
