@@ -87,7 +87,7 @@ def quad4_ke_plane_strain_bbar(
     # 各Gauss点の「体積ひずみ感度」 b_m = [1 1 0] * B  (1×8)
     # → εm = εxx + εyy だけを取り出す
     vol_selector = np.array([1.0, 1.0, 0.0], dtype=float)  # [εxx, εyy, γxy]
-    b_m = np.einsum("k, gij -> gi", vol_selector, B_arr)  # (4,8)
+    b_m = np.einsum("k, gkj -> gj", vol_selector, B_arr)  # (4,8)
 
     # 要素平均 b̄_m （detJで重み付け）
     w = detJ_arr
