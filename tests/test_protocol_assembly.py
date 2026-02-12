@@ -12,6 +12,7 @@ from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
 from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
 from xkep_cae.elements.quad4 import Quad4PlaneStrain
 from xkep_cae.elements.quad4_bbar import Quad4BBarPlaneStrain
+from xkep_cae.elements.quad4_eas_bbar import Quad4EASBBarPlaneStrain, Quad4EASPlaneStrain
 from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.elements.tri6 import Tri6PlaneStrain
 from xkep_cae.materials.beam_elastic import BeamElastic1D
@@ -25,7 +26,14 @@ def test_protocol_isinstance():
     mat = PlaneStrainElastic(200e3, 0.3)
     assert isinstance(mat, ConstitutiveProtocol)
 
-    for cls in [Quad4PlaneStrain, Tri3PlaneStrain, Tri6PlaneStrain, Quad4BBarPlaneStrain]:
+    for cls in [
+        Quad4PlaneStrain,
+        Tri3PlaneStrain,
+        Tri6PlaneStrain,
+        Quad4BBarPlaneStrain,
+        Quad4EASPlaneStrain,
+        Quad4EASBBarPlaneStrain,
+    ]:
         obj = cls()
         assert isinstance(obj, ElementProtocol), f"{cls.__name__} is not ElementProtocol"
 

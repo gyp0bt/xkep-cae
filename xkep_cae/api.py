@@ -10,7 +10,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.assembly import assemble_global_stiffness
-from xkep_cae.elements.quad4 import Quad4PlaneStrain
+from xkep_cae.elements.quad4_eas_bbar import Quad4EASPlaneStrain
 from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.elements.tri6 import Tri6PlaneStrain
 from xkep_cae.materials.elastic import PlaneStrainElastic
@@ -83,13 +83,13 @@ def solve_plane_strain(
     # Protocol ベースの要素・材料
     mat = PlaneStrainElastic(E, nu)
     element_groups: list[
-        tuple[Quad4PlaneStrain | Tri3PlaneStrain | Tri6PlaneStrain, np.ndarray]
+        tuple[Quad4EASPlaneStrain | Tri3PlaneStrain | Tri6PlaneStrain, np.ndarray]
     ] = []
 
     if has_q:
         q = np.asarray(elem_quads, int)
         conn_q = np.vectorize(label_to_new.get)(q)
-        element_groups.append((Quad4PlaneStrain(), conn_q))
+        element_groups.append((Quad4EASPlaneStrain(), conn_q))
 
     if has_t3:
         t_arr = np.asarray(elem_tris, int)
