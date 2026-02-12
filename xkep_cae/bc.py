@@ -1,8 +1,9 @@
 from __future__ import annotations
-import numpy as np
-import scipy.sparse as sp
 
 import warnings
+
+import numpy as np
+import scipy.sparse as sp
 from scipy.sparse import SparseEfficiencyWarning
 
 warnings.simplefilter("ignore", SparseEfficiencyWarning)
@@ -43,7 +44,7 @@ def apply_dirichlet(
     if fbc.shape[0] != n:
         raise ValueError("K と f のサイズが一致していません。")
 
-    for dof, val in zip(fixed_dofs, values):
+    for dof, val in zip(fixed_dofs, values, strict=True):
         # 1) 既知変位の影響を右辺へ移す: f <- f - K[:,dof]*val
         col = Kbc[:, dof]  # (n,1) CSR
         coeffs = col.data
@@ -114,7 +115,7 @@ def apply_dirichlet_penalty(
 
     # 対角に penalty を足し、右辺にも penalty*val を足す
     # これで u[d] ≈ val になるように強制される
-    for dof, val in zip(fixed_dofs, vals):
+    for dof, val in zip(fixed_dofs, vals, strict=True):
         Kbc[dof, dof] += penalty
         fbc[dof] += penalty * val
 

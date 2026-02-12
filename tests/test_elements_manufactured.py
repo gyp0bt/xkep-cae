@@ -1,15 +1,14 @@
 from __future__ import annotations
+
 import numpy as np
 import scipy.sparse as sp
 
-from pycae.api import assemble_K_from_arrays_mixed
-from pycae.bc import apply_dirichlet
-from pycae.solver import solve_displacement
+from xkep_cae.api import assemble_K_from_arrays_mixed
+from xkep_cae.bc import apply_dirichlet
+from xkep_cae.solver import solve_displacement
 
 
-def _manufactured_solve_check(
-    K: sp.csr_matrix, fixed_dofs: np.ndarray, seed: int = 0
-) -> None:
+def _manufactured_solve_check(K: sp.csr_matrix, fixed_dofs: np.ndarray, seed: int = 0) -> None:
     """製造解 u_true を用いたソルバ検証（固定DOFを0にして f=K u_true を作る）"""
     n = K.shape[0]
     rng = np.random.default_rng(seed)
@@ -88,9 +87,7 @@ def test_mixed_quad4_tri3():
     quads = np.array([[0, 1, 2, 3]], dtype=int)
     tris = np.array([[1, 4, 2]], dtype=int)
 
-    K = assemble_K_from_arrays_mixed(
-        quads, tris, nodes, E=100.0, nu=0.29, thickness=1.0
-    )
+    K = assemble_K_from_arrays_mixed(quads, tris, nodes, E=100.0, nu=0.29, thickness=1.0)
 
     # 左端2節点(0,3)の全DOF拘束
     fixed = np.array([0, 1, 6, 7], dtype=int)

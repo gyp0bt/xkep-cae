@@ -1,16 +1,16 @@
 # fem/elements/tri3.py
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
-    from pycae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.constitutive import ConstitutiveProtocol
 
 
-def tri3_ke_plane_strain(
-    node_xy: np.ndarray, D: np.ndarray, t: float = 1.0
-) -> np.ndarray:
+def tri3_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> np.ndarray:
     """TRI3（一次三角形, 定ひずみ, 平面歪み）の局所剛性 (6x6)。
 
     Args:

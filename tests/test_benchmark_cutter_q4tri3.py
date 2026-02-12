@@ -1,6 +1,7 @@
 from __future__ import annotations
-import pytest
+
 import numpy as np
+import pytest
 
 pymesh = pytest.importorskip("pymesh", reason="pymeshが必要なテスト")
 
@@ -9,7 +10,8 @@ pymesh = pytest.importorskip("pymesh", reason="pymeshが必要なテスト")
 def test_cutter_sample1():
     """実メッシュ（pymesh依存）でのQ4/TRI3混在ソルブ"""
     from pymesh import mesher
-    from pycae.api import solve_plane_strain_from_label_maps
+
+    from xkep_cae.api import solve_plane_strain_from_label_maps
 
     mesh_filepath = "mesh_cutter_sample1.inp"
     mesh = mesher(mesh_filepath, verbose=False)
@@ -25,9 +27,7 @@ def test_cutter_sample1():
         elem_tris = elem_arr[:, 1:]
 
     node_coord_array = mesh.get_node_coord_array()
-    nodes = np.array(
-        [[i["label"], i["x"], i["y"], i["z"]] for i in node_coord_array], dtype=float
-    )
+    nodes = np.array([[i["label"], i["x"], i["y"], i["z"]] for i in node_coord_array], dtype=float)
 
     gfix = mesh.get_node_labels_with_nset("gfix")
     gmove = mesh.get_node_labels_with_nset("gmove")
@@ -41,6 +41,8 @@ def test_cutter_sample1():
         node_coord_array=nodes,
         node_label_df_mapping=node_label_df_mapping,
         node_label_load_mapping=node_label_load_mapping,
-        E=200e3, nu=0.3, thickness=1.0,
+        E=200e3,
+        nu=0.3,
+        thickness=1.0,
     )
     assert 1 in u_map

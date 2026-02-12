@@ -1,21 +1,24 @@
-# pycae
+# xkep-cae
 
 ニッチドメイン問題を解くための自作有限要素ソルバー基盤。
 支配方程式・構成則・要素・更新則・積分スキーマをモジュール化し、
 組み合わせて問題特化ソルバーを構成する。
 
+> **名前の由来**: kepler（物理モジュール向けCAEアプリ）の派生系 → xkep
+
 ## 現在の状態
 
 線形弾性・平面ひずみソルバーが実装済み。
 Q4/TRI3/TRI6/Q4_BBAR要素、Abaqusベンチマーク完了。
-Phase 1（アーキテクチャ再構成）完了: Protocol導入、pyproject.toml、pytest統一、CI設定。
+Phase 1（アーキテクチャ再構成）完了: Protocol導入、pyproject.toml、pytest統一、CI設定、ruff lint/format。
 
 次のマイルストーン: Phase 2 空間梁要素の実装。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
-- [実装状況](docs/status/status-002.md) — 最新のステータス
+- [実装状況](docs/status/status-003.md) — 最新のステータス
+- [status-002](docs/status/status-002.md) — Phase 1 アーキテクチャ再構成
 - [status-001](docs/status/status-001.md) — プロジェクト棚卸しとロードマップ策定
 
 ## インストール
@@ -30,12 +33,19 @@ pip install -e ".[dev]"
 pytest tests/ -v -m "not external"
 ```
 
+## Lint / Format
+
+```bash
+ruff check xkep_cae/ tests/
+ruff format xkep_cae/ tests/
+```
+
 ## 使用方法
 
 ### レガシーAPI（関数ベース）
 
 ```python
-from pycae.api import solve_plane_strain_from_label_maps
+from xkep_cae.api import solve_plane_strain_from_label_maps
 
 u_map = solve_plane_strain_from_label_maps(
     elem_tri6=elem_arr,
@@ -52,12 +62,12 @@ u_map = solve_plane_strain_from_label_maps(
 
 ```python
 import numpy as np
-from pycae.elements.quad4 import Quad4PlaneStrain
-from pycae.elements.tri3 import Tri3PlaneStrain
-from pycae.materials.elastic import PlaneStrainElastic
-from pycae.assembly import assemble_global_stiffness
-from pycae.bc import apply_dirichlet
-from pycae.solver import solve_displacement
+from xkep_cae.elements.quad4 import Quad4PlaneStrain
+from xkep_cae.elements.tri3 import Tri3PlaneStrain
+from xkep_cae.materials.elastic import PlaneStrainElastic
+from xkep_cae.assembly import assemble_global_stiffness
+from xkep_cae.bc import apply_dirichlet
+from xkep_cae.solver import solve_displacement
 
 # 材料・要素のオブジェクト生成
 mat = PlaneStrainElastic(E=200e3, nu=0.3)
@@ -82,6 +92,7 @@ u, info = solve_displacement(Kbc, fbc)
 - numpy, scipy（必須）
 - pyamg（大規模問題時のAMGソルバー、オプション）
 - numba（TRI6高速化、オプション）
+- ruff（開発時lint/format）
 
 ## 運用
 

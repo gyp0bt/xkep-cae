@@ -1,4 +1,4 @@
-# pycae ロードマップ
+# xkep-cae ロードマップ
 
 [← README](../README.md)
 
@@ -55,7 +55,7 @@
 以下のプロトコル（Protocol / ABC）を導入する。
 
 ```
-pycae/
+xkep_cae/
 ├── core/
 │   ├── element.py          # ElementProtocol: 要素の抽象インタフェース
 │   ├── constitutive.py     # ConstitutiveProtocol: 構成則の抽象インタフェース

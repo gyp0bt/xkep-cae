@@ -1,11 +1,13 @@
 # fem/elements/tri6.py
 
 from __future__ import annotations
+
 from typing import TYPE_CHECKING
+
 import numpy as np
 
 if TYPE_CHECKING:
-    from pycae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.constitutive import ConstitutiveProtocol
 
 try:
     # numba があれば高速版を有効化
@@ -18,9 +20,7 @@ except Exception:  # ImportError など
 _USE_NUMBA = False
 
 
-def _tri6_ke_plane_strain_python(
-    node_xy: np.ndarray, D: np.ndarray, t: float = 1.0
-) -> np.ndarray:
+def _tri6_ke_plane_strain_python(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> np.ndarray:
     """TRI6（二次三角形, 平面ひずみ）の局所剛性 (12x12) [pure Python版].
 
     節点順は Abaqus CPE6 と同じ:
@@ -71,7 +71,7 @@ def _tri6_ke_plane_strain_python(
 
     Ke = np.zeros((12, 12), dtype=float)
 
-    for (L1, L2, L3), wi in zip(gp, w):
+    for (L1, L2, L3), wi in zip(gp, w, strict=True):
         # --- dN/dL1, dN/dL2, dN/dL3 を計算 ---
         # N1 = L1(2L1-1)
         dN1_dL1 = 4.0 * L1 - 1.0
@@ -231,9 +231,7 @@ if _USE_NUMBA:
 
         return Ke
 
-    def tri6_ke_plane_strain(
-        node_xy: np.ndarray, D: np.ndarray, t: float = 1.0
-    ) -> np.ndarray:
+    def tri6_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> np.ndarray:
         """TRI6（二次三角形, 平面ひずみ）の局所剛性 (Numba 利用時はJIT)."""
         node_xy = np.asarray(node_xy, dtype=np.float64)
         if node_xy.shape != (6, 2):
@@ -253,9 +251,7 @@ if _USE_NUMBA:
 
 else:
     # numba なし環境では従来のPython版をそのまま使う
-    def tri6_ke_plane_strain(
-        node_xy: np.ndarray, D: np.ndarray, t: float = 1.0
-    ) -> np.ndarray:
+    def tri6_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> np.ndarray:
         """TRI6（二次三角形, 平面ひずみ）の局所剛性 (numbaなし)."""
         return _tri6_ke_plane_strain_python(node_xy, D, t)
 
