@@ -10,14 +10,17 @@
 
 線形弾性・平面ひずみソルバーが実装済み。
 Q4/TRI3/TRI6/Q4_BBAR要素、Abaqusベンチマーク完了。
-Phase 1（アーキテクチャ再構成）完了: Protocol導入、pyproject.toml、pytest統一、CI設定、ruff lint/format。
+Phase 1（アーキテクチャ再構成）完了。
+Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
+Abaqus .inp パーサー自前実装済み（pymesh代替）。
 
-次のマイルストーン: Phase 2 空間梁要素の実装。
+次のマイルストーン: Phase 2.3 Timoshenko梁（3D空間）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
-- [実装状況](docs/status/status-003.md) — 最新のステータス
+- [実装状況](docs/status/status-004.md) — 最新のステータス
+- [status-003](docs/status/status-003.md) — リネーム & Phase 1 完了
 - [status-002](docs/status/status-002.md) — Phase 1 アーキテクチャ再構成
 - [status-001](docs/status/status-001.md) — プロジェクト棚卸しとロードマップ策定
 
