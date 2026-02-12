@@ -1,7 +1,11 @@
 # fem/elements/tri6.py
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 import numpy as np
+
+if TYPE_CHECKING:
+    from pycae.core.constitutive import ConstitutiveProtocol
 
 try:
     # numba があれば高速版を有効化
@@ -254,3 +258,27 @@ else:
     ) -> np.ndarray:
         """TRI6（二次三角形, 平面ひずみ）の局所剛性 (numbaなし)."""
         return _tri6_ke_plane_strain_python(node_xy, D, t)
+
+
+class Tri6PlaneStrain:
+    """TRI6二次三角形要素（平面ひずみ）（ElementProtocol適合）."""
+
+    ndof_per_node: int = 2
+    nnodes: int = 6
+    ndof: int = 12
+
+    def local_stiffness(
+        self,
+        coords: np.ndarray,
+        material: ConstitutiveProtocol,
+        thickness: float,
+    ) -> np.ndarray:
+        D = material.tangent()
+        return tri6_ke_plane_strain(coords, D, thickness)
+
+    def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
+        edofs = np.empty(self.ndof, dtype=np.int64)
+        for i, n in enumerate(node_indices):
+            edofs[2 * i] = 2 * n
+            edofs[2 * i + 1] = 2 * n + 1
+        return edofs

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pycae"
+version = "0.1.0"
+description = "ニッチドメイン問題を解くための自作有限要素ソルバー基盤"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+amg = ["pyamg>=5.0"]
+fast = ["numba>=0.57"]
+dev = [
+    "pytest>=7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "external: pymesh等の外部依存が必要なテスト",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["pycae"]

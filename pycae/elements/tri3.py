@@ -1,7 +1,11 @@
 # fem/elements/tri3.py
 
 from __future__ import annotations
+from typing import TYPE_CHECKING
 import numpy as np
+
+if TYPE_CHECKING:
+    from pycae.core.constitutive import ConstitutiveProtocol
 
 
 def tri3_ke_plane_strain(
@@ -50,3 +54,27 @@ def tri3_ke_plane_strain(
     # ★ ここが修正点：2Aではなく A
     Ke = (B.T @ D @ B) * A * t
     return Ke
+
+
+class Tri3PlaneStrain:
+    """TRI3一次三角形要素（平面ひずみ）（ElementProtocol適合）."""
+
+    ndof_per_node: int = 2
+    nnodes: int = 3
+    ndof: int = 6
+
+    def local_stiffness(
+        self,
+        coords: np.ndarray,
+        material: ConstitutiveProtocol,
+        thickness: float,
+    ) -> np.ndarray:
+        D = material.tangent()
+        return tri3_ke_plane_strain(coords, D, thickness)
+
+    def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
+        edofs = np.empty(self.ndof, dtype=np.int64)
+        for i, n in enumerate(node_indices):
+            edofs[2 * i] = 2 * n
+            edofs[2 * i + 1] = 2 * n + 1
+        return edofs

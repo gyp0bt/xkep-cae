@@ -45,10 +45,10 @@
 
 ### 1.1 プロジェクト基盤整備
 
-- [ ] `pyproject.toml` 作成（依存関係、ビルド設定）
-- [ ] テストフレームワーク（pytest）統一
+- [x] `pyproject.toml` 作成（依存関係、ビルド設定）
+- [x] テストフレームワーク（pytest）統一
 - [ ] 既存テストの `tests/` 配下への整理・命名規約統一
-- [ ] CI設定（GitHub Actions等）
+- [x] CI設定（GitHub Actions）
 
 ### 1.2 コア抽象レイヤー設計
 
@@ -116,10 +116,10 @@ class ConstitutiveProtocol(Protocol):
 
 ### 1.3 既存コードの移行
 
-- [ ] 現行の `quad4.py`, `tri3.py`, `tri6.py`, `quad4_bbar.py` を `ElementProtocol` に適合
-- [ ] `elastic.py` を `ConstitutiveProtocol` に適合
-- [ ] `assembly.py` のアセンブリロジックを Protocol ベースに汎化
-- [ ] 既存テストが引き続きパスすることを確認
+- [x] 現行の `quad4.py`, `tri3.py`, `tri6.py`, `quad4_bbar.py` を `ElementProtocol` に適合
+- [x] `elastic.py` を `ConstitutiveProtocol` に適合
+- [x] `assembly.py` のアセンブリロジックを Protocol ベースに汎化
+- [x] 既存テストが引き続きパスすることを確認（16 passed, 2 skipped）
 
 ---
 
