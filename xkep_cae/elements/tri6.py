@@ -267,10 +267,10 @@ class Tri6PlaneStrain:
         self,
         coords: np.ndarray,
         material: ConstitutiveProtocol,
-        thickness: float,
+        thickness: float | None = None,
     ) -> np.ndarray:
         D = material.tangent()
-        return tri6_ke_plane_strain(coords, D, thickness)
+        return tri6_ke_plane_strain(coords, D, thickness if thickness is not None else 1.0)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
         edofs = np.empty(self.ndof, dtype=np.int64)

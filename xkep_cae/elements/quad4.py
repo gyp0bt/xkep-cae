@@ -19,10 +19,6 @@ def quad4_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) ->
     Returns:
         Ke: (8,8) 局所剛性
     """
-    D_tmp = D.copy()
-    D_tmp[0, 1] *= 2
-    D_tmp[1, 0] *= 2
-
     node_xy = np.asarray(node_xy, dtype=float)
     if node_xy.shape != (4, 2):
         raise ValueError("node_xy は (4,2) である必要があります。")
@@ -59,8 +55,7 @@ def quad4_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) ->
             B[2, 2 * i] = dN_dy[i]  # γxy
             B[2, 2 * i + 1] = dN_dx[i]  # γxy
 
-        # Ke += (B.T @ D @ B) * detJ * t
-        Ke += (B.T @ D_tmp @ B) * detJ * t
+        Ke += (B.T @ D @ B) * detJ * t
 
     return Ke
 
@@ -76,10 +71,10 @@ class Quad4PlaneStrain:
         self,
         coords: np.ndarray,
         material: ConstitutiveProtocol,
-        thickness: float,
+        thickness: float | None = None,
     ) -> np.ndarray:
         D = material.tangent()
-        return quad4_ke_plane_strain(coords, D, thickness)
+        return quad4_ke_plane_strain(coords, D, thickness if thickness is not None else 1.0)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
         edofs = np.empty(self.ndof, dtype=np.int64)

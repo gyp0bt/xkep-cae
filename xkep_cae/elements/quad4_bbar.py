@@ -126,10 +126,10 @@ class Quad4BBarPlaneStrain:
         self,
         coords: np.ndarray,
         material: ConstitutiveProtocol,
-        thickness: float,
+        thickness: float | None = None,
     ) -> np.ndarray:
         D = material.tangent()
-        return quad4_ke_plane_strain_bbar(coords, D, thickness)
+        return quad4_ke_plane_strain_bbar(coords, D, thickness if thickness is not None else 1.0)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
         edofs = np.empty(self.ndof, dtype=np.int64)
