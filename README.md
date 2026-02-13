@@ -12,10 +12,12 @@
 Q4/TRI3/TRI6/Q4_BBAR/Q4_EAS要素、Abaqusベンチマーク完了。
 Phase 1（アーキテクチャ再構成）完了。Protocol API に一本化済み（レガシーAPI削除）。
 Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
-**Phase 2.3/2.4（3D梁要素 & 断面拡張）完了: 3D Timoshenko梁（12DOF）、BeamSection（Iy/Iz/J）。**
-**SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。**
-**2D/3D断面力ポスト処理（`BeamForces2D/3D`, `beam2d/3d_section_forces()`）実装済み。**
-**せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。**
+Phase 2.3/2.4（3D梁要素 & 断面拡張）完了: 3D Timoshenko梁（12DOF）、BeamSection（Iy/Iz/J）。
+SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。
+2D/3D断面力ポスト処理（`BeamForces2D/3D`, `beam2d/3d_section_forces()`）実装済み。
+せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。
+**Phase 2.6（数値試験フレームワーク）完了: 3点曲げ・4点曲げ・引張・ねん回・周波数応答試験。**
+**CSV出力対応、Abaqusライクテキスト入力対応。整合質量行列・Rayleigh減衰・FRF計算を実装。**
 Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
 Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
 Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
@@ -27,7 +29,8 @@ Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
-- [実装状況](docs/status/status-011.md) — 最新のステータス
+- [実装状況](docs/status/status-012.md) — 最新のステータス
+- [status-011](docs/status/status-011.md) — 2D断面力ポスト処理 & せん断応力 & 数値試験ロードマップ
 - [status-010](docs/status/status-010.md) — 3Dアセンブリテスト & 内力ポスト処理 & ワーピング検討
 - [status-009](docs/status/status-009.md) — 3D Timoshenko梁 & 断面モデル拡張 & SCF
 - [status-008](docs/status/status-008.md) — Cosserat rod & 撚線モデル ロードマップ拡張
@@ -131,6 +134,62 @@ K = assemble_global_stiffness(nodes_xyz, [(beam, conn)], mat)
 from xkep_cae.elements.beam_timo3d import beam3d_section_forces
 forces_1, forces_2 = beam.section_forces(coords_elem, u_elem, mat)
 print(f"軸力: {forces_1.N:.3f}, せん断力: {forces_1.Vy:.3f}, モーメント: {forces_1.Mz:.3f}")
+```
+
+### 数値試験フレームワーク
+
+```python
+from xkep_cae.numerical_tests import (
+    NumericalTestConfig, run_test, run_all_tests,
+    export_static_csv, parse_test_input,
+)
+
+# 関数引数で指定
+cfg = NumericalTestConfig(
+    name="bend3p", beam_type="timo2d", E=200e3, nu=0.3,
+    length=100.0, n_elems=10, load_value=1000.0,
+    section_shape="rectangle", section_params={"b": 10.0, "h": 20.0},
+)
+result = run_test(cfg)
+print(f"FEM: {result.displacement_max:.6f}, 解析解: {result.displacement_analytical:.6f}")
+
+# Abaqusライクテキスト入力
+cfg = parse_test_input("""
+*TEST, TYPE=BEND3P
+*BEAM SECTION, SECTION=RECT
+ 10.0, 20.0
+*ELASTIC
+ 200000.0, 0.3
+*SPECIMEN
+ 100.0, 10
+*LOAD
+ 1000.0
+""", beam_type="timo2d")
+result = run_test(cfg)
+
+# CSV出力
+export_static_csv(result, output_dir="./results")
+```
+
+### 周波数応答試験
+
+```python
+from xkep_cae.numerical_tests import (
+    FrequencyResponseConfig, run_frequency_response,
+    export_frequency_response_csv,
+)
+
+cfg = FrequencyResponseConfig(
+    beam_type="timo2d", E=200e3, nu=0.3, rho=7.85e-9,
+    length=100.0, n_elems=10,
+    section_shape="rectangle", section_params={"b": 10.0, "h": 20.0},
+    freq_min=10.0, freq_max=5000.0, n_freq=200,
+    excitation_type="displacement", excitation_dof="uy",
+    damping_alpha=0.0, damping_beta=1e-7,
+)
+result = run_frequency_response(cfg)
+print(f"推定固有振動数: {result.natural_frequencies}")
+export_frequency_response_csv(result, output_dir="./results")
 ```
 
 ## 依存ライブラリ
