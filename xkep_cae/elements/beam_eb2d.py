@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -24,6 +25,25 @@ import numpy as np
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
     from xkep_cae.sections.beam import BeamSection2D
+
+
+@dataclass
+class BeamForces2D:
+    """2D梁要素の断面力（局所座標系）.
+
+    符号規約:
+      - N: 軸力（引張正）
+      - V: せん断力（局所y方向正）
+      - M: 曲げモーメント（凸下 = sagging で正）
+
+    座標系:
+      - x: 梁軸方向（節点1→節点2）
+      - y: x軸に直交（反時計回り90度）
+    """
+
+    N: float
+    V: float
+    M: float
 
 
 def _beam_length_and_cosines(coords: np.ndarray) -> tuple[float, float, float]:
@@ -260,3 +280,132 @@ class EulerBernoulliBeam2D:
             f_global: (6,) 全体座標系の等価節点力
         """
         return eb_beam2d_distributed_load(coords, qy_local)
+
+    def section_forces(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> tuple[BeamForces2D, BeamForces2D]:
+        """要素両端の断面力を計算する.
+
+        Args:
+            coords: (2, 2) 節点座標
+            u_elem_global: (6,) 要素変位ベクトル（全体座標系）
+            material: 構成則（E を保持）
+
+        Returns:
+            (forces_1, forces_2): 両端の断面力（局所座標系）
+        """
+        D = material.tangent()
+        if np.ndim(D) == 0:
+            young_e = float(D)
+        elif D.shape == (1,):
+            young_e = float(D[0])
+        elif D.shape == (1, 1):
+            young_e = float(D[0, 0])
+        else:
+            raise ValueError(
+                f"梁要素にはスカラーまたは(1,1)の弾性テンソルが必要です。shape={D.shape}"
+            )
+
+        return eb_beam2d_section_forces(
+            coords, u_elem_global, young_e, self.section.A, self.section.I,
+        )
+
+
+def eb_beam2d_section_forces(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    A: float,
+    I: float,  # noqa: E741
+) -> tuple[BeamForces2D, BeamForces2D]:
+    """Euler-Bernoulli梁の要素両端の断面力を計算する（局所座標系）.
+
+    全体座標系の変位ベクトルから局所座標系に変換し、
+    局所剛性行列を用いて要素端力を求める。
+
+    符号規約:
+      - 節点1: 断面力 = -f_local[0:3] （正面の法線が+x方向なので反転）
+      - 節点2: 断面力 = f_local[3:6]
+      - N 正 = 引張、V 正 = y方向の正のせん断
+      - M 正 = 凸下（sagging）
+
+    Args:
+        coords: (2, 2) 節点座標
+        u_elem_global: (6,) 要素変位ベクトル（全体座標系）
+        E: ヤング率
+        A: 断面積
+        I: 断面二次モーメント
+
+    Returns:
+        (forces_1, forces_2): 両端の断面力
+    """
+    length, c, s = _beam_length_and_cosines(coords)
+    T = _transformation_matrix_2d(c, s)
+    Ke_local = eb_beam2d_ke_local(E, A, I, length)
+
+    u_local = T @ u_elem_global
+    f_local = Ke_local @ u_local
+
+    forces_1 = BeamForces2D(N=-f_local[0], V=-f_local[1], M=-f_local[2])
+    forces_2 = BeamForces2D(N=f_local[3], V=f_local[4], M=f_local[5])
+    return forces_1, forces_2
+
+
+def beam2d_max_bending_stress(
+    section_forces: BeamForces2D,
+    A: float,
+    I: float,  # noqa: E741
+    y_max: float,
+) -> float:
+    """断面力から最大曲げ応力（絶対値）を推定する.
+
+    σ_x = N/A ± M·y_max/I
+
+    断面の最外縁での応力の最大絶対値を返す。
+
+    Args:
+        section_forces: 断面力
+        A: 断面積
+        I: 断面二次モーメント
+        y_max: 断面の y 方向最外縁距離（中立軸から）
+
+    Returns:
+        σ_max: 最大曲げ応力の絶対値
+    """
+    sigma_axial = section_forces.N / A
+    sigma_m = abs(section_forces.M) * y_max / I
+    return abs(sigma_axial) + sigma_m
+
+
+def beam2d_max_shear_stress(
+    section_forces: BeamForces2D,
+    A: float,
+    shape: str = "rectangle",
+) -> float:
+    """断面力から最大横せん断応力を推定する.
+
+    断面形状に応じた中立軸上の最大せん断応力を返す。
+
+    形状依存の公式:
+      - 矩形断面: τ_max = 3V/(2A)
+      - 円形断面: τ_max = 4V/(3A)
+      - 一般断面: τ_max = V/A（フォールバック）
+
+    Args:
+        section_forces: 断面力
+        A: 断面積
+        shape: 断面形状 ("rectangle", "circle", "general")
+
+    Returns:
+        τ_max: 最大横せん断応力の絶対値
+    """
+    V_abs = abs(section_forces.V)
+    if shape == "circle":
+        return 4.0 * V_abs / (3.0 * A)
+    elif shape == "rectangle":
+        return 3.0 * V_abs / (2.0 * A)
+    else:
+        return V_abs / A

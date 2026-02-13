@@ -14,7 +14,8 @@ Phase 1（アーキテクチャ再構成）完了。Protocol API に一本化済
 Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
 **Phase 2.3/2.4（3D梁要素 & 断面拡張）完了: 3D Timoshenko梁（12DOF）、BeamSection（Iy/Iz/J）。**
 **SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。**
-**断面力ポスト処理（`BeamForces3D`, `beam3d_section_forces()`）実装済み。**
+**2D/3D断面力ポスト処理（`BeamForces2D/3D`, `beam2d/3d_section_forces()`）実装済み。**
+**せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。**
 Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
 Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
 Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
@@ -26,7 +27,8 @@ Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
-- [実装状況](docs/status/status-010.md) — 最新のステータス
+- [実装状況](docs/status/status-011.md) — 最新のステータス
+- [status-010](docs/status/status-010.md) — 3Dアセンブリテスト & 内力ポスト処理 & ワーピング検討
 - [status-009](docs/status/status-009.md) — 3D Timoshenko梁 & 断面モデル拡張 & SCF
 - [status-008](docs/status/status-008.md) — Cosserat rod & 撚線モデル ロードマップ拡張
 - [status-007](docs/status/status-007.md) — Cowper κ(ν)実装・Abaqus比較テスト

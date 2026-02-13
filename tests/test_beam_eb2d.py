@@ -17,10 +17,14 @@ from xkep_cae.bc import apply_dirichlet
 from xkep_cae.core.constitutive import ConstitutiveProtocol
 from xkep_cae.core.element import ElementProtocol
 from xkep_cae.elements.beam_eb2d import (
+    BeamForces2D,
     EulerBernoulliBeam2D,
+    beam2d_max_bending_stress,
+    beam2d_max_shear_stress,
     eb_beam2d_distributed_load,
     eb_beam2d_ke_global,
     eb_beam2d_ke_local,
+    eb_beam2d_section_forces,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection2D
@@ -351,3 +355,229 @@ class TestBeamSection2D:
         """I<=0のときValueErrorが発生すること."""
         with pytest.raises(ValueError, match="断面二次モーメント"):
             BeamSection2D(A=100.0, I=0.0)
+
+
+class TestSectionForces2D_EB:
+    """2D Euler-Bernoulli梁の断面力テスト."""
+
+    def test_axial_tension(self):
+        """軸引張の断面力が N = P であること."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 5
+        P = 50.0
+
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+        K, ndof = _assemble_beam_system(nodes, conn, E, sec.A, sec.I)
+
+        f = np.zeros(ndof)
+        tip_node = n_elems
+        f[3 * tip_node] = P  # 軸方向荷重
+
+        import scipy.sparse as sp
+
+        K_sp = sp.csr_matrix(K)
+        fixed_dofs = np.array([0, 1, 2], dtype=int)
+        Kbc, fbc = apply_dirichlet(K_sp, f, fixed_dofs)
+        u, _ = solve_displacement(Kbc, fbc, show_progress=False)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = eb_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I,
+            )
+            assert abs(f1.N - P) / P < 1e-10
+            assert abs(f2.N - P) / P < 1e-10
+            assert abs(f1.V) < 1e-8
+            assert abs(f1.M) < 1e-8
+
+    def test_cantilever_bending(self):
+        """y方向荷重の断面力（V, M）が解析解と一致.
+
+        解析解: V = P（一定）, M(x) = P·(L - x)
+        """
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+        K, ndof = _assemble_beam_system(nodes, conn, E, sec.A, sec.I)
+
+        f = np.zeros(ndof)
+        f[3 * n_elems + 1] = P
+
+        import scipy.sparse as sp
+
+        K_sp = sp.csr_matrix(K)
+        Kbc, fbc = apply_dirichlet(K_sp, f, np.array([0, 1, 2]))
+        u, _ = solve_displacement(Kbc, fbc, show_progress=False)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = eb_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I,
+            )
+            # せん断力: V = P
+            assert abs(f1.V - P) / P < 1e-8
+            assert abs(f2.V - P) / P < 1e-8
+
+            # 曲げモーメント: M(x) = P·(L - x)
+            x1 = nodes[n1, 0]
+            x2 = nodes[n2, 0]
+            M1_analytical = P * (total_length - x1)
+            M2_analytical = P * (total_length - x2)
+            if abs(M1_analytical) > 1e-12:
+                assert abs(f1.M - M1_analytical) / abs(M1_analytical) < 1e-8
+            if abs(M2_analytical) > 1e-12:
+                assert abs(f2.M - M2_analytical) / abs(M2_analytical) < 1e-8
+            else:
+                assert abs(f2.M) < 1e-6
+
+    def test_section_forces_via_class(self):
+        """EulerBernoulliBeam2D.section_forces() が関数版と一致."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        beam = EulerBernoulliBeam2D(section=sec)
+        mat = BeamElastic1D(E=E)
+
+        total_length = 100.0
+        n_elems = 5
+        P = 10.0
+
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+        K, ndof = _assemble_beam_system(nodes, conn, E, sec.A, sec.I)
+
+        f = np.zeros(ndof)
+        f[3 * n_elems + 1] = P
+
+        import scipy.sparse as sp
+
+        K_sp = sp.csr_matrix(K)
+        Kbc, fbc = apply_dirichlet(K_sp, f, np.array([0, 1, 2]))
+        u, _ = solve_displacement(Kbc, fbc, show_progress=False)
+
+        n1, n2 = conn[0]
+        coords = nodes[[n1, n2]]
+        u_elem = np.empty(6)
+        for i, n in enumerate([n1, n2]):
+            for d in range(3):
+                u_elem[3 * i + d] = u[3 * n + d]
+
+        f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
+        f1_func, f2_func = eb_beam2d_section_forces(
+            coords, u_elem, E, sec.A, sec.I,
+        )
+
+        assert abs(f1_class.N - f1_func.N) < 1e-10
+        assert abs(f1_class.V - f1_func.V) < 1e-10
+        assert abs(f1_class.M - f1_func.M) < 1e-10
+        assert abs(f2_class.N - f2_func.N) < 1e-10
+        assert abs(f2_class.V - f2_func.V) < 1e-10
+        assert abs(f2_class.M - f2_func.M) < 1e-10
+
+    def test_equilibrium(self):
+        """要素の力の釣り合い: N一定, V一定, M1 - V·L = M2."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+        L_elem = total_length / n_elems
+
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+        K, ndof = _assemble_beam_system(nodes, conn, E, sec.A, sec.I)
+
+        f = np.zeros(ndof)
+        f[3 * n_elems + 1] = P
+
+        import scipy.sparse as sp
+
+        K_sp = sp.csr_matrix(K)
+        Kbc, fbc = apply_dirichlet(K_sp, f, np.array([0, 1, 2]))
+        u, _ = solve_displacement(Kbc, fbc, show_progress=False)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = eb_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I,
+            )
+            assert abs(f1.N - f2.N) < 1e-8
+            assert abs(f1.V - f2.V) < 1e-8
+            assert abs(f1.M - f1.V * L_elem - f2.M) < 1e-6
+
+
+class TestMaxBendingStress2D:
+    """2D最大曲げ応力テスト."""
+
+    def test_pure_axial(self):
+        """純軸引張: σ = N/A."""
+        forces = BeamForces2D(N=100.0, V=0.0, M=0.0)
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, 5.0)
+        assert abs(sigma - 100.0 / sec.A) < 1e-10
+
+    def test_pure_bending(self):
+        """純曲げ: σ = M·y_max/I."""
+        M = 1000.0
+        y_max = 5.0
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        forces = BeamForces2D(N=0.0, V=0.0, M=M)
+        sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, y_max)
+        expected = M * y_max / sec.I
+        assert abs(sigma - expected) / expected < 1e-10
+
+    def test_combined_loading(self):
+        """複合荷重: σ = |N/A| + |M|·y/I."""
+        N = 100.0
+        M = 500.0
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        y_max = 5.0
+        forces = BeamForces2D(N=N, V=0.0, M=M)
+        sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, y_max)
+        expected = abs(N / sec.A) + M * y_max / sec.I
+        assert abs(sigma - expected) / expected < 1e-10
+
+
+class TestMaxShearStress2D:
+    """2D最大せん断応力テスト."""
+
+    def test_rectangle_shear(self):
+        """矩形断面: τ = 3V/(2A)."""
+        V = 10.0
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        forces = BeamForces2D(N=0.0, V=V, M=0.0)
+        tau = beam2d_max_shear_stress(forces, sec.A, shape="rectangle")
+        expected = 3.0 * V / (2.0 * sec.A)
+        assert abs(tau - expected) < 1e-10
+
+    def test_circle_shear(self):
+        """円形断面: τ = 4V/(3A)."""
+        V = 10.0
+        sec = BeamSection2D.circle(d=10.0)
+        forces = BeamForces2D(N=0.0, V=V, M=0.0)
+        tau = beam2d_max_shear_stress(forces, sec.A, shape="circle")
+        expected = 4.0 * V / (3.0 * sec.A)
+        assert abs(tau - expected) < 1e-10
+
+    def test_zero_shear(self):
+        """V=0 のとき τ=0."""
+        forces = BeamForces2D(N=100.0, V=0.0, M=500.0)
+        tau = beam2d_max_shear_stress(forces, 100.0, shape="rectangle")
+        assert abs(tau) < 1e-15

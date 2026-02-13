@@ -19,7 +19,11 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from xkep_cae.elements.beam_eb2d import _beam_length_and_cosines, _transformation_matrix_2d
+from xkep_cae.elements.beam_eb2d import (
+    BeamForces2D,
+    _beam_length_and_cosines,
+    _transformation_matrix_2d,
+)
 
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
@@ -305,3 +309,96 @@ class TimoshenkoBeam2D:
     ) -> np.ndarray:
         """等分布荷重の等価節点力ベクトル（全体座標系）."""
         return timo_beam2d_distributed_load(coords, qy_local)
+
+    def section_forces(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> tuple[BeamForces2D, BeamForces2D]:
+        """要素両端の断面力を計算する.
+
+        Args:
+            coords: (2, 2) 節点座標
+            u_elem_global: (6,) 要素変位ベクトル（全体座標系）
+            material: 構成則（E, nu を保持）
+
+        Returns:
+            (forces_1, forces_2): 両端の断面力（局所座標系）
+        """
+        D = material.tangent()
+        if np.ndim(D) == 0:
+            young_e = float(D)
+        elif D.shape == (1,):
+            young_e = float(D[0])
+        elif D.shape == (1, 1):
+            young_e = float(D[0, 0])
+        else:
+            raise ValueError(
+                f"梁要素にはスカラーまたは(1,1)の弾性テンソルが必要です。shape={D.shape}"
+            )
+
+        nu = float(material.nu) if hasattr(material, "nu") else 0.3
+        if hasattr(material, "G"):
+            shear_g = float(material.G)
+        elif hasattr(material, "nu"):
+            shear_g = young_e / (2.0 * (1.0 + nu))
+        else:
+            raise ValueError(
+                "材料オブジェクトからせん断弾性率を取得できません。G or nu が必要です。"
+            )
+
+        kappa_val = self._resolve_kappa(nu)
+
+        return timo_beam2d_section_forces(
+            coords, u_elem_global,
+            young_e, self.section.A, self.section.I,
+            kappa_val, shear_g,
+            scf=self.scf,
+        )
+
+
+def timo_beam2d_section_forces(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    A: float,
+    I: float,  # noqa: E741
+    kappa: float,
+    G: float,
+    scf: float | None = None,
+) -> tuple[BeamForces2D, BeamForces2D]:
+    """Timoshenko梁の要素両端の断面力を計算する（局所座標系）.
+
+    全体座標系の変位ベクトルから局所座標系に変換し、
+    局所剛性行列を用いて要素端力を求める。
+
+    符号規約:
+      - 節点1: 断面力 = -f_local[0:3]
+      - 節点2: 断面力 = f_local[3:6]
+      - N 正 = 引張、V 正 = y方向の正のせん断
+      - M 正 = 凸下（sagging）
+
+    Args:
+        coords: (2, 2) 節点座標
+        u_elem_global: (6,) 要素変位ベクトル（全体座標系）
+        E: ヤング率
+        A: 断面積
+        I: 断面二次モーメント
+        kappa: せん断補正係数
+        G: せん断弾性率
+        scf: スレンダネス補償係数
+
+    Returns:
+        (forces_1, forces_2): 両端の断面力
+    """
+    length, c, s = _beam_length_and_cosines(coords)
+    T = _transformation_matrix_2d(c, s)
+    Ke_local = timo_beam2d_ke_local(E, A, I, length, kappa, G, scf=scf)
+
+    u_local = T @ u_elem_global
+    f_local = Ke_local @ u_local
+
+    forces_1 = BeamForces2D(N=-f_local[0], V=-f_local[1], M=-f_local[2])
+    forces_2 = BeamForces2D(N=f_local[3], V=f_local[4], M=f_local[5])
+    return forces_1, forces_2

@@ -21,6 +21,7 @@ from xkep_cae.elements.beam_timo2d import (
     timo_beam2d_distributed_load,
     timo_beam2d_ke_global,
     timo_beam2d_ke_local,
+    timo_beam2d_section_forces,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection2D
@@ -585,3 +586,150 @@ class TestSCF:
             coords, E, sec.A, sec.I, KAPPA, G, scf=0.25,
         )
         assert np.allclose(Ke_class, Ke_func, atol=1e-10)
+
+
+class TestSectionForces2D_Timo:
+    """2D Timoshenko梁の断面力テスト."""
+
+    def test_axial_tension(self):
+        """軸引張で N = P、他成分ゼロ."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 5
+        P = 50.0
+
+        def ke_func(coords):
+            return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
+
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+        K, ndof = _assemble_beam_system(nodes, conn, ke_func)
+
+        f = np.zeros(ndof)
+        f[3 * n_elems] = P  # 軸方向荷重
+
+        import scipy.sparse as sp
+
+        K_sp = sp.csr_matrix(K)
+        Kbc, fbc = apply_dirichlet(K_sp, f, np.array([0, 1, 2]))
+        u, _ = solve_displacement(Kbc, fbc, show_progress=False)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = timo_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+            )
+            assert abs(f1.N - P) / P < 1e-10
+            assert abs(f2.N - P) / P < 1e-10
+            assert abs(f1.V) < 1e-8
+            assert abs(f1.M) < 1e-8
+
+    def test_cantilever_bending(self):
+        """y方向荷重で V = P, M(x) = P·(L-x)."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+
+        def ke_func(coords):
+            return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
+
+        u = _solve_cantilever_point_load(
+            n_elems, total_length, sec.A, sec.I, P, ke_func,
+        )
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = timo_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+            )
+            assert abs(f1.V - P) / P < 1e-8
+            assert abs(f2.V - P) / P < 1e-8
+
+            x1 = nodes[n1, 0]
+            x2 = nodes[n2, 0]
+            M1_analytical = P * (total_length - x1)
+            M2_analytical = P * (total_length - x2)
+            if abs(M1_analytical) > 1e-12:
+                assert abs(f1.M - M1_analytical) / abs(M1_analytical) < 1e-8
+            if abs(M2_analytical) > 1e-12:
+                assert abs(f2.M - M2_analytical) / abs(M2_analytical) < 1e-8
+            else:
+                assert abs(f2.M) < 1e-6
+
+    def test_section_forces_via_class(self):
+        """TimoshenkoBeam2D.section_forces() が関数版と一致."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        beam = TimoshenkoBeam2D(section=sec, kappa=KAPPA)
+        mat = BeamElastic1D(E=E, nu=NU)
+
+        total_length = 100.0
+        n_elems = 5
+        P = 10.0
+
+        def ke_func(coords):
+            return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
+
+        u = _solve_cantilever_point_load(
+            n_elems, total_length, sec.A, sec.I, P, ke_func,
+        )
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+
+        n1, n2 = conn[0]
+        coords = nodes[[n1, n2]]
+        u_elem = np.empty(6)
+        for i, n in enumerate([n1, n2]):
+            for d in range(3):
+                u_elem[3 * i + d] = u[3 * n + d]
+
+        f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
+        f1_func, f2_func = timo_beam2d_section_forces(
+            coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+        )
+
+        assert abs(f1_class.N - f1_func.N) < 1e-10
+        assert abs(f1_class.V - f1_func.V) < 1e-10
+        assert abs(f1_class.M - f1_func.M) < 1e-10
+
+    def test_equilibrium(self):
+        """力の釣り合い: N一定, V一定, M1 - V·L = M2."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+        L_elem = total_length / n_elems
+
+        def ke_func(coords):
+            return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
+
+        u = _solve_cantilever_point_load(
+            n_elems, total_length, sec.A, sec.I, P, ke_func,
+        )
+        nodes, conn = _make_cantilever_mesh(n_elems, total_length)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(6)
+            for i, n in enumerate([n1, n2]):
+                for d in range(3):
+                    u_elem[3 * i + d] = u[3 * n + d]
+
+            f1, f2 = timo_beam2d_section_forces(
+                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+            )
+            assert abs(f1.N - f2.N) < 1e-8
+            assert abs(f1.V - f2.V) < 1e-8
+            assert abs(f1.M - f1.V * L_elem - f2.M) < 1e-6
