@@ -467,6 +467,55 @@ def beam3d_max_bending_stress(
     return abs(sigma_axial) + sigma_mz + sigma_my
 
 
+def beam3d_max_shear_stress(
+    section_forces: BeamForces3D,
+    A: float,
+    J: float,
+    r_max: float,
+    shape: str = "circle",
+) -> float:
+    """断面力から最大せん断応力を推定する.
+
+    ねじりせん断応力と横せん断応力の保守的な和を返す。
+
+    ねじりせん断応力:
+      τ_torsion = |Mx| · r_max / J （円形/パイプ断面の厳密解）
+
+    横せん断応力（形状依存の中立軸上最大値）:
+      - 円形断面: τ = 4V/(3A)
+      - 矩形断面: τ = 3V/(2A)
+      - 一般断面: τ = V/A（フォールバック）
+
+    注意: ねじりと横せん断の最大応力点は一般に異なるため、
+    保守的に和を取っている（実際の最大値はこれより小さい場合がある）。
+
+    Args:
+        section_forces: 断面力
+        A: 断面積
+        J: ねじり定数
+        r_max: 断面の最外縁距離（ねじりせん断応力の計算用）
+        shape: 断面形状 ("circle", "rectangle", "general")
+
+    Returns:
+        τ_max: 最大せん断応力の絶対値（保守的推定）
+    """
+    # ねじりせん断応力
+    tau_torsion = abs(section_forces.Mx) * r_max / J
+
+    # 横せん断応力（形状依存）
+    if shape == "circle":
+        tau_vy = 4.0 * abs(section_forces.Vy) / (3.0 * A)
+        tau_vz = 4.0 * abs(section_forces.Vz) / (3.0 * A)
+    elif shape == "rectangle":
+        tau_vy = 3.0 * abs(section_forces.Vy) / (2.0 * A)
+        tau_vz = 3.0 * abs(section_forces.Vz) / (2.0 * A)
+    else:
+        tau_vy = abs(section_forces.Vy) / A
+        tau_vz = abs(section_forces.Vz) / A
+
+    return tau_torsion + max(tau_vy, tau_vz)
+
+
 class TimoshenkoBeam3D:
     """3D Timoshenko 梁要素（ElementProtocol適合）.
 

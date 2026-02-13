@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.3/2.4 完了、3Dアセンブリテスト & 内力ポスト処理完了）
+## 現在地（Phase 2.3/2.4 完了、2D/3D断面力 & せん断応力ポスト処理完了）
 
 ### 実装済み
 
@@ -25,12 +25,12 @@
 | **梁要素** | Euler-Bernoulli梁（2D）, Timoshenko梁（2D, **Cowper κ(ν) 対応, SCF対応**）, **Timoshenko梁（3D空間, 12DOF）** |
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形断面, 円形断面, **パイプ断面**（2D/3D, Iy/Iz/J 対応） |
-| **ポスト処理** | **3D梁の断面力（N, Vy, Vz, Mx, My, Mz）、最大曲げ応力推定** |
+| **ポスト処理** | **2D/3D梁の断面力（N, V, M / N, Vy, Vz, Mx, My, Mz）、最大曲げ応力推定、最大せん断応力推定（ねじり+横せん断）** |
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー（自前実装, **`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応**） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**174テスト**） |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**193テスト**） |
 | **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
@@ -216,6 +216,133 @@ Cosserat rod は本質的に幾何学的非線形定式化であり、Phase 3 �
 Phase 3.2（共回転定式化）の代替として位置づけることも可能。
 Phase 4.6（撚線モデル）では Cosserat rod が「外側の梁」および「個別素線」の
 両方の幾何記述として使用される。
+
+### 2.6 数値試験フレームワーク（一括・部分実行）
+
+**目的**: 材料試験（3点曲げ・4点曲げ・引張・ねん回）の数値シミュレーションを
+統一インタフェースで定義・実行・比較できるフレームワークを構築する。
+一括実行（全試験）と部分実行（指定試験のみ）の両方をサポートする。
+
+#### 対象試験
+
+| 試験種別 | 略称 | 荷重条件 | 主要な断面力 | 解析解の有無 |
+|---------|------|---------|-------------|------------|
+| **3点曲げ試験** | `bend3p` | 中央集中荷重、両端単純支持 | V, M | あり: δ = PL³/(48EI) + PL/(4κGA) |
+| **4点曲げ試験** | `bend4p` | 2点荷重、両端単純支持 | V, M（純曲げ区間あり） | あり: δ = Pa(3L²-4a²)/(48EI) + Pa/(κGA) |
+| **引張試験** | `tensile` | 軸方向引張荷重 | N | あり: δ = PL/(EA) |
+| **ねん回試験** | `torsion` | 軸方向ねじりモーメント | Mx | あり: θ = TL/(GJ) |
+
+#### 設計方針
+
+```python
+@dataclass
+class NumericalTest:
+    """数値試験の定義."""
+    name: str                   # 試験名 ("bend3p", "bend4p", "tensile", "torsion")
+    beam_type: str              # "eb2d", "timo2d", "timo3d"
+    section: BeamSection | BeamSection2D
+    material: BeamElastic1D
+    length: float               # 試料長さ
+    n_elems: int                # 要素分割数
+    load_value: float           # 荷重値 (P or T)
+    # 4点曲げ用
+    load_span: float | None     # 荷重スパン a（4点曲げのみ）
+
+@dataclass
+class TestResult:
+    """試験結果."""
+    name: str
+    displacement_max: float     # 最大変位
+    displacement_analytical: float | None  # 解析解
+    forces: list[BeamForces2D | BeamForces3D]  # 各要素の断面力
+    max_bending_stress: float
+    max_shear_stress: float
+    relative_error: float | None  # 解析解との相対誤差
+```
+
+#### 実装項目
+
+- [ ] `NumericalTest` / `TestResult` データクラス定義
+- [ ] 試験別のメッシュ生成・境界条件・荷重条件の自動設定
+  - [ ] 3点曲げ: 単純支持 + 中央集中荷重
+  - [ ] 4点曲げ: 単純支持 + 2点対称荷重
+  - [ ] 引張: 一端固定 + 他端軸方向荷重
+  - [ ] ねん回: 一端固定 + 他端ねじりモーメント
+- [ ] 一括実行API: `run_all_tests(tests: list[NumericalTest]) -> list[TestResult]`
+- [ ] 部分実行API: `run_tests(tests: list[NumericalTest], names: list[str]) -> list[TestResult]`
+- [ ] 解析解との自動比較・誤差レポート生成
+- [ ] pytest マーカーによる試験種別選択実行（`-m bend3p`, `-m tensile` 等）
+- [ ] 結果の表形式サマリ出力
+
+#### 3点曲げ試験の詳細
+
+```
+   P
+   ↓
+   ┌───────────────────┐
+   ▲         L         ▲
+ 支点A    (中央荷重)   支点B
+
+支持条件: 両端ピン支持（ux固定, uy固定, θ自由）
+荷重: 中央節点に P（y方向負）
+
+解析解（Timoshenko）:
+  δ_mid = PL³/(48EI) + PL/(4κGA)
+  V = P/2（中央で符号反転）
+  M_max = PL/4（中央）
+```
+
+#### 4点曲げ試験の詳細
+
+```
+      P           P
+      ↓           ↓
+   ┌──────────────────┐
+   ▲  a    L-2a    a  ▲
+ 支点A               支点B
+
+支持条件: 両端ピン支持
+荷重: 左右対称の2点に P（荷重スパン a）
+
+解析解（Timoshenko）:
+  δ_mid = Pa(3L²-4a²)/(48EI) + Pa/(κGA)
+  V = P（荷重点間はゼロ）
+  M = Pa（荷重点間で一定 = 純曲げ区間）
+```
+
+#### 引張試験の詳細
+
+```
+  ■────────────────→ P
+  固定端             荷重端
+
+支持条件: 一端全拘束（ux, uy, θ / ux, uy, uz, θx, θy, θz）
+荷重: 他端に軸方向力 P
+
+解析解:
+  δ = PL/(EA)
+  N = P（全要素で一定）
+```
+
+#### ねん回試験の詳細（3Dのみ）
+
+```
+  ■────────────────⟳ T
+  固定端             トルク端
+
+支持条件: 一端全拘束（6DOF）
+荷重: 他端にねじりモーメント T
+
+解析解:
+  θ = TL/(GJ)
+  Mx = T（全要素で一定）
+  τ_max = T·r_max/J
+```
+
+#### 依存関係
+
+- Phase 2.1–2.4 の梁要素・断面モデル・ポスト処理が前提
+- Phase 3（非線形）完了後、荷重増分対応に拡張予定
 
 ---
 
@@ -518,7 +645,8 @@ Phase 1 (アーキテクチャ)
     ↓
 Phase 2 (梁要素)
     ├── 2.1-2.4: EB/Timoshenko/断面
-    └── 2.5: Cosserat rod ─────────────┐
+    ├── 2.5: Cosserat rod ─────────────┐
+    └── 2.6: 数値試験フレームワーク     │
         ↓                              │
 Phase 3 (幾何学非線形) ────────────────┤
     ↓                                  │

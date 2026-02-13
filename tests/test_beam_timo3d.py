@@ -23,6 +23,7 @@ from xkep_cae.elements.beam_timo3d import (
     _build_local_axes,
     _transformation_matrix_3d,
     beam3d_max_bending_stress,
+    beam3d_max_shear_stress,
     beam3d_section_forces,
     timo_beam3d_distributed_load,
     timo_beam3d_ke_global,
@@ -916,3 +917,55 @@ class TestMaxBendingStress:
         sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, y_max, z_max)
         expected = abs(N / sec.A) + Mz * y_max / sec.Iz + My * z_max / sec.Iy
         assert abs(sigma - expected) / expected < 1e-10
+
+
+class TestMaxShearStress3D:
+    """3D最大せん断応力テスト."""
+
+    def test_pure_torsion(self):
+        """純ねじり: τ = |Mx|·r/J."""
+        Mx = 100.0
+        sec = BeamSection.circle(d=10.0)
+        r_max = 5.0
+        forces = BeamForces3D(N=0.0, Vy=0.0, Vz=0.0, Mx=Mx, My=0.0, Mz=0.0)
+        tau = beam3d_max_shear_stress(forces, sec.A, sec.J, r_max, shape="circle")
+        expected = Mx * r_max / sec.J
+        assert abs(tau - expected) / expected < 1e-10
+
+    def test_transverse_shear_circle(self):
+        """円形断面の横せん断: τ = 4V/(3A)."""
+        Vy = 10.0
+        sec = BeamSection.circle(d=10.0)
+        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        tau = beam3d_max_shear_stress(forces, sec.A, sec.J, 5.0, shape="circle")
+        expected = 4.0 * Vy / (3.0 * sec.A)
+        assert abs(tau - expected) / expected < 1e-10
+
+    def test_transverse_shear_rectangle(self):
+        """矩形断面の横せん断: τ = 3V/(2A)."""
+        Vy = 10.0
+        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        tau = beam3d_max_shear_stress(forces, sec.A, sec.J, 5.0, shape="rectangle")
+        expected = 3.0 * Vy / (2.0 * sec.A)
+        assert abs(tau - expected) / expected < 1e-10
+
+    def test_combined_torsion_and_transverse(self):
+        """ねじり＋横せん断の保守的和."""
+        Mx = 100.0
+        Vy = 10.0
+        Vz = 5.0
+        sec = BeamSection.circle(d=10.0)
+        r_max = 5.0
+        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=Vz, Mx=Mx, My=0.0, Mz=0.0)
+        tau = beam3d_max_shear_stress(forces, sec.A, sec.J, r_max, shape="circle")
+        tau_torsion = Mx * r_max / sec.J
+        tau_transverse = 4.0 * max(Vy, Vz) / (3.0 * sec.A)
+        expected = tau_torsion + tau_transverse
+        assert abs(tau - expected) / expected < 1e-10
+
+    def test_zero_shear(self):
+        """全せん断成分ゼロの場合 τ=0."""
+        forces = BeamForces3D(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=500.0)
+        tau = beam3d_max_shear_stress(forces, 100.0, 50.0, 5.0, shape="circle")
+        assert abs(tau) < 1e-15
