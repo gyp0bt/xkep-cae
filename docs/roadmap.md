@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.6 完了、数値試験フレームワーク＋周波数応答試験）
+## 現在地（Phase 2.5 前半完了、Cosserat rod 四元数回転実装）
 
 ### 実装済み
 
@@ -32,7 +32,8 @@
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー, **CSV出力, Abaqusライクテキスト入力** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**241テスト**） |
+| **Cosserat rod** | **四元数ベース回転表現、B行列定式化、線形化版要素（Phase 2.5 前半）** |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**314テスト**） |
 | **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
@@ -197,11 +198,13 @@ Timoshenko梁を超える一般的な梁定式化。中心線＋断面回転で�
 
 #### 実装項目
 
-- [ ] SO(3) 回転パラメトライゼーション（四元数 or 回転ベクトル）
-- [ ] 一般化歪み (ν, κ) の計算
-- [ ] Cosserat rod の弾性構成則（N = EA·ε, M = EI·κ 等の一般化）
-- [ ] 弱形式・変分定式化（仮想仕事式）
-- [ ] 有限要素離散化（Hermite or Lagrange interpolation on SO(3)）
+- [x] SO(3) 回転パラメトライゼーション（**四元数**で実装）— `xkep_cae/math/quaternion.py`
+- [x] 一般化歪み (Γ, κ) の計算 — B行列ベース
+- [x] Cosserat rod の弾性構成則 C = diag(EA, κy·GA, κz·GA, GJ, EIy, EIz)
+- [x] 有限要素離散化（2節点線形要素、1点ガウス求積）— `beam_cosserat.py`
+- [x] 線形化版テスト: 軸引張(厳密)、ねじり(厳密)、曲げ(メッシュ収束)、3点曲げ — 36テスト
+- [x] 設計仕様書 — `docs/cosserat-design.md`
+- [ ] 内力ベクトル `internal_force()`（Phase 3 非線形用）
 - [ ] 接線剛性行列（材料剛性 + 幾何剛性）
 - [ ] テスト：Euler elastica、ヘリカルばね、大回転片持ち梁
 - [ ] Phase 3（幾何学的非線形）との統合

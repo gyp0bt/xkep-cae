@@ -18,18 +18,21 @@ SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。
 せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。
 **Phase 2.6（数値試験フレームワーク）完了: 3点曲げ・4点曲げ・引張・ねん回・周波数応答試験。**
 **CSV出力対応、Abaqusライクテキスト入力対応。整合質量行列・Rayleigh減衰・FRF計算を実装。**
+**Phase 2.5 前半完了: Cosserat rod 四元数回転実装。** 四元数演算モジュール（15関数）、
+Cosserat rod 線形化要素（B行列＋1点ガウス求積）、[設計仕様書](docs/cosserat-design.md)を実装。314テストパス。
 Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
 Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
 Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
-ロードマップに Cosserat rod（Phase 2.5）および撚線モデル（Phase 4.6: 拡張ファイバー理論）を追加。
 
-次のマイルストーン: Phase 2.5 Cosserat rod → Phase 3 幾何学的非線形。
+次のマイルストーン: Phase 2.5 後半（内力ベクトル・幾何剛性） → Phase 3 幾何学的非線形。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
-- [実装状況](docs/status/status-012.md) — 最新のステータス
+- [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
+- [実装状況](docs/status/status-013.md) — 最新のステータス（Cosserat rod 四元数回転実装）
+- [status-012](docs/status/status-012.md) — 数値試験フレームワーク（Phase 2.6）
 - [status-011](docs/status/status-011.md) — 2D断面力ポスト処理 & せん断応力 & 数値試験ロードマップ
 - [status-010](docs/status/status-010.md) — 3Dアセンブリテスト & 内力ポスト処理 & ワーピング検討
 - [status-009](docs/status/status-009.md) — 3D Timoshenko梁 & 断面モデル拡張 & SCF
@@ -134,6 +137,25 @@ K = assemble_global_stiffness(nodes_xyz, [(beam, conn)], mat)
 from xkep_cae.elements.beam_timo3d import beam3d_section_forces
 forces_1, forces_2 = beam.section_forces(coords_elem, u_elem, mat)
 print(f"軸力: {forces_1.N:.3f}, せん断力: {forces_1.Vy:.3f}, モーメント: {forces_1.Mz:.3f}")
+```
+
+### Cosserat rod（四元数ベース幾何学的厳密梁）
+
+```python
+from xkep_cae.elements.beam_cosserat import CosseratRod
+from xkep_cae.materials.beam_elastic import BeamElastic1D
+from xkep_cae.sections.beam import BeamSection
+
+sec = BeamSection.circle(d=10.0)
+beam = CosseratRod(section=sec, kappa_y="cowper", kappa_z="cowper")
+mat = BeamElastic1D(E=200e3, nu=0.3)
+
+coords = np.array([[0.0, 0.0, 0.0], [100.0, 0.0, 0.0]])
+Ke = beam.local_stiffness(coords, mat)
+
+# 一般化歪みの計算
+strains = beam.compute_strains(coords, u_elem)
+print(f"軸伸び: {strains.gamma[0]:.6f}, ねじり: {strains.kappa[0]:.6f}")
 ```
 
 ### 数値試験フレームワーク
