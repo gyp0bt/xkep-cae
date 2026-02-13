@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.3/2.4 完了、2D/3D断面力 & せん断応力ポスト処理完了）
+## 現在地（Phase 2.6 完了、数値試験フレームワーク＋周波数応答試験）
 
 ### 実装済み
 
@@ -25,12 +25,14 @@
 | **梁要素** | Euler-Bernoulli梁（2D）, Timoshenko梁（2D, **Cowper κ(ν) 対応, SCF対応**）, **Timoshenko梁（3D空間, 12DOF）** |
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形断面, 円形断面, **パイプ断面**（2D/3D, Iy/Iz/J 対応） |
-| **ポスト処理** | **2D/3D梁の断面力（N, V, M / N, Vy, Vz, Mx, My, Mz）、最大曲げ応力推定、最大せん断応力推定（ねじり+横せん断）** |
+| **ポスト処理** | 2D/3D梁の断面力（N, V, M / N, Vy, Vz, Mx, My, Mz）、最大曲げ応力推定、最大せん断応力推定（ねじり+横せん断） |
+| **数値試験** | **3点曲げ・4点曲げ・引張・ねん回・周波数応答試験（`numerical_tests`パッケージ）** |
+| **動的解析基盤** | **整合質量行列（2D/3D梁）、Rayleigh減衰、周波数応答関数（FRF）** |
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
-| **I/O** | Abaqus .inp パーサー（自前実装, **`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応**） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**193テスト**） |
+| **I/O** | Abaqus .inp パーサー, **CSV出力, Abaqusライクテキスト入力** |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**241テスト**） |
 | **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
@@ -262,17 +264,20 @@ class TestResult:
 
 #### 実装項目
 
-- [ ] `NumericalTest` / `TestResult` データクラス定義
-- [ ] 試験別のメッシュ生成・境界条件・荷重条件の自動設定
-  - [ ] 3点曲げ: 単純支持 + 中央集中荷重
-  - [ ] 4点曲げ: 単純支持 + 2点対称荷重
-  - [ ] 引張: 一端固定 + 他端軸方向荷重
-  - [ ] ねん回: 一端固定 + 他端ねじりモーメント
-- [ ] 一括実行API: `run_all_tests(tests: list[NumericalTest]) -> list[TestResult]`
-- [ ] 部分実行API: `run_tests(tests: list[NumericalTest], names: list[str]) -> list[TestResult]`
-- [ ] 解析解との自動比較・誤差レポート生成
+- [x] `NumericalTestConfig` / `StaticTestResult` データクラス定義
+- [x] 試験別のメッシュ生成・境界条件・荷重条件の自動設定
+  - [x] 3点曲げ: 単純支持 + 中央集中荷重
+  - [x] 4点曲げ: 単純支持 + 2点対称荷重
+  - [x] 引張: 一端固定 + 他端軸方向荷重
+  - [x] ねん回: 一端固定 + 他端ねじりモーメント
+- [x] 一括実行API: `run_all_tests()`
+- [x] 部分実行API: `run_tests()`
+- [x] 解析解との自動比較・誤差レポート生成
 - [ ] pytest マーカーによる試験種別選択実行（`-m bend3p`, `-m tensile` 等）
-- [ ] 結果の表形式サマリ出力
+- [x] 結果のCSV出力（`export_static_csv()`, `export_frequency_response_csv()`）
+- [x] **周波数応答試験**（`run_frequency_response()`）— 整合質量行列 + Rayleigh減衰 + FRF
+- [x] **Abaqusライクテキスト入力**（`parse_test_input()`）
+- [x] **摩擦滑り影響の実用的判定**（`assess_friction_effect()`）
 
 #### 3点曲げ試験の詳細
 
