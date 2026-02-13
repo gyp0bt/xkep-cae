@@ -159,17 +159,47 @@ class TimoshenkoBeam2D:
     """2D Timoshenko 梁要素（ElementProtocol適合）.
 
     Args:
-        section: 梁断面特性（A, I）
-        kappa: せん断補正係数（デフォルト: 5/6、矩形断面用）
+        section: 梁断面特性（A, I, shape）
+        kappa: せん断補正係数。以下のいずれか:
+            - float: 固定値（旧デフォルト: 5/6）
+            - "cowper": Cowper (1966) のν依存係数を自動計算（Abaqus準拠）
+
+    Abaqusとの差異:
+        Abaqus B21/B22 はデフォルトで Cowper のν依存κを使用する。
+        xkep-cae のデフォルトは κ=5/6（固定値）だが、kappa="cowper" を
+        指定することで Abaqus と同等の動作になる。
+        ν=0.3・矩形断面の場合: Cowper κ≈0.850 vs 固定 κ=0.833（約2%差）。
     """
 
     ndof_per_node: int = 3
     nnodes: int = 2
     ndof: int = 6
 
-    def __init__(self, section: BeamSection2D, kappa: float = 5.0 / 6.0) -> None:
+    def __init__(self, section: BeamSection2D, kappa: float | str = 5.0 / 6.0) -> None:
         self.section = section
-        self.kappa = kappa
+        if isinstance(kappa, str):
+            if kappa != "cowper":
+                raise ValueError(f"kappa に指定できる文字列は 'cowper' のみです: '{kappa}'")
+            self._kappa_mode = "cowper"
+            self._kappa_value: float | None = None
+        else:
+            self._kappa_mode = "fixed"
+            self._kappa_value = float(kappa)
+
+    @property
+    def kappa(self) -> float | str:
+        """現在のせん断補正係数設定を返す."""
+        if self._kappa_mode == "cowper":
+            return "cowper"
+        assert self._kappa_value is not None
+        return self._kappa_value
+
+    def _resolve_kappa(self, nu: float) -> float:
+        """材料のνからκを解決する."""
+        if self._kappa_mode == "cowper":
+            return self.section.cowper_kappa(nu)
+        assert self._kappa_value is not None
+        return self._kappa_value
 
     def local_stiffness(
         self,
@@ -199,18 +229,23 @@ class TimoshenkoBeam2D:
                 f"梁要素にはスカラーまたは(1,1)の弾性テンソルが必要です。shape={D.shape}"
             )
 
+        # ポアソン比の取得（Cowperκ計算用）
+        nu = float(material.nu) if hasattr(material, "nu") else 0.3
+
         # せん断弾性率はmaterialから取得（BeamElastic1Dの場合はG属性を持つ）
         if hasattr(material, "G"):
             shear_g = float(material.G)
         elif hasattr(material, "nu"):
-            shear_g = young_e / (2.0 * (1.0 + float(material.nu)))
+            shear_g = young_e / (2.0 * (1.0 + nu))
         else:
             raise ValueError(
                 "材料オブジェクトからせん断弾性率を取得できません。G or nu が必要です。"
             )
 
+        kappa_val = self._resolve_kappa(nu)
+
         return timo_beam2d_ke_global(
-            coords, young_e, self.section.A, self.section.I, self.kappa, shear_g
+            coords, young_e, self.section.A, self.section.I, kappa_val, shear_g
         )
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
