@@ -20,6 +20,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -27,6 +28,32 @@ import numpy as np
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
     from xkep_cae.sections.beam import BeamSection
+
+
+@dataclass
+class BeamForces3D:
+    """3D梁要素の断面力（局所座標系）.
+
+    符号規約:
+      - N: 軸力（引張正）
+      - Vy: y方向せん断力
+      - Vz: z方向せん断力
+      - Mx: ねじりモーメント（トルク）
+      - My: y軸まわり曲げモーメント
+      - Mz: z軸まわり曲げモーメント
+
+    座標系:
+      - x: 梁軸方向（節点1→節点2）
+      - y: 断面第1主軸方向
+      - z: x × y（右手系）
+    """
+
+    N: float
+    Vy: float
+    Vz: float
+    Mx: float
+    My: float
+    Mz: float
 
 
 def _beam3d_length_and_direction(coords: np.ndarray) -> tuple[float, np.ndarray]:
@@ -335,6 +362,111 @@ def timo_beam3d_distributed_load(
     return T.T @ f_local
 
 
+def beam3d_section_forces(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+) -> tuple[BeamForces3D, BeamForces3D]:
+    """要素両端の断面力を計算する（局所座標系）.
+
+    全体座標系の変位ベクトルから局所座標系に変換し、
+    局所剛性行列を用いて要素端力を求める。
+
+    符号規約:
+      - 節点1: 断面力 = -f_local[0:6] （正面の法線が+x方向なので反転）
+      - 節点2: 断面力 = f_local[6:12]
+      - N 正 = 引張、Vy/Vz 正 = y/z方向の正のせん断
+      - Mz 正 = xy面内で凸下（sagging）、My/Mx 同様
+
+    Args:
+        coords: (2, 3) 節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E: ヤング率
+        G: せん断弾性率
+        A: 断面積
+        Iy: y軸まわり断面二次モーメント
+        Iz: z軸まわり断面二次モーメント
+        J: ねじり定数
+        kappa_y: y方向せん断補正係数
+        kappa_z: z方向せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        scf: スレンダネス補償係数
+
+    Returns:
+        (forces_1, forces_2): 両端の断面力
+    """
+    length, e_x = _beam3d_length_and_direction(coords)
+    R = _build_local_axes(e_x, v_ref)
+    T = _transformation_matrix_3d(R)
+    Ke_local = timo_beam3d_ke_local(
+        E, G, A, Iy, Iz, J, length, kappa_y, kappa_z, scf=scf,
+    )
+
+    u_local = T @ u_elem_global
+    f_local = Ke_local @ u_local
+
+    # 節点1: 断面力 = -f_local[0:6]
+    forces_1 = BeamForces3D(
+        N=-f_local[0],
+        Vy=-f_local[1],
+        Vz=-f_local[2],
+        Mx=-f_local[3],
+        My=-f_local[4],
+        Mz=-f_local[5],
+    )
+    # 節点2: 断面力 = f_local[6:12]
+    forces_2 = BeamForces3D(
+        N=f_local[6],
+        Vy=f_local[7],
+        Vz=f_local[8],
+        Mx=f_local[9],
+        My=f_local[10],
+        Mz=f_local[11],
+    )
+    return forces_1, forces_2
+
+
+def beam3d_max_bending_stress(
+    section_forces: BeamForces3D,
+    A: float,
+    Iy: float,
+    Iz: float,
+    y_max: float,
+    z_max: float,
+) -> float:
+    """断面力から最大曲げ応力（絶対値）を推定する.
+
+    σ_x = N/A ± Mz·y_max/Iz ± My·z_max/Iy
+
+    断面の最外縁での応力の最大絶対値を返す。
+    ねじりによるせん断応力は含まない。
+
+    Args:
+        section_forces: 断面力
+        A: 断面積
+        Iy: y軸まわり断面二次モーメント
+        Iz: z軸まわり断面二次モーメント
+        y_max: 断面の y 方向最外縁距離（中立軸から）
+        z_max: 断面の z 方向最外縁距離（中立軸から）
+
+    Returns:
+        σ_max: 最大曲げ応力の絶対値
+    """
+    sigma_axial = section_forces.N / A
+    sigma_mz = abs(section_forces.Mz) * y_max / Iz
+    sigma_my = abs(section_forces.My) * z_max / Iy
+    return abs(sigma_axial) + sigma_mz + sigma_my
+
+
 class TimoshenkoBeam3D:
     """3D Timoshenko 梁要素（ElementProtocol適合）.
 
@@ -466,6 +598,56 @@ class TimoshenkoBeam3D:
             for d in range(6):
                 edofs[6 * idx + d] = 6 * n + d
         return edofs
+
+    def section_forces(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> tuple[BeamForces3D, BeamForces3D]:
+        """要素両端の断面力を計算する.
+
+        Args:
+            coords: (2, 3) 節点座標
+            u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+            material: 構成則（E, nu を保持）
+
+        Returns:
+            (forces_1, forces_2): 両端の断面力（局所座標系）
+        """
+        D = material.tangent()
+        if np.ndim(D) == 0:
+            young_e = float(D)
+        elif D.shape == (1,):
+            young_e = float(D[0])
+        elif D.shape == (1, 1):
+            young_e = float(D[0, 0])
+        else:
+            raise ValueError(
+                f"梁要素にはスカラーまたは(1,1)の弾性テンソルが必要です。shape={D.shape}"
+            )
+
+        nu = float(material.nu) if hasattr(material, "nu") else 0.3
+        if hasattr(material, "G"):
+            shear_g = float(material.G)
+        elif hasattr(material, "nu"):
+            shear_g = young_e / (2.0 * (1.0 + nu))
+        else:
+            raise ValueError(
+                "材料オブジェクトからせん断弾性率を取得できません。G or nu が必要です。"
+            )
+
+        kappa_y_val = self._resolve_kappa_y(nu)
+        kappa_z_val = self._resolve_kappa_z(nu)
+
+        return beam3d_section_forces(
+            coords, u_elem_global,
+            young_e, shear_g,
+            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+            kappa_y_val, kappa_z_val,
+            v_ref=self.v_ref,
+            scf=self.scf,
+        )
 
     def distributed_load(
         self,
