@@ -1,6 +1,6 @@
 # xkep-cae と Abaqus の差異
 
-[← README](../README.md) | [ロードマップ](roadmap.md) | [最新status](status/status-007.md)
+[← README](../README.md) | [ロードマップ](roadmap.md) | [最新status](status/status-009.md)
 
 xkep-cae の要素定式化と Abaqus との既知の差異をまとめる。
 Abaqus ベンチマークとの比較時に参照すること。
@@ -42,6 +42,7 @@ CPE4R は1点積分 + hourglass制御であり、EAS-4 とは定式化が根本�
 |----------|--------|--------|
 | `EulerBernoulliBeam2D` | B23（2D） | Euler-Bernoulli梁（3次Hermite補間） |
 | `TimoshenkoBeam2D` | B21（2D） | Timoshenko梁（せん断変形考慮） |
+| `TimoshenkoBeam3D` | B31（3D） | 3D Timoshenko梁（12DOF, 二軸曲げ+ねじり） |
 
 ### 2.2 せん断補正係数 κ（Cowperの補正）
 
@@ -81,11 +82,22 @@ f_p = 1 / (1 + ξ · SCF · L²A / (12I))
 
 - SCF デフォルト = 0.25
 - 細長い梁ほど f_p → 0 で、Euler-Bernoulli梁に自動遷移
-- **xkep-cae にはこの補正なし** → 純粋なTimoshenko梁
+
+**xkep-cae では `scf` パラメータでオプション対応**:
+
+```python
+beam = TimoshenkoBeam2D(section=sec, scf=0.25)  # Abaqus相当のSCF
+beam = TimoshenkoBeam3D(section=sec, scf=0.25)   # 3D版も同様
+```
+
+xkep-cae の SCF はせん断パラメータ Φ を直接低減する:
+Φ_eff = Φ · f_p → 細長い梁で Φ → 0（EB遷移）。
+Abaqus はペナルティ法の横せん断剛性を制限する。
+適用メカニズムが異なるため、SCF=0.25 でも数値的に完全一致しない場合がある。
 
 #### Abaqus 比較時の設定
 
-xkep-cae の結果と Abaqus を直接比較する場合、
+xkep-cae `scf=None`（デフォルト）と Abaqus を直接比較する場合、
 Abaqus 側で SCF を無効化する必要がある:
 
 ```
@@ -160,9 +172,9 @@ xkep-cae と Abaqus の結果を比較する際に確認すべき項目:
 | 項目 | 現状 | 計画 |
 |------|------|------|
 | Cowper κ | `kappa="cowper"` で対応済み | — |
-| SCF | 未実装（Abaqus側で無効化） | 将来的にオプションで実装検討 |
+| SCF | `scf` パラメータで対応済み | — |
 | CPE4R 相当 | 未実装 | 優先度低（EAS-4で十分） |
-| 3D梁要素 | 未実装 | Phase 2.3 で実装予定 |
+| 3D梁要素 | `TimoshenkoBeam3D` 実装済み | — |
 | シェル要素 | 未実装 | Phase 8.3 で検討 |
 
 ---

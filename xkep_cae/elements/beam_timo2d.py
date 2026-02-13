@@ -33,12 +33,21 @@ def timo_beam2d_ke_local(
     L: float,
     kappa: float,
     G: float,
+    scf: float | None = None,
 ) -> np.ndarray:
     """Timoshenko梁の局所剛性行列 (6x6) を返す.
 
     DOF順: [u1, v1, θ1, u2, v2, θ2]（局所座標系）
 
     せん断パラメータ Φ = 12EI/(κGAL²) を用いた整合定式化。
+
+    SCF（スレンダネス補償係数）を指定すると、横せん断パラメータΦが
+    スレンダネスに応じて低減され、細長い梁でEB梁に遷移する:
+      f_p = 1 / (1 + SCF · L²A/(12I))
+      Φ_eff = Φ · f_p
+
+    太い梁 (L²A/(12I) ≈ 1): Φ_eff ≈ Φ（通常のTimoshenko）
+    細長い梁 (L²A/(12I) >> 1): Φ_eff → 0（EB梁に遷移）
 
     Args:
         E: ヤング率
@@ -47,6 +56,7 @@ def timo_beam2d_ke_local(
         L: 要素長さ
         kappa: せん断補正係数（矩形: 5/6, 円形: 6/7）
         G: せん断弾性率
+        scf: スレンダネス補償係数（None=無効, Abaqusデフォルト=0.25）
 
     Returns:
         Ke: (6, 6) 局所剛性行列
@@ -58,6 +68,15 @@ def timo_beam2d_ke_local(
 
     # せん断パラメータ
     Phi = 12.0 * E * I / (kappa * G * A * L * L)
+
+    # SCF適用: 細長い梁でΦを低減しEB梁に遷移させる
+    # f_p = 1 / (1 + SCF · L²A/(12I))
+    # Φ_eff = Φ · f_p → Φ_eff → 0 でEB梁に遷移
+    if scf is not None and scf > 0.0:
+        slenderness = L * L * A / (12.0 * I)
+        f_p = 1.0 / (1.0 + scf * slenderness)
+        Phi = Phi * f_p
+
     denom = 1.0 + Phi
 
     Ke = np.zeros((6, 6), dtype=float)
@@ -99,6 +118,7 @@ def timo_beam2d_ke_global(
     I: float,  # noqa: E741
     kappa: float,
     G: float,
+    scf: float | None = None,
 ) -> np.ndarray:
     """全体座標系での Timoshenko 梁の剛性行列 (6x6) を返す.
 
@@ -109,12 +129,13 @@ def timo_beam2d_ke_global(
         I: 断面二次モーメント
         kappa: せん断補正係数
         G: せん断弾性率
+        scf: スレンダネス補償係数（None=無効, Abaqusデフォルト=0.25）
 
     Returns:
         Ke_global: (6, 6) 全体座標系の剛性行列
     """
     length, c, s = _beam_length_and_cosines(coords)
-    Ke_local = timo_beam2d_ke_local(E, A, I, length, kappa, G)
+    Ke_local = timo_beam2d_ke_local(E, A, I, length, kappa, G, scf=scf)
     T = _transformation_matrix_2d(c, s)
     return T.T @ Ke_local @ T
 
@@ -163,20 +184,39 @@ class TimoshenkoBeam2D:
         kappa: せん断補正係数。以下のいずれか:
             - float: 固定値（旧デフォルト: 5/6）
             - "cowper": Cowper (1966) のν依存係数を自動計算（Abaqus準拠）
+        scf: スレンダネス補償係数（Slenderness Compensation Factor）。
+            None（デフォルト）: SCF無効（純粋なTimoshenko梁）
+            0.25: Abaqusデフォルト。細長い梁ではEB梁に自動遷移する。
+            0.0: SCF無効（Noneと同等）
 
     Abaqusとの差異:
         Abaqus B21/B22 はデフォルトで Cowper のν依存κを使用する。
         xkep-cae のデフォルトは κ=5/6（固定値）だが、kappa="cowper" を
         指定することで Abaqus と同等の動作になる。
         ν=0.3・矩形断面の場合: Cowper κ≈0.850 vs 固定 κ=0.833（約2%差）。
+
+    SCF について:
+        Abaqus B21/B22 はデフォルトで SCF=0.25 を適用する。
+        SCFは横せん断剛性をスレンダネスに応じて低減する補正:
+          f_p = 1 / (1 + SCF · L²A/(12I))
+        細長い梁ほど f_p → 0 となり、横せん断剛性が実質ゼロ
+        （＝Euler-Bernoulli梁の挙動）に遷移する。
+        Abaqusとの比較時にSCFを合わせるか、Abaqus側で SCF=0 に
+        設定して無効化する必要がある（abaqus-differences.md 参照）。
     """
 
     ndof_per_node: int = 3
     nnodes: int = 2
     ndof: int = 6
 
-    def __init__(self, section: BeamSection2D, kappa: float | str = 5.0 / 6.0) -> None:
+    def __init__(
+        self,
+        section: BeamSection2D,
+        kappa: float | str = 5.0 / 6.0,
+        scf: float | None = None,
+    ) -> None:
         self.section = section
+        self.scf = scf
         if isinstance(kappa, str):
             if kappa != "cowper":
                 raise ValueError(f"kappa に指定できる文字列は 'cowper' のみです: '{kappa}'")
@@ -245,7 +285,8 @@ class TimoshenkoBeam2D:
         kappa_val = self._resolve_kappa(nu)
 
         return timo_beam2d_ke_global(
-            coords, young_e, self.section.A, self.section.I, kappa_val, shear_g
+            coords, young_e, self.section.A, self.section.I, kappa_val, shear_g,
+            scf=self.scf,
         )
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
