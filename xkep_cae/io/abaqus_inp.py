@@ -4,6 +4,8 @@ pymesh 代替として、Abaqus入力ファイルの以下のセクションを�
   - *NODE: 節点座標
   - *ELEMENT: 要素接続配列
   - *NSET: ノードセット
+  - *BEAM SECTION: 梁断面定義（SECTION, ELSET, MATERIAL, 寸法）
+  - *TRANSVERSE SHEAR STIFFNESS: 横せん断剛性（K11, K22, K12）
 
 対応要素タイプ:
   - CPS3, CPE3: 3節点三角形（TRI3）
@@ -35,6 +37,28 @@ class AbaqusNode:
 
 
 @dataclass
+class AbaqusBeamSection:
+    """Abaqus梁断面定義（*BEAM SECTION）.
+
+    Attributes:
+        section_type: 断面タイプ（"RECT", "CIRC", "PIPE" 等）
+        elset: 要素セット名
+        material: 材料名
+        dimensions: 断面寸法リスト（断面タイプに依存）
+        direction: 断面方向ベクトル（オプション）
+        transverse_shear: 横せん断剛性 (K11, K22, K12)。
+            *TRANSVERSE SHEAR STIFFNESS で指定された場合に設定。
+    """
+
+    section_type: str
+    elset: str
+    material: str
+    dimensions: list[float] = field(default_factory=list)
+    direction: list[float] | None = None
+    transverse_shear: tuple[float, float, float] | None = None
+
+
+@dataclass
 class AbaqusElementGroup:
     """同一タイプの要素グループ.
 
@@ -59,6 +83,7 @@ class AbaqusMesh:
     nodes: list[AbaqusNode] = field(default_factory=list)
     element_groups: list[AbaqusElementGroup] = field(default_factory=list)
     nsets: dict[str, list[int]] = field(default_factory=dict)
+    beam_sections: list[AbaqusBeamSection] = field(default_factory=list)
 
     def get_node_coord_array(self) -> list[dict[str, float]]:
         """節点座標をpymesh互換の辞書リストで返す.
@@ -188,6 +213,14 @@ def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
             elif keyword == "*NSET":
                 opts = _parse_keyword_options(line)
                 idx = _parse_nset_section(lines, idx + 1, opts, mesh)
+            elif keyword in ("*BEAM SECTION", "*BEAMSECTION"):
+                opts = _parse_keyword_options(line)
+                idx = _parse_beam_section(lines, idx + 1, opts, mesh)
+            elif keyword in (
+                "*TRANSVERSE SHEAR STIFFNESS",
+                "*TRANSVERSESHEARSTIFFNESS",
+            ):
+                idx = _parse_transverse_shear_stiffness(lines, idx + 1, mesh)
             else:
                 idx += 1
         else:
@@ -334,4 +367,100 @@ def _parse_nset_section(
         idx += 1
 
     mesh.nsets[nset_name] = labels
+    return idx
+
+
+def _parse_beam_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*BEAM SECTION セクションをパースする.
+
+    形式:
+        *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+        dim1, dim2, ...       (断面寸法)
+        nx, ny, nz            (断面方向ベクトル、オプション)
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    section_type = opts.get("SECTION", "UNKNOWN")
+    elset = opts.get("ELSET", "UNNAMED")
+    material = opts.get("MATERIAL", "UNNAMED")
+
+    beam_sec = AbaqusBeamSection(
+        section_type=section_type,
+        elset=elset,
+        material=material,
+    )
+
+    idx = start_idx
+    n_lines = len(lines)
+    data_line_count = 0
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+
+        if data_line_count == 0:
+            # 1行目: 断面寸法
+            beam_sec.dimensions = [float(p) for p in parts]
+        elif data_line_count == 1:
+            # 2行目: 断面方向ベクトル（オプション）
+            beam_sec.direction = [float(p) for p in parts]
+
+        data_line_count += 1
+        idx += 1
+
+    mesh.beam_sections.append(beam_sec)
+    return idx
+
+
+def _parse_transverse_shear_stiffness(
+    lines: list[str],
+    start_idx: int,
+    mesh: AbaqusMesh,
+) -> int:
+    """*TRANSVERSE SHEAR STIFFNESS セクションをパースする.
+
+    形式:
+        *TRANSVERSE SHEAR STIFFNESS
+        K11, K22 [, K12]
+
+    直前の *BEAM SECTION に横せん断剛性を関連付ける。
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        k11 = float(parts[0])
+        k22 = float(parts[1]) if len(parts) > 1 else k11
+        k12 = float(parts[2]) if len(parts) > 2 else 0.0
+
+        # 直前の beam section に関連付け
+        if mesh.beam_sections:
+            mesh.beam_sections[-1].transverse_shear = (k11, k22, k12)
+
+        idx += 1
+        break  # データは1行のみ
+
     return idx

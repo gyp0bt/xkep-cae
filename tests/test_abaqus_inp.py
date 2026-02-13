@@ -388,3 +388,117 @@ class TestErrorHandling:
         """)
         mesh = read_abaqus_inp(p)
         assert len(mesh.nodes) == 0
+
+
+class TestBeamSectionParsing:
+    """*BEAM SECTION と *TRANSVERSE SHEAR STIFFNESS のパーステスト."""
+
+    @pytest.fixture()
+    def tmp_inp(self, tmp_path):
+        """一時 .inp ファイルを作成するヘルパー."""
+        import textwrap
+
+        def _create(content: str) -> Path:
+            p = tmp_path / "test_beam.inp"
+            p.write_text(textwrap.dedent(content), encoding="utf-8")
+            return p
+
+        return _create
+
+    def test_beam_section_rect(self, tmp_inp):
+        """矩形断面の *BEAM SECTION パース."""
+        p = tmp_inp("""\
+            *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+            10.0, 20.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.beam_sections) == 1
+        sec = mesh.beam_sections[0]
+        assert sec.section_type == "RECT"
+        assert sec.elset == "beams"
+        assert sec.material == "steel"
+        assert len(sec.dimensions) == 2
+        assert abs(sec.dimensions[0] - 10.0) < 1e-12
+        assert abs(sec.dimensions[1] - 20.0) < 1e-12
+        assert sec.transverse_shear is None
+
+    def test_beam_section_with_direction(self, tmp_inp):
+        """方向ベクトル付きの *BEAM SECTION パース."""
+        p = tmp_inp("""\
+            *BEAM SECTION, SECTION=CIRC, ELSET=pipes, MATERIAL=copper
+            5.0
+            0.0, 0.0, 1.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.beam_sections) == 1
+        sec = mesh.beam_sections[0]
+        assert sec.section_type == "CIRC"
+        assert sec.direction is not None
+        assert len(sec.direction) == 3
+        assert abs(sec.direction[2] - 1.0) < 1e-12
+
+    def test_transverse_shear_stiffness(self, tmp_inp):
+        """*TRANSVERSE SHEAR STIFFNESS のパース."""
+        p = tmp_inp("""\
+            *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+            10.0, 10.0
+            *TRANSVERSE SHEAR STIFFNESS
+            6410256.0, 6410256.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.beam_sections) == 1
+        sec = mesh.beam_sections[0]
+        assert sec.transverse_shear is not None
+        k11, k22, k12 = sec.transverse_shear
+        assert abs(k11 - 6410256.0) < 1.0
+        assert abs(k22 - 6410256.0) < 1.0
+        assert abs(k12 - 0.0) < 1e-12
+
+    def test_transverse_shear_with_k12(self, tmp_inp):
+        """K12 付きの横せん断剛性パース."""
+        p = tmp_inp("""\
+            *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+            10.0, 10.0
+            *TRANSVERSE SHEAR STIFFNESS
+            1000.0, 2000.0, 500.0
+        """)
+        mesh = read_abaqus_inp(p)
+        sec = mesh.beam_sections[0]
+        k11, k22, k12 = sec.transverse_shear
+        assert abs(k11 - 1000.0) < 1e-12
+        assert abs(k22 - 2000.0) < 1e-12
+        assert abs(k12 - 500.0) < 1e-12
+
+    def test_beam_section_with_elements_and_nodes(self, tmp_inp):
+        """ノード・要素と併用した場合のパース."""
+        p = tmp_inp("""\
+            *NODE
+            1, 0.0, 0.0
+            2, 100.0, 0.0
+            *ELEMENT, TYPE=B21, ELSET=beams
+            1, 1, 2
+            *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+            10.0, 10.0
+            *TRANSVERSE SHEAR STIFFNESS
+            6410256.0, 6410256.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.nodes) == 2
+        assert len(mesh.element_groups) == 1
+        assert len(mesh.beam_sections) == 1
+        assert mesh.beam_sections[0].transverse_shear is not None
+
+    def test_multiple_beam_sections(self, tmp_inp):
+        """複数の *BEAM SECTION のパース."""
+        p = tmp_inp("""\
+            *BEAM SECTION, SECTION=RECT, ELSET=beams1, MATERIAL=steel
+            10.0, 10.0
+            *TRANSVERSE SHEAR STIFFNESS
+            1000.0, 1000.0
+            *BEAM SECTION, SECTION=CIRC, ELSET=beams2, MATERIAL=copper
+            5.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.beam_sections) == 2
+        assert mesh.beam_sections[0].transverse_shear is not None
+        assert mesh.beam_sections[1].transverse_shear is None

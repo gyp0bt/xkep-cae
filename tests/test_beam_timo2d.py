@@ -474,3 +474,114 @@ class TestCowperKappaIntegration:
         sec = BeamSection2D.rectangle(b=10.0, h=10.0)
         with pytest.raises(ValueError, match="cowper"):
             TimoshenkoBeam2D(section=sec, kappa="invalid")
+
+
+class TestSCF:
+    """SCF（スレンダネス補償係数）のテスト.
+
+    SCF はAbaqusの B21/B22 が横せん断剛性に適用する補正。
+    f_p = 1 / (1 + SCF · L²A/(12I))
+    (κGA)_eff = κGA · f_p
+    """
+
+    def test_scf_none_is_pure_timoshenko(self):
+        """scf=None で純粋なTimoshenko梁（SCF無効）."""
+        area = 100.0
+        inertia = 833.333
+        L = 100.0
+
+        Ke_none = timo_beam2d_ke_local(E, area, inertia, L, KAPPA, G, scf=None)
+        Ke_zero = timo_beam2d_ke_local(E, area, inertia, L, KAPPA, G, scf=0.0)
+        Ke_base = timo_beam2d_ke_local(E, area, inertia, L, KAPPA, G)
+
+        assert np.allclose(Ke_none, Ke_base, atol=1e-12)
+        assert np.allclose(Ke_zero, Ke_base, atol=1e-12)
+
+    def test_scf_reduces_shear_deflection(self):
+        """SCF > 0 でせん断たわみが減少すること."""
+        b, h = 10.0, 10.0
+        area = b * h
+        inertia = b * h**3 / 12.0
+        total_length = 200.0
+        n_elems = 20
+        P = 1.0
+
+        def ke_no_scf(coords):
+            return timo_beam2d_ke_global(coords, E, area, inertia, KAPPA, G)
+
+        def ke_scf(coords):
+            return timo_beam2d_ke_global(coords, E, area, inertia, KAPPA, G, scf=0.25)
+
+        u_no_scf = _solve_cantilever_point_load(
+            n_elems, total_length, area, inertia, P, ke_no_scf,
+        )
+        u_scf = _solve_cantilever_point_load(
+            n_elems, total_length, area, inertia, P, ke_scf,
+        )
+
+        delta_no_scf = u_no_scf[3 * n_elems + 1]
+        delta_scf = u_scf[3 * n_elems + 1]
+
+        # SCFで横せん断が低減 → せん断たわみが減少 → 全体たわみ減少
+        assert delta_scf < delta_no_scf
+
+    def test_scf_approaches_eb_for_slender_beam(self):
+        """細長い梁でSCFを適用するとEB解に近づくこと."""
+        b, h = 1.0, 1.0
+        area = b * h
+        inertia = b * h**3 / 12.0
+        total_length = 1000.0  # L/h = 1000
+        n_elems = 20
+        P = 1.0
+
+        delta_eb = P * total_length**3 / (3.0 * E * inertia)
+
+        def ke_scf(coords):
+            return timo_beam2d_ke_global(coords, E, area, inertia, KAPPA, G, scf=0.25)
+
+        u_scf = _solve_cantilever_point_load(
+            n_elems, total_length, area, inertia, P, ke_scf,
+        )
+        delta_scf = u_scf[3 * n_elems + 1]
+
+        # EB解との相対差が非常に小さいこと
+        rel_diff = abs(delta_scf - delta_eb) / abs(delta_eb)
+        assert rel_diff < 0.001  # 0.1%以内
+
+    def test_scf_formula_correctness(self):
+        """SCFの数式が Φ_eff = Φ·f_p, f_p = 1/(1+SCF·L²A/(12I)) と一致すること."""
+        area = 100.0
+        inertia = 833.333
+        L = 100.0
+        scf_val = 0.25
+
+        # SCFなし → Φ_original
+        Phi_original = 12.0 * E * inertia / (KAPPA * G * area * L * L)
+
+        # SCF適用 → Φ_eff = Φ · f_p（低減）
+        slenderness = L * L * area / (12.0 * inertia)
+        f_p = 1.0 / (1.0 + scf_val * slenderness)
+        Phi_eff = Phi_original * f_p
+
+        # 剛性行列から Φ_eff を逆算
+        Ke_scf = timo_beam2d_ke_local(E, area, inertia, L, KAPPA, G, scf=scf_val)
+
+        # K[1,1] = 12EI/L³ / (1+Φ_eff) → Φ_eff = 12EI/(K[1,1]·L³) - 1
+        EI_L3 = E * inertia / (L**3)
+        Phi_from_Ke = 12.0 * EI_L3 / Ke_scf[1, 1] - 1.0
+
+        assert abs(Phi_from_Ke - Phi_eff) < 1e-10
+
+    def test_scf_via_class_interface(self):
+        """TimoshenkoBeam2D クラスでSCFが使えること."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        beam = TimoshenkoBeam2D(section=sec, scf=0.25)
+        assert beam.scf == 0.25
+
+        mat = BeamElastic1D(E=E, nu=NU)
+        coords = np.array([[0.0, 0.0], [100.0, 0.0]])
+        Ke_class = beam.local_stiffness(coords, mat)
+        Ke_func = timo_beam2d_ke_global(
+            coords, E, sec.A, sec.I, KAPPA, G, scf=0.25,
+        )
+        assert np.allclose(Ke_class, Ke_func, atol=1e-10)

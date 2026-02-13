@@ -12,19 +12,21 @@
 Q4/TRI3/TRI6/Q4_BBAR/Q4_EAS要素、Abaqusベンチマーク完了。
 Phase 1（アーキテクチャ再構成）完了。Protocol API に一本化済み（レガシーAPI削除）。
 Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
-Abaqus .inp パーサー自前実装済み（pymesh代替）。
-**Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。**
-せん断ロッキングと体積ロッキングを同時に抑制。
-**Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。**
-**ロードマップに Cosserat rod（Phase 2.5）および撚線モデル（Phase 4.6: 拡張ファイバー理論）を追加。**
+**Phase 2.3/2.4（3D梁要素 & 断面拡張）完了: 3D Timoshenko梁（12DOF）、BeamSection（Iy/Iz/J）。**
+**SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。**
+Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
+Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
+Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
+ロードマップに Cosserat rod（Phase 2.5）および撚線モデル（Phase 4.6: 拡張ファイバー理論）を追加。
 
-次のマイルストーン: Phase 2.3 Timoshenko梁（3D空間）→ Phase 2.5 Cosserat rod。
+次のマイルストーン: Phase 2.5 Cosserat rod → Phase 3 幾何学的非線形。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
-- [実装状況](docs/status/status-008.md) — 最新のステータス
+- [実装状況](docs/status/status-009.md) — 最新のステータス
+- [status-008](docs/status/status-008.md) — Cosserat rod & 撚線モデル ロードマップ拡張
 - [status-007](docs/status/status-007.md) — Cowper κ(ν)実装・Abaqus比較テスト
 - [status-006](docs/status/status-006.md) — EAS-4 Q4要素・B-barバグ修正
 - [status-005](docs/status/status-005.md) — レガシー削除・Q4 D行列修正
@@ -106,6 +108,20 @@ beam = EulerBernoulliBeam2D(section=sec)
 mat = BeamElastic1D(E=200e3)
 
 K = assemble_global_stiffness(nodes_xy, [(beam, conn)], mat)
+```
+
+### 3D梁要素
+
+```python
+from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+from xkep_cae.materials.beam_elastic import BeamElastic1D
+from xkep_cae.sections.beam import BeamSection
+
+sec = BeamSection.rectangle(b=10.0, h=20.0)
+beam = TimoshenkoBeam3D(section=sec, kappa_y="cowper", kappa_z="cowper")
+mat = BeamElastic1D(E=200e3, nu=0.3)
+
+K = assemble_global_stiffness(nodes_xyz, [(beam, conn)], mat)
 ```
 
 ## 依存ライブラリ
