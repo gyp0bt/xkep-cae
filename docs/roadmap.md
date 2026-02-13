@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.3/2.4 完了、3D Timoshenko梁 & 断面モデル拡張 & SCF）
+## 現在地（Phase 2.3/2.4 完了、3Dアセンブリテスト & 内力ポスト処理完了）
 
 ### 実装済み
 
@@ -25,18 +25,18 @@
 | **梁要素** | Euler-Bernoulli梁（2D）, Timoshenko梁（2D, **Cowper κ(ν) 対応, SCF対応**）, **Timoshenko梁（3D空間, 12DOF）** |
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形断面, 円形断面, **パイプ断面**（2D/3D, Iy/Iz/J 対応） |
+| **ポスト処理** | **3D梁の断面力（N, Vy, Vz, Mx, My, Mz）、最大曲げ応力推定** |
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー（自前実装, **`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応**） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**161テスト**） |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**174テスト**） |
 | **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
 
 - 3次元連続体要素なし（平面問題限定）
 - 非線形解析なし（幾何学/材料）
-- 応力・ひずみのポスト処理なし
 - 動的解析なし
 
 ---
@@ -156,8 +156,10 @@ class ConstitutiveProtocol(Protocol):
 - [x] ねじり剛性 GJ
 - [x] 二軸曲げ（EIy, EIz）
 - [x] せん断変形（κy, κz）— Cowper κ 対応
-- [ ] ワーピング（オプション、薄肉断面用）
-- [x] テスト：3D片持ち梁、ねじり問題 — 33テスト
+- [x] ~~ワーピング~~ — スキップ（薄肉開断面用、円形/パイプ断面では不要。[status-010](status/status-010.md) 参照）
+- [x] 断面力ポスト処理（`BeamForces3D`, `beam3d_section_forces()`, `beam3d_max_bending_stress()`）
+- [x] 3Dアセンブリレベルテスト（`test_protocol_assembly.py` に5件追加）
+- [x] テスト：3D片持ち梁、ねじり問題 — 43テスト（断面力テスト含む）
 
 ### 2.4 断面モデル
 

@@ -18,9 +18,12 @@ import pytest
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.core.element import ElementProtocol
 from xkep_cae.elements.beam_timo3d import (
+    BeamForces3D,
     TimoshenkoBeam3D,
     _build_local_axes,
     _transformation_matrix_3d,
+    beam3d_max_bending_stress,
+    beam3d_section_forces,
     timo_beam3d_distributed_load,
     timo_beam3d_ke_global,
     timo_beam3d_ke_local,
@@ -680,3 +683,236 @@ class TestBeamSectionProperties:
         sec3d = BeamSection.rectangle(b=10.0, h=10.0)
         sec2d = BeamSection2D.rectangle(b=10.0, h=10.0)
         assert abs(sec3d.cowper_kappa_y(0.3) - sec2d.cowper_kappa(0.3)) < 1e-12
+
+
+class TestSectionForces:
+    """断面力（内力）ポスト処理のテスト."""
+
+    def test_axial_tension(self):
+        """軸引張の断面力が N = P であること（円形断面）."""
+        sec = BeamSection.circle(d=10.0)
+        total_length = 100.0
+        n_elems = 5
+        P = 50.0
+
+        def ke_func(coords):
+            return timo_beam3d_ke_global(
+                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            )
+
+        u = _solve_cantilever3d(n_elems, total_length, ke_func, 0, P)
+        nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
+
+        # 各要素の断面力を確認: 全要素で N = P
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(12)
+            for i, n in enumerate([n1, n2]):
+                for d in range(6):
+                    u_elem[6 * i + d] = u[6 * n + d]
+
+            f1, f2 = beam3d_section_forces(
+                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
+                KAPPA, KAPPA,
+            )
+            assert abs(f1.N - P) / P < 1e-10
+            assert abs(f2.N - P) / P < 1e-10
+            assert abs(f1.Vy) < 1e-8
+            assert abs(f1.Vz) < 1e-8
+            assert abs(f1.Mx) < 1e-8
+            assert abs(f1.My) < 1e-8
+            assert abs(f1.Mz) < 1e-8
+
+    def test_torsion(self):
+        """ねじりの断面力が Mx = T であること（円形断面）."""
+        sec = BeamSection.circle(d=10.0)
+        total_length = 100.0
+        n_elems = 5
+        T_torque = 10.0
+
+        def ke_func(coords):
+            return timo_beam3d_ke_global(
+                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            )
+
+        u = _solve_cantilever3d(n_elems, total_length, ke_func, 3, T_torque)
+        nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(12)
+            for i, n in enumerate([n1, n2]):
+                for d in range(6):
+                    u_elem[6 * i + d] = u[6 * n + d]
+
+            f1, f2 = beam3d_section_forces(
+                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
+                KAPPA, KAPPA,
+            )
+            assert abs(f1.Mx - T_torque) / T_torque < 1e-10
+            assert abs(f2.Mx - T_torque) / T_torque < 1e-10
+            assert abs(f1.N) < 1e-8
+            assert abs(f1.Vy) < 1e-8
+
+    def test_cantilever_bending_y(self):
+        """y方向荷重の断面力（せん断力と曲げモーメント）が解析解と一致（円形断面）.
+
+        解析解:
+          Vy = P（全要素で一定）
+          Mz(x) = P·(L - x)（根元で PL、先端で 0）
+        """
+        sec = BeamSection.circle(d=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+
+        def ke_func(coords):
+            return timo_beam3d_ke_global(
+                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            )
+
+        u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
+        nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(12)
+            for i, n in enumerate([n1, n2]):
+                for d in range(6):
+                    u_elem[6 * i + d] = u[6 * n + d]
+
+            f1, f2 = beam3d_section_forces(
+                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
+                KAPPA, KAPPA,
+            )
+
+            # せん断力: Vy = P（全要素で一定）
+            assert abs(f1.Vy - P) / P < 1e-8
+            assert abs(f2.Vy - P) / P < 1e-8
+
+            # 曲げモーメント: Mz(x) = P·(L - x)
+            x1 = nodes[n1, 0]
+            x2 = nodes[n2, 0]
+            Mz_1_analytical = P * (total_length - x1)
+            Mz_2_analytical = P * (total_length - x2)
+            if abs(Mz_1_analytical) > 1e-12:
+                assert abs(f1.Mz - Mz_1_analytical) / abs(Mz_1_analytical) < 1e-8
+            if abs(Mz_2_analytical) > 1e-12:
+                assert abs(f2.Mz - Mz_2_analytical) / abs(Mz_2_analytical) < 1e-8
+            else:
+                assert abs(f2.Mz) < 1e-6
+
+    def test_section_forces_via_class(self):
+        """TimoshenkoBeam3D.section_forces() メソッドが関数版と一致（円形断面）."""
+        sec = BeamSection.circle(d=10.0)
+        beam = TimoshenkoBeam3D(section=sec, kappa_y=KAPPA, kappa_z=KAPPA)
+        mat = BeamElastic1D(E=E, nu=NU)
+
+        total_length = 100.0
+        n_elems = 5
+        P = 10.0
+
+        def ke_func(coords):
+            return timo_beam3d_ke_global(
+                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            )
+
+        u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
+        nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
+
+        # 先頭要素で検証
+        n1, n2 = conn[0]
+        coords = nodes[[n1, n2]]
+        u_elem = np.empty(12)
+        for i, n in enumerate([n1, n2]):
+            for d in range(6):
+                u_elem[6 * i + d] = u[6 * n + d]
+
+        f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
+        f1_func, f2_func = beam3d_section_forces(
+            coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
+            KAPPA, KAPPA,
+        )
+
+        assert abs(f1_class.N - f1_func.N) < 1e-10
+        assert abs(f1_class.Vy - f1_func.Vy) < 1e-10
+        assert abs(f1_class.Mz - f1_func.Mz) < 1e-10
+        assert abs(f2_class.N - f2_func.N) < 1e-10
+        assert abs(f2_class.Vy - f2_func.Vy) < 1e-10
+        assert abs(f2_class.Mz - f2_func.Mz) < 1e-10
+
+    def test_equilibrium(self):
+        """要素両端の断面力が力の釣り合いを満たすこと（円形断面）.
+
+        外力なしの要素では: N1 = N2, Vy1 = Vy2, Mz1 + Vy1·L = Mz2
+        """
+        sec = BeamSection.circle(d=10.0)
+        total_length = 100.0
+        n_elems = 10
+        P = 1.0
+        L_elem = total_length / n_elems
+
+        def ke_func(coords):
+            return timo_beam3d_ke_global(
+                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            )
+
+        u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
+        nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
+
+        for elem_nodes in conn:
+            n1, n2 = elem_nodes
+            coords = nodes[[n1, n2]]
+            u_elem = np.empty(12)
+            for i, n in enumerate([n1, n2]):
+                for d in range(6):
+                    u_elem[6 * i + d] = u[6 * n + d]
+
+            f1, f2 = beam3d_section_forces(
+                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
+                KAPPA, KAPPA,
+            )
+
+            # 軸力一定
+            assert abs(f1.N - f2.N) < 1e-8
+            # せん断力一定（分布荷重なし）
+            assert abs(f1.Vy - f2.Vy) < 1e-8
+            # モーメントの釣り合い: Mz1 - Vy1·L = Mz2
+            assert abs(f1.Mz - f1.Vy * L_elem - f2.Mz) < 1e-6
+
+
+class TestMaxBendingStress:
+    """最大曲げ応力推定のテスト."""
+
+    def test_pure_axial(self):
+        """純軸引張の応力が N/A であること."""
+        forces = BeamForces3D(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        sec = BeamSection.circle(d=10.0)
+        sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, 5.0, 5.0)
+        assert abs(sigma - 100.0 / sec.A) < 1e-10
+
+    def test_pure_bending_mz(self):
+        """純曲げ（Mz）の応力が Mz·y_max/Iz であること."""
+        Mz = 1000.0
+        y_max = 5.0
+        sec = BeamSection.circle(d=10.0)
+        forces = BeamForces3D(N=0.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=Mz)
+        sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, y_max, 5.0)
+        expected = Mz * y_max / sec.Iz
+        assert abs(sigma - expected) / expected < 1e-10
+
+    def test_combined_loading(self):
+        """複合荷重の応力が正しいこと."""
+        N = 100.0
+        Mz = 500.0
+        My = 300.0
+        sec = BeamSection.circle(d=10.0)
+        y_max = 5.0
+        z_max = 5.0
+        forces = BeamForces3D(N=N, Vy=0.0, Vz=0.0, Mx=0.0, My=My, Mz=Mz)
+        sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, y_max, z_max)
+        expected = abs(N / sec.A) + Mz * y_max / sec.Iz + My * z_max / sec.Iy
+        assert abs(sigma - expected) / expected < 1e-10
