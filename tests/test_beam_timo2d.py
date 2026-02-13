@@ -340,3 +340,137 @@ class TestProtocolConformance:
         """BeamElastic1DのGが正しく計算されること."""
         mat = BeamElastic1D(E=E, nu=NU)
         assert abs(mat.G - G) < 1e-6
+
+
+class TestCowperKappa:
+    """Cowper (1966) のν依存せん断補正係数の検証.
+
+    Abaqus B21/B22 はデフォルトで Cowper のκを使用する:
+      矩形: κ = 10(1+ν)/(12+11ν)
+      円形: κ = 6(1+ν)/(7+6ν)
+    """
+
+    def test_rectangle_kappa_at_nu03(self):
+        """矩形断面 ν=0.3 でのCowper κ ≈ 0.8497."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        kappa = sec.cowper_kappa(0.3)
+        expected = 10.0 * 1.3 / (12.0 + 11.0 * 0.3)  # = 13/15.3 ≈ 0.8497
+        assert abs(kappa - expected) < 1e-12
+
+    def test_rectangle_kappa_at_nu0(self):
+        """矩形断面 ν=0 でのCowper κ = 10/12 = 5/6."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        kappa = sec.cowper_kappa(0.0)
+        assert abs(kappa - 5.0 / 6.0) < 1e-12
+
+    def test_circle_kappa_at_nu03(self):
+        """円形断面 ν=0.3 でのCowper κ ≈ 0.8864."""
+        sec = BeamSection2D.circle(d=10.0)
+        kappa = sec.cowper_kappa(0.3)
+        expected = 6.0 * 1.3 / (7.0 + 6.0 * 0.3)  # = 7.8/8.8 ≈ 0.8864
+        assert abs(kappa - expected) < 1e-12
+
+    def test_circle_kappa_at_nu0(self):
+        """円形断面 ν=0 でのCowper κ = 6/7."""
+        sec = BeamSection2D.circle(d=10.0)
+        kappa = sec.cowper_kappa(0.0)
+        assert abs(kappa - 6.0 / 7.0) < 1e-12
+
+    def test_general_section_fallback(self):
+        """一般断面ではκ=5/6にフォールバック."""
+        sec = BeamSection2D(A=100.0, I=833.333)
+        kappa = sec.cowper_kappa(0.3)
+        assert abs(kappa - 5.0 / 6.0) < 1e-12
+
+    def test_section_shape_rectangle(self):
+        """rectangle()ファクトリでshapeが"rectangle"になること."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        assert sec.shape == "rectangle"
+
+    def test_section_shape_circle(self):
+        """circle()ファクトリでshapeが"circle"になること."""
+        sec = BeamSection2D.circle(d=10.0)
+        assert sec.shape == "circle"
+
+    def test_section_shape_general(self):
+        """直接構築でshapeが"general"になること."""
+        sec = BeamSection2D(A=100.0, I=833.333)
+        assert sec.shape == "general"
+
+
+class TestCowperKappaIntegration:
+    """kappa="cowper" を使ったTimoshenko梁の統合テスト.
+
+    Cowper κ でTimoshenko解析解と比較。
+    解析解: δ = PL³/(3EI) + PL/(κ_cowper·G·A)
+    """
+
+    def test_cowper_tip_deflection(self):
+        """kappa="cowper"指定の先端たわみが Cowper κ の解析解と一致."""
+        b, h = 10.0, 10.0
+        area = b * h
+        inertia = b * h**3 / 12.0
+        total_length = 100.0
+        n_elems = 20
+        P = 1.0
+
+        # Cowper κ for rectangle, ν=0.3
+        kappa_cowper = 10.0 * (1.0 + NU) / (12.0 + 11.0 * NU)
+        delta_analytical = P * total_length**3 / (3.0 * E * inertia) + P * total_length / (
+            kappa_cowper * G * area
+        )
+
+        sec = BeamSection2D.rectangle(b=b, h=h)
+        beam = TimoshenkoBeam2D(section=sec, kappa="cowper")
+        mat = BeamElastic1D(E=E, nu=NU)
+
+        # kappa プロパティが "cowper" であること
+        assert beam.kappa == "cowper"
+
+        # 手動アセンブリで解く
+        def ke_func(coords):
+            return beam.local_stiffness(coords, mat)
+
+        u = _solve_cantilever_point_load(n_elems, total_length, area, inertia, P, ke_func)
+        delta_fem = u[3 * n_elems + 1]
+        assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
+
+    def test_cowper_vs_fixed_kappa_difference(self):
+        """Cowper κ と固定 5/6 で約2%のたわみ差が出ること."""
+        b, h = 10.0, 10.0
+        area = b * h
+        inertia = b * h**3 / 12.0
+        total_length = 100.0
+        n_elems = 20
+        P = 1.0
+
+        sec = BeamSection2D.rectangle(b=b, h=h)
+        mat = BeamElastic1D(E=E, nu=NU)
+
+        beam_fixed = TimoshenkoBeam2D(section=sec, kappa=5.0 / 6.0)
+        beam_cowper = TimoshenkoBeam2D(section=sec, kappa="cowper")
+
+        def ke_fixed(coords):
+            return beam_fixed.local_stiffness(coords, mat)
+
+        def ke_cowper(coords):
+            return beam_cowper.local_stiffness(coords, mat)
+
+        u_fixed = _solve_cantilever_point_load(n_elems, total_length, area, inertia, P, ke_fixed)
+        u_cowper = _solve_cantilever_point_load(n_elems, total_length, area, inertia, P, ke_cowper)
+
+        delta_fixed = u_fixed[3 * n_elems + 1]
+        delta_cowper = u_cowper[3 * n_elems + 1]
+
+        # Cowper κ > 5/6 → せん断剛性が大きい → たわみが小さい
+        assert delta_cowper < delta_fixed
+
+        # 差は小さい（数%以内）
+        rel_diff = abs(delta_cowper - delta_fixed) / abs(delta_fixed)
+        assert rel_diff < 0.05  # 5%以内
+
+    def test_invalid_kappa_string_raises(self):
+        """無効なkappa文字列でValueError."""
+        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        with pytest.raises(ValueError, match="cowper"):
+            TimoshenkoBeam2D(section=sec, kappa="invalid")

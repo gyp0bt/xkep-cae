@@ -15,13 +15,16 @@ Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
 Abaqus .inp パーサー自前実装済み（pymesh代替）。
 **Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。**
 せん断ロッキングと体積ロッキングを同時に抑制。
+**Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。**
 
 次のマイルストーン: Phase 2.3 Timoshenko梁（3D空間）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
-- [実装状況](docs/status/status-006.md) — 最新のステータス
+- [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
+- [実装状況](docs/status/status-007.md) — 最新のステータス
+- [status-006](docs/status/status-006.md) — EAS-4 Q4要素・B-barバグ修正
 - [status-005](docs/status/status-005.md) — レガシー削除・Q4 D行列修正
 - [status-004](docs/status/status-004.md) — Phase 2.1/2.2 梁要素 & Abaqusパーサー
 - [status-003](docs/status/status-003.md) — リネーム & Phase 1 完了
