@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.2 完了、EAS-4実装済み、Cowper κ実装済み）
+## 現在地（Phase 2.2 完了、Cosserat rod & 撚線モデルをロードマップに追加）
 
 ### 実装済み
 
@@ -30,7 +30,7 @@
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー（自前実装） |
 | **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, **CPE4I精度検証**（115テスト） |
-| **ドキュメント** | [Abaqus差異ドキュメント](docs/abaqus-differences.md) |
+| **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
 
@@ -176,6 +176,44 @@ class BeamSection:
 - [ ] 一般断面（任意形状、メッシュベース数値積分）
 - [ ] ファイバーモデル断面（材料非線形用、Phase 4で拡張）
 
+### 2.5 Cosserat rod（幾何学的厳密梁）
+
+Timoshenko梁を超える一般的な梁定式化。中心線＋断面回転で幾何を記述し、
+せん断・伸び・曲率・ねじりを統一的に扱う。撚線モデル（Phase 4.6）の土台となる。
+
+#### 幾何の記述
+
+```
+中心線:     r(s)          ∈ R³
+断面回転:   R(s)          ∈ SO(3)
+一般化歪み: ν = Rᵀr'      （せん断＋軸伸び）
+            κ = axial(RᵀR') （曲率＋ねじり）
+```
+
+#### 実装項目
+
+- [ ] SO(3) 回転パラメトライゼーション（四元数 or 回転ベクトル）
+- [ ] 一般化歪み (ν, κ) の計算
+- [ ] Cosserat rod の弾性構成則（N = EA·ε, M = EI·κ 等の一般化）
+- [ ] 弱形式・変分定式化（仮想仕事式）
+- [ ] 有限要素離散化（Hermite or Lagrange interpolation on SO(3)）
+- [ ] 接線剛性行列（材料剛性 + 幾何剛性）
+- [ ] テスト：Euler elastica、ヘリカルばね、大回転片持ち梁
+- [ ] Phase 3（幾何学的非線形）との統合
+
+#### 参考文献
+
+- Simo, J.C. (1985) "A finite strain beam formulation — Part I"
+- Crisfield, M.A. & Jelenić, G. (1999) "Objectivity of strain measures in the geometrically exact beam"
+- Antman, S.S. "Nonlinear Problems of Elasticity"
+
+#### 備考
+
+Cosserat rod は本質的に幾何学的非線形定式化であり、Phase 3 と密接に連携する。
+Phase 3.2（共回転定式化）の代替として位置づけることも可能。
+Phase 4.6（撚線モデル）では Cosserat rod が「外側の梁」および「個別素線」の
+両方の幾何記述として使用される。
+
 ---
 
 ## Phase 3: 幾何学的非線形
@@ -250,6 +288,98 @@ class BeamSection:
 
 - [ ] 異方性弾性（断面方向依存の剛性）
 - [ ] 梁の曲げ-ねじり連成（偏心、非対称断面）
+
+### 4.6 撚線モデル（拡張ファイバー理論）
+
+**目的**: ファイバー理論を拡張し、撚線電線の素線幾何剛性＋接触剛性＋摩擦散逸＋撚り解き＋
+塑性履歴＋被膜の寄与を1Dモデルとして理想化する。
+「離散素線モデルの縮約（homogenization/ROM）」。
+
+**前提**: Phase 2.5（Cosserat rod）の完成が必須。Phase 4.1–4.2（弾塑性＋ファイバーモデル）が基盤。
+
+#### 概念：通常のファイバー理論との差異
+
+通常のファイバー梁では、断面上の繊維が軸方向に並行に走り、断面積分で合力を計算する：
+```
+ε_xx(y,z) = ε₀ + z·κ  →  断面積分で N, M を計算
+```
+
+撚線の拡張ファイバーでは、**ヘリカルに走る素線（1D）**を集めて合力・合モーメントを作る：
+```
+素線 i の位置:  x_i(s) = r(s) + R(s) · ρ_i(θ_i(s))
+一般化内力:     n(s) = Σᵢ R·nᵢ^local + 接触反力の合力
+一般化モーメント: m(s) = Σᵢ [R·mᵢ^local + (xᵢ-r)×(素線力)] + 接触偶力
+```
+
+ここで `θ_i(s)` はヘリックス位相であり、撚り解きが起きると**拘束ではなく未知量**になる。
+これが通常のファイバー梁との決定的な差。
+
+#### 内部変数
+
+| 変数 | 物理的意味 | 役割 |
+|------|-----------|------|
+| `θ_i(s)` | 素線ヘリックス位相 | 撚り戻り・撚り解きの自由度 |
+| `δ_ij(s)` | 素線 i–j の接線方向相対すべり | 摩擦散逸の主役 |
+| `g_ij(s)` | ギャップ（接触開閉） | 接触状態管理 |
+| stick/slip状態 | 離散フラグ or 連続正則化変数 | 摩擦モード |
+| `α_i(s)` | 素線材料の塑性履歴 | 等方硬化等 |
+| `γ_c(s)` | 被膜せん断変形 | 被膜の寄与（最小限） |
+
+#### 構成則の構造
+
+**素線の幾何剛性**:
+各素線を Cosserat rod とみなし、外側の (r, R) と内部 θ_i から素線の歪みを写像で作る：
+```
+(νᵢ, κᵢ) = Gᵢ(ν, κ, θᵢ, θᵢ', ...)
+U_wire = Σᵢ ∫ ψᵢ(νᵢ, κᵢ, αᵢ) ds
+```
+
+**接触剛性（法線方向）**:
+```
+U_contact = Σ_(i,j) ∫ ½ kₙ ⟨-g_ij⟩² ds    （penalty法）
+```
+
+**摩擦散逸（接線方向）**:
+増分変分（incremental potential）で定式化：
+```
+min_Δ [ΔU(·) - ΔW_ext + D(Δδ, Δα)]
+D_ij ~ ∫ μ·N_ij·|Δδ_ij| ds    （Coulomb摩擦の散逸ポテンシャル）
+```
+
+正則化（tanh等）で滑らかにしてNewtonで回すか、非滑らか最適化で扱う。
+
+#### 段階的実装計画
+
+**Level 0: 基礎同定用**（最初に作るべき）
+- [ ] 素線は軸方向のみ（曲げ剛性無視）
+- [ ] 接触は法線方向 penalty
+- [ ] 摩擦は正則化 Coulomb
+- [ ] 内部変数: `δ_ij` と素線塑性 `α_i` のみ
+- [ ] テスト: 引張・ねじり・曲げの基本ヒステリシスが出るか確認
+
+**Level 1: 撚り解き**（コア機能）
+- [ ] `θ_i(s)` を未知量化（ヘリックス拘束を解く）
+- [ ] 被膜を「周方向せん断ばね＋圧縮ばね」で平均化して追加
+- [ ] テスト: 撚り戻り＋摩擦散逸の主要現象が乗ることを検証
+
+**Level 2: 素線曲げ・局所座屈**
+- [ ] 素線を Cosserat rod 化（曲げ・ねじり含む）
+- [ ] 接触ペア爆増の対策（近接のみ、代表接触、連続平均化）
+- [ ] テスト: 局所座屈モードの再現
+
+#### 設計上の警告
+
+1. **接触ペアの爆発**: 全素線ペアを持つと O(n²) で計算が爆発する。代表接触か連続平均化が必須。
+2. **被膜モデルの範囲**: "ただのばね"にすると温度・粘弾性・損傷で破綻する。目的（剛性寄与/摩擦制御/保護）を決めて最小モデルにする。
+3. **摩擦の数値安定性**: 摩擦は数値的に悪条件。増分ポテンシャル（非滑らか最適化 or 正則化）を最初から前提にする。
+4. **状態変数の選定がモデルの生死を決める**: 曲げ主目的なら θ_i の縮約、ねじり疲労なら δ_ij の統計化など、用途に応じた最小状態変数の設計が不可欠。
+
+#### 参考文献
+
+- Costello, G.A. "Theory of Wire Rope"
+- Cardou, A. & Jolicoeur, C. (1997) "Mechanical Models of Helical Strands"
+- Jiang, W.G. et al. (2006) "Statically indeterminate contacts in axially loaded wire strand"
+- Foti, F. & Martinelli, L. (2016) "An analytical approach to model the hysteretic bending behavior of spiral strands"
 
 ---
 
@@ -353,12 +483,17 @@ class BeamSection:
 Phase 1 (アーキテクチャ)
     ↓
 Phase 2 (梁要素)
+    ├── 2.1-2.4: EB/Timoshenko/断面
+    └── 2.5: Cosserat rod ─────────────┐
+        ↓                              │
+Phase 3 (幾何学非線形) ────────────────┤
+    ↓                                  │
+Phase 4 (材料非線形)                   │
+    ├── 4.1-4.5: 弾塑性/粘弾性        │
+    └── 4.6: 撚線モデル ←─────────────┘
+        (Cosserat rod + ファイバー拡張 + 接触/摩擦)
     ↓
-Phase 3 (幾何学非線形) ─────────────┐
-    ↓                                │
-Phase 4 (材料非線形) ←───────────────┤
-    ↓                                │
-Phase 5 (動的解析) ←─────────────────┘
+Phase 5 (動的解析) ← Phase 3完了後に並行可
     ↓
 Phase 6 (NNサロゲート) ← Phase 4の構成則設計に依存
     ↓
@@ -368,6 +503,8 @@ Phase 8 (応用展開) ← 必要に応じて
 ```
 
 **クリティカルパス**: Phase 1 → 2 → 3 → 4
+
+**撚線モデルのクリティカルパス**: Phase 2.5 (Cosserat rod) → Phase 3 → Phase 4.1-4.2 → Phase 4.6 (撚線モデル)
 
 **並行開発可能**: Phase 5は Phase 3完了後に並行可、Phase 6は Phase 4の構成則設計と並行可
 
@@ -391,3 +528,8 @@ Phase 8 (応用展開) ← 必要に応じて
 - de Souza Neto et al. "Computational Methods for Plasticity"
 - Simo, J.C. & Hughes, T.J.R. "Computational Inelasticity"
 - Felippa, C.A. "A unified formulation of small-strain corotational finite elements"
+- Simo, J.C. (1985) "A finite strain beam formulation"（Cosserat rod）
+- Antman, S.S. "Nonlinear Problems of Elasticity"（Cosserat rod 理論）
+- Costello, G.A. "Theory of Wire Rope"（撚線力学の基礎）
+- Cardou, A. & Jolicoeur, C. (1997) "Mechanical Models of Helical Strands"（撚線モデル）
+- Foti, F. & Martinelli, L. (2016) "Hysteretic bending of spiral strands"（撚線曲げヒステリシス）
