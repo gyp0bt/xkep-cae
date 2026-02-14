@@ -157,7 +157,7 @@ FEM 解が正しいことを確認し、参照値を修正。
 - [ ] Lee's frame / Williams toggle frame 等の標準ベンチマーク
 
 ### 優先度C（ドキュメント）
-- [ ] 非線形 Cosserat rod の設計詳細を `docs/cosserat-design.md` に追記
+- [x] 非線形 Cosserat rod の設計詳細を `docs/cosserat-design.md` に追記
 
 ---
 

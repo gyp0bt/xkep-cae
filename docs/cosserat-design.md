@@ -160,10 +160,12 @@ Ke = ∫₀ᴸ Bᵀ · C · B ds ≈ Σ wᵢ · L · B(ξᵢ)ᵀ · C · B(ξᵢ
 | ファイル | 概要 |
 |---------|------|
 | `xkep_cae/math/__init__.py` | 数学パッケージ |
-| `xkep_cae/math/quaternion.py` | 四元数演算（15関数） |
-| `xkep_cae/elements/beam_cosserat.py` | Cosserat rod 要素 |
-| `tests/test_quaternion.py` | 四元数テスト（37テスト） |
-| `tests/test_beam_cosserat.py` | Cosserat rod テスト（36テスト） |
+| `xkep_cae/math/quaternion.py` | 四元数演算 + SO(3) ヤコビアン（17関数） |
+| `xkep_cae/elements/beam_cosserat.py` | Cosserat rod 要素（線形 + 非線形） |
+| `tests/test_quaternion.py` | 四元数テスト（43テスト） |
+| `tests/test_beam_cosserat.py` | Cosserat rod 線形テスト（36テスト） |
+| `tests/test_nonlinear_cosserat.py` | Cosserat rod 非線形テスト（13テスト） |
+| `tests/test_euler_elastica.py` | Euler elastica ベンチマーク（9テスト） |
 
 ### 四元数演算モジュール (`quaternion.py`)
 
@@ -184,6 +186,8 @@ Ke = ∫₀ᴸ Bᵀ · C · B ds ≈ Σ wᵢ · L · B(ξᵢ)ᵀ · C · B(ξᵢ
 | `quat_angular_velocity(q, q_dot)` | 角速度（body frame） |
 | `quat_material_curvature(q, q_prime)` | 物質曲率 κ |
 | `skew(v)` / `axial(S)` | hat/vee 写像 |
+| `so3_right_jacobian(rotvec)` | SO(3) 右ヤコビアン J_r(θ) |
+| `so3_right_jacobian_inverse(rotvec)` | SO(3) 右ヤコビアン逆行列 J_r⁻¹(θ) |
 
 ### Cosserat rod 要素 (`beam_cosserat.py`)
 
@@ -196,6 +200,10 @@ Ke = ∫₀ᴸ Bᵀ · C · B ds ≈ Σ wᵢ · L · B(ξᵢ)ᵀ · C · B(ξᵢ
 | `cosserat_ke_global()` | 全体剛性行列 |
 | `cosserat_section_forces()` | 断面力計算 |
 | `cosserat_generalized_strains()` | 一般化歪み計算 |
+| `_nonlinear_strains()` | 非線形歪み計算（Γ, κ） |
+| `_nonlinear_B_matrix()` | 非線形 B 行列 (6×12) |
+| `_nonlinear_internal_force()` | 非線形内力ベクトル |
+| `_nonlinear_tangent_stiffness()` | 非線形接線剛性（中心差分） |
 
 ---
 
@@ -203,7 +211,7 @@ Ke = ∫₀ᴸ Bᵀ · C · B ds ≈ Σ wᵢ · L · B(ξᵢ)ᵀ · C · B(ξᵢ
 
 ### テスト結果サマリ
 
-**全314テストパス**（四元数37 + Cosserat 36 + 既存241）
+**全407テストパス**（四元数43 + Cosserat線形36 + 非線形13 + Elastica9 + 弧長法5 + 既存301）
 
 ### 軸力・ねじり（1要素厳密）
 
@@ -240,35 +248,114 @@ Ke = ∫₀ᴸ Bᵀ · C · B ds ≈ Σ wᵢ · L · B(ξᵢ)ᵀ · C · B(ξᵢ
 
 ---
 
-## Phase 3 への拡張方針
+## Phase 3: 非線形実装（完了）
 
-### 非線形化の手順
+### 回転パラメトリゼーション
 
-1. **四元数状態の更新**: DOFは増分回転ベクトル Δθ のまま
-   ```
-   q_{n+1} = quat_from_rotvec(Δθ) ⊗ q_n
-   ```
+DOF は**合計回転ベクトル** θ（加算的更新 u += Δu）。
+四元数は on-the-fly で回転ベクトルから生成し、DOF としては保持しない。
 
-2. **歪みの非線形化**: B行列の再計算
-   ```
-   Γ = R(q)ᵀ · r' - e₁   （線形化なし）
-   κ = 2·Im(q* ⊗ q')      （線形化なし）
-   ```
+```
+回転行列: R(θ) = quat_to_rotation_matrix(quat_from_rotvec(θ))
+```
 
-3. **接線剛性**: 材料剛性 + 幾何剛性
-   ```
-   K_T = K_material + K_geometric
-   K_geometric: 回転-力のカップリング項
-   ```
+### SO(3) 右ヤコビアン
 
-4. **Newton-Raphson**: 残差 R = f_ext - f_int の反復
+`xkep_cae/math/quaternion.py` に追加。非線形曲率歪みの計算に必要。
 
-### 必要な追加実装
+```
+J_r(θ) = I - c₁·S + c₂·S²
+  S = skew(θ), φ = ||θ||
+  c₁ = (1 - cos φ) / φ²
+  c₂ = (φ - sin φ) / φ³
 
-- `internal_force()`: 内力ベクトル f_int（非線形）
-- `geometric_stiffness()`: 幾何剛性行列 K_geo
-- 四元数の増分更新ロジック
-- 収束判定（力・変位・エネルギーノルム）
+J_r⁻¹(θ) = I + (1/2)·S + c₃·S²
+  c₃ = 1/φ² - (1 + cos φ) / (2φ sin φ)
+```
+
+小角度 |θ| < 1e-6 ではテイラー展開に切り替え。
+
+### 非線形歪み
+
+ガウス点（要素中点）で評価:
+
+```
+θ_gp = (θ₁ + θ₂) / 2     — ガウス点の回転ベクトル
+r'   = (r₂+u₂ - r₁-u₁) / L₀  — 変形後の接線
+θ'   = (θ₂ - θ₁) / L₀         — 回転勾配
+
+力歪み:     Γ = R(θ_gp)ᵀ · R₀ᵀ · r' - e₁
+モーメント歪み: κ = J_r(θ_gp) · θ'
+```
+
+ここで R₀ は参照配位の回転行列（直線梁では I）。
+
+### 非線形 B 行列
+
+変分 δΓ, δκ を節点 DOF δu で表す:
+
+```
+δΓ = R(θ)ᵀ · R₀ᵀ · δr' + skew(Γ + e₁) · J_r · δθ_gp
+δκ = J_r · δθ'
+```
+
+これを行列形式 δε = B_nl · δu (6×12) として構成。
+
+### 非線形内力
+
+```
+f_int = L₀ · B_nlᵀ · C · [Γ; κ - κ₀]
+```
+
+1点ガウス求積。κ₀ は初期曲率（直線梁ではゼロ）。
+
+### 非線形接線剛性
+
+**中心差分ヤコビアン**で計算:
+
+```
+K_T[i,j] ≈ (f_int(u + h·eⱼ) - f_int(u - h·eⱼ)) / (2h)
+```
+
+h = max(1e-7, 1e-7·|uⱼ|)。計算後に対称化: K_T = (K_T + K_Tᵀ)/2。
+
+解析的接線（材料剛性 + 幾何剛性）は将来の最適化対象。現在の数値微分は
+有限差分テスト（`test_nonlinear_cosserat.py`）で検証済み。
+
+### CosseratRod のディスパッチ
+
+```python
+rod = CosseratRod(section=sec, nonlinear=True)
+```
+
+`nonlinear=True` 時:
+- `internal_force()` → `_nonlinear_internal_force()`
+- `tangent_stiffness()` → `_nonlinear_tangent_stiffness()`
+
+`nonlinear=False`（デフォルト）は従来の線形化版を使用。後方互換。
+
+### 検証結果
+
+#### Euler elastica — 端モーメント
+
+| θ_total | 要素数 | ステップ数 | 先端位置誤差 |
+|---------|--------|-----------|------------|
+| π/4     | 20     | 5         | < 2%L     |
+| π/2     | 20     | 10        | < 2%L     |
+| π       | 20     | 20        | < 3%L     |
+| 3π/2    | 30     | 30        | < 5%L     |
+| 2π (完全円) | 40 | 40       | < 5%L     |
+
+#### Euler elastica — 先端荷重
+
+| PL²/EI | δx/L (数値) | δy/L (数値) | δy/L (参照) | 相対誤差 |
+|--------|------------|------------|------------|---------|
+| 1      | 0.056      | 0.302      | 0.302      | < 1%    |
+| 2      | 0.161      | 0.493      | 0.493      | < 1%    |
+| 5      | 0.388      | 0.714      | 0.714      | < 1%    |
+| 10     | 0.555      | 0.811      | 0.811      | < 1%    |
+
+参照値は elastica ODE の shooting method 解（rtol=1e-12）。
 
 ---
 
