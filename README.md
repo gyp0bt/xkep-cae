@@ -8,38 +8,22 @@
 
 ## 現在の状態
 
-線形弾性・平面ひずみソルバーが実装済み。
-Q4/TRI3/TRI6/Q4_BBAR/Q4_EAS要素、Abaqusベンチマーク完了。
-Phase 1（アーキテクチャ再構成）完了。Protocol API に一本化済み（レガシーAPI削除）。
-Phase 2.1/2.2（2D梁要素）完了: Euler-Bernoulli梁、Timoshenko梁。
-Phase 2.3/2.4（3D梁要素 & 断面拡張）完了: 3D Timoshenko梁（12DOF）、BeamSection（Iy/Iz/J）。
-SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。
-2D/3D断面力ポスト処理（`BeamForces2D/3D`, `beam2d/3d_section_forces()`）実装済み。
-せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。
-**Phase 2.6（数値試験フレームワーク）完了: 3点曲げ・4点曲げ・引張・ねん回・周波数応答試験。**
-**CSV出力対応、Abaqusライクテキスト入力対応。整合質量行列・Rayleigh減衰・FRF計算を実装。**
-**Phase 2.5 完了: Cosserat rod 四元数回転・内力・幾何剛性・初期曲率。** 四元数演算モジュール（15関数）、
-Cosserat rod 線形化要素（B行列＋1点ガウス求積）、内力ベクトル `internal_force()`、
-幾何剛性行列 `geometric_stiffness()`、初期曲率 `kappa_0`、[設計仕様書](docs/cosserat-design.md)を実装。
-数値試験フレームワークに Cosserat rod 統合、pytest マーカー対応、
-周波数応答の解析解比較検証、非一様メッシュサポート追加。
-Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
-Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
-Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
-**Cosserat rod SRI（選択的低減積分: せん断のみ1点、他2点）追加。**
-**Phase 3 開始: Newton-Raphsonソルバー（荷重増分・接線剛性K_T=K_m+K_g）、大変形梁テスト。374テストパス。**
+**Phase 1〜3 完了。407テストパス。**
 
-次のマイルストーン: Phase 3 幾何学的非線形の拡充（弧長法、四元数非線形歪み、Euler elastica ベンチマーク）。
+- Phase 1: アーキテクチャ再構成完了（Protocol API 一本化）
+- Phase 2: 空間梁要素完了（EB/Timoshenko 2D・3D、Cosserat rod、数値試験FW、FRF）
+- Phase 3: 幾何学的非線形完了（非線形Cosserat rod、弧長法、Euler elastica検証済み）
+
+次のマイルストーン: Phase 4（材料非線形）/ Phase 5（動的解析）/ Phase C（梁–梁接触）のいずれか。
 
 ## ドキュメント
 
-- [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
+- [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8 + Phase C）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — AL/Active-set/return mapping/Outer-Inner分離の実装指針
-- [実装状況](docs/status/status-018.md) — 最新のステータス（接触着手をPhase 5後へ再整理）
-- [status-017](docs/status/status-017.md) — 撚線ロードマップの優先順を「接触先行」に再定義
-- [status-016](docs/status/status-016.md) — 梁–梁接触モジュール仕様追加 & ロードマップ更新
+- [実装状況](docs/status/status-020.md) — 最新のステータス（Phase 3 完了）
+- [status-019](docs/status/status-019.md) — ロードマップ修正
 - [status-015](docs/status/status-015.md) — Cosserat rod SRI & Phase 3 幾何学的非線形開始
 - [status-014](docs/status/status-014.md) — Phase 2.5 完成 & 数値試験フレームワーク拡張
 - [status-013](docs/status/status-013.md) — Cosserat rod 四元数回転実装（Phase 2.5 前半）
@@ -197,6 +181,28 @@ f_ext[6 * n_elems + 1] = 1000.0  # y方向先端荷重
 
 result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=10)
 print(f"収束: {result.converged}, 先端変位: {result.u[6*n_elems+1]:.4f}")
+
+# 弧長法（スナップスルー・座屈追跡）
+from xkep_cae.solver import arc_length
+result_al = arc_length(f_ext, np.arange(6), tangent, fint, n_steps=50, delta_l=0.5)
+print(f"荷重パラメータ: {result_al.lam:.4f}, ステップ数: {result_al.n_steps}")
+```
+
+### 幾何学的非線形解析（大変形）
+
+```python
+# CosseratRod(nonlinear=True) で大回転・大変形に対応
+rod = CosseratRod(section=sec, nonlinear=True)
+
+def tangent(u):
+    K, _ = assemble_cosserat_beam(n_elems, L, rod, mat, u, stiffness=True, internal_force=False)
+    return sp.csr_matrix(K)
+
+def fint(u):
+    _, f = assemble_cosserat_beam(n_elems, L, rod, mat, u, stiffness=False, internal_force=True)
+    return f
+
+result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=20, max_iter=50)
 ```
 
 ### 数値試験フレームワーク
