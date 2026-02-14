@@ -24,6 +24,8 @@ from xkep_cae.math.quaternion import (
     quat_to_rotvec,
     rotation_matrix_to_quat,
     skew,
+    so3_right_jacobian,
+    so3_right_jacobian_inverse,
 )
 
 
@@ -342,3 +344,85 @@ class TestSkewAxial:
         v = np.array([1.0, 2.0, 3.0])
         S = skew(v)
         np.testing.assert_array_almost_equal(S + S.T, np.zeros((3, 3)))
+
+
+class TestSO3Jacobian:
+    """SO(3) 右ヤコビアン J_r(θ) のテスト."""
+
+    def test_identity_at_zero(self):
+        """J_r(0) = I."""
+        Jr = so3_right_jacobian(np.zeros(3))
+        np.testing.assert_array_almost_equal(Jr, np.eye(3))
+
+    def test_inverse_at_zero(self):
+        """J_r^{-1}(0) = I."""
+        Jr_inv = so3_right_jacobian_inverse(np.zeros(3))
+        np.testing.assert_array_almost_equal(Jr_inv, np.eye(3))
+
+    def test_inverse_roundtrip(self):
+        """J_r * J_r^{-1} = I for various rotation vectors."""
+        rng = np.random.default_rng(42)
+        for _ in range(10):
+            theta = rng.standard_normal(3) * 2.0  # up to ~2 rad
+            Jr = so3_right_jacobian(theta)
+            Jr_inv = so3_right_jacobian_inverse(theta)
+            np.testing.assert_array_almost_equal(
+                Jr @ Jr_inv, np.eye(3), decimal=10,
+            )
+
+    def test_taylor_branch_matches_exact(self):
+        """小角度のテイラー展開が正確な公式と一致."""
+        # 十分小さい角度でテイラー分岐に入る
+        theta_small = np.array([1e-8, 2e-8, -1e-8])
+        Jr_taylor = so3_right_jacobian(theta_small)
+
+        # 少し大きい角度で正確な公式
+        theta_exact = np.array([0.1, 0.2, -0.1])
+        Jr_exact = so3_right_jacobian(theta_exact)
+        Jr_inv_exact = so3_right_jacobian_inverse(theta_exact)
+
+        # テイラー版は恒等行列に近い
+        np.testing.assert_array_almost_equal(Jr_taylor, np.eye(3), decimal=6)
+        # 正確な版は逆行列と整合
+        np.testing.assert_array_almost_equal(
+            Jr_exact @ Jr_inv_exact, np.eye(3), decimal=10,
+        )
+
+    def test_numerical_derivative(self):
+        """J_r(θ)·δθ が回転ベクトル微小変化の角速度と一致."""
+        theta = np.array([0.5, -0.3, 0.8])
+        Jr = so3_right_jacobian(theta)
+
+        eps = 1e-7
+        for i in range(3):
+            delta = np.zeros(3)
+            delta[i] = eps
+
+            # R(theta + eps*e_i) と R(theta) から数値的な δR を計算
+            q_plus = quat_from_rotvec(theta + delta)
+            q_base = quat_from_rotvec(theta)
+            R_plus = quat_to_rotation_matrix(q_plus)
+            R_base = quat_to_rotation_matrix(q_base)
+
+            # δR · R^T の軸ベクトル = 空間角速度の近似
+            dR = (R_plus - R_base) / eps
+            # 物質角速度: Ω = R^T · dR
+            Omega = R_base.T @ dR
+            omega_numerical = axial(Omega)
+
+            # J_r(θ) · e_i
+            omega_analytical = Jr[:, i]
+            np.testing.assert_array_almost_equal(
+                omega_analytical, omega_numerical, decimal=4,
+            )
+
+    def test_known_value_90deg_z(self):
+        """z軸90度回転での既知の値."""
+        theta = np.array([0.0, 0.0, np.pi / 2.0])
+        Jr = so3_right_jacobian(theta)
+        phi = np.pi / 2.0
+        c1 = (1.0 - np.cos(phi)) / (phi * phi)
+        c2 = (phi - np.sin(phi)) / (phi ** 3)
+        S = skew(theta)
+        Jr_expected = np.eye(3) - c1 * S + c2 * (S @ S)
+        np.testing.assert_array_almost_equal(Jr, Jr_expected, decimal=12)

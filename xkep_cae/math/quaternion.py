@@ -386,3 +386,63 @@ def axial(S: np.ndarray) -> np.ndarray:
         v: (3,) axialベクトル
     """
     return np.array([S[2, 1], S[0, 2], S[1, 0]])
+
+
+def so3_right_jacobian(rotvec: np.ndarray) -> np.ndarray:
+    """SO(3) の右ヤコビアン J_r(θ) を計算する.
+
+    回転ベクトル θ に対する指数写像の右微分。
+    Cosserat rod の曲率歪み κ = J_r(θ) · θ' に使用。
+
+    J_r(θ) = I - c₁·S + c₂·S²
+      S = skew(θ), φ = |θ|
+      c₁ = (1 - cos φ) / φ²
+      c₂ = (φ - sin φ) / φ³
+
+    |θ| → 0 のテイラー展開:
+      J_r ≈ I - (1/2)·S + (1/6)·S²
+
+    Args:
+        rotvec: (3,) 回転ベクトル
+
+    Returns:
+        Jr: (3, 3) 右ヤコビアン行列
+    """
+    S = skew(rotvec)
+    phi = float(np.linalg.norm(rotvec))
+    if phi < 1e-6:
+        # テイラー展開: c1 = 1/2 - phi^2/24, c2 = 1/6 - phi^2/120
+        phi2 = phi * phi
+        c1 = 0.5 - phi2 / 24.0
+        c2 = 1.0 / 6.0 - phi2 / 120.0
+    else:
+        c1 = (1.0 - np.cos(phi)) / (phi * phi)
+        c2 = (phi - np.sin(phi)) / (phi * phi * phi)
+    return np.eye(3) - c1 * S + c2 * (S @ S)
+
+
+def so3_right_jacobian_inverse(rotvec: np.ndarray) -> np.ndarray:
+    """SO(3) の右ヤコビアン逆行列 J_r⁻¹(θ) を計算する.
+
+    J_r⁻¹(θ) = I + (1/2)·S + γ·S²
+      S = skew(θ), φ = |θ|
+      γ = 1/φ² - (1 + cos φ) / (2φ sin φ)
+
+    |θ| → 0 のテイラー展開:
+      J_r⁻¹ ≈ I + (1/2)·S + (1/12)·S²
+
+    Args:
+        rotvec: (3,) 回転ベクトル
+
+    Returns:
+        Jr_inv: (3, 3) 右ヤコビアン逆行列
+    """
+    S = skew(rotvec)
+    phi = float(np.linalg.norm(rotvec))
+    if phi < 1e-6:
+        # テイラー展開: gamma = 1/12 + phi^2/720
+        phi2 = phi * phi
+        gamma = 1.0 / 12.0 + phi2 / 720.0
+    else:
+        gamma = 1.0 / (phi * phi) - (1.0 + np.cos(phi)) / (2.0 * phi * np.sin(phi))
+    return np.eye(3) + 0.5 * S + gamma * (S @ S)
