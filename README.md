@@ -36,7 +36,11 @@ Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
-- [実装状況](docs/status/status-015.md) — 最新のステータス（SRI & Phase 3 幾何学的非線形開始）
+- [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — AL/Active-set/return mapping/Outer-Inner分離の実装指針
+- [実装状況](docs/status/status-018.md) — 最新のステータス（接触着手をPhase 5後へ再整理）
+- [status-017](docs/status/status-017.md) — 撚線ロードマップの優先順を「接触先行」に再定義
+- [status-016](docs/status/status-016.md) — 梁–梁接触モジュール仕様追加 & ロードマップ更新
+- [status-015](docs/status/status-015.md) — Cosserat rod SRI & Phase 3 幾何学的非線形開始
 - [status-014](docs/status/status-014.md) — Phase 2.5 完成 & 数値試験フレームワーク拡張
 - [status-013](docs/status/status-013.md) — Cosserat rod 四元数回転実装（Phase 2.5 前半）
 - [status-012](docs/status/status-012.md) — 数値試験フレームワーク（Phase 2.6）
