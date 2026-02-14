@@ -43,6 +43,8 @@ from xkep_cae.math.quaternion import (
 
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.state import CosseratPlasticState
+    from xkep_cae.materials.plasticity_1d import Plasticity1D
     from xkep_cae.sections.beam import BeamSection
 
 
@@ -1543,3 +1545,184 @@ def assemble_cosserat_beam(
             f_int[dof_start:dof_end] += f_int_e
 
     return K_T, f_int
+
+
+# ===========================================================================
+# 弾塑性 Cosserat rod アセンブリ（Phase 4.1: 材料非線形）
+# ===========================================================================
+
+
+def _compute_generalized_stress_plastic(
+    strain: np.ndarray,
+    C_elastic: np.ndarray,
+    plasticity: Plasticity1D,
+    state: CosseratPlasticState,
+    A: float,
+) -> tuple[np.ndarray, np.ndarray, CosseratPlasticState]:
+    """軸方向(index 0)のみ return mapping、他は弾性.
+
+    一般化歪みベクトル [Γ₁, Γ₂, Γ₃, κ₁, κ₂, κ₃] のうち、
+    Γ₁（軸伸び歪み）のみ弾塑性構成則を適用する。
+    その他の成分（せん断、ねじり、曲げ）は弾性のまま。
+
+    Args:
+        strain: (6,) 一般化歪みベクトル
+        C_elastic: (6, 6) 弾性構成行列（対角成分に断面剛性）
+        plasticity: 1D弾塑性構成則
+        state: 現在の塑性状態
+        A: 断面積
+
+    Returns:
+        (stress, C_tangent, state_new):
+            stress: (6,) 一般化応力ベクトル
+            C_tangent: (6, 6) consistent tangent 構成行列
+            state_new: 更新された塑性状態
+    """
+    stress = C_elastic @ strain
+    C_tangent = C_elastic.copy()
+
+    # 軸方向: strain[0] = Γ₁ (材料レベルの軸歪み)
+    result = plasticity.return_mapping(strain[0], state.axial)
+    stress[0] = result.stress * A          # sigma → N = sigma * A
+    C_tangent[0, 0] = result.tangent * A   # D_ep → D_ep_section = D_ep * A
+
+    state_new = state.copy()
+    state_new.axial = result.state_new
+    return stress, C_tangent, state_new
+
+
+def assemble_cosserat_beam_plastic(
+    n_elems: int,
+    beam_length: float,
+    rod: CosseratRod,
+    material: ConstitutiveProtocol,
+    u: np.ndarray,
+    states: list[CosseratPlasticState],
+    plasticity: Plasticity1D,
+    *,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None, list[CosseratPlasticState]]:
+    """弾塑性 Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
+
+    assemble_cosserat_beam() の弾塑性版。軸方向(Γ₁)のみ return mapping を適用し、
+    せん断・曲げ・ねじりは弾性のまま。
+
+    states のサイズ:
+      - uniform 積分: n_elems * rod.n_gauss
+      - SRI: n_elems * 2（非せん断成分の2点ガウス）
+
+    Args:
+        n_elems: 要素数
+        beam_length: 梁長さ
+        rod: CosseratRod 要素
+        material: 構成則
+        u: (total_dof,) 現在の変位ベクトル
+        states: 塑性状態リスト（各積分点に1つ）
+        plasticity: 1D弾塑性構成則
+        stiffness: 接線剛性行列を計算するか
+        internal_force: 内力ベクトルを計算するか
+
+    Returns:
+        (K_T, f_int, states_new):
+            K_T: 接線剛性行列（None可）
+            f_int: 内力ベクトル（None可）
+            states_new: 更新された塑性状態リスト
+    """
+    E, G, nu = rod._extract_material_props(material)
+    kappa_y = rod._resolve_kappa_y(nu)
+    kappa_z = rod._resolve_kappa_z(nu)
+    sec = rod.section
+    kappa_0 = rod.kappa_0
+
+    is_sri = rod.integration_scheme == "sri"
+
+    n_nodes = n_elems + 1
+    total_dof = n_nodes * 6
+    elem_len = beam_length / n_elems
+
+    K_T = np.zeros((total_dof, total_dof)) if stiffness else None
+    f_int = np.zeros(total_dof) if internal_force else None
+    states_new = [s.copy() for s in states]
+
+    # 構成行列と積分点の準備（SRI / uniform）
+    if is_sri:
+        C_shear = np.diag([
+            0.0, kappa_y * G * sec.A, kappa_z * G * sec.A, 0.0, 0.0, 0.0,
+        ])
+        C_full = np.diag([
+            E * sec.A, 0.0, 0.0, G * sec.J, E * sec.Iy, E * sec.Iz,
+        ])
+        pts_2, wts_2 = _gauss_points(2)
+        pts_1, wts_1 = _gauss_points(1)
+    else:
+        C_elastic = _cosserat_constitutive_matrix(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, kappa_y, kappa_z,
+        )
+        gauss_pts, gauss_wts = _gauss_points(rod.n_gauss)
+
+    for i in range(n_elems):
+        coords_i = np.array([
+            [i * elem_len, 0.0, 0.0],
+            [(i + 1) * elem_len, 0.0, 0.0],
+        ])
+        dof_s = 6 * i
+        dof_e = 6 * (i + 2)
+
+        # 局所座標系への変換
+        dx = coords_i[1] - coords_i[0]
+        L_e = float(np.linalg.norm(dx))
+        e_x = dx / L_e
+        R, _ = _build_local_axes_from_quat(e_x, rod.v_ref)
+        T = _transformation_matrix_12(R)
+        u_local = T @ u[dof_s:dof_e]
+
+        f_local = np.zeros(12)
+        K_local = np.zeros((12, 12))
+
+        if is_sri:
+            # 非せん断成分（2点ガウス）: 軸方向に塑性あり
+            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2)):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain = B @ u_local
+                if kappa_0 is not None:
+                    strain[3:6] = strain[3:6] - kappa_0
+                state_idx = i * 2 + gp_idx
+                stress, C_tan, new_st = _compute_generalized_stress_plastic(
+                    strain, C_full, plasticity, states[state_idx], sec.A,
+                )
+                states_new[state_idx] = new_st
+                f_local += w * L_e * B.T @ stress
+                K_local += w * L_e * B.T @ C_tan @ B
+
+            # せん断成分（1点ガウス）: 弾性のみ
+            for xi, w in zip(pts_1, wts_1):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain = B @ u_local
+                if kappa_0 is not None:
+                    strain[3:6] = strain[3:6] - kappa_0
+                stress_sh = C_shear @ strain
+                f_local += w * L_e * B.T @ stress_sh
+                K_local += w * L_e * B.T @ C_shear @ B
+        else:
+            # 一様積分: 全成分を n_gauss 点で計算
+            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts)):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain = B @ u_local
+                if kappa_0 is not None:
+                    strain[3:6] = strain[3:6] - kappa_0
+                state_idx = i * rod.n_gauss + gp_idx
+                stress, C_tan, new_st = _compute_generalized_stress_plastic(
+                    strain, C_elastic, plasticity, states[state_idx], sec.A,
+                )
+                states_new[state_idx] = new_st
+                f_local += w * L_e * B.T @ stress
+                K_local += w * L_e * B.T @ C_tan @ B
+
+        # 全体座標系に変換してアセンブリ
+        if internal_force and f_int is not None:
+            f_int[dof_s:dof_e] += T.T @ f_local
+        if stiffness and K_T is not None:
+            K_T[dof_s:dof_e, dof_s:dof_e] += T.T @ K_local @ T
+
+    return K_T, f_int, states_new
