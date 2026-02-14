@@ -15,10 +15,12 @@
 
 ---
 
-## 現在地（Phase 3 完了）
+## 現在地（Phase 4.1 完了）
 
-Phase 1〜3 完了（407テスト）。
+Phase 1〜3 + Phase 4.1 完了（435テスト）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
+1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
+全 Phase のバリデーションテストを[検証文書](verification/validation.md)に図付きで文書化済み。
 ラインサーチと Lee's frame 等の追加ベンチマークはオプションとして残存。
 動的解析の一部（整合質量行列・Rayleigh減衰・FRF）は Phase 2.6 で先行実装済み。
 
@@ -39,14 +41,15 @@ Phase 1〜3 完了（407テスト）。
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力 |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法（**407テスト**） |
+| **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick） |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒（**435テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md) |
 
 ### 未実装（現状の制約）
 
 - ラインサーチ・Lee's frame 等の追加ベンチマーク（Phase 3 オプション）
 - 3次元連続体要素なし（平面問題限定）
-- 材料非線形（塑性・粘弾性等）未実装
+- 材料非線形は1D弾塑性のみ実装済み（2D/3D塑性・粘弾性等は未実装）
 - 時間積分スキーマ（Newmark等）未実装
 - 梁–梁接触モジュールは設計完了・実装未着手
 
