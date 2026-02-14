@@ -32,6 +32,8 @@ markers = [
     "torsion: ねん回試験",
     "freq_response: 周波数応答試験",
     "cosserat: Cosserat rod 要素テスト",
+    "sri: SRI（選択的低減積分）テスト",
+    "nonlinear: 非線形解析テスト",
 ]
 
 [tool.ruff]

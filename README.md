@@ -22,19 +22,22 @@ SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。
 Cosserat rod 線形化要素（B行列＋1点ガウス求積）、内力ベクトル `internal_force()`、
 幾何剛性行列 `geometric_stiffness()`、初期曲率 `kappa_0`、[設計仕様書](docs/cosserat-design.md)を実装。
 数値試験フレームワークに Cosserat rod 統合、pytest マーカー対応、
-周波数応答の解析解比較検証、非一様メッシュサポート追加。345テストパス。
+周波数応答の解析解比較検証、非一様メッシュサポート追加。
 Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
 Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
 Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
+**Cosserat rod SRI（選択的低減積分: せん断のみ1点、他2点）追加。**
+**Phase 3 開始: Newton-Raphsonソルバー（荷重増分・接線剛性K_T=K_m+K_g）、大変形梁テスト。374テストパス。**
 
-次のマイルストーン: Phase 3 幾何学的非線形（Newton-Raphson、Cosserat rod 大変形）。
+次のマイルストーン: Phase 3 幾何学的非線形の拡充（弧長法、四元数非線形歪み、Euler elastica ベンチマーク）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
-- [実装状況](docs/status/status-014.md) — 最新のステータス（Phase 2.5 完成 & 数値試験拡張）
+- [実装状況](docs/status/status-015.md) — 最新のステータス（SRI & Phase 3 幾何学的非線形開始）
+- [status-014](docs/status/status-014.md) — Phase 2.5 完成 & 数値試験フレームワーク拡張
 - [status-013](docs/status/status-013.md) — Cosserat rod 四元数回転実装（Phase 2.5 前半）
 - [status-012](docs/status/status-012.md) — 数値試験フレームワーク（Phase 2.6）
 - [status-011](docs/status/status-011.md) — 2D断面力ポスト処理 & せん断応力 & 数値試験ロードマップ
@@ -160,6 +163,36 @@ Ke = beam.local_stiffness(coords, mat)
 # 一般化歪みの計算
 strains = beam.compute_strains(coords, u_elem)
 print(f"軸伸び: {strains.gamma[0]:.6f}, ねじり: {strains.kappa[0]:.6f}")
+```
+
+### 非線形解析（Newton-Raphson法）
+
+```python
+import numpy as np
+import scipy.sparse as sp
+from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
+from xkep_cae.materials.beam_elastic import BeamElastic1D
+from xkep_cae.sections.beam import BeamSection
+from xkep_cae.solver import newton_raphson
+
+sec = BeamSection.rectangle(10.0, 10.0)
+mat = BeamElastic1D(E=200e3, nu=0.3)
+rod = CosseratRod(section=sec, integration_scheme="sri")  # SRI or "uniform"
+n_elems, L = 20, 200.0
+
+def tangent(u):
+    K, _ = assemble_cosserat_beam(n_elems, L, rod, mat, u, stiffness=True, internal_force=False)
+    return sp.csr_matrix(K)
+
+def fint(u):
+    _, f = assemble_cosserat_beam(n_elems, L, rod, mat, u, stiffness=False, internal_force=True)
+    return f
+
+f_ext = np.zeros((n_elems + 1) * 6)
+f_ext[6 * n_elems + 1] = 1000.0  # y方向先端荷重
+
+result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=10)
+print(f"収束: {result.converged}, 先端変位: {result.u[6*n_elems+1]:.4f}")
 ```
 
 ### 数値試験フレームワーク
