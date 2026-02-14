@@ -15,6 +15,8 @@ from xkep_cae.numerical_tests.core import (
     analytical_bend4p,
     analytical_tensile,
     analytical_torsion,
+    generate_beam_mesh_2d_nonuniform,
+    generate_beam_mesh_3d_nonuniform,
 )
 from xkep_cae.numerical_tests.csv_export import (
     export_frequency_response_csv,
@@ -48,4 +50,6 @@ __all__ = [
     "export_static_csv",
     "export_frequency_response_csv",
     "parse_test_input",
+    "generate_beam_mesh_2d_nonuniform",
+    "generate_beam_mesh_3d_nonuniform",
 ]

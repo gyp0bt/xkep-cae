@@ -18,20 +18,24 @@ SCF（スレンダネス補償係数）を2D/3D Timoshenko梁に実装。
 せん断応力ポスト処理（`beam2d/3d_max_shear_stress()`、ねじり+横せん断）実装済み。
 **Phase 2.6（数値試験フレームワーク）完了: 3点曲げ・4点曲げ・引張・ねん回・周波数応答試験。**
 **CSV出力対応、Abaqusライクテキスト入力対応。整合質量行列・Rayleigh減衰・FRF計算を実装。**
-**Phase 2.5 前半完了: Cosserat rod 四元数回転実装。** 四元数演算モジュール（15関数）、
-Cosserat rod 線形化要素（B行列＋1点ガウス求積）、[設計仕様書](docs/cosserat-design.md)を実装。314テストパス。
+**Phase 2.5 完了: Cosserat rod 四元数回転・内力・幾何剛性・初期曲率。** 四元数演算モジュール（15関数）、
+Cosserat rod 線形化要素（B行列＋1点ガウス求積）、内力ベクトル `internal_force()`、
+幾何剛性行列 `geometric_stiffness()`、初期曲率 `kappa_0`、[設計仕様書](docs/cosserat-design.md)を実装。
+数値試験フレームワークに Cosserat rod 統合、pytest マーカー対応、
+周波数応答の解析解比較検証、非一様メッシュサポート追加。345テストパス。
 Abaqus .inp パーサー自前実装済み（pymesh代替、`*BEAM SECTION` / `*TRANSVERSE SHEAR STIFFNESS` 対応）。
 Q4要素にEAS-4（Simo-Rifai）を実装し、デフォルトに設定。
 Cowper (1966) のν依存せん断補正係数 `kappa="cowper"` をTimoshenko梁に実装（Abaqus準拠）。
 
-次のマイルストーン: Phase 2.5 後半（内力ベクトル・幾何剛性） → Phase 3 幾何学的非線形。
+次のマイルストーン: Phase 3 幾何学的非線形（Newton-Raphson、Cosserat rod 大変形）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
-- [実装状況](docs/status/status-013.md) — 最新のステータス（Cosserat rod 四元数回転実装）
+- [実装状況](docs/status/status-014.md) — 最新のステータス（Phase 2.5 完成 & 数値試験拡張）
+- [status-013](docs/status/status-013.md) — Cosserat rod 四元数回転実装（Phase 2.5 前半）
 - [status-012](docs/status/status-012.md) — 数値試験フレームワーク（Phase 2.6）
 - [status-011](docs/status/status-011.md) — 2D断面力ポスト処理 & せん断応力 & 数値試験ロードマップ
 - [status-010](docs/status/status-010.md) — 3Dアセンブリテスト & 内力ポスト処理 & ワーピング検討

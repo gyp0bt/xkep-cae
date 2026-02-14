@@ -31,7 +31,9 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from xkep_cae.math.quaternion import (
+    quat_from_rotvec,
     quat_identity,
+    quat_multiply,
     quat_rotate_vector,
     quat_to_rotation_matrix,
     rotation_matrix_to_quat,
@@ -437,6 +439,256 @@ def cosserat_section_forces(
     return forces_1, forces_2
 
 
+def _gauss_points(n_gauss: int) -> tuple[list[float], list[float]]:
+    """[0,1]区間上のガウス積分点と重みを返す."""
+    if n_gauss == 1:
+        return [0.5], [1.0]
+    elif n_gauss == 2:
+        return (
+            [0.5 - 0.5 / np.sqrt(3.0), 0.5 + 0.5 / np.sqrt(3.0)],
+            [0.5, 0.5],
+        )
+    else:
+        raise ValueError(f"n_gauss は 1 または 2 のみサポート: {n_gauss}")
+
+
+def cosserat_internal_force_local(
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    L: float,
+    kappa_y: float,
+    kappa_z: float,
+    u_local: np.ndarray,
+    kappa_0: np.ndarray | None = None,
+    n_gauss: int = 1,
+) -> np.ndarray:
+    """Cosserat rod の局所内力ベクトル (12,) を計算する.
+
+    f_int = ∫₀ᴸ Bᵀ · σ ds,  σ = C · (ε - ε₀)
+
+    線形版では f_int = Ke · u と等価だが、非線形拡張時にはこちらが基準。
+
+    Args:
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        L: 要素長さ
+        kappa_y, kappa_z: せん断補正係数
+        u_local: (12,) 局所座標系の要素変位
+        kappa_0: (3,) 初期曲率 [κ₁₀, κ₂₀, κ₃₀]（None = ゼロ）
+        n_gauss: ガウス積分点数
+
+    Returns:
+        f_int: (12,) 局所内力ベクトル
+    """
+    C = _cosserat_constitutive_matrix(E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    gauss_pts, gauss_wts = _gauss_points(n_gauss)
+
+    f_int = np.zeros(12, dtype=float)
+    for xi, w in zip(gauss_pts, gauss_wts):
+        B = _cosserat_b_matrix(L, xi)
+        strain = B @ u_local  # (6,)
+        # 初期曲率を差し引く（初期歪みの減算）
+        if kappa_0 is not None:
+            strain[3:6] = strain[3:6] - kappa_0
+        stress = C @ strain
+        f_int += w * L * B.T @ stress
+
+    return f_int
+
+
+def cosserat_internal_force_global(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+    n_gauss: int = 1,
+) -> np.ndarray:
+    """全体座標系での Cosserat rod の内力ベクトル (12,) を返す.
+
+    f_int_global = Tᵀ · f_int_local
+
+    Args:
+        coords: (2, 3) 節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率（局所座標系）
+        n_gauss: ガウス積分点数
+
+    Returns:
+        f_int_global: (12,) 全体座標系の内力ベクトル
+    """
+    dx = coords[1] - coords[0]
+    L = float(np.linalg.norm(dx))
+    if L < 1e-15:
+        raise ValueError("要素長さがほぼゼロです。")
+    e_x = dx / L
+
+    R, _q = _build_local_axes_from_quat(e_x, v_ref)
+    T = _transformation_matrix_12(R)
+    u_local = T @ u_elem_global
+
+    f_int_local = cosserat_internal_force_local(
+        E, G, A, Iy, Iz, J, L, kappa_y, kappa_z, u_local,
+        kappa_0=kappa_0, n_gauss=n_gauss,
+    )
+    return T.T @ f_int_local
+
+
+def cosserat_geometric_stiffness_local(
+    L: float,
+    stress: np.ndarray,
+    n_gauss: int = 1,
+) -> np.ndarray:
+    """Cosserat rod の局所幾何剛性行列 Kg (12x12) を計算する.
+
+    軸力 N による幾何剛性（初期応力効果）。
+    線形座屈解析および Newton-Raphson 法の接線剛性修正に使用。
+
+    定式化:
+      δΠ_g = ∫₀ᴸ N · (δu₂'·u₂' + δu₃'·u₃') ds
+            + ∫₀ᴸ N · (δθ₂·θ₂ + δθ₃·θ₃) ds  （近似項）
+
+    ここで u₂, u₃ は横方向変位、N は軸力。
+    1点ガウス求積で離散化する。
+
+    Args:
+        L: 要素長さ
+        stress: (6,) 一般化応力ベクトル [N, Vy, Vz, Mx, My, Mz]
+        n_gauss: ガウス積分点数
+
+    Returns:
+        Kg: (12, 12) 局所幾何剛性行列
+    """
+    N = stress[0]   # 軸力
+    Mx = stress[3]  # ねじりモーメント
+
+    gauss_pts, gauss_wts = _gauss_points(n_gauss)
+
+    Kg = np.zeros((12, 12), dtype=float)
+
+    for xi, w in zip(gauss_pts, gauss_wts):
+        dN1 = -1.0 / L
+        dN2 = 1.0 / L
+        N1 = 1.0 - xi
+        N2 = xi
+
+        # 軸力 N による横方向変位微分の二次形式
+        # δu₂' · u₂' + δu₃' · u₃' → 形状関数微分の外積
+        # DOF: u₂₁=1, u₂₂=7, u₃₁=2, u₃₂=8
+        G_trans = np.zeros((2, 12), dtype=float)
+        # u₂ の微分
+        G_trans[0, 1] = dN1   # u₂₁
+        G_trans[0, 7] = dN2   # u₂₂
+        # u₃ の微分
+        G_trans[1, 2] = dN1   # u₃₁
+        G_trans[1, 8] = dN2   # u₃₂
+
+        Kg += w * L * N * G_trans.T @ G_trans
+
+        # ねじりモーメント Mx による回転の連成項
+        # Mx による θ₂-θ₃ 連成（Wagner 効果の近似）
+        G_rot = np.zeros((2, 12), dtype=float)
+        G_rot[0, 4] = dN1   # θ₂₁
+        G_rot[0, 10] = dN2  # θ₂₂
+        G_rot[1, 5] = dN1   # θ₃₁
+        G_rot[1, 11] = dN2  # θ₃₂
+
+        Kg += w * L * N * G_rot.T @ G_rot
+
+        # Mx による θ₂-θ₃ の反対称連成（ねじり-曲げ連成）
+        G_twist = np.zeros((2, 12), dtype=float)
+        # θ₂ の形状関数
+        G_twist[0, 4] = N1
+        G_twist[0, 10] = N2
+        # θ₃ の形状関数
+        G_twist[1, 5] = N1
+        G_twist[1, 11] = N2
+
+        # 反対称行列による連成: Mx * (δθ₂·θ₃' - δθ₃·θ₂')
+        G_twist_d = np.zeros((2, 12), dtype=float)
+        G_twist_d[0, 4] = dN1
+        G_twist_d[0, 10] = dN2
+        G_twist_d[1, 5] = dN1
+        G_twist_d[1, 11] = dN2
+
+        # 反対称寄与: Mx * (G_twist[0]^T * G_twist_d[1] - G_twist[1]^T * G_twist_d[0])
+        Kg_twist = Mx * (
+            np.outer(G_twist[0], G_twist_d[1])
+            - np.outer(G_twist[1], G_twist_d[0])
+        )
+        Kg += w * L * Kg_twist
+
+    # 対称化（数値誤差補正）
+    Kg = 0.5 * (Kg + Kg.T)
+    return Kg
+
+
+def cosserat_geometric_stiffness_global(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+    n_gauss: int = 1,
+) -> np.ndarray:
+    """全体座標系での Cosserat rod の幾何剛性行列 (12x12) を返す.
+
+    Kg_global = Tᵀ · Kg_local · T
+
+    Args:
+        coords: (2, 3) 節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率（局所座標系）
+        n_gauss: ガウス積分点数
+
+    Returns:
+        Kg_global: (12, 12) 全体座標系の幾何剛性行列
+    """
+    dx = coords[1] - coords[0]
+    L = float(np.linalg.norm(dx))
+    if L < 1e-15:
+        raise ValueError("要素長さがほぼゼロです。")
+    e_x = dx / L
+
+    R, _q = _build_local_axes_from_quat(e_x, v_ref)
+    T = _transformation_matrix_12(R)
+    u_local = T @ u_elem_global
+
+    # 一般化応力を計算（構成則）
+    C = _cosserat_constitutive_matrix(E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    B_mid = _cosserat_b_matrix(L, 0.5)
+    strain = B_mid @ u_local
+    if kappa_0 is not None:
+        strain[3:6] = strain[3:6] - kappa_0
+    stress = C @ strain
+
+    Kg_local = cosserat_geometric_stiffness_local(L, stress, n_gauss)
+    return T.T @ Kg_local @ T
+
+
 class CosseratRod:
     """Cosserat rod 要素（ElementProtocol 適合）.
 
@@ -478,10 +730,12 @@ class CosseratRod:
         kappa_z: float | str = 5.0 / 6.0,
         v_ref: np.ndarray | None = None,
         n_gauss: int = 1,
+        kappa_0: np.ndarray | None = None,
     ) -> None:
         self.section = section
         self.v_ref = v_ref
         self.n_gauss = n_gauss
+        self._kappa_0 = np.array(kappa_0, dtype=float) if kappa_0 is not None else None
 
         # 各節点の参照四元数（線形化版では恒等四元数）
         self._q_ref_nodes: list[np.ndarray] = [
@@ -622,6 +876,78 @@ class CosseratRod:
             v_ref=self.v_ref,
             n_gauss=self.n_gauss,
         )
+
+    def internal_force(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> np.ndarray:
+        """全体座標系の内力ベクトル (12,) を返す.
+
+        f_int = Tᵀ · ∫₀ᴸ Bᵀ · σ ds
+
+        線形版では f_int = Ke · u と等価。Phase 3 非線形版への基盤。
+
+        Args:
+            coords: (2, 3) 節点座標
+            u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+            material: 構成則
+
+        Returns:
+            f_int: (12,) 全体座標系の内力ベクトル
+        """
+        E, G, nu = self._extract_material_props(material)
+        kappa_y = self._resolve_kappa_y(nu)
+        kappa_z = self._resolve_kappa_z(nu)
+
+        return cosserat_internal_force_global(
+            coords, u_elem_global,
+            E, G,
+            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+            kappa_y, kappa_z,
+            v_ref=self.v_ref,
+            kappa_0=self._kappa_0,
+            n_gauss=self.n_gauss,
+        )
+
+    def geometric_stiffness(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> np.ndarray:
+        """全体座標系の幾何剛性行列 (12x12) を返す.
+
+        初期応力（軸力・ねじり）による幾何学的剛性効果を計算。
+        接線剛性 = 材料剛性（local_stiffness） + 幾何剛性
+
+        Args:
+            coords: (2, 3) 節点座標
+            u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+            material: 構成則
+
+        Returns:
+            Kg: (12, 12) 全体座標系の幾何剛性行列
+        """
+        E, G, nu = self._extract_material_props(material)
+        kappa_y = self._resolve_kappa_y(nu)
+        kappa_z = self._resolve_kappa_z(nu)
+
+        return cosserat_geometric_stiffness_global(
+            coords, u_elem_global,
+            E, G,
+            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+            kappa_y, kappa_z,
+            v_ref=self.v_ref,
+            kappa_0=self._kappa_0,
+            n_gauss=self.n_gauss,
+        )
+
+    @property
+    def kappa_0(self) -> np.ndarray | None:
+        """初期曲率ベクトルを返す."""
+        return self._kappa_0
 
     def compute_strains(
         self,

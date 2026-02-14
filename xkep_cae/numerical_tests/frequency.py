@@ -289,7 +289,7 @@ def run_frequency_response(
     """
     sec = _build_section_props(cfg.section_shape, cfg.section_params,
                                cfg.beam_type, cfg.nu)
-    is_3d = cfg.beam_type == "timo3d"
+    is_3d = cfg.beam_type in ("timo3d", "cosserat")
     dof_per_node = 6 if is_3d else 3
 
     # メッシュ

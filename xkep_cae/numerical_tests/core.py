@@ -18,7 +18,7 @@ import numpy as np
 TEST_TYPES_STATIC = ("bend3p", "bend4p", "tensile", "torsion")
 TEST_TYPES_ALL = (*TEST_TYPES_STATIC, "freq_response")
 
-BeamType = Literal["eb2d", "timo2d", "timo3d"]
+BeamType = Literal["eb2d", "timo2d", "timo3d", "cosserat"]
 SupportCondition = Literal["roller", "pin"]
 
 
@@ -63,12 +63,12 @@ class NumericalTestConfig:
             raise ValueError(
                 f"試験名は {TEST_TYPES_STATIC} のいずれか: {self.name}"
             )
-        if self.beam_type not in ("eb2d", "timo2d", "timo3d"):
-            raise ValueError(f"beam_type は eb2d/timo2d/timo3d: {self.beam_type}")
+        if self.beam_type not in ("eb2d", "timo2d", "timo3d", "cosserat"):
+            raise ValueError(f"beam_type は eb2d/timo2d/timo3d/cosserat: {self.beam_type}")
         if self.name == "bend4p" and self.load_span is None:
             raise ValueError("4点曲げ試験には load_span が必要です。")
-        if self.name == "torsion" and self.beam_type != "timo3d":
-            raise ValueError("ねん回試験は 3D 梁 (timo3d) のみ対応。")
+        if self.name == "torsion" and self.beam_type not in ("timo3d", "cosserat"):
+            raise ValueError("ねん回試験は 3D 梁 (timo3d/cosserat) のみ対応。")
 
     @property
     def G(self) -> float:
@@ -130,8 +130,8 @@ class FrequencyResponseConfig:
     damping_beta: float = 0.0
 
     def __post_init__(self) -> None:
-        if self.beam_type not in ("eb2d", "timo2d", "timo3d"):
-            raise ValueError(f"beam_type は eb2d/timo2d/timo3d: {self.beam_type}")
+        if self.beam_type not in ("eb2d", "timo2d", "timo3d", "cosserat"):
+            raise ValueError(f"beam_type は eb2d/timo2d/timo3d/cosserat: {self.beam_type}")
         if self.excitation_type not in ("displacement", "acceleration"):
             raise ValueError("excitation_type は displacement/acceleration")
         if self.rho <= 0:
@@ -245,6 +245,85 @@ def generate_beam_mesh_3d(
     nodes = np.column_stack([x, np.zeros(n_nodes), np.zeros(n_nodes)])
     connectivity = np.column_stack([np.arange(n_elems), np.arange(1, n_nodes)])
     return nodes, connectivity
+
+
+def generate_beam_mesh_2d_nonuniform(
+    total_length: float,
+    refinement_points: list[float],
+    base_n_elems: int = 10,
+    refinement_factor: float = 3.0,
+    refinement_radius: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """非一様メッシュの2D梁を生成する（荷重点周辺を細分割）.
+
+    Args:
+        total_length: 全長
+        refinement_points: 細分割する位置のリスト
+        base_n_elems: 基本要素数
+        refinement_factor: 細分割倍率（細分割領域の要素密度比）
+        refinement_radius: 細分割半径（None = total_length / 10）
+
+    Returns:
+        nodes: (n_nodes, 2) 節点座標
+        connectivity: (n_elems, 2) 要素接続
+    """
+    if refinement_radius is None:
+        refinement_radius = total_length / 10.0
+
+    base_spacing = total_length / base_n_elems
+    fine_spacing = base_spacing / refinement_factor
+
+    x_coords: list[float] = [0.0]
+    x = 0.0
+    while x < total_length - 1e-12:
+        in_refined = any(
+            abs(x - p) < refinement_radius for p in refinement_points
+        )
+        spacing = fine_spacing if in_refined else base_spacing
+        x = min(x + spacing, total_length)
+        x_coords.append(x)
+
+    # 細分割点が節点に乗るよう追加
+    for p in refinement_points:
+        if 0 < p < total_length and p not in x_coords:
+            x_coords.append(p)
+
+    x_coords = sorted(set(x_coords))
+    x_arr = np.array(x_coords)
+    n_nodes = len(x_arr)
+    n_elems = n_nodes - 1
+    nodes = np.column_stack([x_arr, np.zeros(n_nodes)])
+    connectivity = np.column_stack([np.arange(n_elems), np.arange(1, n_nodes)])
+    return nodes, connectivity
+
+
+def generate_beam_mesh_3d_nonuniform(
+    total_length: float,
+    refinement_points: list[float],
+    base_n_elems: int = 10,
+    refinement_factor: float = 3.0,
+    refinement_radius: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """非一様メッシュの3D梁を生成する（荷重点周辺を細分割）.
+
+    Args:
+        total_length: 全長
+        refinement_points: 細分割する位置のリスト
+        base_n_elems: 基本要素数
+        refinement_factor: 細分割倍率
+        refinement_radius: 細分割半径
+
+    Returns:
+        nodes: (n_nodes, 3) 節点座標
+        connectivity: (n_elems, 2) 要素接続
+    """
+    nodes_2d, conn = generate_beam_mesh_2d_nonuniform(
+        total_length, refinement_points,
+        base_n_elems, refinement_factor, refinement_radius,
+    )
+    n_nodes = len(nodes_2d)
+    nodes = np.column_stack([nodes_2d[:, 0], np.zeros(n_nodes), np.zeros(n_nodes)])
+    return nodes, conn
 
 
 # ---------------------------------------------------------------------------
