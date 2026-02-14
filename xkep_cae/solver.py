@@ -5,6 +5,7 @@
 
 非線形:
   - newton_raphson(): 荷重増分 + Newton-Raphson 法
+  - arc_length(): 円筒弧長法 (Crisfield, 1981)
   - Newton-Raphson の収束判定: 力ノルム / 変位ノルム / エネルギーノルム
 """
 
@@ -332,4 +333,265 @@ def newton_raphson(
         load_history=load_history,
         displacement_history=disp_history,
         residual_history=res_history,
+    )
+
+
+# ====================================================================
+# 非線形ソルバー: 円筒弧長法 (Crisfield, 1981)
+# ====================================================================
+
+
+@dataclass
+class ArcLengthResult:
+    """弧長法解析の結果.
+
+    Attributes:
+        u: (ndof,) 最終変位ベクトル
+        lam: 最終荷重係数 λ
+        converged: 全ステップが収束したかどうか
+        n_steps: 実行ステップ数
+        total_iterations: 全ステップの合計 Newton 反復回数
+        load_history: 各ステップの荷重係数 λ の履歴
+        displacement_history: 各ステップの変位ベクトルの履歴
+    """
+
+    u: np.ndarray
+    lam: float
+    converged: bool
+    n_steps: int
+    total_iterations: int
+    load_history: list[float] = field(default_factory=list)
+    displacement_history: list[np.ndarray] = field(default_factory=list)
+
+
+def _apply_bc(
+    K: sp.spmatrix,
+    r: np.ndarray,
+    fixed_dofs: np.ndarray,
+) -> tuple[sp.csr_matrix, np.ndarray]:
+    """境界条件適用（行列消去法）."""
+    K_bc = K.tolil()
+    r_bc = r.copy()
+    for dof in fixed_dofs:
+        K_bc[dof, :] = 0.0
+        K_bc[:, dof] = 0.0
+        K_bc[dof, dof] = 1.0
+        r_bc[dof] = 0.0
+    return K_bc.tocsr(), r_bc
+
+
+def arc_length(
+    f_ext_ref: np.ndarray,
+    fixed_dofs: np.ndarray,
+    assemble_tangent: Callable[[np.ndarray], sp.csr_matrix],
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray],
+    *,
+    n_steps: int = 50,
+    delta_l: float | None = None,
+    max_iter: int = 30,
+    tol_force: float = 1e-8,
+    show_progress: bool = True,
+    u0: np.ndarray | None = None,
+    lambda0: float = 0.0,
+    lambda_max: float | None = None,
+    max_cutbacks: int = 5,
+) -> ArcLengthResult:
+    """円筒弧長法 (Crisfield cylindrical arc-length) による非線形静解析.
+
+    荷重係数 λ をも未知数として扱い、弧長拘束により
+    リミットポイント（座屈・スナップスルー）を追跡する。
+
+    弧長拘束（円筒型）:
+      ||Δu||² = Δl²
+    （荷重パラメータは拘束に含めない）
+
+    予測子:
+      K_T · δu_t = f_ext_ref
+      Δλ₁ = ±Δl / ||δu_t||_free
+      Δu₁ = Δλ₁ · δu_t
+
+    修正子（各 NR 反復）:
+      R = (λ + Δλ) · f_ext_ref - f_int(u + Δu)
+      K_T · δu_R = R
+      K_T · δu_t = f_ext_ref
+      二次方程式から δλ を求め Δu, Δλ を更新
+
+    Args:
+        f_ext_ref: (ndof,) 参照荷重ベクトル（λ=1 での全荷重）
+        fixed_dofs: 拘束DOFの配列
+        assemble_tangent: u → K_T(u) を返すコールバック（CSR行列）
+        assemble_internal_force: u → f_int(u) を返すコールバック
+        n_steps: 最大ステップ数
+        delta_l: 弧長パラメータ（None = 自動推定）
+        max_iter: 各ステップの最大修正反復回数
+        tol_force: 力ノルム収束判定
+        show_progress: 進捗表示
+        u0: 初期変位（None = ゼロ）
+        lambda0: 初期荷重係数
+        lambda_max: 荷重係数の上限（None = 制限なし）
+        max_cutbacks: 各ステップの最大弧長カットバック回数
+
+    Returns:
+        ArcLengthResult: 解析結果
+    """
+    ndof = f_ext_ref.shape[0]
+    fixed_dofs = np.asarray(fixed_dofs, dtype=int)
+
+    u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+    lam = lambda0
+
+    f_ref_norm = float(np.linalg.norm(f_ext_ref))
+    if f_ref_norm < 1e-30:
+        raise ValueError("参照荷重ベクトルがゼロです。")
+
+    # 弧長の自動推定: 初期接線から
+    if delta_l is None:
+        K0 = assemble_tangent(u)
+        K0_bc, f_bc = _apply_bc(K0, f_ext_ref, fixed_dofs)
+        du_t0 = spla.spsolve(K0_bc, f_bc)
+        du_t0[fixed_dofs] = 0.0
+        # 10ステップで λ=1 に到達する程度の弧長
+        delta_l = float(np.linalg.norm(du_t0)) * 0.1
+
+    load_history: list[float] = []
+    disp_history: list[np.ndarray] = []
+    total_iter = 0
+    sign = 1.0  # 荷重進行方向
+    dl = delta_l  # 現在の弧長（適応的に変更）
+
+    for step in range(1, n_steps + 1):
+        converged_step = False
+
+        for cutback in range(max_cutbacks + 1):
+            # --- 予測子 ---
+            K_T = assemble_tangent(u)
+            K_bc, f_bc = _apply_bc(K_T, f_ext_ref, fixed_dofs)
+            du_t = spla.spsolve(K_bc, f_bc)
+            du_t[fixed_dofs] = 0.0
+
+            du_t_norm = float(np.linalg.norm(du_t))
+            if du_t_norm < 1e-30:
+                if show_progress:
+                    print(f"  Step {step}: 接線方向がゼロ。中断。")
+                break
+
+            d_lam_pred = sign * dl / du_t_norm
+            Delta_u = d_lam_pred * du_t
+            Delta_lam = d_lam_pred
+
+            # --- 修正子 (NR 反復) ---
+            need_cutback = False
+            for it in range(max_iter):
+                total_iter += 1
+
+                f_int = assemble_internal_force(u + Delta_u)
+                residual = (lam + Delta_lam) * f_ext_ref - f_int
+                residual[fixed_dofs] = 0.0
+                res_norm = float(np.linalg.norm(residual))
+
+                if res_norm / f_ref_norm < tol_force:
+                    converged_step = True
+                    if show_progress:
+                        print(
+                            f"  Step {step}, λ={lam + Delta_lam:.6f}, "
+                            f"iter {it}, ||R||/||f|| = {res_norm / f_ref_norm:.3e}"
+                        )
+                    break
+
+                # 接線方向と残差修正（1回の factorize で2つの RHS を解く）
+                K_T = assemble_tangent(u + Delta_u)
+                K_bc, r_bc = _apply_bc(K_T, residual, fixed_dofs)
+                du_R = spla.spsolve(K_bc, r_bc)
+                du_R[fixed_dofs] = 0.0
+
+                K_bc2, f_bc2 = _apply_bc(K_T, f_ext_ref, fixed_dofs)
+                du_t = spla.spsolve(K_bc2, f_bc2)
+                du_t[fixed_dofs] = 0.0
+
+                # 円筒弧長拘束の二次方程式
+                # ||(Δu + δu_R + δλ · δu_t)||² = Δl²
+                v = Delta_u + du_R
+                a1 = float(np.dot(du_t, du_t))
+                a2 = 2.0 * float(np.dot(v, du_t))
+                a3 = float(np.dot(v, v)) - dl**2
+
+                disc = a2**2 - 4.0 * a1 * a3
+
+                if disc < 0:
+                    # 弧長が大きすぎて解が存在しない → カットバック
+                    need_cutback = True
+                    break
+
+                sqrt_disc = np.sqrt(disc)
+                d_lam_1 = (-a2 + sqrt_disc) / (2.0 * a1)
+                d_lam_2 = (-a2 - sqrt_disc) / (2.0 * a1)
+
+                # Δu の進行方向と一致する解を選択
+                v1 = v + d_lam_1 * du_t
+                v2 = v + d_lam_2 * du_t
+                if float(np.dot(Delta_u, v1)) >= float(np.dot(Delta_u, v2)):
+                    d_lam = d_lam_1
+                else:
+                    d_lam = d_lam_2
+
+                Delta_u = v + d_lam * du_t
+                Delta_lam += d_lam
+
+            if converged_step:
+                break
+
+            if need_cutback and cutback < max_cutbacks:
+                dl *= 0.5
+                if show_progress:
+                    print(
+                        f"  Step {step}: 判別式 < 0。"
+                        f"弧長を {dl:.4e} に縮小 (cutback {cutback + 1})"
+                    )
+                continue
+
+            # max_iter reached without convergence
+            break
+
+        if not converged_step:
+            if show_progress:
+                print(
+                    f"  Step {step}: 収束せず。"
+                )
+            return ArcLengthResult(
+                u=u, lam=lam, converged=False,
+                n_steps=step - 1, total_iterations=total_iter,
+                load_history=load_history,
+                displacement_history=disp_history,
+            )
+
+        # 更新
+        u = u + Delta_u
+        lam = lam + Delta_lam
+
+        # 次ステップの荷重進行方向を更新
+        if step > 1 and len(disp_history) > 0:
+            du_step = u - disp_history[-1]
+            dot_sign = float(np.dot(du_step, du_t))
+            if dot_sign < 0:
+                sign = -sign
+
+        load_history.append(lam)
+        disp_history.append(u.copy())
+
+        # 弧長適応: 少ない反復で収束したら弧長を増加
+        if it <= 3:
+            dl = min(dl * 1.5, delta_l * 4.0)
+        elif it > max_iter // 2:
+            dl = max(dl * 0.5, delta_l * 0.01)
+
+        if lambda_max is not None and lam >= lambda_max:
+            if show_progress:
+                print(f"  λ = {lam:.6f} >= lambda_max = {lambda_max}. 終了。")
+            break
+
+    return ArcLengthResult(
+        u=u, lam=lam, converged=True,
+        n_steps=len(load_history), total_iterations=total_iter,
+        load_history=load_history,
+        displacement_history=disp_history,
     )
