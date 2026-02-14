@@ -26,6 +26,12 @@ dev = [
 testpaths = ["tests"]
 markers = [
     "external: pymesh等の外部依存が必要なテスト",
+    "bend3p: 3点曲げ試験",
+    "bend4p: 4点曲げ試験",
+    "tensile: 引張試験",
+    "torsion: ねん回試験",
+    "freq_response: 周波数応答試験",
+    "cosserat: Cosserat rod 要素テスト",
 ]
 
 [tool.ruff]

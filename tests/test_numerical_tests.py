@@ -148,6 +148,7 @@ class TestFrictionAssessment:
 # ===========================================================================
 # 静的試験 — 3点曲げ
 # ===========================================================================
+@pytest.mark.bend3p
 class TestBend3p:
     def _make_config(self, beam_type="timo2d"):
         return NumericalTestConfig(
@@ -194,6 +195,7 @@ class TestBend3p:
 # ===========================================================================
 # 静的試験 — 4点曲げ
 # ===========================================================================
+@pytest.mark.bend4p
 class TestBend4p:
     def _make_config(self, beam_type="timo2d"):
         return NumericalTestConfig(
@@ -228,6 +230,7 @@ class TestBend4p:
 # ===========================================================================
 # 静的試験 — 引張
 # ===========================================================================
+@pytest.mark.tensile
 class TestTensile:
     def _make_config(self, beam_type="timo2d"):
         return NumericalTestConfig(
@@ -262,6 +265,7 @@ class TestTensile:
 # ===========================================================================
 # 静的試験 — ねん回（3Dのみ）
 # ===========================================================================
+@pytest.mark.torsion
 class TestTorsion:
     def _make_config(self):
         return NumericalTestConfig(
@@ -326,6 +330,7 @@ class TestRunAPI:
 # ===========================================================================
 # 周波数応答試験
 # ===========================================================================
+@pytest.mark.freq_response
 class TestFrequencyResponse:
     def _make_config(self, beam_type="timo2d", exc_type="displacement"):
         return FrequencyResponseConfig(
@@ -621,3 +626,169 @@ class TestValidation:
                 beam_type="timo2d", E=E_STEEL, nu=NU_STEEL, rho=-1.0,
                 length=100.0, n_elems=10,
             )
+
+    def test_cosserat_beam_type_accepted(self):
+        """cosserat が beam_type として受理されること."""
+        cfg = NumericalTestConfig(
+            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=100.0, n_elems=10, load_value=1000.0,
+        )
+        assert cfg.beam_type == "cosserat"
+
+
+# ===========================================================================
+# Cosserat rod 数値試験
+# ===========================================================================
+@pytest.mark.cosserat
+class TestCosseratNumerical:
+    """Cosserat rod の数値試験フレームワーク統合テスト."""
+
+    def test_tensile_cosserat(self):
+        """Cosserat rod で引張試験（厳密解一致）."""
+        cfg = NumericalTestConfig(
+            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=L_BEAM, n_elems=N_ELEMS, load_value=1000.0,
+            section_shape="rectangle", section_params=RECT_PARAMS,
+        )
+        result = run_test(cfg)
+        assert result.relative_error is not None
+        assert result.relative_error < 1e-10
+
+    def test_torsion_cosserat(self):
+        """Cosserat rod でねん回試験（厳密解一致）."""
+        cfg = NumericalTestConfig(
+            name="torsion", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=L_BEAM, n_elems=N_ELEMS, load_value=T_TORQUE,
+            section_shape="circle", section_params=CIRC_PARAMS,
+        )
+        result = run_test(cfg)
+        assert result.relative_error is not None
+        assert result.relative_error < 1e-10
+
+    def test_bend3p_cosserat(self):
+        """Cosserat rod で3点曲げ試験（メッシュ収束）."""
+        cfg = NumericalTestConfig(
+            name="bend3p", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=L_BEAM, n_elems=20, load_value=abs(P_LOAD),
+            section_shape="rectangle", section_params=RECT_PARAMS,
+        )
+        result = run_test(cfg)
+        assert result.relative_error is not None
+        # Cosserat rod は B行列定式化のため 20要素ではTimo3Dほど正確でないが収束する
+        assert result.relative_error < 0.05
+
+    def test_bend4p_cosserat(self):
+        """Cosserat rod で4点曲げ試験."""
+        cfg = NumericalTestConfig(
+            name="bend4p", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=L_BEAM, n_elems=20, load_value=abs(P_LOAD),
+            section_shape="rectangle", section_params=RECT_PARAMS,
+            load_span=25.0,
+        )
+        result = run_test(cfg)
+        assert result.relative_error is not None
+        assert result.relative_error < 0.05
+
+    def test_section_forces_cosserat(self):
+        """Cosserat rod の断面力ポスト処理."""
+        cfg = NumericalTestConfig(
+            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
+            length=L_BEAM, n_elems=4, load_value=1000.0,
+            section_shape="rectangle", section_params=RECT_PARAMS,
+        )
+        result = run_test(cfg)
+        assert len(result.element_forces) == 4
+
+
+# ===========================================================================
+# 周波数応答 — 固有振動数の解析解との比較
+# ===========================================================================
+@pytest.mark.freq_response
+class TestFrequencyResponseAnalytical:
+    """カンチレバー梁の固有振動数を Euler-Bernoulli 解析解と比較."""
+
+    def test_cantilever_natural_frequencies_eb2d(self):
+        """EB2Dの固有振動数がEB解析解と一致（低次モード）."""
+        # EB解析解: f_n = (β_n L)² / (2πL²) √(EI/ρA)
+        # β_1 L = 1.8751 (カンチレバー第1モード)
+        # I は _build_section_props の 2D 規約（Iz = xy面内曲げ）に合わせる
+        from xkep_cae.numerical_tests.core import _build_section_props
+
+        sec = _build_section_props("rectangle", RECT_PARAMS, "eb2d", NU_STEEL)
+        A = sec["A"]
+        I = sec["I"]  # noqa: E741 — 2D梁のxy面内曲げ用断面二次モーメント
+        beta_1L = 1.8751
+        f1_analytical = beta_1L**2 / (2 * np.pi * L_BEAM**2) * np.sqrt(
+            E_STEEL * I / (RHO_STEEL * A)
+        )
+
+        cfg = FrequencyResponseConfig(
+            beam_type="eb2d", E=E_STEEL, nu=NU_STEEL, rho=RHO_STEEL,
+            length=L_BEAM, n_elems=20,
+            section_shape="rectangle", section_params=RECT_PARAMS,
+            freq_min=1.0, freq_max=f1_analytical * 2.0,
+            n_freq=500,
+            excitation_type="acceleration", excitation_dof="uy",
+            damping_alpha=0.0, damping_beta=1e-8,
+        )
+        result = run_frequency_response(cfg)
+        assert len(result.natural_frequencies) > 0, "固有振動数が検出されなかった"
+        f1_fem = result.natural_frequencies[0]
+        rel_error = abs(f1_fem - f1_analytical) / f1_analytical
+        # 20要素のFEMは十分正確（5%以内）
+        assert rel_error < 0.05, (
+            f"第1固有振動数: FEM={f1_fem:.1f} Hz, 解析解={f1_analytical:.1f} Hz, "
+            f"誤差={rel_error*100:.1f}%"
+        )
+
+
+# ===========================================================================
+# 非一様メッシュテスト
+# ===========================================================================
+class TestNonUniformMesh:
+    """非一様メッシュ生成のテスト."""
+
+    def test_2d_nonuniform_basic(self):
+        """2D非一様メッシュの基本テスト."""
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        nodes, conn = generate_beam_mesh_2d_nonuniform(
+            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+        )
+        assert nodes.shape[1] == 2
+        assert nodes[0, 0] == pytest.approx(0.0)
+        assert nodes[-1, 0] == pytest.approx(100.0)
+        # 非一様メッシュは均一メッシュより要素数が多い
+        assert len(conn) >= 10
+        # 荷重点（50.0）が節点に含まれる
+        assert any(abs(nodes[:, 0] - 50.0) < 1e-10)
+
+    def test_3d_nonuniform_basic(self):
+        """3D非一様メッシュの基本テスト."""
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_3d_nonuniform
+        nodes, conn = generate_beam_mesh_3d_nonuniform(
+            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+        )
+        assert nodes.shape[1] == 3
+        assert nodes[0, 0] == pytest.approx(0.0)
+        assert nodes[-1, 0] == pytest.approx(100.0)
+
+    def test_nonuniform_multiple_points(self):
+        """複数の細分割ポイント."""
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        nodes, conn = generate_beam_mesh_2d_nonuniform(
+            100.0, [25.0, 75.0], base_n_elems=10, refinement_factor=3.0,
+        )
+        assert any(abs(nodes[:, 0] - 25.0) < 1e-10)
+        assert any(abs(nodes[:, 0] - 75.0) < 1e-10)
+
+    def test_nonuniform_refinement_increases_elements(self):
+        """細分割すると要素数が増加する."""
+        from xkep_cae.numerical_tests.core import (
+            generate_beam_mesh_2d,
+            generate_beam_mesh_2d_nonuniform,
+        )
+        _, conn_uniform = generate_beam_mesh_2d(10, 100.0)
+        _, conn_nonuniform = generate_beam_mesh_2d_nonuniform(
+            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+        )
+        assert len(conn_nonuniform) >= len(conn_uniform)

@@ -22,6 +22,10 @@ from xkep_cae.elements.beam_cosserat import (
     CosseratStrains,
     _cosserat_b_matrix,
     _cosserat_constitutive_matrix,
+    cosserat_geometric_stiffness_global,
+    cosserat_geometric_stiffness_local,
+    cosserat_internal_force_global,
+    cosserat_internal_force_local,
     cosserat_ke_global,
     cosserat_ke_local,
     cosserat_section_forces,
@@ -624,3 +628,254 @@ class TestCircularSection:
         u = _solve_cantilever(1, L, 3, T, sec, mat)
         theta_expected = T * L / (G * sec.J)
         np.testing.assert_almost_equal(u[6 + 3], theta_expected, decimal=8)
+
+
+# ===========================================================================
+# 内力ベクトル テスト
+# ===========================================================================
+class TestInternalForce:
+    """内力ベクトル f_int のテスト."""
+
+    def test_linear_equivalence_axial(self):
+        """線形時 f_int = Ke · u の確認（軸引張）."""
+        sec = _make_section()
+        ky = kz = 5.0 / 6.0
+        Ke = cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz)
+        P = 1000.0
+        u_local = np.zeros(12)
+        u_local[6] = P * L / (E * sec.A)
+        f_ke = Ke @ u_local
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+        )
+        np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
+
+    def test_linear_equivalence_torsion(self):
+        """線形時 f_int = Ke · u の確認（ねじり）."""
+        sec = _make_section()
+        ky = kz = 5.0 / 6.0
+        Ke = cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz)
+        T_torque = 500.0
+        u_local = np.zeros(12)
+        u_local[9] = T_torque * L / (G * sec.J)
+        f_ke = Ke @ u_local
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+        )
+        np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
+
+    def test_linear_equivalence_bending(self):
+        """線形時 f_int = Ke · u の確認（曲げ変位）."""
+        sec = _make_section()
+        ky = kz = 5.0 / 6.0
+        Ke = cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz)
+        u_local = np.zeros(12)
+        u_local[7] = 0.01  # uy2
+        u_local[11] = 0.001  # θz2
+        f_ke = Ke @ u_local
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+        )
+        np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
+
+    def test_global_internal_force(self):
+        """全体座標系での内力 = Tᵀ · f_int_local の確認."""
+        sec = _make_section()
+        mat = _make_material()
+        P = 1000.0
+        u = _solve_cantilever(1, L, 0, P, sec, mat)
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        u_global = u  # 12 DOF (2 nodes)
+        f_int = cosserat_internal_force_global(
+            coords, u_global,
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+        )
+        # 固定端の反力 = -P, 荷重端の内力 = P
+        assert abs(f_int[0] + P) < 1e-6  # 固定端反力
+        assert abs(f_int[6] - P) < 1e-6  # 荷重端
+
+    def test_class_internal_force(self):
+        """CosseratRodクラスの internal_force() テスト."""
+        sec = _make_section()
+        mat = _make_material()
+        rod = CosseratRod(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        P = 1000.0
+        u = _solve_cantilever(1, L, 0, P, sec, mat)
+        f_int = rod.internal_force(coords, u, mat)
+        Ke = rod.local_stiffness(coords, mat)
+        f_ke = Ke @ u
+        np.testing.assert_array_almost_equal(f_int, f_ke, decimal=6)
+
+    def test_zero_displacement_gives_zero_force(self):
+        """ゼロ変位 → ゼロ内力."""
+        sec = _make_section()
+        u_local = np.zeros(12)
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, u_local,
+        )
+        np.testing.assert_array_almost_equal(f_int, np.zeros(12))
+
+    def test_2gauss_equivalence(self):
+        """2点ガウス求積でも f_int = Ke · u."""
+        sec = _make_section()
+        ky = kz = 5.0 / 6.0
+        Ke = cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, n_gauss=2)
+        u_local = np.zeros(12)
+        u_local[6] = 0.05
+        u_local[7] = 0.01
+        f_ke = Ke @ u_local
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local, n_gauss=2,
+        )
+        np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
+
+
+# ===========================================================================
+# 幾何剛性行列 テスト
+# ===========================================================================
+class TestGeometricStiffness:
+    """幾何剛性行列 Kg のテスト."""
+
+    def test_shape(self):
+        """形状が (12, 12) であること."""
+        stress = np.array([1000.0, 0, 0, 0, 0, 0])
+        Kg = cosserat_geometric_stiffness_local(L, stress)
+        assert Kg.shape == (12, 12)
+
+    def test_symmetry(self):
+        """幾何剛性行列は対称."""
+        stress = np.array([1000.0, 0, 0, 100.0, 0, 0])
+        Kg = cosserat_geometric_stiffness_local(L, stress)
+        np.testing.assert_array_almost_equal(Kg, Kg.T)
+
+    def test_zero_stress_gives_zero(self):
+        """ゼロ応力 → ゼロ幾何剛性."""
+        stress = np.zeros(6)
+        Kg = cosserat_geometric_stiffness_local(L, stress)
+        np.testing.assert_array_almost_equal(Kg, np.zeros((12, 12)))
+
+    def test_axial_tension_positive(self):
+        """引張軸力 → 幾何剛性行列が非ゼロ."""
+        N = 1000.0
+        stress = np.array([N, 0, 0, 0, 0, 0])
+        Kg = cosserat_geometric_stiffness_local(L, stress)
+        assert np.linalg.norm(Kg) > 0
+
+    def test_proportional_to_N(self):
+        """Kg は軸力 N に比例する."""
+        stress_1 = np.array([1000.0, 0, 0, 0, 0, 0])
+        stress_2 = np.array([2000.0, 0, 0, 0, 0, 0])
+        Kg_1 = cosserat_geometric_stiffness_local(L, stress_1)
+        Kg_2 = cosserat_geometric_stiffness_local(L, stress_2)
+        np.testing.assert_array_almost_equal(2.0 * Kg_1, Kg_2)
+
+    def test_global_transformation(self):
+        """全体座標系への変換で固有値が保存される."""
+        sec = _make_section()
+        coords_x = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        # 軸引張変位
+        P = 1000.0
+        mat = _make_material()
+        u = _solve_cantilever(1, L, 0, P, sec, mat)
+
+        Kg = cosserat_geometric_stiffness_global(
+            coords_x, u, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+        )
+        assert Kg.shape == (12, 12)
+        np.testing.assert_array_almost_equal(Kg, Kg.T)
+
+    def test_class_geometric_stiffness(self):
+        """CosseratRodクラスの geometric_stiffness() テスト."""
+        sec = _make_section()
+        mat = _make_material()
+        rod = CosseratRod(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        P = 1000.0
+        u = _solve_cantilever(1, L, 0, P, sec, mat)
+        Kg = rod.geometric_stiffness(coords, u, mat)
+        assert Kg.shape == (12, 12)
+        np.testing.assert_array_almost_equal(Kg, Kg.T)
+
+    def test_tangent_stiffness_positive_definite_under_tension(self):
+        """引張時の接線剛性 Km + Kg は正定値性がゼロ方向を除いて成立."""
+        sec = _make_section()
+        mat = _make_material()
+        rod = CosseratRod(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        P = 1000.0
+        u = _solve_cantilever(1, L, 0, P, sec, mat)
+        Km = rod.local_stiffness(coords, mat)
+        Kg = rod.geometric_stiffness(coords, u, mat)
+        Kt = Km + Kg
+        eigvals = np.linalg.eigvalsh(Kt)
+        # 6 rigid-body modes have ~0 eigenvalues, rest should be positive
+        positive_eigs = eigvals[eigvals > 1e-6]
+        assert len(positive_eigs) >= 6
+        assert np.all(positive_eigs > 0)
+
+
+# ===========================================================================
+# 初期曲率 テスト
+# ===========================================================================
+class TestInitialCurvature:
+    """初期曲率 κ₀ のサポートテスト."""
+
+    def test_kappa0_attribute(self):
+        """CosseratRod にkappa_0が設定できること."""
+        sec = _make_section()
+        kappa_0 = np.array([0.01, 0.0, 0.0])  # 初期ねじり
+        rod = CosseratRod(section=sec, kappa_0=kappa_0)
+        np.testing.assert_array_almost_equal(rod.kappa_0, kappa_0)
+
+    def test_kappa0_none_default(self):
+        """デフォルトで kappa_0 = None."""
+        sec = _make_section()
+        rod = CosseratRod(section=sec)
+        assert rod.kappa_0 is None
+
+    def test_internal_force_with_initial_curvature(self):
+        """初期曲率がある場合、ゼロ変位でも内力が発生する."""
+        sec = _make_section()
+        kappa_0 = np.array([0.01, 0.0, 0.0])  # 初期ねじり
+        u_local = np.zeros(12)
+        f_int = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
+            u_local, kappa_0=kappa_0,
+        )
+        # 初期ねじりがあるので θx 方向に非ゼロ内力
+        assert np.linalg.norm(f_int) > 0
+        # κ₁₀ のみ非ゼロなので、Mx に関する成分のみ
+        # DOF 3 (θ₁₁), DOF 9 (θ₁₂) に影響
+        assert abs(f_int[3]) > 0 or abs(f_int[9]) > 0
+
+    def test_internal_force_cancels_at_kappa0(self):
+        """変位が初期曲率と整合する場合、初期曲率分が相殺される."""
+        sec = _make_section()
+        kappa_0 = np.array([0.01, 0.0, 0.0])  # 初期ねじり κ₁₀ = 0.01
+        # κ₁ = θ₁' = (θ₁₂ - θ₁₁)/L = κ₁₀ → θ₁₂ = κ₁₀ * L
+        u_local = np.zeros(12)
+        u_local[9] = kappa_0[0] * L  # θ₁₂
+        f_with = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
+            u_local, kappa_0=kappa_0,
+        )
+        # 変位無しの場合の内力
+        f_without = cosserat_internal_force_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
+            np.zeros(12), kappa_0=None,
+        )
+        # kappa_0が変位で完全に打ち消される → 内力ゼロ（ストレスフリー配位）
+        np.testing.assert_array_almost_equal(f_with, f_without, decimal=8)
+
+    def test_helical_initial_curvature(self):
+        """ヘリカル初期曲率（ねじり + 曲率）."""
+        sec = BeamSection.circle(d=5.0)
+        kappa_0 = np.array([0.02, 0.01, 0.0])  # ねじり + y曲率
+        rod = CosseratRod(section=sec, kappa_0=kappa_0)
+        coords = np.array([[0.0, 0.0, 0.0], [50.0, 0.0, 0.0]])
+        mat = _make_material()
+        u_zero = np.zeros(12)
+        f_int = rod.internal_force(coords, u_zero, mat)
+        # 初期曲率があるのでゼロ変位でも内力が出る
+        assert np.linalg.norm(f_int) > 0

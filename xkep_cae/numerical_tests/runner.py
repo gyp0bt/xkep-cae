@@ -134,7 +134,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     if n_elems % 2 != 0:
         n_elems += 1  # 中央節点が必要
 
-    is_3d = cfg.beam_type == "timo3d"
+    is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
         nodes, conn = generate_beam_mesh_3d(n_elems, L)
@@ -223,7 +223,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     a = cfg.load_span
     n_elems = cfg.n_elems
 
-    is_3d = cfg.beam_type == "timo3d"
+    is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
         nodes, conn = generate_beam_mesh_3d(n_elems, L)
@@ -314,7 +314,7 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
     L = cfg.length
     n_elems = cfg.n_elems
 
-    is_3d = cfg.beam_type == "timo3d"
+    is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
         nodes, conn = generate_beam_mesh_3d(n_elems, L)
@@ -443,6 +443,16 @@ def _get_ke_func(cfg: NumericalTestConfig, sec: dict):
         return lambda coords: timo_beam3d_ke_global(
             coords, E, G, A, Iy, Iz, J, ky, kz
         )
+
+    elif cfg.beam_type == "cosserat":
+        from xkep_cae.elements.beam_cosserat import cosserat_ke_global
+
+        A = sec["A"]
+        Iy, Iz, J = sec["Iy"], sec["Iz"], sec["J"]
+        ky, kz, G = sec["kappa_y"], sec["kappa_z"], cfg.G
+        return lambda coords: cosserat_ke_global(
+            coords, E, G, A, Iy, Iz, J, ky, kz
+        )
     else:
         raise ValueError(f"未対応の beam_type: {cfg.beam_type}")
 
@@ -499,6 +509,24 @@ def _compute_section_forces(
                     edofs.append(6 * n + d)
             u_elem = u[edofs]
             f1, f2 = beam3d_section_forces(
+                coords, u_elem, E, cfg.G, sec["A"],
+                sec["Iy"], sec["Iz"], sec["J"],
+                sec["kappa_y"], sec["kappa_z"],
+            )
+            forces.append((f1, f2))
+
+    elif cfg.beam_type == "cosserat":
+        from xkep_cae.elements.beam_cosserat import cosserat_section_forces
+
+        for elem_nodes in conn:
+            n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
+            coords = nodes[[n1, n2]]
+            edofs = []
+            for n in [n1, n2]:
+                for d in range(6):
+                    edofs.append(6 * n + d)
+            u_elem = u[edofs]
+            f1, f2 = cosserat_section_forces(
                 coords, u_elem, E, cfg.G, sec["A"],
                 sec["Iy"], sec["Iz"], sec["J"],
                 sec["kappa_y"], sec["kappa_z"],

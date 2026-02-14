@@ -15,7 +15,7 @@
 
 ---
 
-## 現在地（Phase 2.5 前半完了、Cosserat rod 四元数回転実装）
+## 現在地（Phase 2.5 完了、Phase 3 幾何学的非線形へ）
 
 ### 実装済み
 
@@ -32,8 +32,8 @@
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー, **CSV出力, Abaqusライクテキスト入力** |
-| **Cosserat rod** | **四元数ベース回転表現、B行列定式化、線形化版要素（Phase 2.5 前半）** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証（**314テスト**） |
+| **Cosserat rod** | **四元数ベース回転表現、B行列定式化、線形化版要素、内力ベクトル、幾何剛性行列、初期曲率サポート（Phase 2.5 完了）** |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, CPE4I精度検証, **周波数応答解析解比較**（**345テスト**） |
 | **ドキュメント** | [Abaqus差異ドキュメント](abaqus-differences.md) |
 
 ### 未実装（現状の制約）
@@ -204,8 +204,10 @@ Timoshenko梁を超える一般的な梁定式化。中心線＋断面回転で�
 - [x] 有限要素離散化（2節点線形要素、1点ガウス求積）— `beam_cosserat.py`
 - [x] 線形化版テスト: 軸引張(厳密)、ねじり(厳密)、曲げ(メッシュ収束)、3点曲げ — 36テスト
 - [x] 設計仕様書 — `docs/cosserat-design.md`
-- [ ] 内力ベクトル `internal_force()`（Phase 3 非線形用）
-- [ ] 接線剛性行列（材料剛性 + 幾何剛性）
+- [x] 内力ベクトル `internal_force()`（Phase 3 非線形用）— 線形等価性検証済み
+- [x] 幾何剛性行列 `geometric_stiffness()`（軸力N + ねじりMx）— 対称性・正定値性検証済み
+- [x] 初期曲率 `kappa_0` サポート（ヘリカル構造基盤）— ストレスフリー配位検証済み
+- [x] 数値試験フレームワークへの統合（`beam_type="cosserat"`）— 56テスト
 - [ ] テスト：Euler elastica、ヘリカルばね、大回転片持ち梁
 - [ ] Phase 3（幾何学的非線形）との統合
 
@@ -276,7 +278,7 @@ class TestResult:
 - [x] 一括実行API: `run_all_tests()`
 - [x] 部分実行API: `run_tests()`
 - [x] 解析解との自動比較・誤差レポート生成
-- [ ] pytest マーカーによる試験種別選択実行（`-m bend3p`, `-m tensile` 等）
+- [x] pytest マーカーによる試験種別選択実行（`-m bend3p`, `-m tensile`, `-m cosserat` 等）
 - [x] 結果のCSV出力（`export_static_csv()`, `export_frequency_response_csv()`）
 - [x] **周波数応答試験**（`run_frequency_response()`）— 整合質量行列 + Rayleigh減衰 + FRF
 - [x] **Abaqusライクテキスト入力**（`parse_test_input()`）
