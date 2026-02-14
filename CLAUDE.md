@@ -34,6 +34,13 @@
 - 後方互換性を保ちながら拡張（既存テストを破壊しない）
 - lint/format: `ruff check xkep_cae/ tests/` && `ruff format xkep_cae/ tests/`
 
+### 検証結果のドキュメント化
+
+- 文献値や解析解との比較結果は `docs/verification/` に**図付き**で残す
+- 図は `tests/generate_verification_plots.py` で生成（matplotlib → PNG）
+- `pytest` 実行時にはプロットを生成しない（図生成は別スクリプト）
+- 図には解析解（実線）と数値解（マーカー）を重ね描きし、一致を視覚的に確認できるようにする
+
 ## プロジェクト構成
 
 ```
@@ -57,5 +64,5 @@ docs/
 
 ## 現在の状態
 
-Phase 1〜3 完了（407テスト）。次は Phase 4 / 5 / C のいずれか。
+Phase 1〜3 完了。Phase 4.1（1D弾塑性）実装中。
 詳細は `docs/roadmap.md` および最新の status ファイルを参照。

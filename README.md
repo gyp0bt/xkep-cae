@@ -8,21 +8,24 @@
 
 ## 現在の状態
 
-**Phase 1〜3 完了。407テストパス。**
+**Phase 1〜3 完了、Phase 4.1 完了。435テストパス。**
 
 - Phase 1: アーキテクチャ再構成完了（Protocol API 一本化）
 - Phase 2: 空間梁要素完了（EB/Timoshenko 2D・3D、Cosserat rod、数値試験FW、FRF）
 - Phase 3: 幾何学的非線形完了（非線形Cosserat rod、弧長法、Euler elastica検証済み）
+- Phase 4.1: 1次元弾塑性完了（return mapping、等方/移動硬化、consistent tangent、検証図付き）
 
-次のマイルストーン: Phase 4（材料非線形）/ Phase 5（動的解析）/ Phase C（梁–梁接触）のいずれか。
+次のマイルストーン: Phase 4.2〜4.5（材料非線形続き）/ Phase 5（動的解析）/ Phase C（梁–梁接触）。
 
 ## ドキュメント
 
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8 + Phase C）
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
+- [検証図](docs/verification/) — 弾塑性構成則の解析解比較（応力-歪み、ヒステリシス、荷重-変位）
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — AL/Active-set/return mapping/Outer-Inner分離の実装指針
-- [実装状況](docs/status/status-020.md) — 最新のステータス（Phase 3 完了）
+- [実装状況](docs/status/status-021.md) — 最新のステータス（Phase 4.1 完了）
+- [status-020](docs/status/status-020.md) — Phase 3 完了
 - [status-019](docs/status/status-019.md) — ロードマップ修正
 - [status-015](docs/status/status-015.md) — Cosserat rod SRI & Phase 3 幾何学的非線形開始
 - [status-014](docs/status/status-014.md) — Phase 2.5 完成 & 数値試験フレームワーク拡張
@@ -203,6 +206,56 @@ def fint(u):
     return f
 
 result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=20, max_iter=50)
+```
+
+### 弾塑性解析（材料非線形）
+
+```python
+import numpy as np
+import scipy.sparse as sp
+from xkep_cae.core.state import CosseratPlasticState
+from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam_plastic
+from xkep_cae.materials.beam_elastic import BeamElastic1D
+from xkep_cae.materials.plasticity_1d import IsotropicHardening, Plasticity1D
+from xkep_cae.sections.beam import BeamSection
+from xkep_cae.solver import newton_raphson
+
+sec = BeamSection.rectangle(10.0, 20.0)
+mat = BeamElastic1D(E=200e3, nu=0.3)
+rod = CosseratRod(section=sec, integration_scheme="uniform", n_gauss=1)
+plas = Plasticity1D(E=200e3, iso=IsotropicHardening(sigma_y0=250.0, H_iso=1000.0))
+
+n_elems, L = 4, 100.0
+states = [CosseratPlasticState() for _ in range(n_elems)]
+u = np.zeros((n_elems + 1) * 6)
+f_ext = np.zeros_like(u)
+f_ext[6 * n_elems] = 100_000.0  # 軸力
+
+for step in range(5):
+    lam = (step + 1) / 5
+    states_trial = None
+
+    def fint(u_, _st=states):
+        nonlocal states_trial
+        _, f, states_trial = assemble_cosserat_beam_plastic(
+            n_elems, L, rod, mat, u_, _st, plas,
+            stiffness=False, internal_force=True,
+        )
+        return f
+
+    def tangent(u_, _st=states):
+        K, _, _ = assemble_cosserat_beam_plastic(
+            n_elems, L, rod, mat, u_, _st, plas,
+            stiffness=True, internal_force=False,
+        )
+        return sp.csr_matrix(K)
+
+    result = newton_raphson(
+        lam * f_ext, np.arange(6), tangent, fint,
+        n_load_steps=1, u0=u, show_progress=False,
+    )
+    u = result.u
+    states = [s.copy() for s in states_trial]
 ```
 
 ### 数値試験フレームワーク
