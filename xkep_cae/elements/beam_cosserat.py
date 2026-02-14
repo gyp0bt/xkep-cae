@@ -220,6 +220,214 @@ def cosserat_ke_local(
     return Ke
 
 
+def cosserat_ke_local_sri(
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    L: float,
+    kappa_y: float,
+    kappa_z: float,
+) -> np.ndarray:
+    """選択的低減積分 (SRI) による Cosserat rod の局所剛性行列 (12x12).
+
+    せん断成分（Γ₂, Γ₃）のみ1点ガウス求積（低減積分）、
+    それ以外（軸伸びΓ₁, ねじりκ₁, 曲率κ₂, κ₃）は2点ガウス求積（完全積分）。
+
+    従来の全成分1点積分との違い:
+      - 曲げ・ねじり・軸伸びの積分精度が向上
+      - せん断ロッキングを回避（せん断のみ低減積分）
+      - 少ない要素数で高精度な曲げ応答を得られる
+
+    定式化:
+      Ke = ∫₀ᴸ Bᵀ · C_non_shear · B ds  （2点ガウス）
+         + ∫₀ᴸ Bᵀ · C_shear · B ds       （1点ガウス）
+
+    Args:
+        E: ヤング率
+        G: せん断弾性率
+        A: 断面積
+        Iy: y軸まわり断面二次モーメント
+        Iz: z軸まわり断面二次モーメント
+        J: ねじり定数
+        L: 要素長さ
+        kappa_y: y方向せん断補正係数
+        kappa_z: z方向せん断補正係数
+
+    Returns:
+        Ke: (12, 12) 局所剛性行列（局所座標系）
+    """
+    # せん断成分: Γ₂ (row 1), Γ₃ (row 2)
+    C_shear = np.diag([
+        0.0,               # Γ₁: 軸伸び → 完全積分
+        kappa_y * G * A,   # Γ₂: y方向せん断 → 低減積分
+        kappa_z * G * A,   # Γ₃: z方向せん断 → 低減積分
+        0.0,               # κ₁: ねじり → 完全積分
+        0.0,               # κ₂: y曲率 → 完全積分
+        0.0,               # κ₃: z曲率 → 完全積分
+    ])
+    # 非せん断成分: Γ₁, κ₁, κ₂, κ₃
+    C_full = np.diag([
+        E * A,     # Γ₁: 軸伸び
+        0.0,       # Γ₂: せん断 → 低減積分
+        0.0,       # Γ₃: せん断 → 低減積分
+        G * J,     # κ₁: ねじり
+        E * Iy,    # κ₂: y曲率
+        E * Iz,    # κ₃: z曲率
+    ])
+
+    # 2点ガウス求積（完全積分: 非せん断成分）
+    pts_2, wts_2 = _gauss_points(2)
+    Ke = np.zeros((12, 12), dtype=float)
+    for xi, w in zip(pts_2, wts_2):
+        B = _cosserat_b_matrix(L, xi)
+        Ke += w * L * B.T @ C_full @ B
+
+    # 1点ガウス求積（低減積分: せん断成分）
+    pts_1, wts_1 = _gauss_points(1)
+    for xi, w in zip(pts_1, wts_1):
+        B = _cosserat_b_matrix(L, xi)
+        Ke += w * L * B.T @ C_shear @ B
+
+    return Ke
+
+
+def cosserat_ke_global_sri(
+    coords: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+) -> np.ndarray:
+    """SRI版の全体座標系 Cosserat rod 剛性行列 (12x12) を返す.
+
+    Args:
+        coords: (2, 3) 節点座標
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+
+    Returns:
+        Ke_global: (12, 12) 全体座標系の剛性行列
+    """
+    dx = coords[1] - coords[0]
+    L = float(np.linalg.norm(dx))
+    if L < 1e-15:
+        raise ValueError("要素長さがほぼゼロです。")
+    e_x = dx / L
+
+    R, _q_ref = _build_local_axes_from_quat(e_x, v_ref)
+    Ke_local = cosserat_ke_local_sri(E, G, A, Iy, Iz, J, L, kappa_y, kappa_z)
+    T = _transformation_matrix_12(R)
+    return T.T @ Ke_local @ T
+
+
+def cosserat_internal_force_local_sri(
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    L: float,
+    kappa_y: float,
+    kappa_z: float,
+    u_local: np.ndarray,
+    kappa_0: np.ndarray | None = None,
+) -> np.ndarray:
+    """SRI版の局所内力ベクトル (12,).
+
+    せん断成分は1点、非せん断成分は2点ガウス求積。
+
+    Args:
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        L: 要素長さ
+        kappa_y, kappa_z: せん断補正係数
+        u_local: (12,) 局所座標系の要素変位
+        kappa_0: (3,) 初期曲率（None = ゼロ）
+
+    Returns:
+        f_int: (12,) 局所内力ベクトル
+    """
+    C_shear = np.diag([0.0, kappa_y * G * A, kappa_z * G * A, 0.0, 0.0, 0.0])
+    C_full = np.diag([E * A, 0.0, 0.0, G * J, E * Iy, E * Iz])
+
+    f_int = np.zeros(12, dtype=float)
+
+    # 2点ガウス（非せん断成分）
+    pts_2, wts_2 = _gauss_points(2)
+    for xi, w in zip(pts_2, wts_2):
+        B = _cosserat_b_matrix(L, xi)
+        strain = B @ u_local
+        if kappa_0 is not None:
+            strain[3:6] = strain[3:6] - kappa_0
+        stress = C_full @ strain
+        f_int += w * L * B.T @ stress
+
+    # 1点ガウス（せん断成分）
+    pts_1, wts_1 = _gauss_points(1)
+    for xi, w in zip(pts_1, wts_1):
+        B = _cosserat_b_matrix(L, xi)
+        strain = B @ u_local
+        if kappa_0 is not None:
+            strain[3:6] = strain[3:6] - kappa_0
+        stress = C_shear @ strain
+        f_int += w * L * B.T @ stress
+
+    return f_int
+
+
+def cosserat_internal_force_global_sri(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+) -> np.ndarray:
+    """SRI版の全体座標系内力ベクトル (12,) を返す.
+
+    Args:
+        coords: (2, 3) 節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率
+
+    Returns:
+        f_int_global: (12,) 全体座標系の内力ベクトル
+    """
+    dx = coords[1] - coords[0]
+    L = float(np.linalg.norm(dx))
+    if L < 1e-15:
+        raise ValueError("要素長さがほぼゼロです。")
+    e_x = dx / L
+
+    R, _q = _build_local_axes_from_quat(e_x, v_ref)
+    T = _transformation_matrix_12(R)
+    u_local = T @ u_elem_global
+
+    f_int_local = cosserat_internal_force_local_sri(
+        E, G, A, Iy, Iz, J, L, kappa_y, kappa_z, u_local,
+        kappa_0=kappa_0,
+    )
+    return T.T @ f_int_local
+
+
 def _build_local_axes_from_quat(
     e_x: np.ndarray,
     v_ref: np.ndarray | None = None,
@@ -693,26 +901,32 @@ class CosseratRod:
     """Cosserat rod 要素（ElementProtocol 適合）.
 
     四元数ベースの回転表現を用いた幾何学的厳密梁の線形化版。
-    B行列 + 1点ガウス求積でせん断ロッキングを回避する。
+    B行列 + ガウス求積でせん断ロッキングを回避する。
 
     Timoshenko 3D との違い:
       - 内部で四元数状態を保持（Phase 3 での非線形拡張の準備）
       - 一般化歪み (Γ, κ) を明示的に計算
-      - B行列ベースの定式化（1点ガウス求積）
+      - B行列ベースの定式化
       - 線形化時は Timoshenko 3D と同じ物理を扱うが、
         要素剛性行列は等価ではない（B-matrix 定式化と解析定式化の違い）
 
+    積分スキーム:
+      - "uniform": 全成分を n_gauss 点で一様積分（デフォルト、1点推奨）
+      - "sri": せん断(Γ₂,Γ₃)のみ1点低減積分、他は2点完全積分
+        SRIは少ない要素数で曲げ精度を向上させる
+
     収束特性:
-      - 1点ガウス求積の線形要素のため、メッシュ細分割が必要
-      - 軸力・ねじり: 1要素で厳密
-      - 曲げ: 要素数を増やすと解析解に収束
+      - uniform/1点: 軸力・ねじり厳密、曲げはメッシュ依存
+      - SRI: 軸力・ねじり厳密、曲げの収束が高速
 
     Args:
         section: 梁断面特性
         kappa_y: y方向せん断補正係数（float or "cowper"）
         kappa_z: z方向せん断補正係数（float or "cowper"）
         v_ref: 局所y軸の参照ベクトル
-        n_gauss: ガウス積分点数（1 or 2）
+        n_gauss: ガウス積分点数（1 or 2、uniform スキームのみ有効）
+        kappa_0: 初期曲率ベクトル
+        integration_scheme: 積分スキーム（"uniform" or "sri"）
 
     DOF配置:
         各節点: (ux, uy, uz, θx, θy, θz) → 6 DOF/node
@@ -731,10 +945,16 @@ class CosseratRod:
         v_ref: np.ndarray | None = None,
         n_gauss: int = 1,
         kappa_0: np.ndarray | None = None,
+        integration_scheme: str = "uniform",
     ) -> None:
+        if integration_scheme not in ("uniform", "sri"):
+            raise ValueError(
+                f"integration_scheme は 'uniform' または 'sri' のみ: '{integration_scheme}'"
+            )
         self.section = section
         self.v_ref = v_ref
         self.n_gauss = n_gauss
+        self.integration_scheme = integration_scheme
         self._kappa_0 = np.array(kappa_0, dtype=float) if kappa_0 is not None else None
 
         # 各節点の参照四元数（線形化版では恒等四元数）
@@ -829,6 +1049,13 @@ class CosseratRod:
         kappa_y = self._resolve_kappa_y(nu)
         kappa_z = self._resolve_kappa_z(nu)
 
+        if self.integration_scheme == "sri":
+            return cosserat_ke_global_sri(
+                coords, E, G,
+                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+                kappa_y, kappa_z,
+                v_ref=self.v_ref,
+            )
         return cosserat_ke_global(
             coords, E, G,
             self.section.A, self.section.Iy, self.section.Iz, self.section.J,
@@ -901,6 +1128,15 @@ class CosseratRod:
         kappa_y = self._resolve_kappa_y(nu)
         kappa_z = self._resolve_kappa_z(nu)
 
+        if self.integration_scheme == "sri":
+            return cosserat_internal_force_global_sri(
+                coords, u_elem_global,
+                E, G,
+                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+                kappa_y, kappa_z,
+                v_ref=self.v_ref,
+                kappa_0=self._kappa_0,
+            )
         return cosserat_internal_force_global(
             coords, u_elem_global,
             E, G,
@@ -974,3 +1210,82 @@ class CosseratRod:
             np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]]),
             u_local,
         )
+
+    def tangent_stiffness(
+        self,
+        coords: np.ndarray,
+        u_elem_global: np.ndarray,
+        material: ConstitutiveProtocol,
+    ) -> np.ndarray:
+        """接線剛性行列 K_T = K_material + K_geometric (12x12) を返す.
+
+        Newton-Raphson法の反復で使用する接線剛性。
+
+        Args:
+            coords: (2, 3) 節点座標
+            u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+            material: 構成則
+
+        Returns:
+            K_T: (12, 12) 全体座標系の接線剛性行列
+        """
+        Km = self.local_stiffness(coords, material)
+        Kg = self.geometric_stiffness(coords, u_elem_global, material)
+        return Km + Kg
+
+
+# ===========================================================================
+# 非線形解析ヘルパー: Cosserat rod の非線形梁解析
+# ===========================================================================
+
+def assemble_cosserat_beam(
+    n_elems: int,
+    beam_length: float,
+    rod: CosseratRod,
+    material: ConstitutiveProtocol,
+    u: np.ndarray,
+    *,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
+
+    非線形解析のコールバック用にアセンブリ関数を提供する。
+
+    Args:
+        n_elems: 要素数
+        beam_length: 梁長さ
+        rod: CosseratRod 要素
+        material: 構成則
+        u: (total_dof,) 現在の変位ベクトル
+        stiffness: 接線剛性行列を計算するか
+        internal_force: 内力ベクトルを計算するか
+
+    Returns:
+        (K_T, f_int): 接線剛性行列と内力ベクトル（不要なものはNone）
+    """
+    n_nodes = n_elems + 1
+    total_dof = n_nodes * 6
+    elem_len = beam_length / n_elems
+
+    K_T = np.zeros((total_dof, total_dof)) if stiffness else None
+    f_int = np.zeros(total_dof) if internal_force else None
+
+    for i in range(n_elems):
+        coords = np.array([
+            [i * elem_len, 0.0, 0.0],
+            [(i + 1) * elem_len, 0.0, 0.0],
+        ])
+        dof_start = 6 * i
+        dof_end = 6 * (i + 2)
+        u_elem = u[dof_start:dof_end]
+
+        if stiffness and K_T is not None:
+            K_T_e = rod.tangent_stiffness(coords, u_elem, material)
+            K_T[dof_start:dof_end, dof_start:dof_end] += K_T_e
+
+        if internal_force and f_int is not None:
+            f_int_e = rod.internal_force(coords, u_elem, material)
+            f_int[dof_start:dof_end] += f_int_e
+
+    return K_T, f_int
