@@ -38,6 +38,7 @@ from xkep_cae.math.quaternion import (
     quat_to_rotation_matrix,
     rotation_matrix_to_quat,
     skew,
+    so3_right_jacobian,
 )
 
 if TYPE_CHECKING:
@@ -897,6 +898,236 @@ def cosserat_geometric_stiffness_global(
     return T.T @ Kg_local @ T
 
 
+# ===========================================================================
+# 非線形 Cosserat rod（幾何学的非線形: Phase 3）
+# ===========================================================================
+
+
+def cosserat_nonlinear_strains(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    v_ref: np.ndarray | None = None,
+) -> CosseratStrains:
+    """非線形一般化歪み (Γ, κ) を計算する.
+
+    全体座標系の DOF から直接計算。回転ベクトル → 四元数 → 回転行列で
+    非線形の力歪みと曲率歪みを得る。
+
+    Γ = R(θ_gp)ᵀ · R₀ᵀ · r' - e₁
+    κ = J_r(θ_gp) · θ'
+
+    ここで:
+      r' = (r₂_def - r₁_def) / L₀    変形勾配
+      θ_gp = (θ₁ + θ₂) / 2            中点の回転ベクトル
+      θ' = (θ₂ - θ₁) / L₀             回転勾配
+      R₀ = 初期ローカルフレーム回転行列
+      e₁ = [1, 0, 0]ᵀ                 body frame の参照接線
+
+    Args:
+        coords: (2, 3) 初期節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        v_ref: 局所y軸の参照ベクトル
+
+    Returns:
+        CosseratStrains: 要素中央での非線形一般化歪み（body frame）
+    """
+    dx0 = coords[1] - coords[0]
+    L0 = float(np.linalg.norm(dx0))
+    e1_ref = dx0 / L0
+
+    R0, _ = _build_local_axes_from_quat(e1_ref, v_ref)
+
+    # 変形位置
+    r1_def = coords[0] + u_elem_global[0:3]
+    r2_def = coords[1] + u_elem_global[6:9]
+    r_prime = (r2_def - r1_def) / L0
+
+    # 回転
+    theta1 = u_elem_global[3:6]
+    theta2 = u_elem_global[9:12]
+    theta_gp = 0.5 * (theta1 + theta2)
+    theta_prime = (theta2 - theta1) / L0
+
+    q_gp = quat_from_rotvec(theta_gp)
+    R_gp = quat_to_rotation_matrix(q_gp)
+    Jr = so3_right_jacobian(theta_gp)
+
+    # 非線形歪み
+    gamma = R_gp.T @ (R0.T @ r_prime) - np.array([1.0, 0.0, 0.0])
+    kappa = Jr @ theta_prime
+
+    return CosseratStrains(gamma=gamma, kappa=kappa)
+
+
+def _cosserat_b_matrix_nonlinear(
+    L0: float,
+    R_gp: np.ndarray,
+    Jr: np.ndarray,
+    R0: np.ndarray,
+    gamma: np.ndarray,
+) -> np.ndarray:
+    """非線形 B 行列 (6×12) を構築する.
+
+    線形化された歪みの変分（1点ガウス求積、ξ=0.5）:
+      δΓ = Rᵀ R₀ᵀ · δr' + skew(Γ+e₁) · J_r · δθ_gp
+      δκ = J_r · δθ'
+
+    ここで:
+      δr' = (-1/L₀)·δu₁ + (1/L₀)·δu₂
+      δθ_gp = 0.5·δθ₁ + 0.5·δθ₂
+      δθ' = (-1/L₀)·δθ₁ + (1/L₀)·δθ₂
+
+    DOF 配置: [u₁(3), θ₁(3), u₂(3), θ₂(3)]
+
+    Args:
+        L0: 初期要素長さ
+        R_gp: (3, 3) ガウス点での回転行列 R(θ_gp)
+        Jr: (3, 3) ガウス点での右ヤコビアン J_r(θ_gp)
+        R0: (3, 3) 初期ローカルフレーム回転行列
+        gamma: (3,) 力歪み Γ（現在の状態）
+
+    Returns:
+        B_nl: (6, 12) 非線形歪み-変位行列
+    """
+    e1 = np.array([1.0, 0.0, 0.0])
+    RtR0t = R_gp.T @ R0.T  # (3, 3)
+    S_gamma_e1 = skew(gamma + e1)  # (3, 3)
+    S_Jr = S_gamma_e1 @ Jr  # (3, 3)
+
+    B_nl = np.zeros((6, 12), dtype=float)
+
+    # δΓ rows (0:3)
+    # δr' = (-1/L0)*δu1 + (1/L0)*δu2
+    B_nl[0:3, 0:3] = (-1.0 / L0) * RtR0t     # δu₁
+    B_nl[0:3, 3:6] = 0.5 * S_Jr               # δθ₁
+    B_nl[0:3, 6:9] = (1.0 / L0) * RtR0t       # δu₂
+    B_nl[0:3, 9:12] = 0.5 * S_Jr              # δθ₂
+
+    # δκ rows (3:6)
+    # δθ' = (-1/L0)*δθ1 + (1/L0)*δθ2
+    B_nl[3:6, 3:6] = (-1.0 / L0) * Jr         # δθ₁
+    B_nl[3:6, 9:12] = (1.0 / L0) * Jr         # δθ₂
+
+    return B_nl
+
+
+def cosserat_internal_force_nonlinear(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+) -> np.ndarray:
+    """非線形 Cosserat rod の全体座標系内力ベクトル (12,).
+
+    f_int = L₀ · B_nlᵀ · C · [Γ; κ-κ₀]
+
+    1点ガウス求積（ξ=0.5）で離散化。
+
+    Args:
+        coords: (2, 3) 初期節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率
+
+    Returns:
+        f_int: (12,) 全体座標系の内力ベクトル
+    """
+    dx0 = coords[1] - coords[0]
+    L0 = float(np.linalg.norm(dx0))
+    e1_ref = dx0 / L0
+    R0, _ = _build_local_axes_from_quat(e1_ref, v_ref)
+
+    # 変形配位
+    r1_def = coords[0] + u_elem_global[0:3]
+    r2_def = coords[1] + u_elem_global[6:9]
+    r_prime = (r2_def - r1_def) / L0
+
+    theta1 = u_elem_global[3:6]
+    theta2 = u_elem_global[9:12]
+    theta_gp = 0.5 * (theta1 + theta2)
+    theta_prime = (theta2 - theta1) / L0
+
+    q_gp = quat_from_rotvec(theta_gp)
+    R_gp = quat_to_rotation_matrix(q_gp)
+    Jr = so3_right_jacobian(theta_gp)
+
+    # 非線形歪み
+    gamma = R_gp.T @ (R0.T @ r_prime) - np.array([1.0, 0.0, 0.0])
+    kappa = Jr @ theta_prime
+    if kappa_0 is not None:
+        kappa = kappa - kappa_0
+
+    # 構成則
+    C = _cosserat_constitutive_matrix(E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    strain = np.concatenate([gamma, kappa])
+    stress = C @ strain
+
+    # 非線形 B 行列
+    B_nl = _cosserat_b_matrix_nonlinear(L0, R_gp, Jr, R0, gamma)
+
+    # 内力（1点ガウス、weight=1.0、Jacobian=L0）
+    return L0 * B_nl.T @ stress
+
+
+def cosserat_tangent_stiffness_nonlinear(
+    coords: np.ndarray,
+    u_elem_global: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+) -> np.ndarray:
+    """非線形 Cosserat rod の接線剛性行列 (12×12).
+
+    内力 f_int の DOF に関する正確なヤコビアンを中心差分で計算する。
+    1点ガウス求積での f_int 計算は軽量なため、12回の摂動でも十分高速。
+
+    Args:
+        coords: (2, 3) 初期節点座標
+        u_elem_global: (12,) 要素変位ベクトル（全体座標系）
+        E, G, A, Iy, Iz, J: 材料・断面パラメータ
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率
+
+    Returns:
+        K_T: (12, 12) 全体座標系の接線剛性行列
+    """
+    eps = 1e-7
+    K_T = np.zeros((12, 12), dtype=float)
+    args = (E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    kwargs = dict(v_ref=v_ref, kappa_0=kappa_0)
+
+    for j in range(12):
+        u_plus = u_elem_global.copy()
+        u_plus[j] += eps
+        u_minus = u_elem_global.copy()
+        u_minus[j] -= eps
+        f_plus = cosserat_internal_force_nonlinear(coords, u_plus, *args, **kwargs)
+        f_minus = cosserat_internal_force_nonlinear(coords, u_minus, *args, **kwargs)
+        K_T[:, j] = (f_plus - f_minus) / (2.0 * eps)
+
+    # 対称化（理論的に対称だが中心差分の数値誤差を除去）
+    K_T = 0.5 * (K_T + K_T.T)
+    return K_T
+
+
 class CosseratRod:
     """Cosserat rod 要素（ElementProtocol 適合）.
 
@@ -946,6 +1177,7 @@ class CosseratRod:
         n_gauss: int = 1,
         kappa_0: np.ndarray | None = None,
         integration_scheme: str = "uniform",
+        nonlinear: bool = False,
     ) -> None:
         if integration_scheme not in ("uniform", "sri"):
             raise ValueError(
@@ -955,6 +1187,7 @@ class CosseratRod:
         self.v_ref = v_ref
         self.n_gauss = n_gauss
         self.integration_scheme = integration_scheme
+        self.nonlinear = nonlinear
         self._kappa_0 = np.array(kappa_0, dtype=float) if kappa_0 is not None else None
 
         # 各節点の参照四元数（線形化版では恒等四元数）
@@ -1128,6 +1361,15 @@ class CosseratRod:
         kappa_y = self._resolve_kappa_y(nu)
         kappa_z = self._resolve_kappa_z(nu)
 
+        if self.nonlinear:
+            return cosserat_internal_force_nonlinear(
+                coords, u_elem_global,
+                E, G,
+                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+                kappa_y, kappa_z,
+                v_ref=self.v_ref,
+                kappa_0=self._kappa_0,
+            )
         if self.integration_scheme == "sri":
             return cosserat_internal_force_global_sri(
                 coords, u_elem_global,
@@ -1229,6 +1471,18 @@ class CosseratRod:
         Returns:
             K_T: (12, 12) 全体座標系の接線剛性行列
         """
+        if self.nonlinear:
+            E, G, nu = self._extract_material_props(material)
+            kappa_y = self._resolve_kappa_y(nu)
+            kappa_z = self._resolve_kappa_z(nu)
+            return cosserat_tangent_stiffness_nonlinear(
+                coords, u_elem_global,
+                E, G,
+                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
+                kappa_y, kappa_z,
+                v_ref=self.v_ref,
+                kappa_0=self._kappa_0,
+            )
         Km = self.local_stiffness(coords, material)
         Kg = self.geometric_stiffness(coords, u_elem_global, material)
         return Km + Kg
