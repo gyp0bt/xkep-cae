@@ -1,0 +1,61 @@
+# xkep-cae コーディング規約
+
+## 言語・文書化
+
+- 全ての回答・設計仕様は**日本語**で記述する
+- すべての markdown 文書には原則 project 直下の `README.md` へのバックリンクを貼る
+
+## 2交代制運用（Codex / Claude Code）
+
+本プロジェクトは **Codex と Claude Code の2交代制**で運用する。常に互いへの引き継ぎを想定すること。
+
+### ステータス管理
+
+- 実装状況は `docs/status/status-{index}.md` に記録する
+- **現在の状況**は index が最大の status ファイルに書かれている
+- status に書いた内容は **git の commit メッセージと整合**を取ること
+- 実装状況は細かく書き出す（別の AI アシスタントが参照して簡便に状況を把握する目的）
+
+### 作業完了時の必須手順
+
+1. **README.md** を更新（現在の状態、ステータスリンク）
+2. **status ファイル**を新規作成 or 更新（TODO は status に記入）
+3. **roadmap.md** を更新（チェックボックス、テスト数、「現在地」）
+4. 実装とドキュメントの不整合を発見したら**その場で修正**するか、TODO に追加
+5. **feature ごとにコミットを切って**、最後に push
+
+### 確認事項・懸念
+
+- ユーザーへの確認事項や設計上の懸念は **status ファイルに書き出す**こと
+
+## コード規約
+
+- テスト駆動: 各要素・構成則は解析解またはリファレンスソルバーとの比較テスト必須
+- 後方互換性を保ちながら拡張（既存テストを破壊しない）
+- lint/format: `ruff check xkep_cae/ tests/` && `ruff format xkep_cae/ tests/`
+
+## プロジェクト構成
+
+```
+xkep_cae/
+├── core/           # Protocol 定義
+├── elements/       # 要素（Q4, TRI3, Beam, Cosserat rod）
+├── materials/      # 構成則
+├── sections/       # 断面モデル
+├── math/           # 数学ユーティリティ（四元数、SO(3)）
+├── numerical_tests/ # 数値試験フレームワーク
+├── solver.py       # 線形/非線形ソルバー（NR, 弧長法）
+├── assembly.py     # アセンブリ
+├── bc.py           # 境界条件
+└── api.py          # 高レベル API
+docs/
+├── roadmap.md      # 全体ロードマップ（正の計画文書）
+├── status/         # ステータスファイル群
+├── cosserat-design.md  # Cosserat rod 設計仕様
+└── contact/        # 接触モジュール仕様
+```
+
+## 現在の状態
+
+Phase 1〜3 完了（407テスト）。次は Phase 4 / 5 / C のいずれか。
+詳細は `docs/roadmap.md` および最新の status ファイルを参照。
