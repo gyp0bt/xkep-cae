@@ -43,9 +43,10 @@ from xkep_cae.math.quaternion import (
 
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
-    from xkep_cae.core.state import CosseratPlasticState
+    from xkep_cae.core.state import CosseratFiberPlasticState, CosseratPlasticState
     from xkep_cae.materials.plasticity_1d import Plasticity1D
     from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.fiber import FiberSection
 
 
 @dataclass
@@ -100,31 +101,31 @@ def _cosserat_b_matrix(
     B = np.zeros((6, 12), dtype=float)
 
     # Γ₁ = u₁' (軸伸び)
-    B[0, 0] = dN1   # u₁₁
-    B[0, 6] = dN2   # u₁₂
+    B[0, 0] = dN1  # u₁₁
+    B[0, 6] = dN2  # u₁₂
 
     # Γ₂ = u₂' - θ₃ (y方向せん断)
-    B[1, 1] = dN1   # u₂₁
-    B[1, 5] = -N1   # -θ₃₁
-    B[1, 7] = dN2   # u₂₂
+    B[1, 1] = dN1  # u₂₁
+    B[1, 5] = -N1  # -θ₃₁
+    B[1, 7] = dN2  # u₂₂
     B[1, 11] = -N2  # -θ₃₂
 
     # Γ₃ = u₃' + θ₂ (z方向せん断)
-    B[2, 2] = dN1   # u₃₁
-    B[2, 4] = N1    # θ₂₁
-    B[2, 8] = dN2   # u₃₂
-    B[2, 10] = N2   # θ₂₂
+    B[2, 2] = dN1  # u₃₁
+    B[2, 4] = N1  # θ₂₁
+    B[2, 8] = dN2  # u₃₂
+    B[2, 10] = N2  # θ₂₂
 
     # κ₁ = θ₁' (ねじり)
-    B[3, 3] = dN1   # θ₁₁
-    B[3, 9] = dN2   # θ₁₂
+    B[3, 3] = dN1  # θ₁₁
+    B[3, 9] = dN2  # θ₁₂
 
     # κ₂ = θ₂' (y軸曲率)
-    B[4, 4] = dN1   # θ₂₁
+    B[4, 4] = dN1  # θ₂₁
     B[4, 10] = dN2  # θ₂₂
 
     # κ₃ = θ₃' (z軸曲率)
-    B[5, 5] = dN1   # θ₃₁
+    B[5, 5] = dN1  # θ₃₁
     B[5, 11] = dN2  # θ₃₂
 
     return B
@@ -160,14 +161,16 @@ def _cosserat_constitutive_matrix(
     Returns:
         C: (6, 6) 構成行列
     """
-    return np.diag([
-        E * A,           # N  = EA · Γ₁
-        kappa_y * G * A,  # Vy = κy·GA · Γ₂
-        kappa_z * G * A,  # Vz = κz·GA · Γ₃
-        G * J,           # Mx = GJ · κ₁
-        E * Iy,          # My = EIy · κ₂
-        E * Iz,          # Mz = EIz · κ₃
-    ])
+    return np.diag(
+        [
+            E * A,  # N  = EA · Γ₁
+            kappa_y * G * A,  # Vy = κy·GA · Γ₂
+            kappa_z * G * A,  # Vz = κz·GA · Γ₃
+            G * J,  # Mx = GJ · κ₁
+            E * Iy,  # My = EIy · κ₂
+            E * Iz,  # Mz = EIz · κ₃
+        ]
+    )
 
 
 def cosserat_ke_local(
@@ -263,23 +266,27 @@ def cosserat_ke_local_sri(
         Ke: (12, 12) 局所剛性行列（局所座標系）
     """
     # せん断成分: Γ₂ (row 1), Γ₃ (row 2)
-    C_shear = np.diag([
-        0.0,               # Γ₁: 軸伸び → 完全積分
-        kappa_y * G * A,   # Γ₂: y方向せん断 → 低減積分
-        kappa_z * G * A,   # Γ₃: z方向せん断 → 低減積分
-        0.0,               # κ₁: ねじり → 完全積分
-        0.0,               # κ₂: y曲率 → 完全積分
-        0.0,               # κ₃: z曲率 → 完全積分
-    ])
+    C_shear = np.diag(
+        [
+            0.0,  # Γ₁: 軸伸び → 完全積分
+            kappa_y * G * A,  # Γ₂: y方向せん断 → 低減積分
+            kappa_z * G * A,  # Γ₃: z方向せん断 → 低減積分
+            0.0,  # κ₁: ねじり → 完全積分
+            0.0,  # κ₂: y曲率 → 完全積分
+            0.0,  # κ₃: z曲率 → 完全積分
+        ]
+    )
     # 非せん断成分: Γ₁, κ₁, κ₂, κ₃
-    C_full = np.diag([
-        E * A,     # Γ₁: 軸伸び
-        0.0,       # Γ₂: せん断 → 低減積分
-        0.0,       # Γ₃: せん断 → 低減積分
-        G * J,     # κ₁: ねじり
-        E * Iy,    # κ₂: y曲率
-        E * Iz,    # κ₃: z曲率
-    ])
+    C_full = np.diag(
+        [
+            E * A,  # Γ₁: 軸伸び
+            0.0,  # Γ₂: せん断 → 低減積分
+            0.0,  # Γ₃: せん断 → 低減積分
+            G * J,  # κ₁: ねじり
+            E * Iy,  # κ₂: y曲率
+            E * Iz,  # κ₃: z曲率
+        ]
+    )
 
     # 2点ガウス求積（完全積分: 非せん断成分）
     pts_2, wts_2 = _gauss_points(2)
@@ -425,7 +432,16 @@ def cosserat_internal_force_global_sri(
     u_local = T @ u_elem_global
 
     f_int_local = cosserat_internal_force_local_sri(
-        E, G, A, Iy, Iz, J, L, kappa_y, kappa_z, u_local,
+        E,
+        G,
+        A,
+        Iy,
+        Iz,
+        J,
+        L,
+        kappa_y,
+        kappa_z,
+        u_local,
         kappa_0=kappa_0,
     )
     return T.T @ f_int_local
@@ -457,9 +473,7 @@ def _build_local_axes_from_quat(
     e_z = np.cross(e_x, v_ref)
     norm_ez = np.linalg.norm(e_z)
     if norm_ez < 1e-10:
-        raise ValueError(
-            f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}"
-        )
+        raise ValueError(f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}")
     e_z = e_z / norm_ez
     e_y = np.cross(e_z, e_x)
 
@@ -485,7 +499,7 @@ def _transformation_matrix_12(R: np.ndarray) -> np.ndarray:
     """
     T = np.zeros((12, 12), dtype=float)
     for i in range(4):
-        T[3 * i: 3 * i + 3, 3 * i: 3 * i + 3] = R
+        T[3 * i : 3 * i + 3, 3 * i : 3 * i + 3] = R
     return T
 
 
@@ -752,8 +766,18 @@ def cosserat_internal_force_global(
     u_local = T @ u_elem_global
 
     f_int_local = cosserat_internal_force_local(
-        E, G, A, Iy, Iz, J, L, kappa_y, kappa_z, u_local,
-        kappa_0=kappa_0, n_gauss=n_gauss,
+        E,
+        G,
+        A,
+        Iy,
+        Iz,
+        J,
+        L,
+        kappa_y,
+        kappa_z,
+        u_local,
+        kappa_0=kappa_0,
+        n_gauss=n_gauss,
     )
     return T.T @ f_int_local
 
@@ -783,7 +807,7 @@ def cosserat_geometric_stiffness_local(
     Returns:
         Kg: (12, 12) 局所幾何剛性行列
     """
-    N = stress[0]   # 軸力
+    N = stress[0]  # 軸力
     Mx = stress[3]  # ねじりモーメント
 
     gauss_pts, gauss_wts = _gauss_points(n_gauss)
@@ -801,20 +825,20 @@ def cosserat_geometric_stiffness_local(
         # DOF: u₂₁=1, u₂₂=7, u₃₁=2, u₃₂=8
         G_trans = np.zeros((2, 12), dtype=float)
         # u₂ の微分
-        G_trans[0, 1] = dN1   # u₂₁
-        G_trans[0, 7] = dN2   # u₂₂
+        G_trans[0, 1] = dN1  # u₂₁
+        G_trans[0, 7] = dN2  # u₂₂
         # u₃ の微分
-        G_trans[1, 2] = dN1   # u₃₁
-        G_trans[1, 8] = dN2   # u₃₂
+        G_trans[1, 2] = dN1  # u₃₁
+        G_trans[1, 8] = dN2  # u₃₂
 
         Kg += w * L * N * G_trans.T @ G_trans
 
         # ねじりモーメント Mx による回転の連成項
         # Mx による θ₂-θ₃ 連成（Wagner 効果の近似）
         G_rot = np.zeros((2, 12), dtype=float)
-        G_rot[0, 4] = dN1   # θ₂₁
+        G_rot[0, 4] = dN1  # θ₂₁
         G_rot[0, 10] = dN2  # θ₂₂
-        G_rot[1, 5] = dN1   # θ₃₁
+        G_rot[1, 5] = dN1  # θ₃₁
         G_rot[1, 11] = dN2  # θ₃₂
 
         Kg += w * L * N * G_rot.T @ G_rot
@@ -836,10 +860,7 @@ def cosserat_geometric_stiffness_local(
         G_twist_d[1, 11] = dN2
 
         # 反対称寄与: Mx * (G_twist[0]^T * G_twist_d[1] - G_twist[1]^T * G_twist_d[0])
-        Kg_twist = Mx * (
-            np.outer(G_twist[0], G_twist_d[1])
-            - np.outer(G_twist[1], G_twist_d[0])
-        )
+        Kg_twist = Mx * (np.outer(G_twist[0], G_twist_d[1]) - np.outer(G_twist[1], G_twist_d[0]))
         Kg += w * L * Kg_twist
 
     # 対称化（数値誤差補正）
@@ -1000,15 +1021,15 @@ def _cosserat_b_matrix_nonlinear(
 
     # δΓ rows (0:3)
     # δr' = (-1/L0)*δu1 + (1/L0)*δu2
-    B_nl[0:3, 0:3] = (-1.0 / L0) * RtR0t     # δu₁
-    B_nl[0:3, 3:6] = 0.5 * S_Jr               # δθ₁
-    B_nl[0:3, 6:9] = (1.0 / L0) * RtR0t       # δu₂
-    B_nl[0:3, 9:12] = 0.5 * S_Jr              # δθ₂
+    B_nl[0:3, 0:3] = (-1.0 / L0) * RtR0t  # δu₁
+    B_nl[0:3, 3:6] = 0.5 * S_Jr  # δθ₁
+    B_nl[0:3, 6:9] = (1.0 / L0) * RtR0t  # δu₂
+    B_nl[0:3, 9:12] = 0.5 * S_Jr  # δθ₂
 
     # δκ rows (3:6)
     # δθ' = (-1/L0)*δθ1 + (1/L0)*δθ2
-    B_nl[3:6, 3:6] = (-1.0 / L0) * Jr         # δθ₁
-    B_nl[3:6, 9:12] = (1.0 / L0) * Jr         # δθ₂
+    B_nl[3:6, 3:6] = (-1.0 / L0) * Jr  # δθ₁
+    B_nl[3:6, 9:12] = (1.0 / L0) * Jr  # δθ₂
 
     return B_nl
 
@@ -1236,7 +1257,8 @@ class CosseratRod:
         return self._kappa_z_value
 
     def _extract_material_props(
-        self, material: ConstitutiveProtocol,
+        self,
+        material: ConstitutiveProtocol,
     ) -> tuple[float, float, float]:
         """材料オブジェクトから E, G, nu を抽出する."""
         D = material.tangent()
@@ -1286,15 +1308,27 @@ class CosseratRod:
 
         if self.integration_scheme == "sri":
             return cosserat_ke_global_sri(
-                coords, E, G,
-                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-                kappa_y, kappa_z,
+                coords,
+                E,
+                G,
+                self.section.A,
+                self.section.Iy,
+                self.section.Iz,
+                self.section.J,
+                kappa_y,
+                kappa_z,
                 v_ref=self.v_ref,
             )
         return cosserat_ke_global(
-            coords, E, G,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y, kappa_z,
+            coords,
+            E,
+            G,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y,
+            kappa_z,
             v_ref=self.v_ref,
             n_gauss=self.n_gauss,
         )
@@ -1331,10 +1365,16 @@ class CosseratRod:
         kappa_z = self._resolve_kappa_z(nu)
 
         return cosserat_section_forces(
-            coords, u_elem_global,
-            E, G,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y, kappa_z,
+            coords,
+            u_elem_global,
+            E,
+            G,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y,
+            kappa_z,
             v_ref=self.v_ref,
             n_gauss=self.n_gauss,
         )
@@ -1365,27 +1405,45 @@ class CosseratRod:
 
         if self.nonlinear:
             return cosserat_internal_force_nonlinear(
-                coords, u_elem_global,
-                E, G,
-                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-                kappa_y, kappa_z,
+                coords,
+                u_elem_global,
+                E,
+                G,
+                self.section.A,
+                self.section.Iy,
+                self.section.Iz,
+                self.section.J,
+                kappa_y,
+                kappa_z,
                 v_ref=self.v_ref,
                 kappa_0=self._kappa_0,
             )
         if self.integration_scheme == "sri":
             return cosserat_internal_force_global_sri(
-                coords, u_elem_global,
-                E, G,
-                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-                kappa_y, kappa_z,
+                coords,
+                u_elem_global,
+                E,
+                G,
+                self.section.A,
+                self.section.Iy,
+                self.section.Iz,
+                self.section.J,
+                kappa_y,
+                kappa_z,
                 v_ref=self.v_ref,
                 kappa_0=self._kappa_0,
             )
         return cosserat_internal_force_global(
-            coords, u_elem_global,
-            E, G,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y, kappa_z,
+            coords,
+            u_elem_global,
+            E,
+            G,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y,
+            kappa_z,
             v_ref=self.v_ref,
             kappa_0=self._kappa_0,
             n_gauss=self.n_gauss,
@@ -1415,10 +1473,16 @@ class CosseratRod:
         kappa_z = self._resolve_kappa_z(nu)
 
         return cosserat_geometric_stiffness_global(
-            coords, u_elem_global,
-            E, G,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y, kappa_z,
+            coords,
+            u_elem_global,
+            E,
+            G,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y,
+            kappa_z,
             v_ref=self.v_ref,
             kappa_0=self._kappa_0,
             n_gauss=self.n_gauss,
@@ -1478,10 +1542,16 @@ class CosseratRod:
             kappa_y = self._resolve_kappa_y(nu)
             kappa_z = self._resolve_kappa_z(nu)
             return cosserat_tangent_stiffness_nonlinear(
-                coords, u_elem_global,
-                E, G,
-                self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-                kappa_y, kappa_z,
+                coords,
+                u_elem_global,
+                E,
+                G,
+                self.section.A,
+                self.section.Iy,
+                self.section.Iz,
+                self.section.J,
+                kappa_y,
+                kappa_z,
                 v_ref=self.v_ref,
                 kappa_0=self._kappa_0,
             )
@@ -1493,6 +1563,7 @@ class CosseratRod:
 # ===========================================================================
 # 非線形解析ヘルパー: Cosserat rod の非線形梁解析
 # ===========================================================================
+
 
 def assemble_cosserat_beam(
     n_elems: int,
@@ -1528,10 +1599,12 @@ def assemble_cosserat_beam(
     f_int = np.zeros(total_dof) if internal_force else None
 
     for i in range(n_elems):
-        coords = np.array([
-            [i * elem_len, 0.0, 0.0],
-            [(i + 1) * elem_len, 0.0, 0.0],
-        ])
+        coords = np.array(
+            [
+                [i * elem_len, 0.0, 0.0],
+                [(i + 1) * elem_len, 0.0, 0.0],
+            ]
+        )
         dof_start = 6 * i
         dof_end = 6 * (i + 2)
         u_elem = u[dof_start:dof_end]
@@ -1583,8 +1656,8 @@ def _compute_generalized_stress_plastic(
 
     # 軸方向: strain[0] = Γ₁ (材料レベルの軸歪み)
     result = plasticity.return_mapping(strain[0], state.axial)
-    stress[0] = result.stress * A          # sigma → N = sigma * A
-    C_tangent[0, 0] = result.tangent * A   # D_ep → D_ep_section = D_ep * A
+    stress[0] = result.stress * A  # sigma → N = sigma * A
+    C_tangent[0, 0] = result.tangent * A  # D_ep → D_ep_section = D_ep * A
 
     state_new = state.copy()
     state_new.axial = result.state_new
@@ -1647,25 +1720,48 @@ def assemble_cosserat_beam_plastic(
 
     # 構成行列と積分点の準備（SRI / uniform）
     if is_sri:
-        C_shear = np.diag([
-            0.0, kappa_y * G * sec.A, kappa_z * G * sec.A, 0.0, 0.0, 0.0,
-        ])
-        C_full = np.diag([
-            E * sec.A, 0.0, 0.0, G * sec.J, E * sec.Iy, E * sec.Iz,
-        ])
+        C_shear = np.diag(
+            [
+                0.0,
+                kappa_y * G * sec.A,
+                kappa_z * G * sec.A,
+                0.0,
+                0.0,
+                0.0,
+            ]
+        )
+        C_full = np.diag(
+            [
+                E * sec.A,
+                0.0,
+                0.0,
+                G * sec.J,
+                E * sec.Iy,
+                E * sec.Iz,
+            ]
+        )
         pts_2, wts_2 = _gauss_points(2)
         pts_1, wts_1 = _gauss_points(1)
     else:
         C_elastic = _cosserat_constitutive_matrix(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, kappa_y, kappa_z,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            kappa_y,
+            kappa_z,
         )
         gauss_pts, gauss_wts = _gauss_points(rod.n_gauss)
 
     for i in range(n_elems):
-        coords_i = np.array([
-            [i * elem_len, 0.0, 0.0],
-            [(i + 1) * elem_len, 0.0, 0.0],
-        ])
+        coords_i = np.array(
+            [
+                [i * elem_len, 0.0, 0.0],
+                [(i + 1) * elem_len, 0.0, 0.0],
+            ]
+        )
         dof_s = 6 * i
         dof_e = 6 * (i + 2)
 
@@ -1689,7 +1785,11 @@ def assemble_cosserat_beam_plastic(
                     strain[3:6] = strain[3:6] - kappa_0
                 state_idx = i * 2 + gp_idx
                 stress, C_tan, new_st = _compute_generalized_stress_plastic(
-                    strain, C_full, plasticity, states[state_idx], sec.A,
+                    strain,
+                    C_full,
+                    plasticity,
+                    states[state_idx],
+                    sec.A,
                 )
                 states_new[state_idx] = new_st
                 f_local += w * L_e * B.T @ stress
@@ -1713,13 +1813,272 @@ def assemble_cosserat_beam_plastic(
                     strain[3:6] = strain[3:6] - kappa_0
                 state_idx = i * rod.n_gauss + gp_idx
                 stress, C_tan, new_st = _compute_generalized_stress_plastic(
-                    strain, C_elastic, plasticity, states[state_idx], sec.A,
+                    strain,
+                    C_elastic,
+                    plasticity,
+                    states[state_idx],
+                    sec.A,
                 )
                 states_new[state_idx] = new_st
                 f_local += w * L_e * B.T @ stress
                 K_local += w * L_e * B.T @ C_tan @ B
 
         # 全体座標系に変換してアセンブリ
+        if internal_force and f_int is not None:
+            f_int[dof_s:dof_e] += T.T @ f_local
+        if stiffness and K_T is not None:
+            K_T[dof_s:dof_e, dof_s:dof_e] += T.T @ K_local @ T
+
+    return K_T, f_int, states_new
+
+
+# ===========================================================================
+# ファイバーモデル Cosserat rod アセンブリ（Phase 4.2: 曲げの塑性化）
+# ===========================================================================
+
+
+def _compute_generalized_stress_fiber(
+    strain: np.ndarray,
+    C_elastic: np.ndarray,
+    plasticity: Plasticity1D,
+    state: CosseratFiberPlasticState,
+    fiber_section: FiberSection,
+) -> tuple[np.ndarray, np.ndarray, CosseratFiberPlasticState]:
+    """ファイバー積分による一般化応力・接線剛性の計算.
+
+    軸力 N、曲げモーメント My, Mz をファイバー積分で計算する。
+    せん断力 Vy, Vz とねじりモーメント Mx は弾性のまま。
+
+    各ファイバーのひずみ:
+      epsilon_i = Gamma_1 + kappa_2 * z_i - kappa_3 * y_i
+
+    断面力:
+      N  = Sum(sigma_i * A_i)
+      My = Sum(sigma_i * z_i * A_i)
+      Mz = -Sum(sigma_i * y_i * A_i)
+
+    接線剛性（ファイバー成分 [0,4,5] x [0,4,5]）:
+      C[0,0] = Sum(D_i * A_i)
+      C[0,4] = Sum(D_i * z_i * A_i)        = C[4,0]
+      C[0,5] = -Sum(D_i * y_i * A_i)       = C[5,0]
+      C[4,4] = Sum(D_i * z_i^2 * A_i)
+      C[4,5] = -Sum(D_i * y_i * z_i * A_i) = C[5,4]
+      C[5,5] = Sum(D_i * y_i^2 * A_i)
+
+    Args:
+        strain: (6,) 一般化歪みベクトル [Gamma_1, Gamma_2, Gamma_3, kappa_1, kappa_2, kappa_3]
+        C_elastic: (6, 6) 弾性構成行列
+        plasticity: 1D弾塑性構成則
+        state: ファイバー塑性状態
+        fiber_section: ファイバー断面
+
+    Returns:
+        (stress, C_tangent, state_new)
+    """
+    n_fibers = fiber_section.n_fibers
+    y = fiber_section.y
+    z = fiber_section.z
+    areas = fiber_section.areas
+
+    # せん断・ねじりは弾性
+    stress = C_elastic @ strain
+    C_tangent = C_elastic.copy()
+
+    # 各ファイバーのひずみ: epsilon_i = Gamma_1 + kappa_2 * z_i - kappa_3 * y_i
+    fiber_strains = strain[0] + strain[4] * z - strain[5] * y
+
+    # ファイバーごとに return mapping
+    sigmas = np.zeros(n_fibers)
+    tangents = np.zeros(n_fibers)
+    new_fiber_states: list = [None] * n_fibers
+
+    for i in range(n_fibers):
+        result = plasticity.return_mapping(fiber_strains[i], state.fiber_states[i])
+        sigmas[i] = result.stress
+        tangents[i] = result.tangent
+        new_fiber_states[i] = result.state_new
+
+    # 断面力（ファイバー積分）
+    stress[0] = float(np.sum(sigmas * areas))  # N
+    stress[4] = float(np.sum(sigmas * z * areas))  # My
+    stress[5] = float(-np.sum(sigmas * y * areas))  # Mz
+
+    # 接線剛性（ファイバー成分）
+    DA = tangents * areas  # D_i * A_i
+
+    C_tangent[0, 0] = float(np.sum(DA))
+    C_tangent[0, 4] = float(np.sum(DA * z))
+    C_tangent[4, 0] = C_tangent[0, 4]
+    C_tangent[0, 5] = float(-np.sum(DA * y))
+    C_tangent[5, 0] = C_tangent[0, 5]
+    C_tangent[4, 4] = float(np.sum(DA * z**2))
+    C_tangent[4, 5] = float(-np.sum(DA * y * z))
+    C_tangent[5, 4] = C_tangent[4, 5]
+    C_tangent[5, 5] = float(np.sum(DA * y**2))
+
+    from xkep_cae.core.state import CosseratFiberPlasticState as _CFPS
+
+    state_new = _CFPS(fiber_states=new_fiber_states)
+    return stress, C_tangent, state_new
+
+
+def assemble_cosserat_beam_fiber(
+    n_elems: int,
+    beam_length: float,
+    rod: CosseratRod,
+    material: ConstitutiveProtocol,
+    u: np.ndarray,
+    states: list[CosseratFiberPlasticState],
+    plasticity: Plasticity1D,
+    fiber_section: FiberSection,
+    *,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None, list[CosseratFiberPlasticState]]:
+    """ファイバーモデル Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
+
+    断面をファイバーに分割し、各ファイバーに1D弾塑性構成則を適用することで
+    曲げの塑性化を表現する。せん断・ねじりは弾性のまま。
+
+    states のサイズ:
+      - uniform 積分: n_elems * rod.n_gauss
+      - SRI: n_elems * 2（非せん断成分の2点ガウス）
+
+    Args:
+        n_elems: 要素数
+        beam_length: 梁長さ
+        rod: CosseratRod 要素
+        material: 構成則（E, nu 提供用）
+        u: (total_dof,) 現在の変位ベクトル
+        states: ファイバー塑性状態リスト（各積分点に1つ）
+        plasticity: 1D弾塑性構成則
+        fiber_section: ファイバー断面
+        stiffness: 接線剛性行列を計算するか
+        internal_force: 内力ベクトルを計算するか
+
+    Returns:
+        (K_T, f_int, states_new)
+    """
+    E, G, nu = rod._extract_material_props(material)
+    kappa_y = rod._resolve_kappa_y(nu)
+    kappa_z = rod._resolve_kappa_z(nu)
+    sec = fiber_section
+    kappa_0 = rod.kappa_0
+
+    is_sri = rod.integration_scheme == "sri"
+
+    n_nodes = n_elems + 1
+    total_dof = n_nodes * 6
+    elem_len = beam_length / n_elems
+
+    K_T = np.zeros((total_dof, total_dof)) if stiffness else None
+    f_int = np.zeros(total_dof) if internal_force else None
+    states_new = [s.copy() for s in states]
+
+    if is_sri:
+        # せん断成分のみの弾性構成行列（低減積分用）
+        C_shear = np.diag(
+            [
+                0.0,
+                kappa_y * G * sec.A,
+                kappa_z * G * sec.A,
+                0.0,
+                0.0,
+                0.0,
+            ]
+        )
+        # 非せん断成分の弾性構成行列（ファイバーで置換される部分含む）
+        C_full = np.diag(
+            [
+                E * sec.A,
+                0.0,
+                0.0,
+                G * sec.J,
+                E * sec.Iy,
+                E * sec.Iz,
+            ]
+        )
+        pts_2, wts_2 = _gauss_points(2)
+        pts_1, wts_1 = _gauss_points(1)
+    else:
+        C_elastic = _cosserat_constitutive_matrix(
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            kappa_y,
+            kappa_z,
+        )
+        gauss_pts, gauss_wts = _gauss_points(rod.n_gauss)
+
+    for i in range(n_elems):
+        coords_i = np.array(
+            [
+                [i * elem_len, 0.0, 0.0],
+                [(i + 1) * elem_len, 0.0, 0.0],
+            ]
+        )
+        dof_s = 6 * i
+        dof_e = 6 * (i + 2)
+
+        dx = coords_i[1] - coords_i[0]
+        L_e = float(np.linalg.norm(dx))
+        e_x = dx / L_e
+        R, _ = _build_local_axes_from_quat(e_x, rod.v_ref)
+        T = _transformation_matrix_12(R)
+        u_local = T @ u[dof_s:dof_e]
+
+        f_local = np.zeros(12)
+        K_local = np.zeros((12, 12))
+
+        if is_sri:
+            # 非せん断成分（2点ガウス）: ファイバー積分
+            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2)):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain_vec = B @ u_local
+                if kappa_0 is not None:
+                    strain_vec[3:6] = strain_vec[3:6] - kappa_0
+                state_idx = i * 2 + gp_idx
+                stress, C_tan, new_st = _compute_generalized_stress_fiber(
+                    strain_vec,
+                    C_full,
+                    plasticity,
+                    states[state_idx],
+                    fiber_section,
+                )
+                states_new[state_idx] = new_st
+                f_local += w * L_e * B.T @ stress
+                K_local += w * L_e * B.T @ C_tan @ B
+
+            # せん断成分（1点ガウス）: 弾性のみ
+            for xi, w in zip(pts_1, wts_1):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain_vec = B @ u_local
+                if kappa_0 is not None:
+                    strain_vec[3:6] = strain_vec[3:6] - kappa_0
+                stress_sh = C_shear @ strain_vec
+                f_local += w * L_e * B.T @ stress_sh
+                K_local += w * L_e * B.T @ C_shear @ B
+        else:
+            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts)):
+                B = _cosserat_b_matrix(L_e, xi)
+                strain_vec = B @ u_local
+                if kappa_0 is not None:
+                    strain_vec[3:6] = strain_vec[3:6] - kappa_0
+                state_idx = i * rod.n_gauss + gp_idx
+                stress, C_tan, new_st = _compute_generalized_stress_fiber(
+                    strain_vec,
+                    C_elastic,
+                    plasticity,
+                    states[state_idx],
+                    fiber_section,
+                )
+                states_new[state_idx] = new_st
+                f_local += w * L_e * B.T @ stress
+                K_local += w * L_e * B.T @ C_tan @ B
+
         if internal_force and f_int is not None:
             f_int[dof_s:dof_e] += T.T @ f_local
         if stiffness and K_T is not None:
