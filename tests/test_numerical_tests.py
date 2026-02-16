@@ -36,10 +36,10 @@ from xkep_cae.numerical_tests.runner import run_all_tests, run_test, run_tests
 # ===========================================================================
 # パラメータ定義
 # ===========================================================================
-E_STEEL = 200e3   # MPa
+E_STEEL = 200e3  # MPa
 NU_STEEL = 0.3
 RHO_STEEL = 7.85e-9  # ton/mm³ (SI consistent with MPa)
-L_BEAM = 100.0    # mm
+L_BEAM = 100.0  # mm
 N_ELEMS = 10
 P_LOAD = -1000.0  # N
 T_TORQUE = 500.0  # N·mm
@@ -92,8 +92,7 @@ class TestAnalyticalSolutions:
         A = 10.0 * 20.0
         G = E_STEEL / (2 * (1 + NU_STEEL))
         kappa = 10.0 * (1.0 + NU_STEEL) / (12.0 + 11.0 * NU_STEEL)
-        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy,
-                                kappa=kappa, G=G, A=A)
+        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy, kappa=kappa, G=G, A=A)
         assert ana["delta_shear"] > 0
         assert ana["delta_mid"] > ana["delta_eb"]
 
@@ -306,14 +305,26 @@ class TestRunAPI:
     def _configs(self):
         return [
             NumericalTestConfig(
-                name="bend3p", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-                length=L_BEAM, n_elems=N_ELEMS, load_value=abs(P_LOAD),
-                section_shape="rectangle", section_params=RECT_PARAMS,
+                name="bend3p",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                length=L_BEAM,
+                n_elems=N_ELEMS,
+                load_value=abs(P_LOAD),
+                section_shape="rectangle",
+                section_params=RECT_PARAMS,
             ),
             NumericalTestConfig(
-                name="tensile", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-                length=L_BEAM, n_elems=N_ELEMS, load_value=1000.0,
-                section_shape="rectangle", section_params=RECT_PARAMS,
+                name="tensile",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                length=L_BEAM,
+                n_elems=N_ELEMS,
+                load_value=1000.0,
+                section_shape="rectangle",
+                section_params=RECT_PARAMS,
             ),
         ]
 
@@ -405,9 +416,15 @@ class TestFrequencyResponse:
 class TestCSVExport:
     def test_static_csv_string(self):
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=4, load_value=1000.0,
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="tensile",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=4,
+            load_value=1000.0,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
         )
         result = run_test(cfg)
         outputs = export_static_csv(result)
@@ -419,9 +436,15 @@ class TestCSVExport:
 
     def test_static_csv_file(self):
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=4, load_value=1000.0,
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="tensile",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=4,
+            load_value=1000.0,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
         )
         result = run_test(cfg)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -431,11 +454,19 @@ class TestCSVExport:
 
     def test_frequency_csv_string(self):
         cfg = FrequencyResponseConfig(
-            beam_type="timo2d", E=E_STEEL, nu=NU_STEEL, rho=RHO_STEEL,
-            length=L_BEAM, n_elems=4,
-            section_shape="rectangle", section_params=RECT_PARAMS,
-            freq_min=10.0, freq_max=100.0, n_freq=5,
-            excitation_type="displacement", excitation_dof="uy",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=4,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
+            freq_min=10.0,
+            freq_max=100.0,
+            n_freq=5,
+            excitation_type="displacement",
+            excitation_dof="uy",
         )
         result = run_frequency_response(cfg)
         outputs = export_frequency_response_csv(result)
@@ -445,11 +476,19 @@ class TestCSVExport:
 
     def test_frequency_csv_file(self):
         cfg = FrequencyResponseConfig(
-            beam_type="timo2d", E=E_STEEL, nu=NU_STEEL, rho=RHO_STEEL,
-            length=L_BEAM, n_elems=4,
-            section_shape="rectangle", section_params=RECT_PARAMS,
-            freq_min=10.0, freq_max=100.0, n_freq=5,
-            excitation_type="displacement", excitation_dof="uy",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=4,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
+            freq_min=10.0,
+            freq_max=100.0,
+            n_freq=5,
+            excitation_type="displacement",
+            excitation_dof="uy",
         )
         result = run_frequency_response(cfg)
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -585,18 +624,30 @@ class TestInpInput:
 class TestCircularSection:
     def test_bend3p_circle(self):
         cfg = NumericalTestConfig(
-            name="bend3p", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=N_ELEMS, load_value=abs(P_LOAD),
-            section_shape="circle", section_params=CIRC_PARAMS,
+            name="bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=N_ELEMS,
+            load_value=abs(P_LOAD),
+            section_shape="circle",
+            section_params=CIRC_PARAMS,
         )
         result = run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_tensile_circle_3d(self):
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="timo3d", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=N_ELEMS, load_value=1000.0,
-            section_shape="circle", section_params=CIRC_PARAMS,
+            name="tensile",
+            beam_type="timo3d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=N_ELEMS,
+            load_value=1000.0,
+            section_shape="circle",
+            section_params=CIRC_PARAMS,
         )
         result = run_test(cfg)
         assert result.relative_error < 1e-10
@@ -609,29 +660,48 @@ class TestValidation:
     def test_invalid_test_name(self):
         with pytest.raises(ValueError, match="試験名"):
             NumericalTestConfig(
-                name="invalid", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-                length=100.0, n_elems=10, load_value=1000.0,
+                name="invalid",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                length=100.0,
+                n_elems=10,
+                load_value=1000.0,
             )
 
     def test_bend4p_requires_span(self):
         with pytest.raises(ValueError, match="load_span"):
             NumericalTestConfig(
-                name="bend4p", beam_type="timo2d", E=E_STEEL, nu=NU_STEEL,
-                length=100.0, n_elems=10, load_value=1000.0,
+                name="bend4p",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                length=100.0,
+                n_elems=10,
+                load_value=1000.0,
             )
 
     def test_freq_response_requires_rho(self):
         with pytest.raises(ValueError, match="rho"):
             FrequencyResponseConfig(
-                beam_type="timo2d", E=E_STEEL, nu=NU_STEEL, rho=-1.0,
-                length=100.0, n_elems=10,
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                rho=-1.0,
+                length=100.0,
+                n_elems=10,
             )
 
     def test_cosserat_beam_type_accepted(self):
         """cosserat が beam_type として受理されること."""
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=100.0, n_elems=10, load_value=1000.0,
+            name="tensile",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=100.0,
+            n_elems=10,
+            load_value=1000.0,
         )
         assert cfg.beam_type == "cosserat"
 
@@ -646,9 +716,15 @@ class TestCosseratNumerical:
     def test_tensile_cosserat(self):
         """Cosserat rod で引張試験（厳密解一致）."""
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=N_ELEMS, load_value=1000.0,
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="tensile",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=N_ELEMS,
+            load_value=1000.0,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
         )
         result = run_test(cfg)
         assert result.relative_error is not None
@@ -657,9 +733,15 @@ class TestCosseratNumerical:
     def test_torsion_cosserat(self):
         """Cosserat rod でねん回試験（厳密解一致）."""
         cfg = NumericalTestConfig(
-            name="torsion", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=N_ELEMS, load_value=T_TORQUE,
-            section_shape="circle", section_params=CIRC_PARAMS,
+            name="torsion",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=N_ELEMS,
+            load_value=T_TORQUE,
+            section_shape="circle",
+            section_params=CIRC_PARAMS,
         )
         result = run_test(cfg)
         assert result.relative_error is not None
@@ -668,9 +750,15 @@ class TestCosseratNumerical:
     def test_bend3p_cosserat(self):
         """Cosserat rod で3点曲げ試験（メッシュ収束）."""
         cfg = NumericalTestConfig(
-            name="bend3p", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=20, load_value=abs(P_LOAD),
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="bend3p",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=20,
+            load_value=abs(P_LOAD),
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
         )
         result = run_test(cfg)
         assert result.relative_error is not None
@@ -680,9 +768,15 @@ class TestCosseratNumerical:
     def test_bend4p_cosserat(self):
         """Cosserat rod で4点曲げ試験."""
         cfg = NumericalTestConfig(
-            name="bend4p", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=20, load_value=abs(P_LOAD),
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="bend4p",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=20,
+            load_value=abs(P_LOAD),
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
             load_span=25.0,
         )
         result = run_test(cfg)
@@ -692,9 +786,15 @@ class TestCosseratNumerical:
     def test_section_forces_cosserat(self):
         """Cosserat rod の断面力ポスト処理."""
         cfg = NumericalTestConfig(
-            name="tensile", beam_type="cosserat", E=E_STEEL, nu=NU_STEEL,
-            length=L_BEAM, n_elems=4, load_value=1000.0,
-            section_shape="rectangle", section_params=RECT_PARAMS,
+            name="tensile",
+            beam_type="cosserat",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            length=L_BEAM,
+            n_elems=4,
+            load_value=1000.0,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
         )
         result = run_test(cfg)
         assert len(result.element_forces) == 4
@@ -718,18 +818,26 @@ class TestFrequencyResponseAnalytical:
         A = sec["A"]
         I = sec["I"]  # noqa: E741 — 2D梁のxy面内曲げ用断面二次モーメント
         beta_1L = 1.8751
-        f1_analytical = beta_1L**2 / (2 * np.pi * L_BEAM**2) * np.sqrt(
-            E_STEEL * I / (RHO_STEEL * A)
+        f1_analytical = (
+            beta_1L**2 / (2 * np.pi * L_BEAM**2) * np.sqrt(E_STEEL * I / (RHO_STEEL * A))
         )
 
         cfg = FrequencyResponseConfig(
-            beam_type="eb2d", E=E_STEEL, nu=NU_STEEL, rho=RHO_STEEL,
-            length=L_BEAM, n_elems=20,
-            section_shape="rectangle", section_params=RECT_PARAMS,
-            freq_min=1.0, freq_max=f1_analytical * 2.0,
+            beam_type="eb2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=20,
+            section_shape="rectangle",
+            section_params=RECT_PARAMS,
+            freq_min=1.0,
+            freq_max=f1_analytical * 2.0,
             n_freq=500,
-            excitation_type="acceleration", excitation_dof="uy",
-            damping_alpha=0.0, damping_beta=1e-8,
+            excitation_type="acceleration",
+            excitation_dof="uy",
+            damping_alpha=0.0,
+            damping_beta=1e-8,
         )
         result = run_frequency_response(cfg)
         assert len(result.natural_frequencies) > 0, "固有振動数が検出されなかった"
@@ -738,7 +846,7 @@ class TestFrequencyResponseAnalytical:
         # 20要素のFEMは十分正確（5%以内）
         assert rel_error < 0.05, (
             f"第1固有振動数: FEM={f1_fem:.1f} Hz, 解析解={f1_analytical:.1f} Hz, "
-            f"誤差={rel_error*100:.1f}%"
+            f"誤差={rel_error * 100:.1f}%"
         )
 
 
@@ -751,8 +859,12 @@ class TestNonUniformMesh:
     def test_2d_nonuniform_basic(self):
         """2D非一様メッシュの基本テスト."""
         from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+
         nodes, conn = generate_beam_mesh_2d_nonuniform(
-            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+            100.0,
+            [50.0],
+            base_n_elems=10,
+            refinement_factor=3.0,
         )
         assert nodes.shape[1] == 2
         assert nodes[0, 0] == pytest.approx(0.0)
@@ -765,8 +877,12 @@ class TestNonUniformMesh:
     def test_3d_nonuniform_basic(self):
         """3D非一様メッシュの基本テスト."""
         from xkep_cae.numerical_tests.core import generate_beam_mesh_3d_nonuniform
+
         nodes, conn = generate_beam_mesh_3d_nonuniform(
-            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+            100.0,
+            [50.0],
+            base_n_elems=10,
+            refinement_factor=3.0,
         )
         assert nodes.shape[1] == 3
         assert nodes[0, 0] == pytest.approx(0.0)
@@ -775,8 +891,12 @@ class TestNonUniformMesh:
     def test_nonuniform_multiple_points(self):
         """複数の細分割ポイント."""
         from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+
         nodes, conn = generate_beam_mesh_2d_nonuniform(
-            100.0, [25.0, 75.0], base_n_elems=10, refinement_factor=3.0,
+            100.0,
+            [25.0, 75.0],
+            base_n_elems=10,
+            refinement_factor=3.0,
         )
         assert any(abs(nodes[:, 0] - 25.0) < 1e-10)
         assert any(abs(nodes[:, 0] - 75.0) < 1e-10)
@@ -787,8 +907,12 @@ class TestNonUniformMesh:
             generate_beam_mesh_2d,
             generate_beam_mesh_2d_nonuniform,
         )
+
         _, conn_uniform = generate_beam_mesh_2d(10, 100.0)
         _, conn_nonuniform = generate_beam_mesh_2d_nonuniform(
-            100.0, [50.0], base_n_elems=10, refinement_factor=3.0,
+            100.0,
+            [50.0],
+            base_n_elems=10,
+            refinement_factor=3.0,
         )
         assert len(conn_nonuniform) >= len(conn_uniform)

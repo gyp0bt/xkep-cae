@@ -13,8 +13,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import NamedTuple
 
-import numpy as np
-
 from xkep_cae.core.state import PlasticState1D
 
 

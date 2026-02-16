@@ -257,10 +257,12 @@ def test_assembly_beam_timo3d_single():
     beam = TimoshenkoBeam3D(section=sec)
     mat = BeamElastic1D(E=200e3, nu=0.3)
 
-    nodes = np.array([
-        [0.0, 0.0, 0.0],
-        [100.0, 0.0, 0.0],
-    ])
+    nodes = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [100.0, 0.0, 0.0],
+        ]
+    )
     conn = np.array([[0, 1]])
 
     K = assemble_global_stiffness(
@@ -325,10 +327,7 @@ def test_assembly_beam_timo3d_cantilever_y():
     u, info = solve_displacement(Kbc, fbc, size_threshold=4000)
 
     # 解析解: δ_y = PL³/(3EIz) + PL/(κGA)
-    delta_analytical = (
-        P * L_total**3 / (3.0 * E * sec.Iz)
-        + P * L_total / (kappa * G * sec.A)
-    )
+    delta_analytical = P * L_total**3 / (3.0 * E * sec.Iz) + P * L_total / (kappa * G * sec.A)
     delta_fem = u[6 * n_elems + 1]
     assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
 
@@ -372,10 +371,7 @@ def test_assembly_beam_timo3d_cantilever_z():
     u, info = solve_displacement(Kbc, fbc, size_threshold=4000)
 
     # 解析解: δ_z = PL³/(3EIy) + PL/(κGA)
-    delta_analytical = (
-        P * L_total**3 / (3.0 * E * sec.Iy)
-        + P * L_total / (kappa * G * sec.A)
-    )
+    delta_analytical = P * L_total**3 / (3.0 * E * sec.Iy) + P * L_total / (kappa * G * sec.A)
     delta_fem = u[6 * n_elems + 2]
     assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
 
@@ -472,9 +468,6 @@ def test_assembly_beam_timo3d_inclined():
 
     # 円形断面では梁軸方向に関わらず横方向たわみの解析解は同じ
     # δ = PL³/(3EI) + PL/(κGA) (I = Iy = Iz for circular)
-    delta_analytical = (
-        P * L_total**3 / (3.0 * E * sec.Iz)
-        + P * L_total / (kappa * G * sec.A)
-    )
+    delta_analytical = P * L_total**3 / (3.0 * E * sec.Iz) + P * L_total / (kappa * G * sec.A)
     delta_fem = u[6 * n_elems + 1]
     assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-8

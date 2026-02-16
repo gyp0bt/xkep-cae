@@ -41,8 +41,9 @@ def _assemble_2d(
         n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
         coords = nodes[[n1, n2]]
         Ke = ke_func(coords)
-        edofs = np.array([3 * n1, 3 * n1 + 1, 3 * n1 + 2,
-                          3 * n2, 3 * n2 + 1, 3 * n2 + 2], dtype=int)
+        edofs = np.array(
+            [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2], dtype=int
+        )
         for ii in range(6):
             for jj in range(6):
                 K[edofs[ii], edofs[jj]] += Ke[ii, jj]
@@ -126,8 +127,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
 
     注: n_elemsは偶数であること（中央節点が存在するため）。
     """
-    sec = _build_section_props(cfg.section_shape, cfg.section_params,
-                               cfg.beam_type, cfg.nu)
+    sec = _build_section_props(cfg.section_shape, cfg.section_params, cfg.beam_type, cfg.nu)
     P = cfg.load_value
     L = cfg.length
     n_elems = cfg.n_elems
@@ -158,7 +158,9 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
 
     # 境界条件
     fixed_dofs = _build_simply_supported_bc_3p(
-        n_elems, is_3d, cfg.support_condition,
+        n_elems,
+        is_3d,
+        cfg.support_condition,
     )
     fixed_dofs = np.array(sorted(set(fixed_dofs)), dtype=int)
 
@@ -170,7 +172,10 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     # 解析解
     use_timo = cfg.beam_type in ("timo2d", "timo3d")
     ana = analytical_bend3p(
-        abs(P), L, cfg.E, sec["I"],
+        abs(P),
+        L,
+        cfg.E,
+        sec["I"],
         kappa=sec["kappa"] if use_timo else None,
         G=cfg.G if use_timo else None,
         A=sec["A"] if use_timo else None,
@@ -188,9 +193,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     element_forces = _compute_section_forces(cfg, sec, nodes, conn, u)
 
     # 摩擦影響評価
-    friction_msg = assess_friction_effect(
-        cfg.name, cfg.span_ratio, cfg.support_condition
-    )
+    friction_msg = assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
         config=cfg,
@@ -216,8 +219,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     荷重スパン a の位置に荷重を配置。
     n_elemsは荷重点が節点に乗るよう調整する。
     """
-    sec = _build_section_props(cfg.section_shape, cfg.section_params,
-                               cfg.beam_type, cfg.nu)
+    sec = _build_section_props(cfg.section_shape, cfg.section_params, cfg.beam_type, cfg.nu)
     P = cfg.load_value
     L = cfg.length
     a = cfg.load_span
@@ -256,7 +258,9 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
 
     # 境界条件（3点曲げと同じ支持条件）
     fixed_dofs = _build_simply_supported_bc_3p(
-        n_elems, is_3d, cfg.support_condition,
+        n_elems,
+        is_3d,
+        cfg.support_condition,
     )
     fixed_dofs = np.array(sorted(set(fixed_dofs)), dtype=int)
 
@@ -266,7 +270,11 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
 
     use_timo = cfg.beam_type in ("timo2d", "timo3d")
     ana = analytical_bend4p(
-        abs(P), L, a_actual, cfg.E, sec["I"],
+        abs(P),
+        L,
+        a_actual,
+        cfg.E,
+        sec["I"],
         kappa=sec["kappa"] if use_timo else None,
         G=cfg.G if use_timo else None,
         A=sec["A"] if use_timo else None,
@@ -281,9 +289,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
     element_forces = _compute_section_forces(cfg, sec, nodes, conn, u)
-    friction_msg = assess_friction_effect(
-        cfg.name, cfg.span_ratio, cfg.support_condition
-    )
+    friction_msg = assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
         config=cfg,
@@ -308,8 +314,7 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
 
     一端固定、他端軸方向荷重。
     """
-    sec = _build_section_props(cfg.section_shape, cfg.section_params,
-                               cfg.beam_type, cfg.nu)
+    sec = _build_section_props(cfg.section_shape, cfg.section_params, cfg.beam_type, cfg.nu)
     P = cfg.load_value
     L = cfg.length
     n_elems = cfg.n_elems
@@ -375,8 +380,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
 
     一端固定、他端ねじりモーメント T。
     """
-    sec = _build_section_props(cfg.section_shape, cfg.section_params,
-                               cfg.beam_type, cfg.nu)
+    sec = _build_section_props(cfg.section_shape, cfg.section_params, cfg.beam_type, cfg.nu)
     T = cfg.load_value
     L = cfg.length
     n_elems = cfg.n_elems
@@ -440,9 +444,7 @@ def _get_ke_func(cfg: NumericalTestConfig, sec: dict):
         A = sec["A"]
         Iy, Iz, J = sec["Iy"], sec["Iz"], sec["J"]
         ky, kz, G = sec["kappa_y"], sec["kappa_z"], cfg.G
-        return lambda coords: timo_beam3d_ke_global(
-            coords, E, G, A, Iy, Iz, J, ky, kz
-        )
+        return lambda coords: timo_beam3d_ke_global(coords, E, G, A, Iy, Iz, J, ky, kz)
 
     elif cfg.beam_type == "cosserat":
         from xkep_cae.elements.beam_cosserat import cosserat_ke_global
@@ -450,9 +452,7 @@ def _get_ke_func(cfg: NumericalTestConfig, sec: dict):
         A = sec["A"]
         Iy, Iz, J = sec["Iy"], sec["Iz"], sec["J"]
         ky, kz, G = sec["kappa_y"], sec["kappa_z"], cfg.G
-        return lambda coords: cosserat_ke_global(
-            coords, E, G, A, Iy, Iz, J, ky, kz
-        )
+        return lambda coords: cosserat_ke_global(coords, E, G, A, Iy, Iz, J, ky, kz)
     else:
         raise ValueError(f"未対応の beam_type: {cfg.beam_type}")
 
@@ -477,8 +477,7 @@ def _compute_section_forces(
         for elem_nodes in conn:
             n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
             coords = nodes[[n1, n2]]
-            edofs = [3 * n1, 3 * n1 + 1, 3 * n1 + 2,
-                     3 * n2, 3 * n2 + 1, 3 * n2 + 2]
+            edofs = [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2]
             u_elem = u[edofs]
             f1, f2 = eb_beam2d_section_forces(coords, u_elem, E, sec["A"], sec["I"])
             forces.append((f1, f2))
@@ -489,8 +488,7 @@ def _compute_section_forces(
         for elem_nodes in conn:
             n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
             coords = nodes[[n1, n2]]
-            edofs = [3 * n1, 3 * n1 + 1, 3 * n1 + 2,
-                     3 * n2, 3 * n2 + 1, 3 * n2 + 2]
+            edofs = [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2]
             u_elem = u[edofs]
             f1, f2 = timo_beam2d_section_forces(
                 coords, u_elem, E, sec["A"], sec["I"], sec["kappa"], cfg.G
@@ -509,9 +507,16 @@ def _compute_section_forces(
                     edofs.append(6 * n + d)
             u_elem = u[edofs]
             f1, f2 = beam3d_section_forces(
-                coords, u_elem, E, cfg.G, sec["A"],
-                sec["Iy"], sec["Iz"], sec["J"],
-                sec["kappa_y"], sec["kappa_z"],
+                coords,
+                u_elem,
+                E,
+                cfg.G,
+                sec["A"],
+                sec["Iy"],
+                sec["Iz"],
+                sec["J"],
+                sec["kappa_y"],
+                sec["kappa_z"],
             )
             forces.append((f1, f2))
 
@@ -527,9 +532,16 @@ def _compute_section_forces(
                     edofs.append(6 * n + d)
             u_elem = u[edofs]
             f1, f2 = cosserat_section_forces(
-                coords, u_elem, E, cfg.G, sec["A"],
-                sec["Iy"], sec["Iz"], sec["J"],
-                sec["kappa_y"], sec["kappa_z"],
+                coords,
+                u_elem,
+                E,
+                cfg.G,
+                sec["A"],
+                sec["Iy"],
+                sec["Iz"],
+                sec["J"],
+                sec["kappa_y"],
+                sec["kappa_z"],
             )
             forces.append((f1, f2))
 

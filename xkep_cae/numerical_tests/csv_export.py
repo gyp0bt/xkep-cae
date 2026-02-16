@@ -67,9 +67,7 @@ def export_static_csv(
     if result.friction_warning:
         summary_rows.append(["摩擦影響注記", result.friction_warning])
 
-    outputs["summary"] = _write_csv(
-        summary_rows, output_dir, f"{prefix}{name}_summary.csv"
-    )
+    outputs["summary"] = _write_csv(summary_rows, output_dir, f"{prefix}{name}_summary.csv")
 
     # --- 節点変位 CSV ---
     n_nodes = len(result.node_coords)
@@ -91,15 +89,19 @@ def export_static_csv(
             row.append(f"{u[dof_per_node * i + d]:.10g}")
         disp_rows.append(row)
 
-    outputs["nodal_disp"] = _write_csv(
-        disp_rows, output_dir, f"{prefix}{name}_nodal_disp.csv"
-    )
+    outputs["nodal_disp"] = _write_csv(disp_rows, output_dir, f"{prefix}{name}_nodal_disp.csv")
 
     # --- 要素断面力 CSV ---
     if is_3d:
         force_header = [
-            "elem_id", "node_pos",
-            "N", "Vy", "Vz", "Mx", "My", "Mz",
+            "elem_id",
+            "node_pos",
+            "N",
+            "Vy",
+            "Vz",
+            "Mx",
+            "My",
+            "Mz",
         ]
     else:
         force_header = ["elem_id", "node_pos", "N", "V", "M"]
@@ -107,25 +109,49 @@ def export_static_csv(
     force_rows = [force_header]
     for e_idx, (f1, f2) in enumerate(result.element_forces):
         if is_3d:
-            force_rows.append([
-                str(e_idx), "node1",
-                f"{f1.N:.10g}", f"{f1.Vy:.10g}", f"{f1.Vz:.10g}",
-                f"{f1.Mx:.10g}", f"{f1.My:.10g}", f"{f1.Mz:.10g}",
-            ])
-            force_rows.append([
-                str(e_idx), "node2",
-                f"{f2.N:.10g}", f"{f2.Vy:.10g}", f"{f2.Vz:.10g}",
-                f"{f2.Mx:.10g}", f"{f2.My:.10g}", f"{f2.Mz:.10g}",
-            ])
+            force_rows.append(
+                [
+                    str(e_idx),
+                    "node1",
+                    f"{f1.N:.10g}",
+                    f"{f1.Vy:.10g}",
+                    f"{f1.Vz:.10g}",
+                    f"{f1.Mx:.10g}",
+                    f"{f1.My:.10g}",
+                    f"{f1.Mz:.10g}",
+                ]
+            )
+            force_rows.append(
+                [
+                    str(e_idx),
+                    "node2",
+                    f"{f2.N:.10g}",
+                    f"{f2.Vy:.10g}",
+                    f"{f2.Vz:.10g}",
+                    f"{f2.Mx:.10g}",
+                    f"{f2.My:.10g}",
+                    f"{f2.Mz:.10g}",
+                ]
+            )
         else:
-            force_rows.append([
-                str(e_idx), "node1",
-                f"{f1.N:.10g}", f"{f1.V:.10g}", f"{f1.M:.10g}",
-            ])
-            force_rows.append([
-                str(e_idx), "node2",
-                f"{f2.N:.10g}", f"{f2.V:.10g}", f"{f2.M:.10g}",
-            ])
+            force_rows.append(
+                [
+                    str(e_idx),
+                    "node1",
+                    f"{f1.N:.10g}",
+                    f"{f1.V:.10g}",
+                    f"{f1.M:.10g}",
+                ]
+            )
+            force_rows.append(
+                [
+                    str(e_idx),
+                    "node2",
+                    f"{f2.N:.10g}",
+                    f"{f2.V:.10g}",
+                    f"{f2.M:.10g}",
+                ]
+            )
 
     outputs["element_forces"] = _write_csv(
         force_rows, output_dir, f"{prefix}{name}_element_forces.csv"
@@ -177,29 +203,31 @@ def export_frequency_response_csv(
         for i, fn in enumerate(result.natural_frequencies):
             summary_rows.append([f"推定固有振動数 {i + 1}", f"{fn:.4f} Hz"])
 
-    outputs["summary"] = _write_csv(
-        summary_rows, output_dir, f"{prefix}freq_response_summary.csv"
-    )
+    outputs["summary"] = _write_csv(summary_rows, output_dir, f"{prefix}freq_response_summary.csv")
 
     # --- FRF CSV ---
     frf_header = [
-        "freq_Hz", "omega_rad_s",
-        "H_real", "H_imag", "magnitude", "phase_deg",
+        "freq_Hz",
+        "omega_rad_s",
+        "H_real",
+        "H_imag",
+        "magnitude",
+        "phase_deg",
     ]
     frf_rows = [frf_header]
     for i in range(len(result.frequencies)):
-        frf_rows.append([
-            f"{result.frequencies[i]:.6f}",
-            f"{2 * 3.141592653589793 * result.frequencies[i]:.6f}",
-            f"{result.transfer_function[i].real:.10g}",
-            f"{result.transfer_function[i].imag:.10g}",
-            f"{result.magnitude[i]:.10g}",
-            f"{result.phase_deg[i]:.6f}",
-        ])
+        frf_rows.append(
+            [
+                f"{result.frequencies[i]:.6f}",
+                f"{2 * 3.141592653589793 * result.frequencies[i]:.6f}",
+                f"{result.transfer_function[i].real:.10g}",
+                f"{result.transfer_function[i].imag:.10g}",
+                f"{result.magnitude[i]:.10g}",
+                f"{result.phase_deg[i]:.6f}",
+            ]
+        )
 
-    outputs["frf"] = _write_csv(
-        frf_rows, output_dir, f"{prefix}freq_response_frf.csv"
-    )
+    outputs["frf"] = _write_csv(frf_rows, output_dir, f"{prefix}freq_response_frf.csv")
 
     return outputs
 

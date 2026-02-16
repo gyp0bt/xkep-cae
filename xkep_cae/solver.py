@@ -12,8 +12,9 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 import numpy as np
 import scipy.sparse as sp
@@ -134,6 +135,7 @@ def solve_displacement(
 # 非線形ソルバー: Newton-Raphson 法
 # ====================================================================
 
+
 @dataclass
 class NonlinearResult:
     """非線形解析の結果.
@@ -204,9 +206,6 @@ def newton_raphson(
     """
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
-    fixed_set = set(fixed_dofs.tolist())
-    free_dofs = np.array([i for i in range(ndof) if i not in fixed_set])
-
     if u0 is not None:
         u = u0.copy()
     else:
@@ -544,8 +543,7 @@ def arc_length(
                 dl *= 0.5
                 if show_progress:
                     print(
-                        f"  Step {step}: 判別式 < 0。"
-                        f"弧長を {dl:.4e} に縮小 (cutback {cutback + 1})"
+                        f"  Step {step}: 判別式 < 0。弧長を {dl:.4e} に縮小 (cutback {cutback + 1})"
                     )
                 continue
 
@@ -554,12 +552,13 @@ def arc_length(
 
         if not converged_step:
             if show_progress:
-                print(
-                    f"  Step {step}: 収束せず。"
-                )
+                print(f"  Step {step}: 収束せず。")
             return ArcLengthResult(
-                u=u, lam=lam, converged=False,
-                n_steps=step - 1, total_iterations=total_iter,
+                u=u,
+                lam=lam,
+                converged=False,
+                n_steps=step - 1,
+                total_iterations=total_iter,
                 load_history=load_history,
                 displacement_history=disp_history,
             )
@@ -590,8 +589,11 @@ def arc_length(
             break
 
     return ArcLengthResult(
-        u=u, lam=lam, converged=True,
-        n_steps=len(load_history), total_iterations=total_iter,
+        u=u,
+        lam=lam,
+        converged=True,
+        n_steps=len(load_history),
+        total_iterations=total_iter,
         load_history=load_history,
         displacement_history=disp_history,
     )

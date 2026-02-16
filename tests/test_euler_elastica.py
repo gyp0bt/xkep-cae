@@ -29,16 +29,15 @@ from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection
 from xkep_cae.solver import newton_raphson
 
-
 # --- 共通パラメータ ---
 # Euler-Bernoulli 極限に近い細長い梁（せん断変形無視）
-E = 1.0e6       # ヤング率
-NU = 0.0        # ポアソン比 0 で G = E/2
-L = 10.0        # 梁長さ
+E = 1.0e6  # ヤング率
+NU = 0.0  # ポアソン比 0 で G = E/2
+L = 10.0  # 梁長さ
 
 # 正方形断面 (薄い)
-_b = 0.1        # 幅
-_h = 0.1        # 高さ
+_b = 0.1  # 幅
+_h = 0.1  # 高さ
 SEC = BeamSection.rectangle(_b, _h)
 EI = E * SEC.Iz  # = E * b*h³/12
 
@@ -66,15 +65,25 @@ def _solve_cantilever_moment(
 
     def _assemble_tangent(u):
         K, _ = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u,
-            stiffness=True, internal_force=False,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=True,
+            internal_force=False,
         )
         return sp.csr_matrix(K)
 
     def _assemble_fint(u):
         _, f_int = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u,
-            stiffness=False, internal_force=True,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=False,
+            internal_force=True,
         )
         return f_int
 
@@ -87,8 +96,10 @@ def _solve_cantilever_moment(
     fixed_dofs = np.arange(6)
 
     result = newton_raphson(
-        f_ext, fixed_dofs,
-        _assemble_tangent, _assemble_fint,
+        f_ext,
+        fixed_dofs,
+        _assemble_tangent,
+        _assemble_fint,
         n_load_steps=n_load_steps,
         max_iter=max_iter,
         show_progress=False,
@@ -115,15 +126,25 @@ def _solve_cantilever_tip_load(
 
     def _assemble_tangent(u):
         K, _ = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u,
-            stiffness=True, internal_force=False,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=True,
+            internal_force=False,
         )
         return sp.csr_matrix(K)
 
     def _assemble_fint(u):
         _, f_int = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u,
-            stiffness=False, internal_force=True,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=False,
+            internal_force=True,
         )
         return f_int
 
@@ -135,8 +156,10 @@ def _solve_cantilever_tip_load(
     fixed_dofs = np.arange(6)
 
     result = newton_raphson(
-        f_ext, fixed_dofs,
-        _assemble_tangent, _assemble_fint,
+        f_ext,
+        fixed_dofs,
+        _assemble_tangent,
+        _assemble_fint,
         n_load_steps=n_load_steps,
         max_iter=max_iter,
         show_progress=False,
@@ -160,11 +183,11 @@ class TestEndMoment:
     @pytest.mark.parametrize(
         "theta_total, n_elems, n_steps, tol_pct",
         [
-            (np.pi / 4, 20, 5, 2.0),      # 45°: 穏やかな非線形
-            (np.pi / 2, 20, 10, 2.0),      # 90°: 中程度
-            (np.pi, 20, 20, 3.0),          # 180°: 半円
+            (np.pi / 4, 20, 5, 2.0),  # 45°: 穏やかな非線形
+            (np.pi / 2, 20, 10, 2.0),  # 90°: 中程度
+            (np.pi, 20, 20, 3.0),  # 180°: 半円
             (3 * np.pi / 2, 30, 30, 5.0),  # 270°: 大変形
-            (2 * np.pi, 40, 40, 5.0),      # 360°: 完全円
+            (2 * np.pi, 40, 40, 5.0),  # 360°: 完全円
         ],
         ids=["pi/4", "pi/2", "pi", "3pi/2", "2pi"],
     )
@@ -173,13 +196,16 @@ class TestEndMoment:
         M = theta_total * EI / L
 
         u = _solve_cantilever_moment(
-            M, n_elems=n_elems, n_load_steps=n_steps, max_iter=100,
+            M,
+            n_elems=n_elems,
+            n_load_steps=n_steps,
+            max_iter=100,
         )
 
         # 先端の変形後位置
         tip_node = n_elems
-        x_tip = L + u[6 * tip_node + 0]      # x座標: 初期 + 変位
-        y_tip = 0.0 + u[6 * tip_node + 1]    # y座標: 初期 + 変位
+        x_tip = L + u[6 * tip_node + 0]  # x座標: 初期 + 変位
+        y_tip = 0.0 + u[6 * tip_node + 1]  # y座標: 初期 + 変位
 
         # 解析解
         R_curv = EI / M  # 曲率半径
@@ -187,11 +213,11 @@ class TestEndMoment:
         y_exact = R_curv * (1.0 - np.cos(theta_total))
 
         # 誤差 (先端位置のユークリッド距離)
-        pos_error = np.sqrt((x_tip - x_exact)**2 + (y_tip - y_exact)**2)
+        pos_error = np.sqrt((x_tip - x_exact) ** 2 + (y_tip - y_exact) ** 2)
         tol = tol_pct / 100.0 * L
 
         assert pos_error < tol, (
-            f"θ={theta_total/np.pi:.2f}π: "
+            f"θ={theta_total / np.pi:.2f}π: "
             f"数値解 ({x_tip:.4f}, {y_tip:.4f}), "
             f"解析解 ({x_exact:.4f}, {y_exact:.4f}), "
             f"誤差 {pos_error:.4f} > 許容 {tol:.4f} ({tol_pct}%L)"
@@ -217,9 +243,9 @@ class TestTipLoad:
 
     # Elastica 厳密解: (alpha, shortening/L, deflection/L)
     REFERENCE = {
-        1:  (0.05634, 0.30174),
-        2:  (0.16056, 0.49349),
-        5:  (0.38756, 0.71384),
+        1: (0.05634, 0.30174),
+        2: (0.16056, 0.49349),
+        5: (0.38756, 0.71384),
         10: (0.55494, 0.81066),
     }
 
@@ -238,7 +264,10 @@ class TestTipLoad:
         P = alpha * EI / L**2
 
         u = _solve_cantilever_tip_load(
-            P, n_elems=n_elems, n_load_steps=n_steps, max_iter=100,
+            P,
+            n_elems=n_elems,
+            n_load_steps=n_steps,
+            max_iter=100,
         )
 
         tip_node = n_elems
@@ -255,10 +284,8 @@ class TestTipLoad:
         err_dy = abs(dy_num - dy_ref) / dy_ref
 
         assert err_dx < tol, (
-            f"α={alpha}: δx/L 数値={dx_num:.4f}, 参照={dx_ref:.4f}, "
-            f"相対誤差={err_dx:.3f} > {tol}"
+            f"α={alpha}: δx/L 数値={dx_num:.4f}, 参照={dx_ref:.4f}, 相対誤差={err_dx:.3f} > {tol}"
         )
         assert err_dy < tol, (
-            f"α={alpha}: δy/L 数値={dy_num:.4f}, 参照={dy_ref:.4f}, "
-            f"相対誤差={err_dy:.3f} > {tol}"
+            f"α={alpha}: δy/L 数値={dy_num:.4f}, 参照={dy_ref:.4f}, 相対誤差={err_dy:.3f} > {tol}"
         )

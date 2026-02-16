@@ -60,9 +60,7 @@ class NumericalTestConfig:
 
     def __post_init__(self) -> None:
         if self.name not in TEST_TYPES_STATIC:
-            raise ValueError(
-                f"試験名は {TEST_TYPES_STATIC} のいずれか: {self.name}"
-            )
+            raise ValueError(f"試験名は {TEST_TYPES_STATIC} のいずれか: {self.name}")
         if self.beam_type not in ("eb2d", "timo2d", "timo3d", "cosserat"):
             raise ValueError(f"beam_type は eb2d/timo2d/timo3d/cosserat: {self.beam_type}")
         if self.name == "bend4p" and self.load_span is None:
@@ -276,9 +274,7 @@ def generate_beam_mesh_2d_nonuniform(
     x_coords: list[float] = [0.0]
     x = 0.0
     while x < total_length - 1e-12:
-        in_refined = any(
-            abs(x - p) < refinement_radius for p in refinement_points
-        )
+        in_refined = any(abs(x - p) < refinement_radius for p in refinement_points)
         spacing = fine_spacing if in_refined else base_spacing
         x = min(x + spacing, total_length)
         x_coords.append(x)
@@ -318,8 +314,11 @@ def generate_beam_mesh_3d_nonuniform(
         connectivity: (n_elems, 2) 要素接続
     """
     nodes_2d, conn = generate_beam_mesh_2d_nonuniform(
-        total_length, refinement_points,
-        base_n_elems, refinement_factor, refinement_radius,
+        total_length,
+        refinement_points,
+        base_n_elems,
+        refinement_factor,
+        refinement_radius,
     )
     n_nodes = len(nodes_2d)
     nodes = np.column_stack([nodes_2d[:, 0], np.zeros(n_nodes), np.zeros(n_nodes)])
@@ -559,10 +558,7 @@ def assess_friction_effect(
         mode_desc = "ピン支持（水平拘束）"
 
     if span_ratio > 10:
-        msgs.append(
-            f"L/h={span_ratio:.1f} > 10: 摩擦影響は無視可能。"
-            f"現在の支持条件: {mode_desc}"
-        )
+        msgs.append(f"L/h={span_ratio:.1f} > 10: 摩擦影響は無視可能。現在の支持条件: {mode_desc}")
     elif span_ratio > 4:
         msgs.append(
             f"L/h={span_ratio:.1f} (4-10): 摩擦影響は軽微（1-5%程度）。"

@@ -44,14 +44,13 @@ from xkep_cae.materials.plasticity_1d import (
 from xkep_cae.sections.beam import BeamSection
 from xkep_cae.solver import newton_raphson
 
-
 # ===== テスト用パラメータ =====
-E_MAT = 200_000.0     # MPa
+E_MAT = 200_000.0  # MPa
 NU = 0.3
-SIGMA_Y0 = 250.0      # MPa
-H_ISO = 1000.0         # 等方硬化係数
-C_KIN = 5000.0         # 移動硬化係数
-GAMMA_KIN = 50.0       # Armstrong-Frederick 回復項
+SIGMA_Y0 = 250.0  # MPa
+H_ISO = 1000.0  # 等方硬化係数
+C_KIN = 5000.0  # 移動硬化係数
+GAMMA_KIN = 50.0  # Armstrong-Frederick 回復項
 
 
 def _make_plasticity(
@@ -68,6 +67,7 @@ def _make_plasticity(
 # ================================================================
 # 構成則単体テスト
 # ================================================================
+
 
 class TestPlasticity1DElastic:
     """降伏未満の弾性応答."""
@@ -197,7 +197,6 @@ class TestPlasticity1DIsotropic:
         r2 = plas.return_mapping(eps2, r1.state_new)
 
         # 等方硬化: 圧縮降伏応力 = -(sigma_y0 + H_iso * alpha1)
-        sigma_y_expanded = SIGMA_Y0 + H_ISO * alpha1
         # 圧縮降伏が発生しているので alpha が増加
         assert r2.state_new.alpha > alpha1
 
@@ -312,6 +311,7 @@ class TestPlasticity1DStateImmutability:
 # 要素・構造レベルテスト
 # ================================================================
 
+
 def _make_section() -> BeamSection:
     return BeamSection.rectangle(10.0, 20.0)
 
@@ -351,12 +351,25 @@ class TestPlasticAssemblyElasticMatch:
 
         # 弾塑性版
         _, f_p, _ = assemble_cosserat_beam_plastic(
-            n_elems, L, rod, mat, u, states, plas,
-            stiffness=False, internal_force=True,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            states,
+            plas,
+            stiffness=False,
+            internal_force=True,
         )
         # 弾性版
         _, f_e = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u, stiffness=False, internal_force=True,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=False,
+            internal_force=True,
         )
 
         np.testing.assert_allclose(f_p, f_e, atol=1e-10)
@@ -381,11 +394,24 @@ class TestPlasticAssemblyElasticMatch:
         states = [CosseratPlasticState() for _ in range(n_elems * n_gauss)]
 
         K_p, _, _ = assemble_cosserat_beam_plastic(
-            n_elems, L, rod, mat, u, states, plas,
-            stiffness=True, internal_force=False,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            states,
+            plas,
+            stiffness=True,
+            internal_force=False,
         )
         K_e, _ = assemble_cosserat_beam(
-            n_elems, L, rod, mat, u, stiffness=True, internal_force=False,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            stiffness=True,
+            internal_force=False,
         )
 
         np.testing.assert_allclose(K_p, K_e, atol=1e-10)
@@ -405,7 +431,13 @@ class TestPlasticAssemblyElasticMatch:
         states = [CosseratPlasticState() for _ in range(n_elems * 2)]
 
         K_p, f_p, _ = assemble_cosserat_beam_plastic(
-            n_elems, L, rod, mat, u, states, plas,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            states,
+            plas,
         )
         K_e, f_e = assemble_cosserat_beam(n_elems, L, rod, mat, u)
 
@@ -431,8 +463,6 @@ class TestPlasticBarAnalytical:
         # 降伏荷重
         P_y = SIGMA_Y0 * sec.A
         # 降伏変位
-        u_y = SIGMA_Y0 / E_MAT * L
-
         # 降伏の 1.5 倍の荷重
         P_target = 1.5 * P_y
         n_steps = 5
@@ -448,25 +478,44 @@ class TestPlasticBarAnalytical:
 
             states_trial = None
 
-            def _fint(u_, _states=states, _states_trial_ref=[None]):
+            def _fint(u_, _states=states, _states_trial_ref=None):
                 nonlocal states_trial
                 _, f, st_new = assemble_cosserat_beam_plastic(
-                    n_elems, L, rod, mat, u_, _states, plas,
-                    stiffness=False, internal_force=True,
+                    n_elems,
+                    L,
+                    rod,
+                    mat,
+                    u_,
+                    _states,
+                    plas,
+                    stiffness=False,
+                    internal_force=True,
                 )
                 states_trial = st_new
                 return f
 
             def _Kt(u_, _states=states):
                 K, _, _ = assemble_cosserat_beam_plastic(
-                    n_elems, L, rod, mat, u_, _states, plas,
-                    stiffness=True, internal_force=False,
+                    n_elems,
+                    L,
+                    rod,
+                    mat,
+                    u_,
+                    _states,
+                    plas,
+                    stiffness=True,
+                    internal_force=False,
                 )
                 return sp.csr_matrix(K)
 
             result = newton_raphson(
-                f_ext, fixed_dofs, _Kt, _fint,
-                n_load_steps=1, u0=u, show_progress=False,
+                f_ext,
+                fixed_dofs,
+                _Kt,
+                _fint,
+                n_load_steps=1,
+                u0=u,
+                show_progress=False,
             )
             u = result.u
             states = [s.copy() for s in states_trial]
@@ -477,7 +526,6 @@ class TestPlasticBarAnalytical:
 
         # 解析解: 降伏後 E_t = E * H / (E + H)
         E_t = E_MAT * H_ISO / (E_MAT + H_ISO)
-        sigma_final = SIGMA_Y0 + E_t * (P_final / sec.A - SIGMA_Y0) / E_t
         # u = (sigma_y / E + (P/A - sigma_y) / (E*H/(E+H))) * L
         #   = (sigma_y / E) * L + (P/A - sigma_y) / (E*H/(E+H)) * L
         u_expected = (SIGMA_Y0 / E_MAT + (P_final / sec.A - SIGMA_Y0) / E_t) * L
@@ -510,22 +558,41 @@ class TestPlasticBarAnalytical:
             def _fint(u_):
                 nonlocal states_trial
                 _, f, st = assemble_cosserat_beam_plastic(
-                    n_elems, L, rod, mat, u_, states_in, plas,
-                    stiffness=False, internal_force=True,
+                    n_elems,
+                    L,
+                    rod,
+                    mat,
+                    u_,
+                    states_in,
+                    plas,
+                    stiffness=False,
+                    internal_force=True,
                 )
                 states_trial = st
                 return f
 
             def _Kt(u_):
                 K, _, _ = assemble_cosserat_beam_plastic(
-                    n_elems, L, rod, mat, u_, states_in, plas,
-                    stiffness=True, internal_force=False,
+                    n_elems,
+                    L,
+                    rod,
+                    mat,
+                    u_,
+                    states_in,
+                    plas,
+                    stiffness=True,
+                    internal_force=False,
                 )
                 return sp.csr_matrix(K)
 
             result = newton_raphson(
-                f_ext, fixed_dofs, _Kt, _fint,
-                n_load_steps=1, u0=u_in, show_progress=False,
+                f_ext,
+                fixed_dofs,
+                _Kt,
+                _fint,
+                n_load_steps=1,
+                u0=u_in,
+                show_progress=False,
             )
             return result.u, [s.copy() for s in states_trial]
 
@@ -559,15 +626,22 @@ class TestPlasticTangentFD:
 
         # 降伏を超えた変位状態を作る
         u = np.zeros(total_dof)
-        u[6] = 0.005   # node 1 x
+        u[6] = 0.005  # node 1 x
         u[12] = 0.010  # node 2 x
 
         states = [CosseratPlasticState() for _ in range(n_elems)]
 
         # 解析的 tangent
         K_an, _, _ = assemble_cosserat_beam_plastic(
-            n_elems, L, rod, mat, u, states, plas,
-            stiffness=True, internal_force=False,
+            n_elems,
+            L,
+            rod,
+            mat,
+            u,
+            states,
+            plas,
+            stiffness=True,
+            internal_force=False,
         )
 
         # 有限差分 tangent
@@ -580,12 +654,26 @@ class TestPlasticTangentFD:
             u_m[j] -= h
 
             _, f_p, _ = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_p, states, plas,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_p,
+                states,
+                plas,
+                stiffness=False,
+                internal_force=True,
             )
             _, f_m, _ = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_m, states, plas,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_m,
+                states,
+                plas,
+                stiffness=False,
+                internal_force=True,
             )
             K_fd[:, j] = (f_p - f_m) / (2.0 * h)
 
@@ -624,8 +712,15 @@ class TestPlasticNRConvergence:
         residuals = []
         for _it in range(15):
             _, f_int, states_trial = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u, states, plas,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                states,
+                plas,
+                stiffness=False,
+                internal_force=True,
             )
             R = f_ext - f_int
             R[fixed_dofs] = 0.0
@@ -635,8 +730,15 @@ class TestPlasticNRConvergence:
                 break
 
             K, _, _ = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u, states, plas,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                states,
+                plas,
+                stiffness=True,
+                internal_force=False,
             )
             free = [d for d in range(total_dof) if d not in set(fixed_dofs.tolist())]
             K_ff = K[np.ix_(free, free)]
@@ -659,7 +761,7 @@ class TestPlasticNRConvergence:
                 # 二次収束なら ratio は有界
                 assert ratio < 1e6, (
                     f"Not quadratic at step {k}: "
-                    f"r[{k}]={residuals[k]:.2e}, r[{k-1}]={residuals[k-1]:.2e}"
+                    f"r[{k}]={residuals[k]:.2e}, r[{k - 1}]={residuals[k - 1]:.2e}"
                 )
 
 
@@ -687,25 +789,44 @@ class TestPlasticMultiElement:
         def _fint(u_):
             nonlocal states_trial
             _, f, st = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_, states, plas,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                states,
+                plas,
+                stiffness=False,
+                internal_force=True,
             )
             states_trial = st
             return f
 
         def _Kt(u_):
             K, _, _ = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_, states, plas,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                states,
+                plas,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         f_ext = np.zeros(total_dof)
         f_ext[6 * n_elems] = P
 
-        result = newton_raphson(
-            f_ext, fixed_dofs, _Kt, _fint,
-            n_load_steps=1, u0=u, show_progress=False,
+        newton_raphson(
+            f_ext,
+            fixed_dofs,
+            _Kt,
+            _fint,
+            n_load_steps=1,
+            u0=u,
+            show_progress=False,
         )
         states = [s.copy() for s in states_trial]
 
@@ -739,16 +860,30 @@ class TestPlasticSRI:
         def _fint(u_):
             nonlocal states_trial
             _, f, st = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_, states, plas,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                states,
+                plas,
+                stiffness=False,
+                internal_force=True,
             )
             states_trial = st
             return f
 
         def _Kt(u_):
             K, _, _ = assemble_cosserat_beam_plastic(
-                n_elems, L, rod, mat, u_, states, plas,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                states,
+                plas,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
@@ -756,8 +891,13 @@ class TestPlasticSRI:
         f_ext[6 * n_elems] = P
 
         result = newton_raphson(
-            f_ext, fixed_dofs, _Kt, _fint,
-            n_load_steps=1, u0=u, show_progress=False,
+            f_ext,
+            fixed_dofs,
+            _Kt,
+            _fint,
+            n_load_steps=1,
+            u0=u,
+            show_progress=False,
         )
         u = result.u
         u_tip = u[6 * n_elems]

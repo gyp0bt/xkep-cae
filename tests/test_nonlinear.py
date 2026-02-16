@@ -10,21 +10,18 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import scipy.sparse as sp
 
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
     assemble_cosserat_beam,
-    cosserat_ke_global,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection
 from xkep_cae.solver import NonlinearResult, newton_raphson
 
-
 # --- テスト用パラメータ ---
-E = 200_000.0   # MPa
+E = 200_000.0  # MPa
 NU = 0.3
 G = E / (2.0 * (1.0 + NU))
 
@@ -72,15 +69,25 @@ class TestNewtonRaphsonLinear:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -90,8 +97,10 @@ class TestNewtonRaphsonLinear:
         fixed_dofs = np.arange(6)  # 節点0を全固定
 
         result = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=1,
             max_iter=10,
             show_progress=False,
@@ -100,7 +109,9 @@ class TestNewtonRaphsonLinear:
         assert result.converged
         delta_expected = P * L / (E * sec.A)
         np.testing.assert_almost_equal(
-            result.u[6 * n_elems], delta_expected, decimal=6,
+            result.u[6 * n_elems],
+            delta_expected,
+            decimal=6,
         )
 
     def test_bending_cantilever(self):
@@ -117,15 +128,25 @@ class TestNewtonRaphsonLinear:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -135,8 +156,10 @@ class TestNewtonRaphsonLinear:
         fixed_dofs = np.arange(6)
 
         result = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=1,
             max_iter=10,
             show_progress=False,
@@ -168,15 +191,25 @@ class TestNewtonRaphsonLinear:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -187,16 +220,20 @@ class TestNewtonRaphsonLinear:
 
         # 1ステップ
         result_1 = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=1,
             show_progress=False,
         )
 
         # 5ステップ
         result_5 = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=5,
             show_progress=False,
         )
@@ -204,7 +241,9 @@ class TestNewtonRaphsonLinear:
         assert result_1.converged
         assert result_5.converged
         np.testing.assert_array_almost_equal(
-            result_1.u, result_5.u, decimal=6,
+            result_1.u,
+            result_5.u,
+            decimal=6,
         )
 
 
@@ -217,8 +256,13 @@ class TestAssembleCosseratBeam:
         rod = CosseratRod(section=sec)
         u = np.zeros(66)  # 11 nodes * 6 DOF
         K, f = assemble_cosserat_beam(
-            10, 100.0, rod, mat, u,
-            stiffness=True, internal_force=False,
+            10,
+            100.0,
+            rod,
+            mat,
+            u,
+            stiffness=True,
+            internal_force=False,
         )
         assert K is not None
         assert f is None
@@ -230,8 +274,13 @@ class TestAssembleCosseratBeam:
         rod = CosseratRod(section=sec)
         u = np.zeros(66)
         K, f = assemble_cosserat_beam(
-            10, 100.0, rod, mat, u,
-            stiffness=False, internal_force=True,
+            10,
+            100.0,
+            rod,
+            mat,
+            u,
+            stiffness=False,
+            internal_force=True,
         )
         assert K is None
         assert f is not None
@@ -243,8 +292,13 @@ class TestAssembleCosseratBeam:
         rod = CosseratRod(section=sec)
         u = np.zeros(66)
         _, f = assemble_cosserat_beam(
-            10, 100.0, rod, mat, u,
-            stiffness=False, internal_force=True,
+            10,
+            100.0,
+            rod,
+            mat,
+            u,
+            stiffness=False,
+            internal_force=True,
         )
         np.testing.assert_array_almost_equal(f, np.zeros(66))
 
@@ -268,9 +322,9 @@ class TestLargeDeformationCantilever:
         L = 200.0
         # 大きな荷重: 線形解で L/10 程度のたわみが出る
         # δ_lin = PL³/(3EI) → P = 3EI·δ/(L³)
-        I = sec.Iz
+        Iz = sec.Iz
         delta_target = L / 5.0  # 40mm たわみ
-        P = 3.0 * E * I * delta_target / L**3
+        P = 3.0 * E * Iz * delta_target / L**3
 
         rod = CosseratRod(section=sec)
         n_nodes = n_elems + 1
@@ -278,15 +332,25 @@ class TestLargeDeformationCantilever:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -296,8 +360,10 @@ class TestLargeDeformationCantilever:
         fixed_dofs = np.arange(6)
 
         result = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=10,
             max_iter=30,
             show_progress=False,
@@ -329,15 +395,25 @@ class TestLargeDeformationCantilever:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -349,8 +425,10 @@ class TestLargeDeformationCantilever:
         fixed_dofs = np.arange(6)
 
         result_nl = newton_raphson(
-            f_ext_nl, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext_nl,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=5,
             max_iter=30,
             show_progress=False,
@@ -363,20 +441,24 @@ class TestLargeDeformationCantilever:
             K = np.zeros((total_dof, total_dof))
             elem_len = L / n_elems
             for i in range(n_elems):
-                coords = np.array([
-                    [i * elem_len, 0.0, 0.0],
-                    [(i + 1) * elem_len, 0.0, 0.0],
-                ])
+                coords = np.array(
+                    [
+                        [i * elem_len, 0.0, 0.0],
+                        [(i + 1) * elem_len, 0.0, 0.0],
+                    ]
+                )
                 Ke = rod.local_stiffness(coords, mat)
-                K[6 * i:6 * (i + 2), 6 * i:6 * (i + 2)] += Ke
+                K[6 * i : 6 * (i + 2), 6 * i : 6 * (i + 2)] += Ke
             return sp.csr_matrix(K)
 
         f_ext_lin = np.zeros(total_dof)
         f_ext_lin[6 * n_elems + 1] = P_bending
 
         result_lin = newton_raphson(
-            f_ext_lin, fixed_dofs,
-            _assemble_tangent_linear, _assemble_fint,
+            f_ext_lin,
+            fixed_dofs,
+            _assemble_tangent_linear,
+            _assemble_fint,
             n_load_steps=1,
             max_iter=10,
             show_progress=False,
@@ -388,8 +470,7 @@ class TestLargeDeformationCantilever:
 
         # 引張下では非線形の方が変位が小さい（剛性増加）
         assert delta_nl < delta_lin, (
-            f"非線形 {delta_nl:.6f} >= 線形 {delta_lin:.6f}: "
-            "引張下の幾何剛性効果が効いていない"
+            f"非線形 {delta_nl:.6f} >= 線形 {delta_lin:.6f}: 引張下の幾何剛性効果が効いていない"
         )
 
     def test_load_history_recorded(self):
@@ -406,15 +487,25 @@ class TestLargeDeformationCantilever:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -424,15 +515,18 @@ class TestLargeDeformationCantilever:
         fixed_dofs = np.arange(6)
 
         result = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=5,
             show_progress=False,
         )
 
         assert len(result.load_history) == 5
         np.testing.assert_array_almost_equal(
-            result.load_history, [0.2, 0.4, 0.6, 0.8, 1.0],
+            result.load_history,
+            [0.2, 0.4, 0.6, 0.8, 1.0],
         )
         assert len(result.displacement_history) == 5
 
@@ -442,9 +536,9 @@ class TestLargeDeformationCantilever:
         mat = _make_material()
         n_elems = 20
         L = 200.0
-        I = sec.Iz
+        Iz = sec.Iz
         delta_target = L / 10.0
-        P = 3.0 * E * I * delta_target / L**3
+        P = 3.0 * E * Iz * delta_target / L**3
 
         rod = CosseratRod(section=sec, integration_scheme="sri")
         n_nodes = n_elems + 1
@@ -452,15 +546,25 @@ class TestLargeDeformationCantilever:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -470,8 +574,10 @@ class TestLargeDeformationCantilever:
         fixed_dofs = np.arange(6)
 
         result = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             n_load_steps=5,
             max_iter=30,
             show_progress=False,
