@@ -14,7 +14,8 @@ CAE ソフトウェアの品質保証における重要な資産として、今�
 - [5. Euler Elastica — 幾何学的非線形（Phase 3）](#5-euler-elastica--幾何学的非線形phase-3)
 - [6. 弧長法（Phase 3）](#6-弧長法phase-3)
 - [7. 1D 弾塑性構成則（Phase 4.1）](#7-1d-弾塑性構成則phase-41)
-- [8. 2D 連続体要素（Phase 1）](#8-2d-連続体要素phase-1)
+- [8. ファイバーモデル弾塑性（Phase 4.2）](#8-ファイバーモデル弾塑性phase-42)
+- [9. 2D 連続体要素（Phase 1）](#9-2d-連続体要素phase-1)
 - [検証図の生成方法](#検証図の生成方法)
 - [テスト実行方法](#テスト実行方法)
 
@@ -270,7 +271,86 @@ shooting method 数値解（rtol = 10⁻¹²）。
 
 ---
 
-## 8. 2D 連続体要素（Phase 1）
+## 8. ファイバーモデル弾塑性（Phase 4.2）
+
+**テストファイル**: `tests/test_fiber_section.py`
+
+### 8.1 FiberSection 断面定数
+
+| テスト名 | 解析解 | 許容誤差 |
+|----------|--------|----------|
+| 矩形断面積 | A = b × h | 相対誤差 < 10⁻¹⁰ |
+| 矩形 Iy | Iy = bh³/12 | 相対誤差 < 1%（分割数依存） |
+| 矩形 Iz | Iz = b³h/12 | 相対誤差 < 1%（分割数依存） |
+| 円形断面積 | A = πd²/4 | 相対誤差 < 1% |
+| 円形 Iy | Iy = πd⁴/64 | 相対誤差 < 5%（分割数依存） |
+| Iy 分割数収束 | bh³/12（厳密解） | 分割数増加で単調収束 |
+
+**解析解の導出**:
+ファイバー近似の断面定数は、分割数を増やすと連続体の解析解 A = ∫dA, Iy = ∫z²dA に収束する。
+矩形断面は等間隔ファイバーで近似するため、有限分割数では Iy にリーマン和による近似誤差が生じる。
+
+### 8.2 ファイバー応力積分
+
+| テスト名 | 解析解 | 許容誤差 |
+|----------|--------|----------|
+| 弾性軸力 | N = EA · Γ₁ | 相対誤差 < 10⁻¹⁰ |
+| 弾性曲げ My | My = EIy · κ₂ | 相対誤差 < 1% |
+| 弾性曲げ Mz | Mz = EIz · κ₃ | 相対誤差 < 1% |
+| 弾性接線（対角） | C[0,0] = EA, C[4,4] = EIy, C[5,5] = EIz | 相対誤差 < 1% |
+| 弾性接線（非対角） | C[0,4] = C[0,5] = C[4,5] = 0（対称断面） | 絶対誤差 < 10⁻¹⁰ |
+| 接線の有限差分 | D_fd = (f(ε+h) − f(ε−h))/(2h) | 相対誤差 < 10⁻⁴ |
+| 塑性域 EA 低下 | 降伏後 EA_eff < EA | 定性確認 |
+
+**解析解の導出**:
+- ファイバーひずみ: εᵢ = Γ₁ + κ₂ · zᵢ − κ₃ · yᵢ
+- 断面力: N = Σ(σᵢ · Aᵢ), My = Σ(σᵢ · zᵢ · Aᵢ), Mz = −Σ(σᵢ · yᵢ · Aᵢ)
+- 接線剛性: C[α,β] = Σ(Dᵢ · φα(yᵢ,zᵢ) · φβ(yᵢ,zᵢ) · Aᵢ)
+
+### 8.3 アセンブリレベル検証
+
+| テスト名 | 参照解 | 許容誤差 |
+|----------|--------|----------|
+| uniform 弾性一致（内力） | 標準弾性アセンブリの内力 | 相対誤差 < 10⁻³ |
+| uniform 弾性一致（剛性） | 標準弾性アセンブリの剛性行列 | 相対誤差 < 10⁻³ |
+| SRI 弾性一致（内力） | SRI 弾性アセンブリの内力 | 相対誤差 < 10⁻³ |
+| 全体接線の有限差分 | K_fd = (f(u+h) − f(u−h))/(2h) | 相対誤差 < 10⁻⁴ |
+
+### 8.4 弾塑性曲げ
+
+| テスト名 | 解析解 | 許容誤差 |
+|----------|--------|----------|
+| 弾性限界モーメント | M_y = σ_y · Iy / z_max | 相対誤差 < 5% |
+| 全塑性モーメント | M_p = σ_y · bh²/4 | 相対誤差 < 5% |
+| 形状係数 | M_p / M_y = 1.5（矩形断面） | 相対誤差 < 5% |
+| 片持ち梁 NR 解析 | 全塑性到達の確認 | NR 収束確認 |
+| NR 二次収束 | r_{n+1}/r_n² ≈ const | 収束率確認 |
+| モーメント-曲率曲線 | 弾性→弾塑性→全塑性遷移 | 定性確認 |
+| 軸引張一致 | Phase 4.1 の bilinear 解析解 | 相対誤差 < 10⁻⁴ |
+
+**解析解の導出**:
+- 弾性限界モーメント: M_y = σ_y · I / c（最外ファイバーが降伏する曲げモーメント）
+- 全塑性モーメント: M_p = σ_y · Z_p（矩形断面では Z_p = bh²/4）
+- 形状係数: f = Z_p / Z_e = 1.5（矩形断面）
+
+### 検証図
+
+![Fiber Moment-Curvature](fiber_moment_curvature.png)
+
+**図の説明**: ファイバーモデルによるモーメント-曲率曲線。
+完全弾塑性（青実線）と等方硬化（赤破線）の両方を表示。
+弾性域では直線的な応答を示し、弾性限界モーメント M_y を超えると剛性が低下する。
+矩形断面の形状係数 M_p/M_y = 1.5 が正しく表現されている。
+
+![Fiber Cantilever Moment](fiber_cantilever_moment.png)
+
+**図の説明**: 片持ち梁の先端モーメント荷重に対する回転角の荷重-変位曲線。
+Newton-Raphson 法による非線形解析結果（赤丸）が弾性解（黒破線）から分岐し、
+全塑性モーメント M_p に漸近する様子が確認できる。
+
+---
+
+## 9. 2D 連続体要素（Phase 1）
 
 **テストファイル**: `tests/test_quad4_eas.py`, `tests/test_abaqus_comparison.py`
 
@@ -296,7 +376,7 @@ python tests/generate_verification_plots.py
 
 出力先: `docs/verification/*.png`
 
-以下の10枚の検証図が生成される:
+以下の12枚の検証図が生成される:
 
 | Phase | ファイル名 | 内容 |
 |-------|-----------|------|
@@ -310,6 +390,8 @@ python tests/generate_verification_plots.py
 | 4.1 | `hysteresis_loop.png` | 繰返し荷重ヒステリシスループ |
 | 4.1 | `bauschinger_comparison.png` | バウシンガー効果比較 |
 | 4.1 | `load_displacement_bar.png` | 弾塑性棒 荷重-変位曲線 |
+| 4.2 | `fiber_moment_curvature.png` | ファイバーモデル モーメント-曲率曲線 |
+| 4.2 | `fiber_cantilever_moment.png` | ファイバー片持ち梁 荷重-回転曲線 |
 
 ---
 
@@ -328,7 +410,7 @@ pytest tests/ -m "bend3p" -v
 pytest tests/test_plasticity_1d.py -v
 ```
 
-**現在のテスト数**: 435 passed, 2 skipped
+**現在のテスト数**: 471 passed, 2 skipped
 
 ---
 
@@ -341,3 +423,5 @@ pytest tests/test_plasticity_1d.py -v
 5. Cook, R.D. et al. (1974). *Concepts and Applications of Finite Element Analysis.* Wiley.
 6. Crisfield, M.A. (1981). "A fast incremental/iterative solution procedure that handles 'snap-through'." *Computers & Structures*, 13, 55–62.
 7. Armstrong, P.J. and Frederick, C.O. (1966). "A mathematical representation of the multiaxial Bauschinger effect." *CEGB Report RD/B/N731.*
+8. de Souza Neto, E.A. et al. (2008). *Computational Methods for Plasticity: Theory and Applications.* Wiley, Ch.14.
+9. Spacone, E. et al. (1996). "Fibre beam-column model for non-linear analysis of R/C frames." *Earthquake Eng. Struct. Dyn.*, 25, 711–725.

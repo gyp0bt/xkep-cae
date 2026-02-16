@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1 完了。435テストパス。**
+**Phase 1〜3 + Phase 4.1〜4.2 完了。471テストパス。**
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -18,11 +18,11 @@
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8 + Phase C）
 - [使用例](docs/examples.md) — API・梁要素・非線形・弾塑性のコード例
 - [バリデーション文書](docs/verification/validation.md) — 全Phase の解析解・厳密解との比較検証
-- [検証図](docs/verification/) — 解析解比較の検証プロット（10枚）
+- [検証図](docs/verification/) — 解析解比較の検証プロット（12枚）
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
-- [実装状況](docs/status/status-022.md) — 最新のステータス（バリデーション文書化）
+- [実装状況](docs/status/status-023.md) — 最新のステータス（Phase 4.2 ファイバーモデル）
 - [ステータス履歴](docs/status/) — 全ステータスファイル一覧
 
 ## インストール

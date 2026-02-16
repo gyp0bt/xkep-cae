@@ -15,11 +15,12 @@
 
 ---
 
-## 現在地（Phase 4.1 完了）
+## 現在地（Phase 4.2 完了）
 
-Phase 1〜3 + Phase 4.1 完了（435テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 完了（471テスト）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
+ファイバーモデル断面（曲げの塑性化）実装完了。FiberSection + ファイバー積分アセンブリ。
 全 Phase のバリデーションテストを[検証文書](verification/validation.md)に図付きで文書化済み。
 ラインサーチと Lee's frame 等の追加ベンチマークはオプションとして残存。
 動的解析の一部（整合質量行列・Rayleigh減衰・FRF）は Phase 2.6 で先行実装済み。
@@ -41,8 +42,9 @@ Phase 1〜3 + Phase 4.1 完了（435テスト）。
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力 |
-| **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒（**435テスト**）, [バリデーション文書](verification/validation.md) |
+| **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, ファイバーモデル断面（曲げの塑性化） |
+| **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ（**471テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md) |
 
 ### 未実装（現状の制約）
@@ -191,7 +193,7 @@ class BeamSection:
 - [x] 基本断面（矩形、円形）— `BeamSection2D`
 - [x] 3D断面（矩形, 円形, パイプ）— `BeamSection`（A, Iy, Iz, J, Cowper κy/κz）
 - [ ] 一般断面（任意形状、メッシュベース数値積分）
-- [ ] ファイバーモデル断面（材料非線形用、Phase 4で拡張）
+- [x] ファイバーモデル断面（FiberSection: 矩形/円形/パイプ、Phase 4.2 で実装）
 
 ### 2.5 Cosserat rod（幾何学的厳密梁） ✓
 
@@ -450,14 +452,16 @@ Cosserat非線形と別ルートの定式化。必要に応じて実装。
 - [x] NR 統合（外部荷重ステップ + 状態管理）
 - [x] 検証図（応力-歪み、ヒステリシス、バウシンガー、荷重-変位）
 
-### 4.2 ファイバーモデル
+### 4.2 ファイバーモデル ✓
 
 断面をファイバー（微小断面要素）に分割し、各ファイバーに1D構成則を適用。
 
-- [ ] ファイバー断面の離散化
-- [ ] 断面力 ← ファイバーの応力積分
-- [ ] 断面接線剛性 ← ファイバーの接線剛性積分
-- [ ] テスト：弾塑性片持ち梁の荷重変位曲線
+- [x] ファイバー断面の離散化（FiberSection: 矩形/円形/パイプ）
+- [x] 断面力 ← ファイバーの応力積分（N, My, Mz）
+- [x] 断面接線剛性 ← ファイバーの接線剛性積分（3×3 サブ行列 [N,My,Mz]×[Γ₁,κ₂,κ₃]）
+- [x] アセンブリ関数 `assemble_cosserat_beam_fiber()`（uniform + SRI 対応）
+- [x] テスト：弾塑性片持ち梁の荷重変位曲線（36テスト）
+- [x] 検証図：モーメント-曲率曲線、片持ち梁荷重-変位曲線
 
 ### 4.3 構造減衰
 
