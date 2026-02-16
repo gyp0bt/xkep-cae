@@ -1026,6 +1026,226 @@ def plot_load_displacement_bar():
 
 
 # =====================================================================
+# Phase 4.2: ファイバーモデル（曲げの塑性化）
+# =====================================================================
+
+
+def plot_fiber_moment_curvature():
+    """ファイバーモデルのモーメント-曲率曲線.
+
+    矩形断面 (b=10, h=20) に等方硬化弾塑性材料を適用し、
+    弾性→弾塑性→全塑性の遷移をプロットする。
+
+    解析解:
+      M_y = sigma_y * b*h^2/6  (弾性限界)
+      M_p = sigma_y * b*h^2/4  (全塑性)
+      shape factor = 1.5 (矩形断面)
+    """
+    plt = _setup_matplotlib()
+
+    from xkep_cae.core.state import CosseratFiberPlasticState
+    from xkep_cae.elements.beam_cosserat import (
+        _compute_generalized_stress_fiber,
+        _cosserat_constitutive_matrix,
+    )
+    from xkep_cae.materials.plasticity_1d import (
+        IsotropicHardening,
+        Plasticity1D,
+    )
+    from xkep_cae.sections.fiber import FiberSection
+
+    E = 200_000.0
+    nu = 0.3
+    sigma_y = 250.0
+    b, h = 10.0, 20.0
+    G = E / (2.0 * (1.0 + nu))
+
+    # --- 完全弾塑性 (H=0) ---
+    fs = FiberSection.rectangle(b, h, ny=4, nz=80)
+    kappa_cowper = fs.cowper_kappa_y(nu)
+    C_elastic = _cosserat_constitutive_matrix(
+        E, G, fs.A, fs.Iy, fs.Iz, fs.J, kappa_cowper, kappa_cowper,
+    )
+    plas_pp = Plasticity1D(E=E, iso=IsotropicHardening(sigma_y0=sigma_y, H_iso=0.0))
+
+    kappa_y_limit = sigma_y / (E * h / 2.0)
+    kappas = np.linspace(0, 15 * kappa_y_limit, 200)
+    moments_pp = []
+    state = CosseratFiberPlasticState.create(fs.n_fibers)
+    for kap in kappas:
+        strain = np.array([0.0, 0.0, 0.0, 0.0, kap, 0.0])
+        stress, _, state_new = _compute_generalized_stress_fiber(
+            strain, C_elastic, plas_pp, state, fs,
+        )
+        moments_pp.append(stress[4])
+        state = state_new
+
+    # --- 等方硬化 (H=1000) ---
+    plas_iso = Plasticity1D(E=E, iso=IsotropicHardening(sigma_y0=sigma_y, H_iso=1000.0))
+    moments_iso = []
+    state = CosseratFiberPlasticState.create(fs.n_fibers)
+    for kap in kappas:
+        strain = np.array([0.0, 0.0, 0.0, 0.0, kap, 0.0])
+        stress, _, state_new = _compute_generalized_stress_fiber(
+            strain, C_elastic, plas_iso, state, fs,
+        )
+        moments_iso.append(stress[4])
+        state = state_new
+
+    kappas = np.array(kappas)
+    moments_pp = np.array(moments_pp)
+    moments_iso = np.array(moments_iso)
+
+    # 解析解
+    W_el = b * h**2 / 6.0
+    W_pl = b * h**2 / 4.0
+    M_y = sigma_y * W_el
+    M_p = sigma_y * W_pl
+    M_elastic = E * fs.Iy * kappas
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(
+        kappas / kappa_y_limit, M_elastic / M_y,
+        "k--", lw=1, label="Elastic (EI*kappa)",
+    )
+    ax.plot(
+        kappas / kappa_y_limit, moments_pp / M_y,
+        "b-", lw=2, label="Fiber: perfectly plastic (H=0)",
+    )
+    ax.plot(
+        kappas / kappa_y_limit, moments_iso / M_y,
+        "r-", lw=2, label="Fiber: isotropic hardening (H=1000)",
+    )
+    ax.axhline(M_p / M_y, color="gray", ls=":", lw=1, label=f"M_p/M_y = {M_p / M_y:.2f}")
+    ax.axhline(1.0, color="gray", ls="-.", lw=1, alpha=0.5)
+    ax.set_xlabel("kappa / kappa_y")
+    ax.set_ylabel("M / M_y")
+    ax.set_title("Fiber Model: Moment-Curvature for Rectangle (b=10, h=20)")
+    ax.set_xlim(0, 15)
+    ax.set_ylim(0, 3.5)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "fiber_moment_curvature.png")
+    plt.close(fig)
+    print("  -> fiber_moment_curvature.png")
+
+
+def plot_fiber_cantilever_load_displacement():
+    """ファイバーモデル片持ち梁の荷重-変位曲線.
+
+    先端モーメントを増分載荷し、NR法で解いた結果をプロットする。
+    弾性解析解と比較して塑性化の効果を確認する。
+    """
+    plt = _setup_matplotlib()
+
+    from xkep_cae.core.state import CosseratFiberPlasticState
+    from xkep_cae.elements.beam_cosserat import (
+        CosseratRod,
+        assemble_cosserat_beam_fiber,
+    )
+    from xkep_cae.materials.beam_elastic import BeamElastic1D
+    from xkep_cae.materials.plasticity_1d import (
+        IsotropicHardening,
+        Plasticity1D,
+    )
+    from xkep_cae.sections.fiber import FiberSection
+    from xkep_cae.solver import newton_raphson
+
+    E = 200_000.0
+    nu = 0.3
+    sigma_y = 250.0
+    H_iso = 1000.0
+    b, h = 10.0, 20.0
+    L = 100.0
+    n_elems = 8
+
+    fs = FiberSection.rectangle(b, h, ny=4, nz=40)
+    rod = CosseratRod(section=fs, integration_scheme="uniform", n_gauss=1)
+    mat = BeamElastic1D(E=E, nu=nu)
+    plas = Plasticity1D(E=E, iso=IsotropicHardening(sigma_y0=sigma_y, H_iso=H_iso))
+
+    n_nodes = n_elems + 1
+    total_dof = n_nodes * 6
+    fixed_dofs = np.arange(6)
+
+    W_el = b * h**2 / 6.0
+    M_y = sigma_y * W_el
+    M_max = 2.0 * M_y
+    n_steps = 20
+
+    moments = []
+    theta_tips = []
+    n_gp = n_elems * rod.n_gauss
+    states = [CosseratFiberPlasticState.create(fs.n_fibers) for _ in range(n_gp)]
+    u = np.zeros(total_dof)
+
+    for step in range(1, n_steps + 1):
+        lam = step / n_steps
+        f_ext = np.zeros(total_dof)
+        f_ext[6 * n_elems + 4] = lam * M_max
+
+        states_trial = [None] * n_gp
+
+        def _fint(u_, _states=states):
+            nonlocal states_trial
+            _, f, st = assemble_cosserat_beam_fiber(
+                n_elems, L, rod, mat, u_, _states, plas, fs,
+                stiffness=False, internal_force=True,
+            )
+            states_trial = st
+            return f
+
+        def _Kt(u_, _states=states):
+            K, _, _ = assemble_cosserat_beam_fiber(
+                n_elems, L, rod, mat, u_, _states, plas, fs,
+                stiffness=True, internal_force=False,
+            )
+            return sp.csr_matrix(K)
+
+        result = newton_raphson(
+            f_ext, fixed_dofs, _Kt, _fint,
+            n_load_steps=1, u0=u, show_progress=False,
+        )
+        u = result.u
+        states = [s.copy() for s in states_trial]
+
+        theta_tips.append(u[6 * n_elems + 4])
+        moments.append(lam * M_max)
+
+    moments = np.array(moments)
+    theta_tips = np.array(theta_tips)
+
+    # 弾性解析解
+    Iy_exact = b * h**3 / 12.0
+    theta_elastic = moments * L / (E * Iy_exact)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(
+        theta_elastic * 1000, moments / M_y,
+        "k--", lw=1.5, label="Elastic (analytical)",
+    )
+    ax.plot(
+        theta_tips * 1000, moments / M_y,
+        "ro-", ms=4, lw=2, label="Fiber model (NR)",
+    )
+    ax.axhline(1.0, color="gray", ls="-.", lw=1, alpha=0.5, label="M_y (elastic limit)")
+    ax.axhline(1.5, color="gray", ls=":", lw=1, alpha=0.5, label="M_p = 1.5*M_y")
+    ax.set_xlabel("Tip rotation [mrad]")
+    ax.set_ylabel("M / M_y")
+    ax.set_title(
+        f"Fiber Model: Cantilever Tip Moment ({n_elems} elements, "
+        f"sigma_y={sigma_y}, H={H_iso})"
+    )
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "fiber_cantilever_moment.png")
+    plt.close(fig)
+    print("  -> fiber_cantilever_moment.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -1056,6 +1276,10 @@ def main():
     plot_hysteresis_loop()
     plot_bauschinger_comparison()
     plot_load_displacement_bar()
+
+    print("[Phase 4.2] ファイバーモデル")
+    plot_fiber_moment_curvature()
+    plot_fiber_cantilever_load_displacement()
 
     print()
     print("Done. All verification plots generated.")
