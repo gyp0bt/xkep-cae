@@ -2,11 +2,16 @@
 
 from xkep_cae.core.constitutive import ConstitutiveProtocol
 from xkep_cae.core.element import ElementProtocol
-from xkep_cae.core.state import CosseratPlasticState, PlasticState1D
+from xkep_cae.core.state import (
+    CosseratFiberPlasticState,
+    CosseratPlasticState,
+    PlasticState1D,
+)
 
 __all__ = [
     "ElementProtocol",
     "ConstitutiveProtocol",
     "PlasticState1D",
     "CosseratPlasticState",
+    "CosseratFiberPlasticState",
 ]

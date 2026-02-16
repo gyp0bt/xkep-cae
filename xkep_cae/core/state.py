@@ -50,3 +50,31 @@ class CosseratPlasticState:
     def copy(self) -> CosseratPlasticState:
         """深いコピーを返す."""
         return CosseratPlasticState(axial=self.axial.copy())
+
+
+@dataclass
+class CosseratFiberPlasticState:
+    """Cosserat rod 1積分点のファイバーモデル弾塑性状態.
+
+    各ファイバーに独立な PlasticState1D を保持する。
+    ファイバーモデルでは軸方向 + 曲げによる非一様ひずみ分布を追跡する。
+
+    ファイバー i のひずみ:
+      epsilon_i = Gamma_1 + kappa_2 * z_i - kappa_3 * y_i
+
+    Attributes:
+        fiber_states: 各ファイバーの塑性状態リスト
+    """
+
+    fiber_states: list[PlasticState1D] = field(default_factory=list)
+
+    @classmethod
+    def create(cls, n_fibers: int) -> CosseratFiberPlasticState:
+        """指定数のファイバーを持つ初期状態を生成する."""
+        return cls(fiber_states=[PlasticState1D() for _ in range(n_fibers)])
+
+    def copy(self) -> CosseratFiberPlasticState:
+        """深いコピーを返す."""
+        return CosseratFiberPlasticState(
+            fiber_states=[s.copy() for s in self.fiber_states],
+        )
