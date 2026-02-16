@@ -39,12 +39,14 @@ def quat_multiply(p: np.ndarray, q: np.ndarray) -> np.ndarray:
     """
     pw, px, py, pz = p
     qw, qx, qy, qz = q
-    return np.array([
-        pw * qw - px * qx - py * qy - pz * qz,
-        pw * qx + px * qw + py * qz - pz * qy,
-        pw * qy - px * qz + py * qw + pz * qx,
-        pw * qz + px * qy - py * qx + pz * qw,
-    ])
+    return np.array(
+        [
+            pw * qw - px * qx - py * qy - pz * qz,
+            pw * qx + px * qw + py * qz - pz * qy,
+            pw * qy - px * qz + py * qw + pz * qx,
+            pw * qz + px * qy - py * qx + pz * qw,
+        ]
+    )
 
 
 def quat_conjugate(q: np.ndarray) -> np.ndarray:
@@ -114,11 +116,13 @@ def quat_rotate_vector(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     tz = 2.0 * (x * vy - y * vx)
 
     # v' = v + w * t + q_vec × t
-    return np.array([
-        vx + w * tx + (y * tz - z * ty),
-        vy + w * ty + (z * tx - x * tz),
-        vz + w * tz + (x * ty - y * tx),
-    ])
+    return np.array(
+        [
+            vx + w * tx + (y * tz - z * ty),
+            vy + w * ty + (z * tx - x * tz),
+            vz + w * tz + (x * ty - y * tx),
+        ]
+    )
 
 
 def quat_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
@@ -145,11 +149,13 @@ def quat_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
     wy = w * y
     wz = w * z
 
-    R = np.array([
-        [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
-        [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
-        [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
-    ])
+    R = np.array(
+        [
+            [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+            [2.0 * (xy + wz), 1.0 - 2.0 * (xx + zz), 2.0 * (yz - wx)],
+            [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+        ]
+    )
     return R
 
 
@@ -216,12 +222,14 @@ def quat_from_axis_angle(axis: np.ndarray, angle: float) -> np.ndarray:
         return quat_identity()
     axis_unit = axis / n
     half = angle / 2.0
-    return np.array([
-        np.cos(half),
-        np.sin(half) * axis_unit[0],
-        np.sin(half) * axis_unit[1],
-        np.sin(half) * axis_unit[2],
-    ])
+    return np.array(
+        [
+            np.cos(half),
+            np.sin(half) * axis_unit[0],
+            np.sin(half) * axis_unit[1],
+            np.sin(half) * axis_unit[2],
+        ]
+    )
 
 
 def quat_from_rotvec(rotvec: np.ndarray) -> np.ndarray:
@@ -244,20 +252,26 @@ def quat_from_rotvec(rotvec: np.ndarray) -> np.ndarray:
         half_angle_sq = angle * angle / 4.0
         w = 1.0 - half_angle_sq / 2.0
         coeff = 0.5 - half_angle_sq / 48.0
-        return quat_normalize(np.array([
-            w,
-            coeff * rotvec[0],
-            coeff * rotvec[1],
-            coeff * rotvec[2],
-        ]))
+        return quat_normalize(
+            np.array(
+                [
+                    w,
+                    coeff * rotvec[0],
+                    coeff * rotvec[1],
+                    coeff * rotvec[2],
+                ]
+            )
+        )
     half = angle / 2.0
     sinc = np.sin(half) / angle
-    return np.array([
-        np.cos(half),
-        sinc * rotvec[0],
-        sinc * rotvec[1],
-        sinc * rotvec[2],
-    ])
+    return np.array(
+        [
+            np.cos(half),
+            sinc * rotvec[0],
+            sinc * rotvec[1],
+            sinc * rotvec[2],
+        ]
+    )
 
 
 def quat_to_rotvec(q: np.ndarray) -> np.ndarray:
@@ -314,9 +328,7 @@ def quat_slerp(q0: np.ndarray, q1: np.ndarray, t: float) -> np.ndarray:
 
     theta = np.arccos(np.clip(dot, -1.0, 1.0))
     sin_theta = np.sin(theta)
-    return (np.sin((1.0 - t) * theta) / sin_theta) * q0 + (
-        np.sin(t * theta) / sin_theta
-    ) * q1
+    return (np.sin((1.0 - t) * theta) / sin_theta) * q0 + (np.sin(t * theta) / sin_theta) * q1
 
 
 def quat_angular_velocity(q: np.ndarray, q_dot: np.ndarray) -> np.ndarray:
@@ -367,11 +379,13 @@ def skew(v: np.ndarray) -> np.ndarray:
     Returns:
         S: (3, 3) 歪対称行列
     """
-    return np.array([
-        [0.0, -v[2], v[1]],
-        [v[2], 0.0, -v[0]],
-        [-v[1], v[0], 0.0],
-    ])
+    return np.array(
+        [
+            [0.0, -v[2], v[1]],
+            [v[2], 0.0, -v[0]],
+            [-v[1], v[0], 0.0],
+        ]
+    )
 
 
 def axial(S: np.ndarray) -> np.ndarray:

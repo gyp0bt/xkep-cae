@@ -13,13 +13,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from scipy import sparse
-from scipy.sparse.linalg import spsolve
 
 from xkep_cae.elements.beam_cosserat import (
-    CosseratForces,
     CosseratRod,
-    CosseratStrains,
     _cosserat_b_matrix,
     _cosserat_constitutive_matrix,
     cosserat_geometric_stiffness_global,
@@ -34,14 +30,13 @@ from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.math.quaternion import quat_identity
 from xkep_cae.sections.beam import BeamSection
 
-
 # --- テスト用パラメータ ---
-E = 200_000.0   # MPa
+E = 200_000.0  # MPa
 NU = 0.3
 G = E / (2.0 * (1.0 + NU))
-L = 100.0       # mm
+L = 100.0  # mm
 B_WIDTH = 10.0  # mm
-H_HEIGHT = 20.0 # mm
+H_HEIGHT = 20.0  # mm
 
 
 def _make_section() -> BeamSection:
@@ -142,7 +137,9 @@ class TestStiffnessMatrix:
         eigvals_sorted = np.sort(eigvals)
         # 最初の6つがゼロ（剛体モード）— 浮動小数点誤差を許容
         for i in range(6):
-            assert abs(eigvals_sorted[i]) < 1e-6, f"eigval[{i}] = {eigvals_sorted[i]} should be zero"
+            assert abs(eigvals_sorted[i]) < 1e-6, (
+                f"eigval[{i}] = {eigvals_sorted[i]} should be zero"
+            )
         # 残りの6つが正
         for i in range(6, 12):
             assert eigvals_sorted[i] > 1e-6, f"eigval[{i}] = {eigvals_sorted[i]} should be positive"
@@ -170,7 +167,9 @@ class TestStiffnessMatrix:
     def test_two_gauss_points(self):
         """2点ガウス求積の剛性行列も対称・正半定値."""
         sec = _make_section()
-        Ke = cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, n_gauss=2)
+        Ke = cosserat_ke_local(
+            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, n_gauss=2
+        )
         np.testing.assert_array_almost_equal(Ke, Ke.T, decimal=12)
         eigvals = np.linalg.eigvalsh(Ke)
         assert np.min(eigvals) > -1e-6
@@ -208,15 +207,22 @@ def _solve_cantilever(
     # 全体剛性行列の組み立て
     K = np.zeros((total_dof, total_dof))
     for i in range(n_elems):
-        coords = np.array([
-            [i * elem_len, 0.0, 0.0],
-            [(i + 1) * elem_len, 0.0, 0.0],
-        ])
+        coords = np.array(
+            [
+                [i * elem_len, 0.0, 0.0],
+                [(i + 1) * elem_len, 0.0, 0.0],
+            ]
+        )
         Ke = cosserat_ke_global(
             coords,
-            material.E, material.G,
-            section.A, section.Iy, section.Iz, section.J,
-            5.0 / 6.0, 5.0 / 6.0,
+            material.E,
+            material.G,
+            section.A,
+            section.Iy,
+            section.Iz,
+            section.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
             n_gauss=n_gauss,
         )
         dof_start = 6 * i
@@ -324,7 +330,7 @@ class TestCantileverBending:
         # 収束性: 各ステップで誤差減少
         for i in range(1, len(errors)):
             assert errors[i] < errors[i - 1], (
-                f"要素数増加で誤差が減少しない: errors[{i}]={errors[i]} >= errors[{i-1}]={errors[i-1]}"
+                f"要素数増加で誤差が減少しない: errors[{i}]={errors[i]} >= errors[{i - 1}]={errors[i - 1]}"
             )
 
     def test_convergence_bending_z(self):
@@ -370,16 +376,24 @@ class TestCantileverCombined:
 
         K = np.zeros((total_dof, total_dof))
         for i in range(n_elems):
-            coords = np.array([
-                [i * elem_len, 0.0, 0.0],
-                [(i + 1) * elem_len, 0.0, 0.0],
-            ])
-            Ke = cosserat_ke_global(
-                coords, mat.E, mat.G,
-                sec.A, sec.Iy, sec.Iz, sec.J,
-                5.0 / 6.0, 5.0 / 6.0,
+            coords = np.array(
+                [
+                    [i * elem_len, 0.0, 0.0],
+                    [(i + 1) * elem_len, 0.0, 0.0],
+                ]
             )
-            K[6 * i:6 * (i + 2), 6 * i:6 * (i + 2)] += Ke
+            Ke = cosserat_ke_global(
+                coords,
+                mat.E,
+                mat.G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                5.0 / 6.0,
+                5.0 / 6.0,
+            )
+            K[6 * i : 6 * (i + 2), 6 * i : 6 * (i + 2)] += Ke
 
         fixed = list(range(6))
         free = [d for d in range(total_dof) if d not in fixed]
@@ -395,10 +409,14 @@ class TestCantileverCombined:
 
         # 軸変位とねじり角は個別解の和
         np.testing.assert_almost_equal(
-            u[6 * n_elems], u_axial[6 * n_elems], decimal=8,
+            u[6 * n_elems],
+            u_axial[6 * n_elems],
+            decimal=8,
         )
         np.testing.assert_almost_equal(
-            u[6 * n_elems + 3], u_torsion[6 * n_elems + 3], decimal=8,
+            u[6 * n_elems + 3],
+            u_torsion[6 * n_elems + 3],
+            decimal=8,
         )
 
 
@@ -412,10 +430,26 @@ class TestCoordinateTransform:
         coords_y = np.array([[0.0, 0.0, 0.0], [0.0, L, 0.0]])
 
         Ke_x = cosserat_ke_global(
-            coords_x, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+            coords_x,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         Ke_y = cosserat_ke_global(
-            coords_y, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+            coords_y,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
 
         # 両方とも対称
@@ -441,8 +475,16 @@ class TestSectionForces:
         u_elem = u[0:12]
 
         f1, f2 = cosserat_section_forces(
-            coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-            5.0 / 6.0, 5.0 / 6.0,
+            coords,
+            u_elem,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         np.testing.assert_almost_equal(f1.N, P, decimal=4)
         np.testing.assert_almost_equal(f2.N, P, decimal=4)
@@ -457,8 +499,16 @@ class TestSectionForces:
         u_elem = u[0:12]
 
         f1, f2 = cosserat_section_forces(
-            coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-            5.0 / 6.0, 5.0 / 6.0,
+            coords,
+            u_elem,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         np.testing.assert_almost_equal(f1.Mx, T, decimal=4)
         np.testing.assert_almost_equal(f2.Mx, T, decimal=4)
@@ -510,7 +560,6 @@ class TestCosseratRodClass:
     def test_compute_strains(self):
         """一般化歪みの計算."""
         sec = _make_section()
-        mat = _make_material()
         elem = CosseratRod(section=sec)
 
         # 純軸伸びの変位
@@ -544,7 +593,9 @@ class TestCosseratRodClass:
     def test_invalid_gauss_points(self):
         sec = _make_section()
         with pytest.raises(ValueError, match="n_gauss"):
-            cosserat_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, n_gauss=3)
+            cosserat_ke_local(
+                E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, n_gauss=3
+            )
 
 
 class TestSimplySupportedBeam:
@@ -573,15 +624,24 @@ class TestSimplySupportedBeam:
             # 組み立て
             K = np.zeros((total_dof, total_dof))
             for i in range(n_elems):
-                coords_i = np.array([
-                    [i * elem_len, 0.0, 0.0],
-                    [(i + 1) * elem_len, 0.0, 0.0],
-                ])
-                Ke = cosserat_ke_global(
-                    coords_i, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-                    kappa, kappa,
+                coords_i = np.array(
+                    [
+                        [i * elem_len, 0.0, 0.0],
+                        [(i + 1) * elem_len, 0.0, 0.0],
+                    ]
                 )
-                K[6 * i: 6 * (i + 2), 6 * i: 6 * (i + 2)] += Ke
+                Ke = cosserat_ke_global(
+                    coords_i,
+                    E,
+                    G,
+                    sec.A,
+                    sec.Iy,
+                    sec.Iz,
+                    sec.J,
+                    kappa,
+                    kappa,
+                )
+                K[6 * i : 6 * (i + 2), 6 * i : 6 * (i + 2)] += Ke
 
             # 境界条件: 6剛体モードを全て除去
             # 節点0: ux=0, uy=0, uz=0, θx=0 (4拘束)
@@ -646,7 +706,16 @@ class TestInternalForce:
         u_local[6] = P * L / (E * sec.A)
         f_ke = Ke @ u_local
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            ky,
+            kz,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
 
@@ -660,7 +729,16 @@ class TestInternalForce:
         u_local[9] = T_torque * L / (G * sec.J)
         f_ke = Ke @ u_local
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            ky,
+            kz,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
 
@@ -674,7 +752,16 @@ class TestInternalForce:
         u_local[11] = 0.001  # θz2
         f_ke = Ke @ u_local
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            ky,
+            kz,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
 
@@ -687,8 +774,16 @@ class TestInternalForce:
         coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
         u_global = u  # 12 DOF (2 nodes)
         f_int = cosserat_internal_force_global(
-            coords, u_global,
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+            coords,
+            u_global,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         # 固定端の反力 = -P, 荷重端の内力 = P
         assert abs(f_int[0] + P) < 1e-6  # 固定端反力
@@ -712,7 +807,16 @@ class TestInternalForce:
         sec = _make_section()
         u_local = np.zeros(12)
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            5.0 / 6.0,
+            5.0 / 6.0,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, np.zeros(12))
 
@@ -726,7 +830,17 @@ class TestInternalForce:
         u_local[7] = 0.01
         f_ke = Ke @ u_local
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local, n_gauss=2,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            ky,
+            kz,
+            u_local,
+            n_gauss=2,
         )
         np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
 
@@ -780,7 +894,16 @@ class TestGeometricStiffness:
         u = _solve_cantilever(1, L, 0, P, sec, mat)
 
         Kg = cosserat_geometric_stiffness_global(
-            coords_x, u, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
+            coords_x,
+            u,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         assert Kg.shape == (12, 12)
         np.testing.assert_array_almost_equal(Kg, Kg.T)
@@ -840,8 +963,17 @@ class TestInitialCurvature:
         kappa_0 = np.array([0.01, 0.0, 0.0])  # 初期ねじり
         u_local = np.zeros(12)
         f_int = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
-            u_local, kappa_0=kappa_0,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            5.0 / 6.0,
+            5.0 / 6.0,
+            u_local,
+            kappa_0=kappa_0,
         )
         # 初期ねじりがあるので θx 方向に非ゼロ内力
         assert np.linalg.norm(f_int) > 0
@@ -857,13 +989,31 @@ class TestInitialCurvature:
         u_local = np.zeros(12)
         u_local[9] = kappa_0[0] * L  # θ₁₂
         f_with = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
-            u_local, kappa_0=kappa_0,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            5.0 / 6.0,
+            5.0 / 6.0,
+            u_local,
+            kappa_0=kappa_0,
         )
         # 変位無しの場合の内力
         f_without = cosserat_internal_force_local(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0,
-            np.zeros(12), kappa_0=None,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            5.0 / 6.0,
+            5.0 / 6.0,
+            np.zeros(12),
+            kappa_0=None,
         )
         # kappa_0が変位で完全に打ち消される → 内力ゼロ（ストレスフリー配位）
         np.testing.assert_array_almost_equal(f_with, f_without, decimal=8)

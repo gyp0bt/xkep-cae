@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 import scipy.sparse as sp
 
 from xkep_cae.elements.beam_cosserat import (
@@ -21,9 +20,8 @@ from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection
 from xkep_cae.solver import ArcLengthResult, arc_length, newton_raphson
 
-
 # --- 共通パラメータ ---
-E = 200_000.0   # MPa
+E = 200_000.0  # MPa
 NU = 0.3
 
 
@@ -60,15 +58,25 @@ class TestArcLengthLinear:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -77,14 +85,19 @@ class TestArcLengthLinear:
         fixed_dofs = np.arange(6)
 
         result_nr = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
-            n_load_steps=1, show_progress=False,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
+            n_load_steps=1,
+            show_progress=False,
         )
 
         result_al = arc_length(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             show_progress=False,
             lambda_max=1.0,
         )
@@ -95,7 +108,9 @@ class TestArcLengthLinear:
 
         u_al_normalized = result_al.u / result_al.lam
         np.testing.assert_array_almost_equal(
-            u_al_normalized, result_nr.u, decimal=3,
+            u_al_normalized,
+            result_nr.u,
+            decimal=3,
         )
 
     def test_bending_cantilever(self):
@@ -112,15 +127,25 @@ class TestArcLengthLinear:
 
         def _assemble_tangent(u):
             K, _ = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         def _assemble_fint(u):
             _, f_int = assemble_cosserat_beam(
-                n_elems, L, rod, mat, u,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u,
+                stiffness=False,
+                internal_force=True,
             )
             return f_int
 
@@ -129,14 +154,19 @@ class TestArcLengthLinear:
         fixed_dofs = np.arange(6)
 
         result_nr = newton_raphson(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
-            n_load_steps=1, show_progress=False,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
+            n_load_steps=1,
+            show_progress=False,
         )
 
         result_al = arc_length(
-            f_ext, fixed_dofs,
-            _assemble_tangent, _assemble_fint,
+            f_ext,
+            fixed_dofs,
+            _assemble_tangent,
+            _assemble_fint,
             show_progress=False,
             lambda_max=1.0,
         )
@@ -146,7 +176,9 @@ class TestArcLengthLinear:
 
         u_al_normalized = result_al.u / result_al.lam
         np.testing.assert_array_almost_equal(
-            u_al_normalized, result_nr.u, decimal=3,
+            u_al_normalized,
+            result_nr.u,
+            decimal=3,
         )
 
 
@@ -169,7 +201,7 @@ class TestSnapThroughSpring:
 
         # リミットポイントの解析値
         u_lim = np.sqrt(-k1 / (3.0 * k3))  # = √(100/3) ≈ 5.774
-        P_lim = k1 * u_lim + k3 * u_lim**3   # ≈ 3.849
+        P_lim = k1 * u_lim + k3 * u_lim**3  # ≈ 3.849
 
         def assemble_tangent(u_vec):
             u = u_vec[0]
@@ -184,8 +216,10 @@ class TestSnapThroughSpring:
         fixed_dofs = np.array([], dtype=int)
 
         result = arc_length(
-            f_ext, fixed_dofs,
-            assemble_tangent, assemble_fint,
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_fint,
             n_steps=100,
             delta_l=0.5,
             max_iter=30,
@@ -204,14 +238,11 @@ class TestSnapThroughSpring:
         # リミットポイントの荷重が解析値と近いこと
         rel_err = abs(lam_max_computed - P_lim) / P_lim
         assert rel_err < 0.15, (
-            f"P_lim: 数値={lam_max_computed:.4f}, 解析={P_lim:.4f}, "
-            f"相対誤差={rel_err:.3f}"
+            f"P_lim: 数値={lam_max_computed:.4f}, 解析={P_lim:.4f}, 相対誤差={rel_err:.3f}"
         )
 
         # リミットポイント後も計算が続いていること（スナップバック追跡）
-        assert result.n_steps > idx_max + 1, (
-            "リミットポイント後にステップが進んでいない"
-        )
+        assert result.n_steps > idx_max + 1, "リミットポイント後にステップが進んでいない"
 
     def test_pre_limit_agrees_with_analytical(self):
         """リミットポイント前の荷重-変位曲線が解析解と一致する."""
@@ -232,8 +263,10 @@ class TestSnapThroughSpring:
         fixed_dofs = np.array([], dtype=int)
 
         result = arc_length(
-            f_ext, fixed_dofs,
-            assemble_tangent, assemble_fint,
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_fint,
             n_steps=50,
             delta_l=0.3,
             max_iter=30,
@@ -243,7 +276,7 @@ class TestSnapThroughSpring:
 
         # リミットポイント前のステップを抽出し、解析解と比較
         for i, (lam_i, u_i) in enumerate(
-            zip(result.load_history, result.displacement_history)
+            zip(result.load_history, result.displacement_history, strict=True)
         ):
             u_val = u_i[0]
             if abs(u_val) > u_lim * 0.8:

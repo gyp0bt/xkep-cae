@@ -289,7 +289,12 @@ class TimoshenkoBeam2D:
         kappa_val = self._resolve_kappa(nu)
 
         return timo_beam2d_ke_global(
-            coords, young_e, self.section.A, self.section.I, kappa_val, shear_g,
+            coords,
+            young_e,
+            self.section.A,
+            self.section.I,
+            kappa_val,
+            shear_g,
             scf=self.scf,
         )
 
@@ -351,9 +356,13 @@ class TimoshenkoBeam2D:
         kappa_val = self._resolve_kappa(nu)
 
         return timo_beam2d_section_forces(
-            coords, u_elem_global,
-            young_e, self.section.A, self.section.I,
-            kappa_val, shear_g,
+            coords,
+            u_elem_global,
+            young_e,
+            self.section.A,
+            self.section.I,
+            kappa_val,
+            shear_g,
             scf=self.scf,
         )
 

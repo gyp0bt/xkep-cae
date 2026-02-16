@@ -390,7 +390,11 @@ class TestSectionForces2D_EB:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = eb_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
             )
             assert abs(f1.N - P) / P < 1e-10
             assert abs(f2.N - P) / P < 1e-10
@@ -428,7 +432,11 @@ class TestSectionForces2D_EB:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = eb_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
             )
             # せん断力: V = P
             assert abs(f1.V - P) / P < 1e-8
@@ -477,7 +485,11 @@ class TestSectionForces2D_EB:
 
         f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
         f1_func, f2_func = eb_beam2d_section_forces(
-            coords, u_elem, E, sec.A, sec.I,
+            coords,
+            u_elem,
+            E,
+            sec.A,
+            sec.I,
         )
 
         assert abs(f1_class.N - f1_func.N) < 1e-10
@@ -516,7 +528,11 @@ class TestSectionForces2D_EB:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = eb_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
             )
             assert abs(f1.N - f2.N) < 1e-8
             assert abs(f1.V - f2.V) < 1e-8

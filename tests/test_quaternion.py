@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 import numpy as np
 import pytest
 
@@ -162,11 +160,13 @@ class TestQuatRotationMatrix:
         """x軸90°回転の回転行列."""
         q = quat_from_axis_angle(np.array([1.0, 0.0, 0.0]), np.pi / 2)
         R = quat_to_rotation_matrix(q)
-        R_expected = np.array([
-            [1.0, 0.0, 0.0],
-            [0.0, 0.0, -1.0],
-            [0.0, 1.0, 0.0],
-        ])
+        R_expected = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 0.0, -1.0],
+                [0.0, 1.0, 0.0],
+            ]
+        )
         np.testing.assert_array_almost_equal(R, R_expected, decimal=12)
 
     def test_shepperd_all_branches(self):
@@ -310,15 +310,17 @@ class TestQuatCurvature:
         κ = 2·Im(q* ⊗ q') = [τ, 0, 0]
         """
         tau = 0.5  # twist rate
-        s = 0.3   # arbitrary position
+        s = 0.3  # arbitrary position
 
         q = np.array([np.cos(tau * s / 2), np.sin(tau * s / 2), 0.0, 0.0])
-        q_prime = np.array([
-            -tau / 2 * np.sin(tau * s / 2),
-            tau / 2 * np.cos(tau * s / 2),
-            0.0,
-            0.0,
-        ])
+        q_prime = np.array(
+            [
+                -tau / 2 * np.sin(tau * s / 2),
+                tau / 2 * np.cos(tau * s / 2),
+                0.0,
+                0.0,
+            ]
+        )
         kappa = quat_material_curvature(q, q_prime)
         np.testing.assert_array_almost_equal(kappa, [tau, 0.0, 0.0], decimal=12)
 
@@ -367,7 +369,9 @@ class TestSO3Jacobian:
             Jr = so3_right_jacobian(theta)
             Jr_inv = so3_right_jacobian_inverse(theta)
             np.testing.assert_array_almost_equal(
-                Jr @ Jr_inv, np.eye(3), decimal=10,
+                Jr @ Jr_inv,
+                np.eye(3),
+                decimal=10,
             )
 
     def test_taylor_branch_matches_exact(self):
@@ -385,7 +389,9 @@ class TestSO3Jacobian:
         np.testing.assert_array_almost_equal(Jr_taylor, np.eye(3), decimal=6)
         # 正確な版は逆行列と整合
         np.testing.assert_array_almost_equal(
-            Jr_exact @ Jr_inv_exact, np.eye(3), decimal=10,
+            Jr_exact @ Jr_inv_exact,
+            np.eye(3),
+            decimal=10,
         )
 
     def test_numerical_derivative(self):
@@ -413,7 +419,9 @@ class TestSO3Jacobian:
             # J_r(θ) · e_i
             omega_analytical = Jr[:, i]
             np.testing.assert_array_almost_equal(
-                omega_analytical, omega_numerical, decimal=4,
+                omega_analytical,
+                omega_numerical,
+                decimal=4,
             )
 
     def test_known_value_90deg_z(self):
@@ -422,7 +430,7 @@ class TestSO3Jacobian:
         Jr = so3_right_jacobian(theta)
         phi = np.pi / 2.0
         c1 = (1.0 - np.cos(phi)) / (phi * phi)
-        c2 = (phi - np.sin(phi)) / (phi ** 3)
+        c2 = (phi - np.sin(phi)) / (phi**3)
         S = skew(theta)
         Jr_expected = np.eye(3) - c1 * S + c2 * (S @ S)
         np.testing.assert_array_almost_equal(Jr, Jr_expected, decimal=12)

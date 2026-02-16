@@ -72,12 +72,14 @@ def _beam2d_consistent_mass_local(
     # 横方向曲げ (v1, θz1, v2, θz2) → DOF 1, 2, 4, 5
     coeff = m / 420.0
     bend_idx = [1, 2, 4, 5]
-    M_bend = coeff * np.array([
-        [156.0,   22.0 * L,   54.0,  -13.0 * L],
-        [22.0 * L,  4.0 * L**2, 13.0 * L, -3.0 * L**2],
-        [54.0,   13.0 * L,  156.0,  -22.0 * L],
-        [-13.0 * L, -3.0 * L**2, -22.0 * L,  4.0 * L**2],
-    ])
+    M_bend = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
     for i_loc, i_glob in enumerate(bend_idx):
         for j_loc, j_glob in enumerate(bend_idx):
             Me[i_glob, j_glob] = M_bend[i_loc, j_loc]
@@ -125,12 +127,14 @@ def _beam3d_consistent_mass_local(
 
     # xy面内曲げ (v1, θz1, v2, θz2) → DOF 1, 5, 7, 11
     coeff = m / 420.0
-    M_xy = coeff * np.array([
-        [156.0,    22.0 * L,   54.0,   -13.0 * L],
-        [22.0 * L,   4.0 * L**2,  13.0 * L, -3.0 * L**2],
-        [54.0,    13.0 * L,  156.0,   -22.0 * L],
-        [-13.0 * L, -3.0 * L**2, -22.0 * L,   4.0 * L**2],
-    ])
+    M_xy = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
     xy_idx = [1, 5, 7, 11]
     for i_loc, i_glob in enumerate(xy_idx):
         for j_loc, j_glob in enumerate(xy_idx):
@@ -139,12 +143,14 @@ def _beam3d_consistent_mass_local(
     # xz面内曲げ (w1, θy1, w2, θy2) → DOF 2, 4, 8, 10
     # dw/dx = -θy なので符号反転: signs = [+1, -1, +1, -1]
     signs = np.array([1.0, -1.0, 1.0, -1.0])
-    M_xz_base = coeff * np.array([
-        [156.0,    22.0 * L,   54.0,   -13.0 * L],
-        [22.0 * L,   4.0 * L**2,  13.0 * L, -3.0 * L**2],
-        [54.0,    13.0 * L,  156.0,   -22.0 * L],
-        [-13.0 * L, -3.0 * L**2, -22.0 * L,   4.0 * L**2],
-    ])
+    M_xz_base = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
     M_xz = M_xz_base * np.outer(signs, signs)
     xz_idx = [2, 4, 8, 10]
     for i_loc, i_glob in enumerate(xz_idx):
@@ -225,8 +231,9 @@ def _assemble_mass_2d(
         n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
         coords = nodes[[n1, n2]]
         Me = _beam2d_mass_global(coords, rho, A)
-        edofs = np.array([3 * n1, 3 * n1 + 1, 3 * n1 + 2,
-                          3 * n2, 3 * n2 + 1, 3 * n2 + 2], dtype=int)
+        edofs = np.array(
+            [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2], dtype=int
+        )
         for ii in range(6):
             for jj in range(6):
                 M[edofs[ii], edofs[jj]] += Me[ii, jj]
@@ -287,8 +294,7 @@ def run_frequency_response(
     Returns:
         FrequencyResponseResult
     """
-    sec = _build_section_props(cfg.section_shape, cfg.section_params,
-                               cfg.beam_type, cfg.nu)
+    sec = _build_section_props(cfg.section_shape, cfg.section_params, cfg.beam_type, cfg.nu)
     is_3d = cfg.beam_type in ("timo3d", "cosserat")
     dof_per_node = 6 if is_3d else 3
 
@@ -303,9 +309,16 @@ def run_frequency_response(
     ndof = dof_per_node * n_nodes
 
     # NumericalTestConfig互換のダミーcfgを作って ke_func を取得
-    _dummy_cfg = type("Cfg", (), {
-        "beam_type": cfg.beam_type, "E": cfg.E, "nu": cfg.nu, "G": cfg.G,
-    })()
+    _dummy_cfg = type(
+        "Cfg",
+        (),
+        {
+            "beam_type": cfg.beam_type,
+            "E": cfg.E,
+            "nu": cfg.nu,
+            "G": cfg.G,
+        },
+    )()
     ke_func = _get_ke_func(_dummy_cfg, sec)
 
     # 剛性行列
@@ -316,8 +329,7 @@ def run_frequency_response(
 
     # 質量行列
     if is_3d:
-        M = _assemble_mass_3d(nodes, conn, cfg.rho, sec["A"],
-                              sec["Iy"], sec["Iz"])
+        M = _assemble_mass_3d(nodes, conn, cfg.rho, sec["A"], sec["Iy"], sec["Iz"])
     else:
         M = _assemble_mass_2d(nodes, conn, cfg.rho, sec["A"])
 

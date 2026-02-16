@@ -20,7 +20,7 @@
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
-- [実装状況](docs/status/status-023.md) — 最新のステータス（Phase 4.2 ファイバーモデル）
+- [実装状況](docs/status/status-024.md) — 最新のステータス（lint解消 + von Mises 3Dロードマップ追加）
 - [ステータス履歴](docs/status/) — 全ステータスファイル一覧
 
 ## インストール

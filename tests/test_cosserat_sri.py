@@ -23,14 +23,13 @@ from xkep_cae.elements.beam_cosserat import (
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection
 
-
 # --- テスト用パラメータ ---
-E = 200_000.0   # MPa
+E = 200_000.0  # MPa
 NU = 0.3
 G = E / (2.0 * (1.0 + NU))
-L = 100.0       # mm
+L = 100.0  # mm
 B_WIDTH = 10.0  # mm
-H_HEIGHT = 20.0 # mm
+H_HEIGHT = 20.0  # mm
 
 
 def _make_section() -> BeamSection:
@@ -49,12 +48,14 @@ def _solve_cantilever_ke(n_elems, beam_length, load_dof, load_value, ke_func):
 
     K = np.zeros((total_dof, total_dof))
     for i in range(n_elems):
-        coords = np.array([
-            [i * elem_len, 0.0, 0.0],
-            [(i + 1) * elem_len, 0.0, 0.0],
-        ])
+        coords = np.array(
+            [
+                [i * elem_len, 0.0, 0.0],
+                [(i + 1) * elem_len, 0.0, 0.0],
+            ]
+        )
         Ke = ke_func(coords)
-        K[6 * i:6 * (i + 2), 6 * i:6 * (i + 2)] += Ke
+        K[6 * i : 6 * (i + 2), 6 * i : 6 * (i + 2)] += Ke
 
     fixed_dofs = list(range(6))
     free_dofs = [d for d in range(total_dof) if d not in fixed_dofs]
@@ -115,7 +116,9 @@ class TestSRIStiffnessMatrix:
         """全体座標系でも対称."""
         sec = _make_section()
         coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
-        Ke = cosserat_ke_global_sri(coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0)
+        Ke = cosserat_ke_global_sri(
+            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0
+        )
         np.testing.assert_array_almost_equal(Ke, Ke.T, decimal=12)
 
 
@@ -126,9 +129,20 @@ class TestSRIAxialTorsion:
         """軸引張: δ = PL/(EA)."""
         sec = _make_section()
         P = 1000.0
-        ke_func = lambda coords: cosserat_ke_global_sri(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
-        )
+
+        def ke_func(coords):
+            return cosserat_ke_global_sri(
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                5.0 / 6.0,
+                5.0 / 6.0,
+            )
+
         u = _solve_cantilever_ke(1, L, 0, P, ke_func)
         delta_expected = P * L / (E * sec.A)
         np.testing.assert_almost_equal(u[6], delta_expected, decimal=8)
@@ -137,9 +151,20 @@ class TestSRIAxialTorsion:
         """ねじり: θ = TL/(GJ)."""
         sec = _make_section()
         T = 500.0
-        ke_func = lambda coords: cosserat_ke_global_sri(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, 5.0 / 6.0, 5.0 / 6.0,
-        )
+
+        def ke_func(coords):
+            return cosserat_ke_global_sri(
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                5.0 / 6.0,
+                5.0 / 6.0,
+            )
+
         u = _solve_cantilever_ke(1, L, 3, T, ke_func)
         theta_expected = T * L / (G * sec.J)
         np.testing.assert_almost_equal(u[6 + 3], theta_expected, decimal=8)
@@ -161,13 +186,34 @@ class TestSRIBendingConvergence:
         delta_shear = P * L / (kappa * G * sec.A)
         delta_exact = delta_bending + delta_shear
 
-        ke_func_sri = lambda coords: cosserat_ke_global_sri(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, kappa, kappa,
-        )
+        def ke_func_sri(coords):
+            return cosserat_ke_global_sri(
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                kappa,
+                kappa,
+            )
+
         from xkep_cae.elements.beam_cosserat import cosserat_ke_global
-        ke_func_uni = lambda coords: cosserat_ke_global(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, kappa, kappa, n_gauss=1,
-        )
+
+        def ke_func_uni(coords):
+            return cosserat_ke_global(
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                kappa,
+                kappa,
+                n_gauss=1,
+            )
 
         n_elems_test = 8
         u_sri = _solve_cantilever_ke(n_elems_test, L, 1, P, ke_func_sri)
@@ -177,9 +223,7 @@ class TestSRIBendingConvergence:
         err_uni = abs(u_uni[6 * n_elems_test + 1] - delta_exact) / abs(delta_exact)
 
         # SRI は uniform-1点 より精度が良い（またはほぼ同等）
-        assert err_sri <= err_uni + 1e-10, (
-            f"SRI error {err_sri:.6f} > uniform error {err_uni:.6f}"
-        )
+        assert err_sri <= err_uni + 1e-10, f"SRI error {err_sri:.6f} > uniform error {err_uni:.6f}"
 
     def test_bending_sri_32elem_accuracy(self):
         """32要素 SRI で十分な精度が出ること."""
@@ -191,9 +235,18 @@ class TestSRIBendingConvergence:
         delta_shear = P * L / (kappa * G * sec.A)
         delta_exact = delta_bending + delta_shear
 
-        ke_func = lambda coords: cosserat_ke_global_sri(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, kappa, kappa,
-        )
+        def ke_func(coords):
+            return cosserat_ke_global_sri(
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                kappa,
+                kappa,
+            )
 
         errors = []
         for n_elems in [4, 8, 16, 32]:
@@ -222,7 +275,16 @@ class TestSRIInternalForce:
         u_local[11] = 0.001
         f_ke = Ke @ u_local
         f_int = cosserat_internal_force_local_sri(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, ky, kz, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            ky,
+            kz,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, f_ke, decimal=8)
 
@@ -230,7 +292,16 @@ class TestSRIInternalForce:
         sec = _make_section()
         u_local = np.zeros(12)
         f_int = cosserat_internal_force_local_sri(
-            E, G, sec.A, sec.Iy, sec.Iz, sec.J, L, 5.0 / 6.0, 5.0 / 6.0, u_local,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            L,
+            5.0 / 6.0,
+            5.0 / 6.0,
+            u_local,
         )
         np.testing.assert_array_almost_equal(f_int, np.zeros(12))
 

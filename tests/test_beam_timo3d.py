@@ -43,7 +43,9 @@ KAPPA = 5.0 / 6.0
 
 
 def _make_cantilever3d_mesh(
-    n_elems: int, total_length: float, direction: str = "x",
+    n_elems: int,
+    total_length: float,
+    direction: str = "x",
 ) -> tuple[np.ndarray, np.ndarray]:
     """3D片持ち梁のメッシュ生成.
 
@@ -143,24 +145,45 @@ class TestLocalStiffnessMatrix:
     def test_shape(self, rect_section):
         """Keの形状が(12,12)であること."""
         Ke = timo_beam3d_ke_local(
-            E, G, rect_section.A, rect_section.Iy, rect_section.Iz,
-            rect_section.J, 100.0, KAPPA, KAPPA,
+            E,
+            G,
+            rect_section.A,
+            rect_section.Iy,
+            rect_section.Iz,
+            rect_section.J,
+            100.0,
+            KAPPA,
+            KAPPA,
         )
         assert Ke.shape == (12, 12)
 
     def test_symmetry(self, rect_section):
         """局所Keが対称であること."""
         Ke = timo_beam3d_ke_local(
-            E, G, rect_section.A, rect_section.Iy, rect_section.Iz,
-            rect_section.J, 100.0, KAPPA, KAPPA,
+            E,
+            G,
+            rect_section.A,
+            rect_section.Iy,
+            rect_section.Iz,
+            rect_section.J,
+            100.0,
+            KAPPA,
+            KAPPA,
         )
         assert np.allclose(Ke, Ke.T, atol=1e-10)
 
     def test_rigid_body_modes(self, rect_section):
         """6つの剛体モード（ゼロ固有値）を持つこと."""
         Ke = timo_beam3d_ke_local(
-            E, G, rect_section.A, rect_section.Iy, rect_section.Iz,
-            rect_section.J, 100.0, KAPPA, KAPPA,
+            E,
+            G,
+            rect_section.A,
+            rect_section.Iy,
+            rect_section.Iz,
+            rect_section.J,
+            100.0,
+            KAPPA,
+            KAPPA,
         )
         eigenvalues = np.linalg.eigvalsh(Ke)
         assert np.sum(np.abs(eigenvalues) < 1e-6) == 6
@@ -168,8 +191,15 @@ class TestLocalStiffnessMatrix:
     def test_positive_semidefinite(self, rect_section):
         """半正定値であること."""
         Ke = timo_beam3d_ke_local(
-            E, G, rect_section.A, rect_section.Iy, rect_section.Iz,
-            rect_section.J, 100.0, KAPPA, KAPPA,
+            E,
+            G,
+            rect_section.A,
+            rect_section.Iy,
+            rect_section.Iz,
+            rect_section.J,
+            100.0,
+            KAPPA,
+            KAPPA,
         )
         eigenvalues = np.linalg.eigvalsh(Ke)
         assert np.all(eigenvalues > -1e-8)
@@ -271,7 +301,15 @@ class TestAxialLoad:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 0, P)
@@ -296,7 +334,15 @@ class TestTorsion:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 3, T_torque)
@@ -325,18 +371,29 @@ class TestBending:
         """y方向荷重（xy面曲げ、Izベース）の先端たわみが解析解と一致."""
         p = beam_params
         sec = p["sec"]
-        delta_analytical = (
-            p["P"] * p["total_length"] ** 3 / (3.0 * E * sec.Iz)
-            + p["P"] * p["total_length"] / (KAPPA * G * sec.A)
-        )
+        delta_analytical = p["P"] * p["total_length"] ** 3 / (3.0 * E * sec.Iz) + p["P"] * p[
+            "total_length"
+        ] / (KAPPA * G * sec.A)
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(
-            p["n_elems"], p["total_length"], ke_func, 1, p["P"],
+            p["n_elems"],
+            p["total_length"],
+            ke_func,
+            1,
+            p["P"],
         )
         delta_fem = u[6 * p["n_elems"] + 1]
         assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
@@ -345,18 +402,29 @@ class TestBending:
         """z方向荷重（xz面曲げ、Iyベース）の先端たわみが解析解と一致."""
         p = beam_params
         sec = p["sec"]
-        delta_analytical = (
-            p["P"] * p["total_length"] ** 3 / (3.0 * E * sec.Iy)
-            + p["P"] * p["total_length"] / (KAPPA * G * sec.A)
-        )
+        delta_analytical = p["P"] * p["total_length"] ** 3 / (3.0 * E * sec.Iy) + p["P"] * p[
+            "total_length"
+        ] / (KAPPA * G * sec.A)
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(
-            p["n_elems"], p["total_length"], ke_func, 2, p["P"],
+            p["n_elems"],
+            p["total_length"],
+            ke_func,
+            2,
+            p["P"],
         )
         delta_fem = u[6 * p["n_elems"] + 2]
         assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-10
@@ -373,11 +441,23 @@ class TestBending:
         # 3D解
         def ke_func_3d(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u_3d = _solve_cantilever3d(
-            p["n_elems"], p["total_length"], ke_func_3d, 1, p["P"],
+            p["n_elems"],
+            p["total_length"],
+            ke_func_3d,
+            1,
+            p["P"],
         )
         delta_3d = u_3d[6 * p["n_elems"] + 1]
 
@@ -386,11 +466,21 @@ class TestBending:
 
         def ke_func_2d(coords):
             return timo_beam2d_ke_global(
-                coords, E, sec2d.A, sec2d.I, KAPPA, G,
+                coords,
+                E,
+                sec2d.A,
+                sec2d.I,
+                KAPPA,
+                G,
             )
 
         u_2d = _solve_cantilever_point_load(
-            p["n_elems"], p["total_length"], sec2d.A, sec2d.I, p["P"], ke_func_2d,
+            p["n_elems"],
+            p["total_length"],
+            sec2d.A,
+            sec2d.I,
+            p["P"],
+            ke_func_2d,
         )
         delta_2d = u_2d[3 * p["n_elems"] + 1]
 
@@ -412,7 +502,15 @@ class TestRectangularAsymmetricBending:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         # y方向荷重（Iz ベース）
@@ -427,13 +525,11 @@ class TestRectangularAsymmetricBending:
         # δ ∝ PL³/(3EI) なので、δ_y/δ_z ≈ Iy/Iz
         # ただしせん断項 PL/(κGA) は共通なので完全一致ではない
         # 解析解で確認
-        delta_y_analytical = (
-            P * total_length**3 / (3.0 * E * sec.Iz)
-            + P * total_length / (KAPPA * G * sec.A)
+        delta_y_analytical = P * total_length**3 / (3.0 * E * sec.Iz) + P * total_length / (
+            KAPPA * G * sec.A
         )
-        delta_z_analytical = (
-            P * total_length**3 / (3.0 * E * sec.Iy)
-            + P * total_length / (KAPPA * G * sec.A)
+        delta_z_analytical = P * total_length**3 / (3.0 * E * sec.Iy) + P * total_length / (
+            KAPPA * G * sec.A
         )
 
         assert abs(delta_y - delta_y_analytical) / abs(delta_y_analytical) < 1e-10
@@ -458,20 +554,32 @@ class TestInclinedBeam:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         # y方向梁 → 局所y方向の荷重は全体のx方向荷重に相当
         # ただし自動座標系選択に依存するため、
         # 全体z方向荷重で xz面曲げをテスト（確実に Iy ベース）
         u = _solve_cantilever3d(
-            n_elems, total_length, ke_func, 2, P, direction="y",
+            n_elems,
+            total_length,
+            ke_func,
+            2,
+            P,
+            direction="y",
         )
         # z方向たわみ→ Iy ベース
         delta_fem = u[6 * n_elems + 2]
-        delta_analytical_iy = (
-            P * total_length**3 / (3.0 * E * sec.Iy)
-            + P * total_length / (KAPPA * G * sec.A)
+        delta_analytical_iy = P * total_length**3 / (3.0 * E * sec.Iy) + P * total_length / (
+            KAPPA * G * sec.A
         )
         assert abs(delta_fem - delta_analytical_iy) / abs(delta_analytical_iy) < 1e-8
 
@@ -488,12 +596,28 @@ class TestSCF3D:
 
         def ke_func_no_scf(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         def ke_func_scf(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
                 scf=0.25,
             )
 
@@ -525,7 +649,15 @@ class TestProtocolConformance:
         coords = np.array([[0.0, 0.0, 0.0], [100.0, 0.0, 0.0]])
         Ke_class = beam.local_stiffness(coords, mat)
         Ke_func = timo_beam3d_ke_global(
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            coords,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            KAPPA,
+            KAPPA,
         )
 
         assert np.allclose(Ke_class, Ke_func, atol=1e-10)
@@ -563,13 +695,14 @@ class TestCowperKappa3D:
         P = 1.0
 
         kappa_cowper = 10.0 * (1.0 + NU) / (12.0 + 11.0 * NU)
-        delta_analytical = (
-            P * total_length**3 / (3.0 * E * sec.Iz)
-            + P * total_length / (kappa_cowper * G * sec.A)
+        delta_analytical = P * total_length**3 / (3.0 * E * sec.Iz) + P * total_length / (
+            kappa_cowper * G * sec.A
         )
 
         beam = TimoshenkoBeam3D(
-            section=sec, kappa_y="cowper", kappa_z="cowper",
+            section=sec,
+            kappa_y="cowper",
+            kappa_z="cowper",
         )
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -596,14 +729,21 @@ class TestDistributedLoad3D:
         n_elems = 20
         q = 0.01
 
-        delta_analytical = (
-            q * total_length**4 / (8.0 * E * sec.Iz)
-            + q * total_length**2 / (2.0 * KAPPA * G * sec.A)
+        delta_analytical = q * total_length**4 / (8.0 * E * sec.Iz) + q * total_length**2 / (
+            2.0 * KAPPA * G * sec.A
         )
 
         nodes, conn = _make_cantilever3d_mesh(n_elems, total_length)
         ke_func = lambda coords: timo_beam3d_ke_global(  # noqa: E731
-            coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+            coords,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            KAPPA,
+            KAPPA,
         )
         K, ndof = _assemble_beam3d_system(nodes, conn, ke_func)
 
@@ -640,6 +780,7 @@ class TestBeamSectionProperties:
     def test_circle_properties(self):
         """円形断面の特性値が正しいこと."""
         import math
+
         sec = BeamSection.circle(d=10.0)
         assert abs(sec.A - math.pi * 25.0) < 1e-10
         assert abs(sec.Iy - sec.Iz) < 1e-12  # 対称
@@ -648,6 +789,7 @@ class TestBeamSectionProperties:
     def test_pipe_properties(self):
         """パイプ断面の特性値が正しいこと."""
         import math
+
         sec = BeamSection.pipe(d_outer=20.0, d_inner=16.0)
         A_expected = math.pi * (10.0**2 - 8.0**2)
         assert abs(sec.A - A_expected) < 1e-10
@@ -681,6 +823,7 @@ class TestBeamSectionProperties:
     def test_cowper_kappa_y(self):
         """Cowper κ_y が BeamSection2D と一致すること."""
         from xkep_cae.sections.beam import BeamSection2D
+
         sec3d = BeamSection.rectangle(b=10.0, h=10.0)
         sec2d = BeamSection2D.rectangle(b=10.0, h=10.0)
         assert abs(sec3d.cowper_kappa_y(0.3) - sec2d.cowper_kappa(0.3)) < 1e-12
@@ -698,7 +841,15 @@ class TestSectionForces:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 0, P)
@@ -714,8 +865,16 @@ class TestSectionForces:
                     u_elem[6 * i + d] = u[6 * n + d]
 
             f1, f2 = beam3d_section_forces(
-                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-                KAPPA, KAPPA,
+                coords,
+                u_elem,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
             assert abs(f1.N - P) / P < 1e-10
             assert abs(f2.N - P) / P < 1e-10
@@ -734,7 +893,15 @@ class TestSectionForces:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 3, T_torque)
@@ -749,8 +916,16 @@ class TestSectionForces:
                     u_elem[6 * i + d] = u[6 * n + d]
 
             f1, f2 = beam3d_section_forces(
-                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-                KAPPA, KAPPA,
+                coords,
+                u_elem,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
             assert abs(f1.Mx - T_torque) / T_torque < 1e-10
             assert abs(f2.Mx - T_torque) / T_torque < 1e-10
@@ -771,7 +946,15 @@ class TestSectionForces:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
@@ -786,8 +969,16 @@ class TestSectionForces:
                     u_elem[6 * i + d] = u[6 * n + d]
 
             f1, f2 = beam3d_section_forces(
-                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-                KAPPA, KAPPA,
+                coords,
+                u_elem,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
             # せん断力: Vy = P（全要素で一定）
@@ -818,7 +1009,15 @@ class TestSectionForces:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
@@ -834,8 +1033,16 @@ class TestSectionForces:
 
         f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
         f1_func, f2_func = beam3d_section_forces(
-            coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-            KAPPA, KAPPA,
+            coords,
+            u_elem,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            KAPPA,
+            KAPPA,
         )
 
         assert abs(f1_class.N - f1_func.N) < 1e-10
@@ -858,7 +1065,15 @@ class TestSectionForces:
 
         def ke_func(coords):
             return timo_beam3d_ke_global(
-                coords, E, G, sec.A, sec.Iy, sec.Iz, sec.J, KAPPA, KAPPA,
+                coords,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
         u = _solve_cantilever3d(n_elems, total_length, ke_func, 1, P)
@@ -873,8 +1088,16 @@ class TestSectionForces:
                     u_elem[6 * i + d] = u[6 * n + d]
 
             f1, f2 = beam3d_section_forces(
-                coords, u_elem, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-                KAPPA, KAPPA,
+                coords,
+                u_elem,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                KAPPA,
+                KAPPA,
             )
 
             # 軸力一定

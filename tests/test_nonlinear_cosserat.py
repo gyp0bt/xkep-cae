@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
@@ -21,9 +20,8 @@ from xkep_cae.elements.beam_cosserat import (
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.sections.beam import BeamSection
 
-
 # --- テスト用パラメータ ---
-E = 200_000.0   # MPa
+E = 200_000.0  # MPa
 NU = 0.3
 G = E / (2.0 * (1.0 + NU))
 
@@ -78,7 +76,7 @@ class TestNonlinearStrains:
         coords = _x_beam_coords(L)
         u = np.zeros(12)
         theta_z = np.pi / 2.0
-        u[5] = theta_z   # node1 θz
+        u[5] = theta_z  # node1 θz
         u[11] = theta_z  # node2 θz
         strains = cosserat_nonlinear_strains(coords, u)
         np.testing.assert_almost_equal(strains.gamma[0], -1.0, decimal=6)
@@ -106,8 +104,16 @@ class TestNonlinearInternalForce:
         coords = _x_beam_coords(L)
         u = np.zeros(12)
         f_int = cosserat_internal_force_nonlinear(
-            coords, u, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-            5.0 / 6.0, 5.0 / 6.0,
+            coords,
+            u,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         np.testing.assert_array_almost_equal(f_int, np.zeros(12))
 
@@ -144,8 +150,16 @@ class TestNonlinearTangentStiffness:
         u = rng.standard_normal(12) * 0.1
 
         K_T = cosserat_tangent_stiffness_nonlinear(
-            coords, u, E, G, sec.A, sec.Iy, sec.Iz, sec.J,
-            5.0 / 6.0, 5.0 / 6.0,
+            coords,
+            u,
+            E,
+            G,
+            sec.A,
+            sec.Iy,
+            sec.Iz,
+            sec.J,
+            5.0 / 6.0,
+            5.0 / 6.0,
         )
         np.testing.assert_array_almost_equal(K_T, K_T.T, decimal=6)
 
@@ -183,8 +197,14 @@ class TestNonlinearTangentStiffness:
         u = rng.standard_normal(12) * 0.05
 
         params = dict(
-            E=E, G=G, A=sec.A, Iy=sec.Iy, Iz=sec.Iz, J=sec.J,
-            kappa_y=5.0 / 6.0, kappa_z=5.0 / 6.0,
+            E=E,
+            G=G,
+            A=sec.A,
+            Iy=sec.Iy,
+            Iz=sec.Iz,
+            J=sec.J,
+            kappa_y=5.0 / 6.0,
+            kappa_z=5.0 / 6.0,
         )
 
         K_T = cosserat_tangent_stiffness_nonlinear(coords, u, **params)

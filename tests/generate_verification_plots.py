@@ -1064,7 +1064,14 @@ def plot_fiber_moment_curvature():
     fs = FiberSection.rectangle(b, h, ny=4, nz=80)
     kappa_cowper = fs.cowper_kappa_y(nu)
     C_elastic = _cosserat_constitutive_matrix(
-        E, G, fs.A, fs.Iy, fs.Iz, fs.J, kappa_cowper, kappa_cowper,
+        E,
+        G,
+        fs.A,
+        fs.Iy,
+        fs.Iz,
+        fs.J,
+        kappa_cowper,
+        kappa_cowper,
     )
     plas_pp = Plasticity1D(E=E, iso=IsotropicHardening(sigma_y0=sigma_y, H_iso=0.0))
 
@@ -1075,7 +1082,11 @@ def plot_fiber_moment_curvature():
     for kap in kappas:
         strain = np.array([0.0, 0.0, 0.0, 0.0, kap, 0.0])
         stress, _, state_new = _compute_generalized_stress_fiber(
-            strain, C_elastic, plas_pp, state, fs,
+            strain,
+            C_elastic,
+            plas_pp,
+            state,
+            fs,
         )
         moments_pp.append(stress[4])
         state = state_new
@@ -1087,7 +1098,11 @@ def plot_fiber_moment_curvature():
     for kap in kappas:
         strain = np.array([0.0, 0.0, 0.0, 0.0, kap, 0.0])
         stress, _, state_new = _compute_generalized_stress_fiber(
-            strain, C_elastic, plas_iso, state, fs,
+            strain,
+            C_elastic,
+            plas_iso,
+            state,
+            fs,
         )
         moments_iso.append(stress[4])
         state = state_new
@@ -1105,16 +1120,25 @@ def plot_fiber_moment_curvature():
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
-        kappas / kappa_y_limit, M_elastic / M_y,
-        "k--", lw=1, label="Elastic (EI*kappa)",
+        kappas / kappa_y_limit,
+        M_elastic / M_y,
+        "k--",
+        lw=1,
+        label="Elastic (EI*kappa)",
     )
     ax.plot(
-        kappas / kappa_y_limit, moments_pp / M_y,
-        "b-", lw=2, label="Fiber: perfectly plastic (H=0)",
+        kappas / kappa_y_limit,
+        moments_pp / M_y,
+        "b-",
+        lw=2,
+        label="Fiber: perfectly plastic (H=0)",
     )
     ax.plot(
-        kappas / kappa_y_limit, moments_iso / M_y,
-        "r-", lw=2, label="Fiber: isotropic hardening (H=1000)",
+        kappas / kappa_y_limit,
+        moments_iso / M_y,
+        "r-",
+        lw=2,
+        label="Fiber: isotropic hardening (H=1000)",
     )
     ax.axhline(M_p / M_y, color="gray", ls=":", lw=1, label=f"M_p/M_y = {M_p / M_y:.2f}")
     ax.axhline(1.0, color="gray", ls="-.", lw=1, alpha=0.5)
@@ -1190,22 +1214,43 @@ def plot_fiber_cantilever_load_displacement():
         def _fint(u_, _states=states):
             nonlocal states_trial
             _, f, st = assemble_cosserat_beam_fiber(
-                n_elems, L, rod, mat, u_, _states, plas, fs,
-                stiffness=False, internal_force=True,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                _states,
+                plas,
+                fs,
+                stiffness=False,
+                internal_force=True,
             )
             states_trial = st
             return f
 
         def _Kt(u_, _states=states):
             K, _, _ = assemble_cosserat_beam_fiber(
-                n_elems, L, rod, mat, u_, _states, plas, fs,
-                stiffness=True, internal_force=False,
+                n_elems,
+                L,
+                rod,
+                mat,
+                u_,
+                _states,
+                plas,
+                fs,
+                stiffness=True,
+                internal_force=False,
             )
             return sp.csr_matrix(K)
 
         result = newton_raphson(
-            f_ext, fixed_dofs, _Kt, _fint,
-            n_load_steps=1, u0=u, show_progress=False,
+            f_ext,
+            fixed_dofs,
+            _Kt,
+            _fint,
+            n_load_steps=1,
+            u0=u,
+            show_progress=False,
         )
         u = result.u
         states = [s.copy() for s in states_trial]
@@ -1222,20 +1267,26 @@ def plot_fiber_cantilever_load_displacement():
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(
-        theta_elastic * 1000, moments / M_y,
-        "k--", lw=1.5, label="Elastic (analytical)",
+        theta_elastic * 1000,
+        moments / M_y,
+        "k--",
+        lw=1.5,
+        label="Elastic (analytical)",
     )
     ax.plot(
-        theta_tips * 1000, moments / M_y,
-        "ro-", ms=4, lw=2, label="Fiber model (NR)",
+        theta_tips * 1000,
+        moments / M_y,
+        "ro-",
+        ms=4,
+        lw=2,
+        label="Fiber model (NR)",
     )
     ax.axhline(1.0, color="gray", ls="-.", lw=1, alpha=0.5, label="M_y (elastic limit)")
     ax.axhline(1.5, color="gray", ls=":", lw=1, alpha=0.5, label="M_p = 1.5*M_y")
     ax.set_xlabel("Tip rotation [mrad]")
     ax.set_ylabel("M / M_y")
     ax.set_title(
-        f"Fiber Model: Cantilever Tip Moment ({n_elems} elements, "
-        f"sigma_y={sigma_y}, H={H_iso})"
+        f"Fiber Model: Cantilever Tip Moment ({n_elems} elements, sigma_y={sigma_y}, H={H_iso})"
     )
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)

@@ -106,9 +106,7 @@ def _build_local_axes(
     e_z = np.cross(e_x, v_ref)
     norm_ez = np.linalg.norm(e_z)
     if norm_ez < 1e-10:
-        raise ValueError(
-            f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}"
-        )
+        raise ValueError(f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}")
     e_z = e_z / norm_ez
     e_y = np.cross(e_z, e_x)
 
@@ -137,7 +135,7 @@ def _transformation_matrix_3d(R: np.ndarray) -> np.ndarray:
     T = np.zeros((12, 12), dtype=float)
     # 4つのブロック: 節点1変位, 節点1回転, 節点2変位, 節点2回転
     for i in range(4):
-        T[3 * i: 3 * i + 3, 3 * i: 3 * i + 3] = R
+        T[3 * i : 3 * i + 3, 3 * i : 3 * i + 3] = R
     return T
 
 
@@ -220,8 +218,8 @@ def timo_beam3d_ke_local(
 
     # --- xy面曲げ: v たわみ (DOF 1, 7) と θz 回転 (DOF 5, 11) ---
     # EIz ベース
-    EIz_L3 = E * Iz / (L ** 3)
-    EIz_L2 = E * Iz / (L ** 2)
+    EIz_L3 = E * Iz / (L**3)
+    EIz_L2 = E * Iz / (L**2)
     EIz_L = E * Iz / L
 
     Ke[1, 1] = 12.0 * EIz_L3 / denom_z
@@ -248,8 +246,8 @@ def timo_beam3d_ke_local(
     # EIy ベース
     # 注意: w-θy の符号規約は v-θz と逆（右手系の整合性）
     # θy > 0 は w が減少する方向 → カップリング項の符号が反転
-    EIy_L3 = E * Iy / (L ** 3)
-    EIy_L2 = E * Iy / (L ** 2)
+    EIy_L3 = E * Iy / (L**3)
+    EIy_L2 = E * Iy / (L**2)
     EIy_L = E * Iy / L
 
     Ke[2, 2] = 12.0 * EIy_L3 / denom_y
@@ -408,7 +406,16 @@ def beam3d_section_forces(
     R = _build_local_axes(e_x, v_ref)
     T = _transformation_matrix_3d(R)
     Ke_local = timo_beam3d_ke_local(
-        E, G, A, Iy, Iz, J, length, kappa_y, kappa_z, scf=scf,
+        E,
+        G,
+        A,
+        Iy,
+        Iz,
+        J,
+        length,
+        kappa_y,
+        kappa_z,
+        scf=scf,
     )
 
     u_local = T @ u_elem_global
@@ -624,9 +631,15 @@ class TimoshenkoBeam3D:
         kappa_z_val = self._resolve_kappa_z(nu)
 
         return timo_beam3d_ke_global(
-            coords, young_e, shear_g,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y_val, kappa_z_val,
+            coords,
+            young_e,
+            shear_g,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y_val,
+            kappa_z_val,
             v_ref=self.v_ref,
             scf=self.scf,
         )
@@ -690,10 +703,16 @@ class TimoshenkoBeam3D:
         kappa_z_val = self._resolve_kappa_z(nu)
 
         return beam3d_section_forces(
-            coords, u_elem_global,
-            young_e, shear_g,
-            self.section.A, self.section.Iy, self.section.Iz, self.section.J,
-            kappa_y_val, kappa_z_val,
+            coords,
+            u_elem_global,
+            young_e,
+            shear_g,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            self.section.J,
+            kappa_y_val,
+            kappa_z_val,
             v_ref=self.v_ref,
             scf=self.scf,
         )
@@ -707,5 +726,9 @@ class TimoshenkoBeam3D:
     ) -> np.ndarray:
         """等分布荷重の等価節点力ベクトル（全体座標系）."""
         return timo_beam3d_distributed_load(
-            coords, qy_local, qz_local, qx_local, v_ref=self.v_ref,
+            coords,
+            qy_local,
+            qz_local,
+            qx_local,
+            v_ref=self.v_ref,
         )

@@ -310,7 +310,11 @@ class EulerBernoulliBeam2D:
             )
 
         return eb_beam2d_section_forces(
-            coords, u_elem_global, young_e, self.section.A, self.section.I,
+            coords,
+            u_elem_global,
+            young_e,
+            self.section.A,
+            self.section.I,
         )
 
 

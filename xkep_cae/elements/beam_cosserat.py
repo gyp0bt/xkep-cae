@@ -33,8 +33,6 @@ import numpy as np
 from xkep_cae.math.quaternion import (
     quat_from_rotvec,
     quat_identity,
-    quat_multiply,
-    quat_rotate_vector,
     quat_to_rotation_matrix,
     rotation_matrix_to_quat,
     skew,
@@ -219,7 +217,7 @@ def cosserat_ke_local(
         raise ValueError(f"n_gauss は 1 または 2 のみサポート: {n_gauss}")
 
     Ke = np.zeros((12, 12), dtype=float)
-    for xi, w in zip(gauss_pts, gauss_wts):
+    for xi, w in zip(gauss_pts, gauss_wts, strict=True):
         B = _cosserat_b_matrix(L, xi)
         Ke += w * L * B.T @ C @ B
 
@@ -291,13 +289,13 @@ def cosserat_ke_local_sri(
     # 2点ガウス求積（完全積分: 非せん断成分）
     pts_2, wts_2 = _gauss_points(2)
     Ke = np.zeros((12, 12), dtype=float)
-    for xi, w in zip(pts_2, wts_2):
+    for xi, w in zip(pts_2, wts_2, strict=True):
         B = _cosserat_b_matrix(L, xi)
         Ke += w * L * B.T @ C_full @ B
 
     # 1点ガウス求積（低減積分: せん断成分）
     pts_1, wts_1 = _gauss_points(1)
-    for xi, w in zip(pts_1, wts_1):
+    for xi, w in zip(pts_1, wts_1, strict=True):
         B = _cosserat_b_matrix(L, xi)
         Ke += w * L * B.T @ C_shear @ B
 
@@ -373,7 +371,7 @@ def cosserat_internal_force_local_sri(
 
     # 2点ガウス（非せん断成分）
     pts_2, wts_2 = _gauss_points(2)
-    for xi, w in zip(pts_2, wts_2):
+    for xi, w in zip(pts_2, wts_2, strict=True):
         B = _cosserat_b_matrix(L, xi)
         strain = B @ u_local
         if kappa_0 is not None:
@@ -383,7 +381,7 @@ def cosserat_internal_force_local_sri(
 
     # 1点ガウス（せん断成分）
     pts_1, wts_1 = _gauss_points(1)
-    for xi, w in zip(pts_1, wts_1):
+    for xi, w in zip(pts_1, wts_1, strict=True):
         B = _cosserat_b_matrix(L, xi)
         strain = B @ u_local
         if kappa_0 is not None:
@@ -712,7 +710,7 @@ def cosserat_internal_force_local(
     gauss_pts, gauss_wts = _gauss_points(n_gauss)
 
     f_int = np.zeros(12, dtype=float)
-    for xi, w in zip(gauss_pts, gauss_wts):
+    for xi, w in zip(gauss_pts, gauss_wts, strict=True):
         B = _cosserat_b_matrix(L, xi)
         strain = B @ u_local  # (6,)
         # 初期曲率を差し引く（初期歪みの減算）
@@ -814,7 +812,7 @@ def cosserat_geometric_stiffness_local(
 
     Kg = np.zeros((12, 12), dtype=float)
 
-    for xi, w in zip(gauss_pts, gauss_wts):
+    for xi, w in zip(gauss_pts, gauss_wts, strict=True):
         dN1 = -1.0 / L
         dN2 = 1.0 / L
         N1 = 1.0 - xi
@@ -1778,7 +1776,7 @@ def assemble_cosserat_beam_plastic(
 
         if is_sri:
             # 非せん断成分（2点ガウス）: 軸方向に塑性あり
-            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2)):
+            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2, strict=True)):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain = B @ u_local
                 if kappa_0 is not None:
@@ -1796,7 +1794,7 @@ def assemble_cosserat_beam_plastic(
                 K_local += w * L_e * B.T @ C_tan @ B
 
             # せん断成分（1点ガウス）: 弾性のみ
-            for xi, w in zip(pts_1, wts_1):
+            for xi, w in zip(pts_1, wts_1, strict=True):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain = B @ u_local
                 if kappa_0 is not None:
@@ -1806,7 +1804,7 @@ def assemble_cosserat_beam_plastic(
                 K_local += w * L_e * B.T @ C_shear @ B
         else:
             # 一様積分: 全成分を n_gauss 点で計算
-            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts)):
+            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts, strict=True)):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain = B @ u_local
                 if kappa_0 is not None:
@@ -2035,7 +2033,7 @@ def assemble_cosserat_beam_fiber(
 
         if is_sri:
             # 非せん断成分（2点ガウス）: ファイバー積分
-            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2)):
+            for gp_idx, (xi, w) in enumerate(zip(pts_2, wts_2, strict=True)):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain_vec = B @ u_local
                 if kappa_0 is not None:
@@ -2053,7 +2051,7 @@ def assemble_cosserat_beam_fiber(
                 K_local += w * L_e * B.T @ C_tan @ B
 
             # せん断成分（1点ガウス）: 弾性のみ
-            for xi, w in zip(pts_1, wts_1):
+            for xi, w in zip(pts_1, wts_1, strict=True):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain_vec = B @ u_local
                 if kappa_0 is not None:
@@ -2062,7 +2060,7 @@ def assemble_cosserat_beam_fiber(
                 f_local += w * L_e * B.T @ stress_sh
                 K_local += w * L_e * B.T @ C_shear @ B
         else:
-            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts)):
+            for gp_idx, (xi, w) in enumerate(zip(gauss_pts, gauss_wts, strict=True)):
                 B = _cosserat_b_matrix(L_e, xi)
                 strain_vec = B @ u_local
                 if kappa_0 is not None:

@@ -514,10 +514,20 @@ class TestSCF:
             return timo_beam2d_ke_global(coords, E, area, inertia, KAPPA, G, scf=0.25)
 
         u_no_scf = _solve_cantilever_point_load(
-            n_elems, total_length, area, inertia, P, ke_no_scf,
+            n_elems,
+            total_length,
+            area,
+            inertia,
+            P,
+            ke_no_scf,
         )
         u_scf = _solve_cantilever_point_load(
-            n_elems, total_length, area, inertia, P, ke_scf,
+            n_elems,
+            total_length,
+            area,
+            inertia,
+            P,
+            ke_scf,
         )
 
         delta_no_scf = u_no_scf[3 * n_elems + 1]
@@ -541,7 +551,12 @@ class TestSCF:
             return timo_beam2d_ke_global(coords, E, area, inertia, KAPPA, G, scf=0.25)
 
         u_scf = _solve_cantilever_point_load(
-            n_elems, total_length, area, inertia, P, ke_scf,
+            n_elems,
+            total_length,
+            area,
+            inertia,
+            P,
+            ke_scf,
         )
         delta_scf = u_scf[3 * n_elems + 1]
 
@@ -583,7 +598,13 @@ class TestSCF:
         coords = np.array([[0.0, 0.0], [100.0, 0.0]])
         Ke_class = beam.local_stiffness(coords, mat)
         Ke_func = timo_beam2d_ke_global(
-            coords, E, sec.A, sec.I, KAPPA, G, scf=0.25,
+            coords,
+            E,
+            sec.A,
+            sec.I,
+            KAPPA,
+            G,
+            scf=0.25,
         )
         assert np.allclose(Ke_class, Ke_func, atol=1e-10)
 
@@ -622,7 +643,13 @@ class TestSectionForces2D_Timo:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = timo_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
+                KAPPA,
+                G,
             )
             assert abs(f1.N - P) / P < 1e-10
             assert abs(f2.N - P) / P < 1e-10
@@ -640,7 +667,12 @@ class TestSectionForces2D_Timo:
             return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
 
         u = _solve_cantilever_point_load(
-            n_elems, total_length, sec.A, sec.I, P, ke_func,
+            n_elems,
+            total_length,
+            sec.A,
+            sec.I,
+            P,
+            ke_func,
         )
         nodes, conn = _make_cantilever_mesh(n_elems, total_length)
 
@@ -653,7 +685,13 @@ class TestSectionForces2D_Timo:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = timo_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
+                KAPPA,
+                G,
             )
             assert abs(f1.V - P) / P < 1e-8
             assert abs(f2.V - P) / P < 1e-8
@@ -683,7 +721,12 @@ class TestSectionForces2D_Timo:
             return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
 
         u = _solve_cantilever_point_load(
-            n_elems, total_length, sec.A, sec.I, P, ke_func,
+            n_elems,
+            total_length,
+            sec.A,
+            sec.I,
+            P,
+            ke_func,
         )
         nodes, conn = _make_cantilever_mesh(n_elems, total_length)
 
@@ -696,7 +739,13 @@ class TestSectionForces2D_Timo:
 
         f1_class, f2_class = beam.section_forces(coords, u_elem, mat)
         f1_func, f2_func = timo_beam2d_section_forces(
-            coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+            coords,
+            u_elem,
+            E,
+            sec.A,
+            sec.I,
+            KAPPA,
+            G,
         )
 
         assert abs(f1_class.N - f1_func.N) < 1e-10
@@ -715,7 +764,12 @@ class TestSectionForces2D_Timo:
             return timo_beam2d_ke_global(coords, E, sec.A, sec.I, KAPPA, G)
 
         u = _solve_cantilever_point_load(
-            n_elems, total_length, sec.A, sec.I, P, ke_func,
+            n_elems,
+            total_length,
+            sec.A,
+            sec.I,
+            P,
+            ke_func,
         )
         nodes, conn = _make_cantilever_mesh(n_elems, total_length)
 
@@ -728,7 +782,13 @@ class TestSectionForces2D_Timo:
                     u_elem[3 * i + d] = u[3 * n + d]
 
             f1, f2 = timo_beam2d_section_forces(
-                coords, u_elem, E, sec.A, sec.I, KAPPA, G,
+                coords,
+                u_elem,
+                E,
+                sec.A,
+                sec.I,
+                KAPPA,
+                G,
             )
             assert abs(f1.N - f2.N) < 1e-8
             assert abs(f1.V - f2.V) < 1e-8
