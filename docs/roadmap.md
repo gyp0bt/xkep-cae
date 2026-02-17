@@ -15,9 +15,10 @@
 
 ---
 
-## 現在地（Phase 4.2 完了）
+## 現在地（Phase 4.3 実装完了・テスト計画策定済み）
 
 Phase 1〜3 + Phase 4.1〜4.2 完了（471テスト）。
+Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テスト計画](status/status-025.md)策定済み、45テスト予定）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
 ファイバーモデル断面（曲げの塑性化）実装完了。FiberSection + ファイバー積分アセンブリ。
@@ -468,13 +469,13 @@ Cosserat非線形と別ルートの定式化。必要に応じて実装。
 3次元応力空間での降伏判定・return mapping を実装し、連続体要素（Q4, TRI3等）に適用。
 1D弾塑性（Phase 4.1）を多軸応力状態に拡張する。
 
-- [ ] von Mises 降伏関数 f = √(3/2) ||dev(σ)|| − (σ_y + R)
-- [ ] 3D return mapping アルゴリズム（radial return）
-- [ ] 3D consistent tangent（弾塑性接線剛性テンソル、Simo & Taylor (1985)）
-- [ ] 等方硬化（線形・Voce）/ 移動硬化（Armstrong-Frederick）
-- [ ] PlasticState3D 状態変数（塑性ひずみテンソル ε^p, 等価塑性ひずみ α, 背応力テンソル β）
-- [ ] 平面ひずみ要素（Q4, TRI3, TRI6, Q4_EAS）との統合
-- [ ] 単軸・二軸・純せん断テスト（解析解比較）
+- [x] von Mises 降伏関数 f = √(3/2) ||dev(σ)|| − (σ_y + R)
+- [x] 3D return mapping アルゴリズム（radial return）
+- [x] 3D consistent tangent（弾塑性接線剛性テンソル、Simo & Taylor (1985)）
+- [x] 等方硬化（線形・Voce）/ 移動硬化（Armstrong-Frederick）
+- [x] PlasticState3D 状態変数（塑性ひずみテンソル ε^p, 等価塑性ひずみ α, 背応力テンソル β）
+- [x] 平面ひずみ要素（Q4, TRI3, Q4_EAS）との統合
+- [ ] 単軸・二軸・純せん断テスト（解析解比較）— テスト計画策定済み（[status-025](status/status-025.md)）、45テスト + 3検証図
 - [ ] パッチテスト（塑性域での要素性能検証）
 - [ ] 検証図（降伏曲面、応力パス、荷重-変位曲線）
 
