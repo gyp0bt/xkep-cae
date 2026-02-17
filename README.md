@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 完了。471テストパス。**
+**Phase 1〜3 + Phase 4.1〜4.2 完了。Phase 4.3（von Mises 3D）実装完了・テスト計画策定済み。471テストパス。**
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -20,7 +20,7 @@
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
-- [実装状況](docs/status/status-024.md) — 最新のステータス（lint解消 + von Mises 3Dロードマップ追加）
+- [実装状況](docs/status/status-025.md) — 最新のステータス（von Mises 3Dテスト計画策定）
 - [ステータス履歴](docs/status/) — 全ステータスファイル一覧
 
 ## インストール
