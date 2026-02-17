@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+import numpy as np
+
 
 @dataclass
 class PlasticState1D:
@@ -77,4 +79,30 @@ class CosseratFiberPlasticState:
         """深いコピーを返す."""
         return CosseratFiberPlasticState(
             fiber_states=[s.copy() for s in self.fiber_states],
+        )
+
+
+@dataclass
+class PlasticState3D:
+    """3D弾塑性の状態変数（Voigt記法）.
+
+    平面ひずみの場合は 3 成分 [εxx, εyy, γxy] を使用。
+    将来の3D固体要素では 6 成分 [εxx, εyy, εzz, γxy, γyz, γxz] に拡張。
+
+    Attributes:
+        eps_p: 塑性ひずみテンソル（Voigt記法）
+        alpha: 等価塑性ひずみ（累積）
+        beta: 背応力テンソル（Voigt記法、移動硬化用）
+    """
+
+    eps_p: np.ndarray = field(default_factory=lambda: np.zeros(3))
+    alpha: float = 0.0
+    beta: np.ndarray = field(default_factory=lambda: np.zeros(3))
+
+    def copy(self) -> PlasticState3D:
+        """深いコピーを返す."""
+        return PlasticState3D(
+            eps_p=self.eps_p.copy(),
+            alpha=self.alpha,
+            beta=self.beta.copy(),
         )
