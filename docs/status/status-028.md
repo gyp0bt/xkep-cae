@@ -119,11 +119,12 @@ Total Lagrangian（TL）定式化による幾何学的非線形解析:
 
 ## TODO（残タスク）
 
-- [ ] Phase 4.3: von Mises 3D 弾塑性テスト実行（45テスト計画済み）— **凍結中**
 - [ ] Phase 3.4: Updated Lagrangian（参照配置更新）の実装
 - [ ] Phase C: 梁–梁接触モジュール実装
 - [ ] 陽解法（Central Difference）
 - [ ] モーダル減衰
+
+> **Note**: Phase 4.3（von Mises 3D 弾塑性）は凍結。roadmap に記載。
 
 ## 確認事項・懸念
 

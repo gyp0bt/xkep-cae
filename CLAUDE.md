@@ -13,6 +13,7 @@
 
 - 実装状況は `docs/status/status-{index}.md` に記録する
 - **現在の状況**は index が最大の status ファイルに書かれている
+- **`docs/status/status-index.md`** にステータス一覧を管理する（新規status作成時に必ず行を追加すること）
 - status に書いた内容は **git の commit メッセージと整合**を取ること
 - 実装状況は細かく書き出す（別の AI アシスタントが参照して簡便に状況を把握する目的）
 
@@ -20,9 +21,10 @@
 
 1. **README.md** を更新（現在の状態、ステータスリンク）
 2. **status ファイル**を新規作成 or 更新（TODO は status に記入）
-3. **roadmap.md** を更新（チェックボックス、テスト数、「現在地」）
-4. 実装とドキュメントの不整合を発見したら**その場で修正**するか、TODO に追加
-5. **feature ごとにコミットを切って**、最後に push
+3. **status-index.md** を更新（新規statusの行を追加）
+4. **roadmap.md** を更新（チェックボックス、テスト数、「現在地」）
+5. 実装とドキュメントの不整合を発見したら**その場で修正**するか、TODO に追加
+6. **feature ごとにコミットを切って**、最後に push
 
 ### 確認事項・懸念
 
@@ -64,5 +66,5 @@ docs/
 
 ## 現在の状態
 
-Phase 1〜3 完了。Phase 4.1（1D弾塑性）実装中。
-詳細は `docs/roadmap.md` および最新の status ファイルを参照。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 完了（556テスト）。Phase 4.3（von Mises 3D）は凍結。
+詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
