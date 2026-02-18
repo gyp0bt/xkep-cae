@@ -15,16 +15,16 @@
 
 ---
 
-## 現在地（Phase 4.3 実装完了・テスト計画策定済み）
+## 現在地（Phase 5.1〜5.2 実装完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 完了（471テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 完了。Phase 5.1（Newmark-β/HHT-α時間積分）および Phase 5.2（集中質量行列）実装完了（498テスト）。
 Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テスト計画](status/status-025.md)策定済み、45テスト予定）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
 ファイバーモデル断面（曲げの塑性化）実装完了。FiberSection + ファイバー積分アセンブリ。
 全 Phase のバリデーションテストを[検証文書](verification/validation.md)に図付きで文書化済み。
 ラインサーチと Lee's frame 等の追加ベンチマークはオプションとして残存。
-動的解析の一部（整合質量行列・Rayleigh減衰・FRF）は Phase 2.6 で先行実装済み。
+動的解析: 整合質量行列・Rayleigh減衰・FRFは Phase 2.6 で先行実装、Newmark-β/HHT-α時間積分・集中質量行列（HRZ法）を追加。
 
 ### 実装済み
 
@@ -36,7 +36,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テ�
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形, 円形, パイプ（2D/3D, Iy/Iz/J 対応） |
 | **非線形ソルバー** | Newton-Raphson（荷重増分 + K_T = K_m + K_g）, 弧長法（Crisfield）, 非線形 Cosserat rod, Euler elastica 検証済み |
-| **動的解析基盤** | 整合質量行列（2D/3D梁）, Rayleigh減衰, 周波数応答関数（FRF） |
+| **動的解析** | Newmark-β/HHT-α時間積分, 整合質量行列（2D/3D梁）, 集中質量行列（HRZ法, 2D/3D梁）, Rayleigh減衰, 周波数応答関数（FRF） |
 | **ポスト処理** | 2D/3D断面力, 最大曲げ応力, 最大せん断応力（ねじり+横せん断） |
 | **数値試験** | 3点曲げ・4点曲げ・引張・ねん回・周波数応答（`numerical_tests`パッケージ） |
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
@@ -45,7 +45,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テ�
 | **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力 |
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ（**471テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）（**498テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md) |
 
 ### 未実装（現状の制約）
@@ -53,7 +53,9 @@ Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テ�
 - ラインサーチ・Lee's frame 等の追加ベンチマーク（Phase 3 オプション）
 - 3次元連続体要素なし（平面問題限定）
 - 材料非線形は1D弾塑性+ファイバーモデルのみ実装済み（3D von Mises塑性・粘弾性等は未実装、Phase 4.3 で計画）
-- 時間積分スキーマ（Newmark等）未実装
+- 陽解法（Central Difference）未実装
+- モーダル減衰未実装
+- ElementProtocol への `mass_matrix()` 統合未実装
 - 梁–梁接触モジュールは設計完了・実装未着手
 
 ---
@@ -513,14 +515,14 @@ Cosserat非線形と別ルートの定式化。必要に応じて実装。
 
 ### 5.1 時間積分スキーマ
 
-- [ ] Newmark-β法（暗黙的）
-- [ ] α法（HHT法、数値減衰付き）
+- [x] Newmark-β法（暗黙的）— `dynamics.py`, 平均加速度法デフォルト, LU事前分解
+- [x] α法（HHT法、数値減衰付き）— α ∈ [-1/3, 0], β/γ自動連動
 - [ ] 陽解法（Central Difference、オプション）
 
 ### 5.2 質量行列
 
 - [x] 整合質量行列（consistent mass）— 2D/3D梁、Phase 2.6 で実装済み
-- [ ] 集中質量行列（lumped mass）
+- [x] 集中質量行列（lumped mass）— HRZ法, 2D/3D梁, 回転DOF非特異
 - [ ] ElementProtocol への `mass_matrix()` 統合
 
 ### 5.3 減衰行列
