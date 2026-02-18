@@ -28,6 +28,7 @@ from xkep_cae.output.database import (
 )
 from xkep_cae.output.export_animation import (
     export_field_animation,
+    export_field_animation_gif,
     render_beam_animation_frame,
 )
 from xkep_cae.output.export_csv import export_frames_csv, export_history_csv
@@ -81,6 +82,7 @@ __all__ = [
     "export_json",
     "export_vtk",
     "export_field_animation",
+    "export_field_animation_gif",
     "render_beam_animation_frame",
     # VTK constants
     "VTK_VERTEX",
