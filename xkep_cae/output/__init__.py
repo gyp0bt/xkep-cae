@@ -1,7 +1,7 @@
 """過渡応答出力インターフェース（Abaqus 準拠）.
 
 Step / Increment / Frame の階層構造で動解析の計算結果を管理し、
-CSV・JSON・VTK（ParaView対応）の3形式でエクスポートする。
+CSV・JSON・VTK（ParaView対応）・アニメーション（PNG）の4形式でエクスポートする。
 
 主要クラス:
     Step: 解析ステップの定義
@@ -16,6 +16,8 @@ CSV・JSON・VTK（ParaView対応）の3形式でエクスポートする。
     export_frames_csv: フレーム出力を CSV にエクスポート
     export_json: 全データを JSON にエクスポート
     export_vtk: フレームデータを VTK (ParaView) にエクスポート
+    export_field_animation: 梁要素のアニメーション出力（PNG画像）
+    render_beam_animation_frame: 梁要素の1フレーム描画
 """
 
 from xkep_cae.output.database import (
@@ -23,6 +25,10 @@ from xkep_cae.output.database import (
     build_output_database,
     mesh_from_abaqus_inp,
     run_transient_steps,
+)
+from xkep_cae.output.export_animation import (
+    export_field_animation,
+    render_beam_animation_frame,
 )
 from xkep_cae.output.export_csv import export_frames_csv, export_history_csv
 from xkep_cae.output.export_json import export_json
@@ -74,6 +80,8 @@ __all__ = [
     "export_frames_csv",
     "export_json",
     "export_vtk",
+    "export_field_animation",
+    "render_beam_animation_frame",
     # VTK constants
     "VTK_VERTEX",
     "VTK_LINE",
