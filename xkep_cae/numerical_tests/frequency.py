@@ -267,6 +267,153 @@ def _assemble_mass_3d(
 
 
 # ---------------------------------------------------------------------------
+# 集中質量行列（Lumped Mass Matrix）— HRZ法
+# ---------------------------------------------------------------------------
+def _beam2d_lumped_mass_local(
+    rho: float,
+    A: float,
+    L: float,
+) -> np.ndarray:
+    """2D梁の局所集中質量行列 (6x6, 対角).
+
+    HRZ (Hinton-Rock-Zienkiewicz) 法による集中化。
+    整合質量行列の対角成分を取り、並進方向で全質量が保存されるよう
+    スケーリングする。回転DOFにも小さな慣性を付与し非特異性を確保。
+
+    DOF順: [u1, v1, θz1, u2, v2, θz2]
+
+    HRZ結果:
+        並進: m/2 （各節点・各方向）
+        回転: m·L²/78 （各節点）
+
+    Args:
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        L: 要素長 [m]
+
+    Returns:
+        Me: (6, 6) 対角集中質量行列
+    """
+    m = rho * A * L
+    # HRZ法: 並進 m/2, 回転 m*L²/78
+    diag = np.array([m / 2.0, m / 2.0, m * L**2 / 78.0, m / 2.0, m / 2.0, m * L**2 / 78.0])
+    return np.diag(diag)
+
+
+def _beam3d_lumped_mass_local(
+    rho: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    L: float,
+) -> np.ndarray:
+    """3D梁の局所集中質量行列 (12x12, 対角).
+
+    HRZ法による集中化。
+
+    DOF順: [u1, v1, w1, θx1, θy1, θz1, u2, v2, w2, θx2, θy2, θz2]
+
+    HRZ結果:
+        並進: m/2 （各節点・各方向）
+        ねじり: ρ·Ip·L/2 （各節点）
+        曲げ回転: m·L²/78 （各節点・各方向）
+
+    Args:
+        rho: 密度
+        A: 断面積
+        Iy: y軸まわり断面二次モーメント
+        Iz: z軸まわり断面二次モーメント
+        L: 要素長
+
+    Returns:
+        Me: (12, 12) 対角集中質量行列
+    """
+    m = rho * A * L
+    Ip = Iy + Iz
+    m_torsion = rho * Ip * L
+    rot_inertia = m * L**2 / 78.0
+
+    # [u, v, w, θx, θy, θz] × 2ノード
+    diag = np.array(
+        [
+            m / 2.0,
+            m / 2.0,
+            m / 2.0,
+            m_torsion / 2.0,
+            rot_inertia,
+            rot_inertia,
+            m / 2.0,
+            m / 2.0,
+            m / 2.0,
+            m_torsion / 2.0,
+            rot_inertia,
+            rot_inertia,
+        ]
+    )
+    return np.diag(diag)
+
+
+def _assemble_lumped_mass_2d(
+    nodes: np.ndarray,
+    connectivity: np.ndarray,
+    rho: float,
+    A: float,
+) -> np.ndarray:
+    """2D梁の全体集中質量行列をアセンブルする.
+
+    集中質量は対角行列なので座標変換不要（回転不変）。
+    """
+    n_nodes = len(nodes)
+    ndof = 3 * n_nodes
+    M = np.zeros((ndof, ndof), dtype=float)
+    for elem_nodes in connectivity:
+        n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
+        coords = nodes[[n1, n2]]
+        dx = coords[1, 0] - coords[0, 0]
+        dy = coords[1, 1] - coords[0, 1]
+        L = np.sqrt(dx**2 + dy**2)
+        Me = _beam2d_lumped_mass_local(rho, A, L)
+        edofs = np.array(
+            [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2],
+            dtype=int,
+        )
+        for ii in range(6):
+            M[edofs[ii], edofs[ii]] += Me[ii, ii]
+    return M
+
+
+def _assemble_lumped_mass_3d(
+    nodes: np.ndarray,
+    connectivity: np.ndarray,
+    rho: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+) -> np.ndarray:
+    """3D梁の全体集中質量行列をアセンブルする.
+
+    集中質量は対角行列なので座標変換不要（回転不変）。
+    """
+    from xkep_cae.elements.beam_timo3d import _beam3d_length_and_direction
+
+    n_nodes = len(nodes)
+    ndof = 6 * n_nodes
+    M = np.zeros((ndof, ndof), dtype=float)
+    for elem_nodes in connectivity:
+        n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
+        coords = nodes[[n1, n2]]
+        L, _ = _beam3d_length_and_direction(coords)
+        Me = _beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
+        edofs = np.empty(12, dtype=int)
+        for i, n in enumerate([n1, n2]):
+            for d in range(6):
+                edofs[6 * i + d] = 6 * n + d
+        for ii in range(12):
+            M[edofs[ii], edofs[ii]] += Me[ii, ii]
+    return M
+
+
+# ---------------------------------------------------------------------------
 # 周波数応答試験ランナー
 # ---------------------------------------------------------------------------
 def run_frequency_response(

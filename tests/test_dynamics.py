@@ -630,3 +630,202 @@ class TestNewmarkBeam:
         u_final = -result.displacement[-1, tip_uy_dof]  # 符号反転して正に
         err = abs(u_final - u_static) / u_static
         assert err < 0.05, f"先端変位の静的収束誤差: {err:.3f} ({u_final:.6e} vs {u_static:.6e})"
+
+
+# ====================================================================
+# 集中質量行列テスト
+# ====================================================================
+
+
+class TestLumpedMass:
+    """集中質量行列（HRZ法）の検証."""
+
+    def test_lumped_mass_2d_is_diagonal(self):
+        """2D集中質量行列が対角行列."""
+        from xkep_cae.numerical_tests.frequency import _beam2d_lumped_mass_local
+
+        Me = _beam2d_lumped_mass_local(rho=7800.0, A=0.001, L=0.1)
+        # 非対角要素がゼロ
+        assert np.allclose(Me, np.diag(np.diag(Me)))
+        # 全対角要素が正
+        assert np.all(np.diag(Me) > 0)
+
+    def test_lumped_mass_3d_is_diagonal(self):
+        """3D集中質量行列が対角行列."""
+        from xkep_cae.numerical_tests.frequency import _beam3d_lumped_mass_local
+
+        Me = _beam3d_lumped_mass_local(rho=7800.0, A=0.001, Iy=1e-8, Iz=1e-8, L=0.1)
+        assert np.allclose(Me, np.diag(np.diag(Me)))
+        assert np.all(np.diag(Me) > 0)
+
+    def test_lumped_mass_2d_total_mass_preserved(self):
+        """2D集中質量の並進方向合計が要素質量と一致."""
+        from xkep_cae.numerical_tests.frequency import _beam2d_lumped_mass_local
+
+        rho, A, L = 7800.0, 0.002, 0.5
+        m_elem = rho * A * L
+        Me = _beam2d_lumped_mass_local(rho, A, L)
+
+        # 軸方向（DOF 0, 3）の合計 = m
+        assert np.isclose(Me[0, 0] + Me[3, 3], m_elem)
+        # 横方向（DOF 1, 4）の合計 = m
+        assert np.isclose(Me[1, 1] + Me[4, 4], m_elem)
+
+    def test_lumped_mass_3d_total_mass_preserved(self):
+        """3D集中質量の並進方向合計が要素質量と一致."""
+        from xkep_cae.numerical_tests.frequency import _beam3d_lumped_mass_local
+
+        rho, A, L = 7800.0, 0.002, 0.5
+        Iy, Iz = 1e-8, 2e-8
+        m_elem = rho * A * L
+        Me = _beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
+
+        # 各並進方向の合計 = m
+        for d in [0, 1, 2]:  # ux, uy, uz
+            assert np.isclose(Me[d, d] + Me[d + 6, d + 6], m_elem)
+
+    def test_lumped_mass_2d_global_total_mass(self):
+        """2Dグローバル集中質量の全体質量が正しい."""
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_2d
+
+        n_elems = 10
+        L = 2.0
+        rho, A = 7800.0, 0.001
+        m_total = rho * A * L
+
+        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        M = _assemble_lumped_mass_2d(nodes, conn, rho, A)
+
+        # 対角行列
+        assert np.allclose(M, np.diag(np.diag(M)))
+
+        # ux 方向（DOF 0, 3, 6, ...）の全合計 = m_total
+        ux_dofs = np.arange(0, M.shape[0], 3)
+        m_sum = np.sum(M[ux_dofs, ux_dofs])
+        assert np.isclose(m_sum, m_total, rtol=1e-12)
+
+    def test_lumped_mass_3d_global_total_mass(self):
+        """3Dグローバル集中質量の全体質量が正しい."""
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_3d
+        from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_3d
+
+        n_elems = 8
+        L = 1.5
+        rho, A = 7800.0, 0.002
+        Iy, Iz = 1e-8, 2e-8
+        m_total = rho * A * L
+
+        nodes, conn = generate_beam_mesh_3d(n_elems, L)
+        M = _assemble_lumped_mass_3d(nodes, conn, rho, A, Iy, Iz)
+
+        # 対角行列
+        assert np.allclose(M, np.diag(np.diag(M)))
+
+        # ux 方向の合計 = m_total
+        ux_dofs = np.arange(0, M.shape[0], 6)
+        m_sum = np.sum(M[ux_dofs, ux_dofs])
+        assert np.isclose(m_sum, m_total, rtol=1e-12)
+
+    def test_lumped_vs_consistent_eigenfreq_convergence(self):
+        """集中質量でも固有振動数が解析解に収束する.
+
+        メッシュ細分化で集中・整合の差が小さくなることを確認。
+        """
+        from scipy.linalg import eigh
+
+        from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.frequency import (
+            _assemble_lumped_mass_2d,
+            _assemble_mass_2d,
+        )
+        from xkep_cae.numerical_tests.runner import _assemble_2d
+
+        L = 1.0
+        E_mod = 2.0e11
+        rho = 7800.0
+        b, h = 0.02, 0.04
+        A = b * h
+        Iz = b * h**3 / 12.0
+
+        beta1L = 1.8751
+        f1_exact = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E_mod * Iz / (rho * A))
+
+        fixed_dofs = np.array([0, 1, 2])
+
+        for n_elems in [10, 20]:
+            nodes, conn = generate_beam_mesh_2d(n_elems, L)
+            ke_func = lambda coords: eb_beam2d_ke_global(coords, E_mod, A, Iz)  # noqa: E731
+            K_full, _ = _assemble_2d(nodes, conn, ke_func)
+
+            M_con = _assemble_mass_2d(nodes, conn, rho, A)
+            M_lum = _assemble_lumped_mass_2d(nodes, conn, rho, A)
+
+            ndof = K_full.shape[0]
+            free = np.array([i for i in range(ndof) if i not in fixed_dofs])
+            K_ff = K_full[np.ix_(free, free)]
+
+            # 整合質量行列の第1固有振動数
+            eigvals_c, _ = eigh(K_ff, M_con[np.ix_(free, free)])
+            f1_con = np.sqrt(eigvals_c[0]) / (2.0 * np.pi)
+
+            # 集中質量行列の第1固有振動数
+            eigvals_l, _ = eigh(K_ff, M_lum[np.ix_(free, free)])
+            f1_lum = np.sqrt(eigvals_l[0]) / (2.0 * np.pi)
+
+            err_con = abs(f1_con - f1_exact) / f1_exact
+            err_lum = abs(f1_lum - f1_exact) / f1_exact
+
+            # 両方 5% 未満
+            assert err_con < 0.05, f"整合: n={n_elems}, err={err_con:.4f}"
+            assert err_lum < 0.05, f"集中: n={n_elems}, err={err_lum:.4f}"
+
+    def test_lumped_mass_beam_transient(self):
+        """集中質量でカンチレバー先端荷重が静的解に収束する."""
+        from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_2d
+        from xkep_cae.numerical_tests.runner import _assemble_2d
+
+        L = 0.5
+        E_mod = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        P = 100.0
+        n_elems = 10
+
+        u_static = P * L**3 / (3.0 * E_mod * Iz)
+
+        beta1L = 1.8751
+        f1 = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E_mod * Iz / (rho * A))
+        omega1 = 2.0 * np.pi * f1
+        T1 = 1.0 / f1
+
+        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        ke_func = lambda coords: eb_beam2d_ke_global(coords, E_mod, A, Iz)  # noqa: E731
+        K, _ = _assemble_2d(nodes, conn, ke_func)
+        M = _assemble_lumped_mass_2d(nodes, conn, rho, A)
+        ndof = K.shape[0]
+        fixed = np.array([0, 1, 2])
+
+        # Rayleigh 減衰
+        xi1 = 0.1
+        beta_r = 2.0 * xi1 / omega1
+        C = beta_r * K
+
+        tip_uy_dof = 3 * n_elems + 1
+        f = np.zeros(ndof)
+        f[tip_uy_dof] = -P
+
+        dt = T1 / 40.0
+        n_steps = int(20 * T1 / dt)
+
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+        result = solve_transient(M, C, K, f, np.zeros(ndof), np.zeros(ndof), cfg, fixed_dofs=fixed)
+
+        u_final = -result.displacement[-1, tip_uy_dof]
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.05, f"集中質量の静的収束誤差: {err:.3f} ({u_final:.6e} vs {u_static:.6e})"
