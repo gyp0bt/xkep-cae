@@ -20,6 +20,8 @@ import numpy as np
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 
+from xkep_cae.core.results import LinearSolveResult
+
 
 def solve_displacement(
     K: sp.csr_matrix,
@@ -30,7 +32,7 @@ def solve_displacement(
     size_threshold: int = 2000,
     show_progress: bool = True,
     use_pyamg: bool = True,
-) -> tuple[np.ndarray, dict[str, Any]]:
+) -> LinearSolveResult:
     """pyamgを主体としたソルバ。小規模はspsolveにフォールバック。
 
     Args:
@@ -42,8 +44,9 @@ def solve_displacement(
         show_progress: セットアップ/ソルブ時間を表示
 
     Returns:
-        u: 解ベクトル
-        info: method, nit, residual_norm, setup_time, solve_time など
+        LinearSolveResult: (u, info) の NamedTuple
+            u: 解ベクトル
+            info: method, nit, residual_norm, setup_time, solve_time など
     """
     n = K.shape[0]
     info: dict[str, Any] = {
@@ -68,7 +71,7 @@ def solve_displacement(
         info["solve_time"] = elapsed
         if show_progress:
             print(f"[spsolve] n={n}, nnz={K.nnz}, elapsed={elapsed:.3f} s")
-        return u, info
+        return LinearSolveResult(u=u, info=info)
 
     # ここからpyamg主体
     try:
@@ -89,7 +92,7 @@ def solve_displacement(
         info["solve_time"] = elapsed
         if show_progress:
             print(f"[spsolve(no-pyamg)] n={n}, nnz={K.nnz}, elapsed={elapsed:.3f} s")
-        return u, info
+        return LinearSolveResult(u=u, info=info)
 
     # pyamg setup
     t0 = time.time()
@@ -128,7 +131,7 @@ def solve_displacement(
             f"res={res_norm:.3e}, setup={setup_time:.3f}s, solve={solve_time:.3f}s"
         )
 
-    return u, info
+    return LinearSolveResult(u=u, info=info)
 
 
 # ====================================================================
