@@ -4,8 +4,11 @@ pymesh 代替として、Abaqus入力ファイルの以下のセクションを�
   - *NODE: 節点座標
   - *ELEMENT: 要素接続配列
   - *NSET: ノードセット
+  - *ELSET: 要素セット
   - *BEAM SECTION: 梁断面定義（SECTION, ELSET, MATERIAL, 寸法）
   - *TRANSVERSE SHEAR STIFFNESS: 横せん断剛性（K11, K22, K12）
+  - *BOUNDARY: 境界条件（節点拘束）
+  - *OUTPUT, FIELD ANIMATION: アニメーション出力（独自拡張）
 
 対応要素タイプ:
   - CPS3, CPE3: 3節点三角形（TRI3）
@@ -74,6 +77,39 @@ class AbaqusElementGroup:
 
 
 @dataclass
+class AbaqusBoundary:
+    """Abaqus境界条件（*BOUNDARY）.
+
+    Attributes:
+        node_label: 節点ラベル
+        first_dof: 拘束開始DOF番号（1始まり）
+        last_dof: 拘束終了DOF番号（1始まり）。first_dofと同じ場合は単一DOF拘束
+        value: 規定変位値（デフォルト0.0）
+    """
+
+    node_label: int
+    first_dof: int
+    last_dof: int
+    value: float = 0.0
+
+
+@dataclass
+class AbaqusFieldAnimation:
+    """アニメーション出力設定（*OUTPUT, FIELD ANIMATION、独自拡張）.
+
+    Abaqusにはないxkep-cae独自キーワード。
+    梁要素のx,y,z軸方向からの二次元プロットを生成する。
+
+    Attributes:
+        output_dir: 出力ディレクトリ（デフォルト "animation"）
+        views: 描画するビュー方向リスト（デフォルト ["xy", "xz", "yz"]）
+    """
+
+    output_dir: str = "animation"
+    views: list[str] = field(default_factory=lambda: ["xy", "xz", "yz"])
+
+
+@dataclass
 class AbaqusMesh:
     """パース結果を保持するデータクラス.
 
@@ -83,7 +119,10 @@ class AbaqusMesh:
     nodes: list[AbaqusNode] = field(default_factory=list)
     element_groups: list[AbaqusElementGroup] = field(default_factory=list)
     nsets: dict[str, list[int]] = field(default_factory=dict)
+    elsets: dict[str, list[int]] = field(default_factory=dict)
     beam_sections: list[AbaqusBeamSection] = field(default_factory=list)
+    boundaries: list[AbaqusBoundary] = field(default_factory=list)
+    field_animation: AbaqusFieldAnimation | None = None
 
     def get_node_coord_array(self) -> list[dict[str, float]]:
         """節点座標をpymesh互換の辞書リストで返す.
@@ -111,6 +150,37 @@ class AbaqusMesh:
                 return labels
         raise KeyError(
             f"ノードセット '{nset_name}' が見つかりません。利用可能: {list(self.nsets.keys())}"
+        )
+
+    def get_element_labels_with_elset(self, elset_name: str) -> list[int]:
+        """指定要素セットのラベルリストを返す.
+
+        *ELSET で明示的に定義されたセットと、*ELEMENT の ELSET= で
+        暗黙的に定義されたセットの両方を検索する。
+
+        Args:
+            elset_name: 要素セット名（大文字小文字区別なし）
+
+        Returns:
+            要素ラベルのリスト
+
+        Raises:
+            KeyError: 要素セットが見つからない場合
+        """
+        key = elset_name.upper()
+
+        # 明示的な *ELSET を検索
+        for name, labels in self.elsets.items():
+            if name.upper() == key:
+                return labels
+
+        # *ELEMENT の ELSET= で暗黙的に定義されたものを検索
+        for group in self.element_groups:
+            if group.elset and group.elset.upper() == key:
+                return [label for label, _ in group.elements]
+
+        raise KeyError(
+            f"要素セット '{elset_name}' が見つかりません。利用可能: {list(self.elsets.keys())}"
         )
 
     def get_element_array(
@@ -213,6 +283,9 @@ def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
             elif keyword == "*NSET":
                 opts = _parse_keyword_options(line)
                 idx = _parse_nset_section(lines, idx + 1, opts, mesh)
+            elif keyword == "*ELSET":
+                opts = _parse_keyword_options(line)
+                idx = _parse_elset_section(lines, idx + 1, opts, mesh)
             elif keyword in ("*BEAM SECTION", "*BEAMSECTION"):
                 opts = _parse_keyword_options(line)
                 idx = _parse_beam_section(lines, idx + 1, opts, mesh)
@@ -221,6 +294,14 @@ def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
                 "*TRANSVERSESHEARSTIFFNESS",
             ):
                 idx = _parse_transverse_shear_stiffness(lines, idx + 1, mesh)
+            elif keyword == "*BOUNDARY":
+                idx = _parse_boundary_section(lines, idx + 1, mesh)
+            elif keyword == "*OUTPUT":
+                opts = _parse_keyword_options(line)
+                if "FIELD ANIMATION" in opts or "FIELD" in opts:
+                    idx = _parse_field_animation(lines, idx + 1, opts, mesh)
+                else:
+                    idx += 1
             else:
                 idx += 1
         else:
@@ -463,4 +544,158 @@ def _parse_transverse_shear_stiffness(
         idx += 1
         break  # データは1行のみ
 
+    return idx
+
+
+def _parse_elset_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*ELSET セクションをパースする.
+
+    2つの形式に対応:
+    1. 通常: 要素ラベルのカンマ区切りリスト
+    2. GENERATE: start, end, step
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    elset_name = opts.get("ELSET", "UNNAMED")
+    is_generate = "GENERATE" in opts
+
+    labels: list[int] = mesh.elsets.get(elset_name, [])
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+
+        if is_generate:
+            # GENERATE: start, end [, step]
+            start = int(parts[0])
+            end = int(parts[1])
+            step = int(parts[2]) if len(parts) > 2 else 1
+            labels.extend(range(start, end + 1, step))
+        else:
+            # 通常: ラベルのリスト
+            labels.extend(int(p) for p in parts)
+
+        idx += 1
+
+    mesh.elsets[elset_name] = labels
+    return idx
+
+
+def _parse_boundary_section(
+    lines: list[str],
+    start_idx: int,
+    mesh: AbaqusMesh,
+) -> int:
+    """*BOUNDARY セクションをパースする.
+
+    Abaqus形式:
+        node_label, first_dof, last_dof [, value]
+    または:
+        node_label, dof  （単一DOF拘束、value=0.0）
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        node_label = int(parts[0])
+
+        if len(parts) == 2:
+            # node_label, dof
+            dof = int(parts[1])
+            mesh.boundaries.append(
+                AbaqusBoundary(node_label=node_label, first_dof=dof, last_dof=dof)
+            )
+        elif len(parts) == 3:
+            # node_label, first_dof, last_dof
+            first_dof = int(parts[1])
+            last_dof = int(parts[2])
+            mesh.boundaries.append(
+                AbaqusBoundary(node_label=node_label, first_dof=first_dof, last_dof=last_dof)
+            )
+        elif len(parts) >= 4:
+            # node_label, first_dof, last_dof, value
+            first_dof = int(parts[1])
+            last_dof = int(parts[2])
+            value = float(parts[3])
+            mesh.boundaries.append(
+                AbaqusBoundary(
+                    node_label=node_label,
+                    first_dof=first_dof,
+                    last_dof=last_dof,
+                    value=value,
+                )
+            )
+
+        idx += 1
+
+    return idx
+
+
+def _parse_field_animation(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*OUTPUT, FIELD ANIMATION セクションをパースする.
+
+    xkep-cae独自拡張。梁要素のアニメーション出力設定。
+
+    オプション:
+        DIR=<出力ディレクトリ>  （デフォルト: "animation"）
+
+    データ行（オプション）:
+        ビュー方向のカンマ区切り（例: xy, xz, yz）
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    output_dir = opts.get("DIR", "animation")
+    anim = AbaqusFieldAnimation(output_dir=output_dir)
+
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        # データ行: ビュー方向リスト
+        parts = [p.strip().lower() for p in line.split(",") if p.strip()]
+        if parts:
+            anim.views = parts
+
+        idx += 1
+        break  # データは1行のみ
+
+    mesh.field_animation = anim
     return idx
