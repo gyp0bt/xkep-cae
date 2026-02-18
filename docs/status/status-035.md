@@ -102,9 +102,9 @@ pyproject.toml に matplotlib をオプショナル依存として追加。
 
 ## TODO
 
-- [ ] テーブル補間型硬化則の実装（*PLASTIC テーブル → Plasticity1D/3D への変換）
+- [x] テーブル補間型硬化則の実装（*PLASTIC テーブル → Plasticity1D/3D への変換） → status-036
 - [ ] GIF/MP4 出力のサポート（ffmpeg連携）— status-034 から継続
 - [ ] 連続体要素のメッシュプロット対応（将来）— status-034 から継続
-- [ ] matplotlib 未インストール環境でのテストスキップ対応
+- [x] matplotlib 未インストール環境でのテストスキップ対応 → status-036
 
 ---

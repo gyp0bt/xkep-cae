@@ -43,6 +43,7 @@
 | [033](status-033.md) | 2026-02-18 | Phase C1 — Broadphase (AABB格子) + 幾何更新 + Active-setヒステリシス | 701 |
 | [034](status-034.md) | 2026-02-18 | FIELD ANIMATION出力 + .inpパーサー拡張（*ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION） | 741 |
 | [035](status-035.md) | 2026-02-18 | .inpパーサー拡張（*MATERIAL / *ELASTIC / *DENSITY / *PLASTIC）+ pyproject.toml更新 | 753 |
+| [036](status-036.md) | 2026-02-18 | テーブル補間型硬化則 + matplotlibテストスキップ対応 | 782 |
 
 ## テスト数推移
 
@@ -70,6 +71,7 @@
 033:     701      (Phase C1: Broadphase AABB格子 + 幾何更新 + Active-setヒステリシス)
 034:     741      (FIELD ANIMATION出力 + .inpパーサー拡張: *ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION)
 035:     753      (.inpパーサー拡張: *MATERIAL / *ELASTIC / *DENSITY / *PLASTIC + pyproject.toml更新)
+036:     782      (テーブル補間型硬化則 + matplotlibテストスキップ対応)
 ```
 
 ## 備考

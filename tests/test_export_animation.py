@@ -18,13 +18,22 @@ from textwrap import dedent
 import numpy as np
 import pytest
 
-from xkep_cae.io.abaqus_inp import (
+try:
+    import matplotlib  # noqa: F401
+
+    _has_matplotlib = True
+except ImportError:
+    _has_matplotlib = False
+
+needs_matplotlib = pytest.mark.skipif(not _has_matplotlib, reason="matplotlib is not installed")
+
+from xkep_cae.io.abaqus_inp import (  # noqa: E402
     AbaqusElementGroup,
     AbaqusMesh,
     AbaqusNode,
     read_abaqus_inp,
 )
-from xkep_cae.output.export_animation import (
+from xkep_cae.output.export_animation import (  # noqa: E402
     _collect_beam_segments,
     export_field_animation,
     render_beam_animation_frame,
@@ -148,6 +157,7 @@ class TestCollectBeamSegments:
         assert np.allclose(seg0_end, [1.0, 0.2, 0.0])
 
 
+@needs_matplotlib
 class TestRenderBeamAnimationFrame:
     """フレーム描画のテスト."""
 
@@ -232,6 +242,7 @@ class TestRenderBeamAnimationFrame:
         plt.close(fig)
 
 
+@needs_matplotlib
 class TestExportFieldAnimation:
     """PNG出力のテスト."""
 
@@ -304,6 +315,7 @@ class TestExportFieldAnimation:
         assert len(files) == 1
 
 
+@needs_matplotlib
 class TestIntegrationWithInpParser:
     """パーサーとアニメーション出力の統合テスト."""
 

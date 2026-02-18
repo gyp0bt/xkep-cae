@@ -261,7 +261,8 @@ class PlaneStrainPlasticity:
         """塑性乗数 dg を求解."""
         mu = self.mu
 
-        if gamma_kin == 0.0 and self.iso.Q_inf == 0.0:
+        _is_linear_3d = isinstance(self.iso, IsotropicHardening3D) and self.iso.Q_inf == 0.0
+        if gamma_kin == 0.0 and _is_linear_3d:
             H_bar = self.iso.H_iso + C_kin
             return (q_trial - self.iso.sigma_y(alpha_n)) / (3.0 * mu + H_bar)
 
