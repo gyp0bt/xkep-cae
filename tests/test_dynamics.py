@@ -1327,3 +1327,479 @@ class TestNonlinearTransient:
 
         # 硬化ばねなので非線形周波数 > 線形周波数
         assert f_nl > f_lin, f"硬化ばね周波数シフト: {f_nl:.3f} <= {f_lin:.3f}"
+
+
+# ====================================================================
+# Central Difference 陽解法テスト
+# ====================================================================
+
+
+class TestCentralDifference:
+    """Central Difference 法（陽解法）の検証."""
+
+    def test_free_vibration_undamped(self):
+        """非減衰自由振動: u(t) = u0·cos(ωₙt).
+
+        陽解法でも十分小さなΔtで解析解に一致する。
+        """
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        u0_val = 0.5
+
+        # 安定条件: Δt < 2/ω_n, 余裕をもって T/100
+        dt = T / 100.0
+        n_steps = int(5 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg
+        )
+
+        assert result.stable
+        t = result.time
+        u_exact = u0_val * np.cos(omega_n * t)
+        u_num = result.displacement[:, 0]
+
+        err = np.max(np.abs(u_num - u_exact))
+        assert err < 0.02, f"Central Difference 自由振動誤差: {err:.4e}"
+
+    def test_step_response_with_damping(self):
+        """減衰付きステップ荷重が静的変位に収束する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 400.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        F0 = 20.0
+        u_static = F0 / k
+
+        xi = 0.1
+        c = 2.0 * xi * omega_n * m
+
+        dt = T / 100.0
+        n_steps = int(30 * T / dt)
+
+        M, C, K = _sdof_matrices(m, c, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(M, C, K, np.array([F0]), np.zeros(1), np.zeros(1), cfg)
+
+        assert result.stable
+        u_final = result.displacement[-1, 0]
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.02, f"Central Difference ステップ応答誤差: {err:.6e}"
+
+    def test_matches_newmark_for_small_dt(self):
+        """十分小さなΔtで暗黙的Newmarkと一致する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+
+        dt = T / 200.0
+        n_steps = int(3 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+
+        # Newmark（暗黙的）
+        cfg_nm = TransientConfig(dt=dt, n_steps=n_steps)
+        res_nm = solve_transient(M, C, K, np.zeros(1), np.array([0.5]), np.zeros(1), cfg_nm)
+
+        # Central Difference（陽解法）
+        cfg_cd = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        res_cd = solve_central_difference(
+            M, C, K, np.zeros(1), np.array([0.5]), np.zeros(1), cfg_cd
+        )
+
+        # 変位の比較（周期誤差の蓄積があるので緩めの許容値）
+        err = np.max(np.abs(res_cd.displacement - res_nm.displacement))
+        assert err < 0.05, f"Newmarkとの差: {err:.4e}"
+
+    def test_instability_detection(self):
+        """安定限界超過の検出."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        dt_cr = 2.0 / omega_n
+
+        # 安定限界超過
+        dt = dt_cr * 1.5
+        M, C, K = _sdof_matrices(m, 0.0, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=10)
+        result = solve_central_difference(M, C, K, np.zeros(1), np.array([0.1]), np.zeros(1), cfg)
+
+        assert not result.stable
+
+    def test_critical_time_step(self):
+        """安定限界時間刻みの計算."""
+        from xkep_cae.dynamics import critical_time_step
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        dt_cr_exact = 2.0 / omega_n
+
+        M, _, K = _sdof_matrices(m, 0.0, k)
+        dt_cr = critical_time_step(M, K)
+
+        np.testing.assert_allclose(dt_cr, dt_cr_exact, rtol=1e-10)
+
+    def test_diagonal_mass_fast_path(self):
+        """対角質量行列（集中質量）で高速パスが動作する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 2.0, 200.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        dt = T / 100.0
+        n_steps = int(3 * T / dt)
+
+        M = np.diag([m])
+        C = np.zeros((1, 1))
+        K = np.array([[k]])
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(M, C, K, np.zeros(1), np.array([0.3]), np.zeros(1), cfg)
+
+        u_exact = 0.3 * np.cos(omega_n * result.time)
+        err = np.max(np.abs(result.displacement[:, 0] - u_exact))
+        assert err < 0.02
+
+    def test_fixed_dofs(self):
+        """拘束DOFが正しく処理される（2DOF系、1DOF固定）."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        k = 100.0
+        M = np.diag([1.0, 1.0])
+        C = np.zeros((2, 2))
+        K = np.array([[k, -k], [-k, 2 * k]])
+
+        omega = np.sqrt(2 * k / 1.0)
+        T = 2.0 * np.pi / omega
+        dt = T / 100.0
+        n_steps = int(3 * T / dt)
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M,
+            C,
+            K,
+            np.zeros(2),
+            np.array([0.0, 0.1]),
+            np.zeros(2),
+            cfg,
+            fixed_dofs=np.array([0]),
+        )
+
+        # DOF 0 は常にゼロ
+        np.testing.assert_allclose(result.displacement[:, 0], 0.0, atol=1e-14)
+        # DOF 1 は振動
+        assert np.max(np.abs(result.displacement[:, 1])) > 0.01
+
+    def test_beam_free_vibration(self):
+        """カンチレバー梁の自由振動をCentral Differenceで解く."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import (
+            CentralDifferenceConfig,
+            critical_time_step,
+            solve_central_difference,
+        )
+
+        L = 0.5
+        E = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        n_elems = 10
+
+        M, C, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        # 安定限界の計算
+        dt_cr = critical_time_step(M, K, fixed_dofs=fixed)
+        dt = 0.8 * dt_cr  # 安全率0.8
+
+        # 第1固有モード形状で初期変位
+        free = np.array([i for i in range(ndof) if i not in fixed])
+        K_ff = K[np.ix_(free, free)]
+        M_ff = M[np.ix_(free, free)]
+        eigvals, eigvecs = eigh(K_ff, M_ff)
+        phi1 = eigvecs[:, 0]
+
+        u0 = np.zeros(ndof)
+        u0[free] = phi1 * 0.001 / np.max(np.abs(phi1))
+
+        # 第1固有振動数
+        f1 = np.sqrt(eigvals[0]) / (2.0 * np.pi)
+        T1 = 1.0 / f1
+        n_steps = int(5 * T1 / dt)
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M, C, K, np.zeros(ndof), u0, np.zeros(ndof), cfg, fixed_dofs=fixed
+        )
+
+        assert result.stable
+
+        # FFTでピーク周波数を検出
+        tip_uy_dof = 3 * n_elems + 1
+        u_tip = result.displacement[:, tip_uy_dof]
+        N = len(u_tip)
+        freqs = np.fft.rfftfreq(N, d=dt)
+        fft_mag = np.abs(np.fft.rfft(u_tip))
+        peak_idx = np.argmax(fft_mag[1:]) + 1
+        f1_num = freqs[peak_idx]
+
+        err = abs(f1_num - f1) / f1
+        assert err < 0.05, f"梁の固有振動数誤差: {err:.3f} ({f1_num:.2f} vs {f1:.2f} Hz)"
+
+    def test_config_validation(self):
+        """CentralDifferenceConfig のバリデーション."""
+        from xkep_cae.dynamics import CentralDifferenceConfig
+
+        with pytest.raises(ValueError, match="dt"):
+            CentralDifferenceConfig(dt=-0.001, n_steps=10)
+        with pytest.raises(ValueError, match="n_steps"):
+            CentralDifferenceConfig(dt=0.001, n_steps=0)
+
+
+# ====================================================================
+# モーダル減衰テスト
+# ====================================================================
+
+
+class TestModalDamping:
+    """モーダル減衰行列の検証."""
+
+    def test_sdof_matches_viscous(self):
+        """1DOF系でモーダル減衰 = 粘性減衰 (c = 2·ξ·ω·m)."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        m, k = 2.0, 200.0
+        omega = np.sqrt(k / m)
+        xi = 0.05
+        c_exact = 2.0 * xi * omega * m
+
+        M = np.array([[m]])
+        K = np.array([[k]])
+        C = build_modal_damping_matrix(M, K, [xi])
+
+        np.testing.assert_allclose(C[0, 0], c_exact, rtol=1e-10)
+
+    def test_symmetric(self):
+        """モーダル減衰行列は対称."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 2.0, 1.5])
+        K = np.array(
+            [
+                [200.0, -100.0, 0.0],
+                [-100.0, 200.0, -100.0],
+                [0.0, -100.0, 100.0],
+            ]
+        )
+        C = build_modal_damping_matrix(M, K, [0.01, 0.02, 0.05])
+        np.testing.assert_allclose(C, C.T, atol=1e-12)
+
+    def test_positive_semidefinite(self):
+        """モーダル減衰行列は正半定値."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 1.0])
+        K = np.array([[200.0, -100.0], [-100.0, 200.0]])
+        C = build_modal_damping_matrix(M, K, [0.05, 0.1])
+
+        eigvals = np.linalg.eigvalsh(C)
+        assert np.all(eigvals >= -1e-12), f"負の固有値: {eigvals}"
+
+    def test_uniform_damping_ratio(self):
+        """全モード同一ξのモーダル減衰 → Rayleigh減衰と等価ではないが、
+        各モードの減衰比は一致する."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 2.0])
+        K = np.array([[300.0, -100.0], [-100.0, 200.0]])
+        xi_target = 0.03
+
+        C = build_modal_damping_matrix(M, K, [xi_target])
+
+        # 検証: Φᵀ·C·Φ = diag(2·ξ·ω)
+        eigvals, eigvecs = eigh(K, M)
+        omega = np.sqrt(eigvals)
+        modal_C = eigvecs.T @ C @ eigvecs
+
+        for i in range(2):
+            xi_actual = modal_C[i, i] / (2.0 * omega[i])
+            np.testing.assert_allclose(xi_actual, xi_target, rtol=1e-10)
+
+    def test_different_ratios_per_mode(self):
+        """各モードに異なる減衰比を指定できる."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 1.0, 1.0])
+        K = np.array(
+            [
+                [200.0, -100.0, 0.0],
+                [-100.0, 200.0, -100.0],
+                [0.0, -100.0, 100.0],
+            ]
+        )
+        xi_list = [0.01, 0.05, 0.10]
+
+        C = build_modal_damping_matrix(M, K, xi_list)
+
+        eigvals, eigvecs = eigh(K, M)
+        omega = np.sqrt(np.maximum(eigvals, 0.0))
+        modal_C = eigvecs.T @ C @ eigvecs
+
+        for i in range(3):
+            xi_actual = modal_C[i, i] / (2.0 * omega[i]) if omega[i] > 1e-10 else 0.0
+            np.testing.assert_allclose(xi_actual, xi_list[i], rtol=1e-10)
+
+    def test_modal_diagonal_in_modal_space(self):
+        """モーダル減衰行列はモーダル空間で対角."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 2.0])
+        K = np.array([[300.0, -100.0], [-100.0, 200.0]])
+
+        C = build_modal_damping_matrix(M, K, [0.02, 0.08])
+
+        eigvals, eigvecs = eigh(K, M)
+        modal_C = eigvecs.T @ C @ eigvecs
+
+        # 非対角要素がゼロ
+        np.testing.assert_allclose(modal_C[0, 1], 0.0, atol=1e-10)
+        np.testing.assert_allclose(modal_C[1, 0], 0.0, atol=1e-10)
+
+    def test_with_fixed_dofs(self):
+        """拘束DOF指定で正しいサイズの行列を返す."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        ndof = 4
+        M = np.diag([1.0, 1.0, 1.0, 1.0])
+        K = np.array(
+            [
+                [200.0, -100.0, 0.0, 0.0],
+                [-100.0, 200.0, -100.0, 0.0],
+                [0.0, -100.0, 200.0, -100.0],
+                [0.0, 0.0, -100.0, 100.0],
+            ]
+        )
+        fixed = np.array([0])
+
+        C = build_modal_damping_matrix(M, K, [0.05], fixed_dofs=fixed)
+
+        assert C.shape == (ndof, ndof)
+        # 拘束DOFの行・列はゼロ
+        np.testing.assert_allclose(C[0, :], 0.0, atol=1e-14)
+        np.testing.assert_allclose(C[:, 0], 0.0, atol=1e-14)
+        # 自由DOF部分は非ゼロ
+        assert np.max(np.abs(C[1:, 1:])) > 0
+
+    def test_transient_damping_effect(self):
+        """モーダル減衰を用いた過渡応答で振動が減衰する."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        m, k = 1.0, 100.0
+        omega = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega
+        xi = 0.05
+
+        M, _, K = _sdof_matrices(m, 0.0, k)
+        C = build_modal_damping_matrix(M, K, [xi])
+
+        dt = T / 50.0
+        n_steps = int(10 * T / dt)
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+
+        result = solve_transient(M, C, K, np.zeros(1), np.array([1.0]), np.zeros(1), cfg)
+
+        # 解析解: u(t) = exp(-ξωt)·cos(ωd·t), ωd = ω·√(1-ξ²)
+        omega_d = omega * np.sqrt(1.0 - xi**2)
+        t = result.time
+        u_exact = np.exp(-xi * omega * t) * np.cos(omega_d * t)
+        u_num = result.displacement[:, 0]
+
+        # 最後の半分で比較
+        idx = n_steps // 2
+        err = np.max(np.abs(u_num[idx:] - u_exact[idx:]))
+        assert err < 0.05, f"モーダル減衰の過渡応答誤差: {err:.4e}"
+
+    def test_scalar_damping_ratio(self):
+        """スカラー減衰比が全モードに適用される."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        M = np.diag([1.0, 2.0, 1.5])
+        K = np.array(
+            [
+                [200.0, -100.0, 0.0],
+                [-100.0, 200.0, -100.0],
+                [0.0, -100.0, 100.0],
+            ]
+        )
+        xi_val = 0.04
+
+        C = build_modal_damping_matrix(M, K, xi_val)
+
+        eigvals, eigvecs = eigh(K, M)
+        omega = np.sqrt(np.maximum(eigvals, 0.0))
+        modal_C = eigvecs.T @ C @ eigvecs
+
+        for i in range(3):
+            if omega[i] > 1e-10:
+                xi_actual = modal_C[i, i] / (2.0 * omega[i])
+                np.testing.assert_allclose(xi_actual, xi_val, rtol=1e-10)
+
+    def test_beam_modal_damping_converges(self):
+        """梁のモーダル減衰で先端荷重が静的解に収束する."""
+        from xkep_cae.dynamics import build_modal_damping_matrix
+
+        L = 0.5
+        E = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        P = 100.0
+        n_elems = 10
+
+        u_static = P * L**3 / (3.0 * E * Iz)
+
+        beta1L = 1.8751
+        f1 = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E * Iz / (rho * A))
+        T1 = 1.0 / f1
+
+        M, _, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        # モーダル減衰: 全モード 10%
+        C = build_modal_damping_matrix(M, K, [0.10], fixed_dofs=fixed)
+
+        tip_uy_dof = 3 * n_elems + 1
+        f = np.zeros(ndof)
+        f[tip_uy_dof] = -P
+
+        dt = T1 / 40.0
+        n_steps = int(20 * T1 / dt)
+
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+        result = solve_transient(M, C, K, f, np.zeros(ndof), np.zeros(ndof), cfg, fixed_dofs=fixed)
+
+        u_final = -result.displacement[-1, tip_uy_dof]
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.05, f"モーダル減衰の静的収束誤差: {err:.3f}"
