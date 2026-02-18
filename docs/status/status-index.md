@@ -42,6 +42,7 @@
 | [032](status-032.md) | 2026-02-18 | 過渡応答出力 TODO 消化（run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合） | 670 |
 | [033](status-033.md) | 2026-02-18 | Phase C1 — Broadphase (AABB格子) + 幾何更新 + Active-setヒステリシス | 701 |
 | [034](status-034.md) | 2026-02-18 | FIELD ANIMATION出力 + .inpパーサー拡張（*ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION） | 741 |
+| [035](status-035.md) | 2026-02-18 | .inpパーサー拡張（*MATERIAL / *ELASTIC / *DENSITY / *PLASTIC）+ pyproject.toml更新 | 753 |
 
 ## テスト数推移
 
@@ -68,6 +69,7 @@
 032:     670      (過渡応答出力 TODO 消化: run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合)
 033:     701      (Phase C1: Broadphase AABB格子 + 幾何更新 + Active-setヒステリシス)
 034:     741      (FIELD ANIMATION出力 + .inpパーサー拡張: *ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION)
+035:     753      (.inpパーサー拡張: *MATERIAL / *ELASTIC / *DENSITY / *PLASTIC + pyproject.toml更新)
 ```
 
 ## 備考
