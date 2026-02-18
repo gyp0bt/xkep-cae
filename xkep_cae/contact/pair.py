@@ -1,6 +1,7 @@
 """接触ペア・接触状態のデータ構造.
 
 Phase C0: ContactPair / ContactState と solver_hooks の骨格。
+Phase C1: broadphase候補探索 + 幾何更新 + Active-setヒステリシス。
 """
 
 from __future__ import annotations
@@ -9,6 +10,13 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 import numpy as np
+
+from xkep_cae.contact.broadphase import broadphase_aabb
+from xkep_cae.contact.geometry import (
+    build_contact_frame,
+    closest_point_segments,
+    compute_gap,
+)
 
 
 class ContactStatus(Enum):
@@ -189,3 +197,148 @@ class ContactManager:
     def get_active_pairs(self) -> list[ContactPair]:
         """有効な接触ペアのリストを返す."""
         return [p for p in self.pairs if p.is_active()]
+
+    # -- Phase C1: broadphase + 幾何更新 + Active-set ---------
+
+    def detect_candidates(
+        self,
+        node_coords: np.ndarray,
+        connectivity: np.ndarray,
+        radii: np.ndarray | float = 0.0,
+        *,
+        margin: float = 0.0,
+        cell_size: float | None = None,
+    ) -> list[tuple[int, int]]:
+        """Broadphase で接触候補ペアを検出し pairs を更新する.
+
+        既存ペアのうち候補に含まれないものは INACTIVE にする。
+        新規候補は ContactPair として追加する。
+
+        Args:
+            node_coords: 節点座標 (n_nodes, 3)
+            connectivity: 要素接続 (n_elems, 2) — 各行が [node_i, node_j]
+            radii: 断面半径。スカラーなら全要素共通。配列なら要素ごと
+            margin: 探索マージン
+            cell_size: 格子セルサイズ（None で自動推定）
+
+        Returns:
+            候補ペアのリスト (elem_a, elem_b)
+        """
+        conn = np.asarray(connectivity, dtype=int)
+        coords = np.asarray(node_coords, dtype=float)
+        n_elems = len(conn)
+
+        # radii ベクトル化
+        if np.isscalar(radii):
+            r_arr = np.full(n_elems, float(radii))
+        else:
+            r_arr = np.asarray(radii, dtype=float)
+
+        # セグメントリスト構築
+        segments = []
+        for e in range(n_elems):
+            ni, nj = conn[e]
+            segments.append((coords[ni], coords[nj]))
+
+        # broadphase 実行
+        candidates = broadphase_aabb(
+            segments,
+            r_arr,
+            margin=margin,
+            cell_size=cell_size,
+        )
+
+        # 既存ペアをマップ化（(elem_a, elem_b) → index）
+        existing: dict[tuple[int, int], int] = {}
+        for idx, p in enumerate(self.pairs):
+            key = (min(p.elem_a, p.elem_b), max(p.elem_a, p.elem_b))
+            existing[key] = idx
+
+        # 候補に含まれない既存ペアを INACTIVE にする
+        candidate_set = set(candidates)
+        for key, idx in existing.items():
+            if key not in candidate_set:
+                self.pairs[idx].state.status = ContactStatus.INACTIVE
+
+        # 新規候補を追加
+        for i, j in candidates:
+            key = (min(i, j), max(i, j))
+            if key not in existing:
+                self.add_pair(
+                    elem_a=i,
+                    elem_b=j,
+                    nodes_a=conn[i],
+                    nodes_b=conn[j],
+                    radius_a=float(r_arr[i]),
+                    radius_b=float(r_arr[j]),
+                )
+
+        return candidates
+
+    def update_geometry(
+        self,
+        node_coords: np.ndarray,
+    ) -> None:
+        """全ペアの幾何情報を更新する（Narrowphase）.
+
+        各ペアについて最近接点・ギャップ・接触フレームを再計算し、
+        Active-set をヒステリシス付きで更新する。
+
+        Args:
+            node_coords: 節点座標 (n_nodes, 3)
+        """
+        coords = np.asarray(node_coords, dtype=float)
+
+        for pair in self.pairs:
+            # セグメント端点を取得
+            xA0 = coords[pair.nodes_a[0]]
+            xA1 = coords[pair.nodes_a[1]]
+            xB0 = coords[pair.nodes_b[0]]
+            xB1 = coords[pair.nodes_b[1]]
+
+            # 最近接点計算
+            result = closest_point_segments(xA0, xA1, xB0, xB1)
+
+            # ギャップ計算
+            gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
+
+            # 接触フレーム更新（法線履歴を使って連続性を保持）
+            prev_t1 = pair.state.tangent1
+            has_prev = float(np.linalg.norm(prev_t1)) > 1e-10
+            n, t1, t2 = build_contact_frame(
+                result.normal,
+                prev_tangent1=prev_t1 if has_prev else None,
+            )
+
+            # 状態を更新
+            pair.state.s = result.s
+            pair.state.t = result.t
+            pair.state.gap = gap
+            pair.state.normal = n
+            pair.state.tangent1 = t1
+            pair.state.tangent2 = t2
+
+            # Active-set ヒステリシス更新
+            self._update_active_set(pair)
+
+    def _update_active_set(self, pair: ContactPair) -> None:
+        """Active-set をヒステリシス付きで更新する.
+
+        g_on / g_off のヒステリシスバンドにより、
+        接触状態のチャタリングを防止する。
+
+        - 非活性 → 活性: gap <= g_on
+        - 活性 → 非活性: gap >= g_off  (g_off > g_on)
+        """
+        gap = pair.state.gap
+        g_on = self.config.g_on
+        g_off = self.config.g_off
+
+        if pair.state.status == ContactStatus.INACTIVE:
+            # 非活性 → 活性化判定
+            if gap <= g_on:
+                pair.state.status = ContactStatus.ACTIVE
+        else:
+            # 活性 → 非活性化判定
+            if gap >= g_off:
+                pair.state.status = ContactStatus.INACTIVE

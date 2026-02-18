@@ -209,3 +209,325 @@ class TestContactManager:
         mgr = ContactManager(config=cfg)
         assert mgr.config.mu == 0.5
         assert mgr.config.use_friction is True
+
+
+# ---------------------------------------------------------------------------
+# Phase C1: detect_candidates / update_geometry / Active-set
+# ---------------------------------------------------------------------------
+class TestDetectCandidates:
+    """detect_candidates (broadphase候補探索) のテスト."""
+
+    @staticmethod
+    def _make_two_beam_mesh():
+        """2本の梁が交差する簡単なメッシュ."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, -1.0, 0.5],
+                [1.0, 1.0, 0.5],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        return coords, conn
+
+    def test_crossing_beams_detected(self):
+        """交差する2梁 → 候補として検出."""
+        coords, conn = self._make_two_beam_mesh()
+        mgr = ContactManager()
+        candidates = mgr.detect_candidates(coords, conn, radii=0.5, margin=0.5)
+
+        assert len(candidates) >= 1
+        assert (0, 1) in candidates
+        assert mgr.n_pairs >= 1
+
+    def test_distant_beams_not_detected(self):
+        """離れた2梁 → 候補なし."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [100.0, 100.0, 100.0],
+                [101.0, 100.0, 100.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        candidates = mgr.detect_candidates(coords, conn, radii=0.1)
+
+        assert len(candidates) == 0
+
+    def test_existing_pairs_deactivated(self):
+        """候補から外れた既存ペアは INACTIVE になる."""
+        coords, conn = self._make_two_beam_mesh()
+        mgr = ContactManager()
+        mgr.detect_candidates(coords, conn, radii=0.5, margin=1.0)
+        assert mgr.n_pairs >= 1
+        for p in mgr.pairs:
+            p.state.status = ContactStatus.ACTIVE
+
+        coords_far = coords.copy()
+        coords_far[2] = [100.0, 100.0, 100.0]
+        coords_far[3] = [101.0, 100.0, 100.0]
+        mgr.detect_candidates(coords_far, conn, radii=0.5, margin=1.0)
+
+        for p in mgr.pairs:
+            if p.elem_a == 0 and p.elem_b == 1:
+                assert p.state.status == ContactStatus.INACTIVE
+
+    def test_new_candidates_added(self):
+        """新しい候補がペアリストに追加される."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.5, 0.5, 0.0],
+                [0.5, 1.5, 0.0],
+                [10.0, 0.0, 0.0],
+                [11.0, 0.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3], [4, 5]])
+        mgr = ContactManager()
+
+        candidates = mgr.detect_candidates(coords, conn, radii=0.0, margin=1.0)
+
+        assert (0, 1) in candidates
+        pair_keys = {(min(p.elem_a, p.elem_b), max(p.elem_a, p.elem_b)) for p in mgr.pairs}
+        assert (0, 1) in pair_keys
+
+    def test_per_element_radii(self):
+        """要素ごとの半径でbroadphaseが動作."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 5.0, 0.0],
+                [1.0, 5.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        radii = np.array([1.0, 4.5])
+        mgr = ContactManager()
+
+        candidates = mgr.detect_candidates(coords, conn, radii=radii)
+        assert (0, 1) in candidates
+
+        pair = mgr.pairs[0]
+        assert pair.radius_a == pytest.approx(1.0)
+        assert pair.radius_b == pytest.approx(4.5)
+
+
+class TestUpdateGeometry:
+    """update_geometry (narrowphase + Active-set) のテスト."""
+
+    def test_updates_gap_and_closest_point(self):
+        """幾何更新でギャップ・最近接パラメータが設定される."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, -1.0, 0.5],
+                [1.0, 1.0, 0.5],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.0, radius_b=0.0)
+
+        mgr.update_geometry(coords)
+
+        pair = mgr.pairs[0]
+        assert 0.0 <= pair.state.s <= 1.0
+        assert 0.0 <= pair.state.t <= 1.0
+        assert pair.state.gap > 0.0
+
+    def test_contact_frame_orthonormal(self):
+        """更新後の接触フレームが正規直交基底."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [1.0, -1.0, 0.5],
+                [1.0, 1.0, 0.5],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        mgr.add_pair(0, 1, conn[0], conn[1])
+
+        mgr.update_geometry(coords)
+
+        st = mgr.pairs[0].state
+        n, t1, t2 = st.normal, st.tangent1, st.tangent2
+        np.testing.assert_allclose(np.linalg.norm(n), 1.0, atol=1e-14)
+        np.testing.assert_allclose(np.linalg.norm(t1), 1.0, atol=1e-14)
+        np.testing.assert_allclose(np.linalg.norm(t2), 1.0, atol=1e-14)
+        np.testing.assert_allclose(n @ t1, 0.0, atol=1e-14)
+        np.testing.assert_allclose(n @ t2, 0.0, atol=1e-14)
+        np.testing.assert_allclose(t1 @ t2, 0.0, atol=1e-14)
+
+    def test_gap_with_radius(self):
+        """半径を考慮したギャップ計算."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+
+        mgr.update_geometry(coords)
+
+        pair = mgr.pairs[0]
+        assert pair.state.gap == pytest.approx(1.0)
+
+    def test_penetration_gap(self):
+        """貫通時のギャップ（負値）."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.5, 0.0],
+                [1.0, 0.5, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+
+        mgr.update_geometry(coords)
+
+        pair = mgr.pairs[0]
+        assert pair.state.gap == pytest.approx(-0.5)
+
+    def test_frame_continuity(self):
+        """法線フレームの連続性（2回の update_geometry）."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.5, 1.0, 0.0],
+                [0.5, 2.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr = ContactManager()
+        mgr.add_pair(0, 1, conn[0], conn[1])
+
+        mgr.update_geometry(coords)
+        t1_first = mgr.pairs[0].state.tangent1.copy()
+
+        coords2 = coords.copy()
+        coords2[2] = [0.5, 1.01, 0.01]
+        mgr.update_geometry(coords2)
+        t1_second = mgr.pairs[0].state.tangent1
+
+        dot = abs(float(t1_first @ t1_second))
+        assert dot > 0.9
+
+
+class TestActiveSetHysteresis:
+    """Active-set ヒステリシスのテスト."""
+
+    def test_activate_on_contact(self):
+        """gap <= g_on で活性化."""
+        mgr = ContactManager(config=ContactConfig(g_on=0.0, g_off=1e-6))
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.5, 0.0],
+                [1.0, 0.5, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+
+        mgr.update_geometry(coords)
+
+        assert mgr.pairs[0].state.status == ContactStatus.ACTIVE
+
+    def test_stays_active_in_hysteresis_band(self):
+        """活性状態で gap が g_on < gap < g_off のとき活性のまま."""
+        cfg = ContactConfig(g_on=0.0, g_off=0.1)
+        mgr = ContactManager(config=cfg)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.05, 0.0],
+                [1.0, 1.05, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+        mgr.pairs[0].state.status = ContactStatus.ACTIVE
+
+        mgr.update_geometry(coords)
+
+        assert mgr.pairs[0].state.gap == pytest.approx(0.05)
+        assert mgr.pairs[0].state.status == ContactStatus.ACTIVE
+
+    def test_deactivate_beyond_g_off(self):
+        """gap >= g_off で非活性化."""
+        cfg = ContactConfig(g_on=0.0, g_off=0.1)
+        mgr = ContactManager(config=cfg)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+        mgr.pairs[0].state.status = ContactStatus.ACTIVE
+
+        mgr.update_geometry(coords)
+
+        assert mgr.pairs[0].state.status == ContactStatus.INACTIVE
+
+    def test_inactive_stays_inactive_in_band(self):
+        """非活性状態で g_on < gap < g_off → 非活性のまま（ヒステリシス）."""
+        cfg = ContactConfig(g_on=0.0, g_off=0.1)
+        mgr = ContactManager(config=cfg)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.05, 0.0],
+                [1.0, 1.05, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+
+        mgr.update_geometry(coords)
+
+        assert mgr.pairs[0].state.status == ContactStatus.INACTIVE
+
+    def test_sliding_deactivates_beyond_g_off(self):
+        """SLIDING 状態でも gap >= g_off で非活性化."""
+        cfg = ContactConfig(g_on=0.0, g_off=0.1)
+        mgr = ContactManager(config=cfg)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 5.0, 0.0],
+                [1.0, 5.0, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]])
+        mgr.add_pair(0, 1, conn[0], conn[1], radius_a=0.5, radius_b=0.5)
+        mgr.pairs[0].state.status = ContactStatus.SLIDING
+
+        mgr.update_geometry(coords)
+
+        assert mgr.pairs[0].state.status == ContactStatus.INACTIVE
