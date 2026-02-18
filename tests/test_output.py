@@ -935,3 +935,570 @@ class TestWorkflow:
         # 全フレーム数
         all_frames = db.all_frames()
         assert len(all_frames) == 12  # (1+5) + (1+5)
+
+
+# ====================================================================
+# run_transient_steps のテスト
+# ====================================================================
+
+
+class TestRunTransientSteps:
+    """run_transient_steps() のテスト."""
+
+    def test_single_step(self):
+        """1ステップの自動実行."""
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+        u0 = np.array([1.0])
+        v0 = np.array([0.0])
+
+        step = Step(
+            name="step1",
+            total_time=0.5,
+            dt=0.01,
+            field_output=FieldOutputRequest(num=5, variables=["U"]),
+        )
+
+        db = run_transient_steps(
+            steps=[step],
+            M=M,
+            K=K,
+            f_ext_funcs=[np.zeros(1)],
+            u0=u0,
+            v0=v0,
+            ndof_per_node=1,
+            node_coords=np.array([[0.0]]),
+        )
+
+        assert db.n_steps == 1
+        assert len(db.step_results[0].frames) == 6  # initial + 5
+
+    def test_multi_step_state_carryover(self):
+        """2ステップの状態引き継ぎ."""
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+        u0 = np.array([1.0])
+        v0 = np.array([0.0])
+
+        steps = [
+            Step(name="s1", total_time=0.5, dt=0.01),
+            Step(name="s2", total_time=0.5, dt=0.01),
+        ]
+
+        db = run_transient_steps(
+            steps=steps,
+            M=M,
+            K=K,
+            f_ext_funcs=[np.zeros(1), np.zeros(1)],
+            u0=u0,
+            v0=v0,
+            ndof_per_node=1,
+        )
+
+        assert db.n_steps == 2
+        assert db.step_results[1].start_time == pytest.approx(0.5)
+
+        # 連続性の確認: step2 は step1 の終了状態から始まるので、連続的に変化する
+        s2_first = db.step_results[1].increments[0].displacement
+        assert not np.allclose(s2_first, 0.0)
+
+    def test_mismatched_steps_f_ext_raises(self):
+        """steps と f_ext_funcs の数不一致でエラー."""
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+
+        with pytest.raises(ValueError, match="一致しない"):
+            run_transient_steps(
+                steps=[Step(name="s1", total_time=0.5, dt=0.01)],
+                M=M,
+                K=K,
+                f_ext_funcs=[np.zeros(1), np.zeros(1)],
+                u0=np.array([0.0]),
+                v0=np.array([0.0]),
+            )
+
+    def test_central_difference_solver(self):
+        """陽解法での実行."""
+        from xkep_cae.dynamics import critical_time_step
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+        dt_cr = critical_time_step(M, K)
+        dt = dt_cr * 0.5
+
+        step = Step(name="explicit", total_time=0.5, dt=dt)
+
+        db = run_transient_steps(
+            steps=[step],
+            M=M,
+            K=K,
+            f_ext_funcs=[np.zeros(1)],
+            u0=np.array([1.0]),
+            v0=np.array([0.0]),
+            solver="central_difference",
+            ndof_per_node=1,
+        )
+
+        assert db.n_steps == 1
+        assert db.step_results[0].converged is True
+
+    def test_invalid_solver_raises(self):
+        """未対応ソルバーでエラー."""
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+
+        with pytest.raises(ValueError, match="未対応のソルバー"):
+            run_transient_steps(
+                steps=[Step(name="s1", total_time=0.5, dt=0.01)],
+                M=M,
+                K=K,
+                f_ext_funcs=[np.zeros(1)],
+                u0=np.array([0.0]),
+                v0=np.array([0.0]),
+                solver="rk4",
+            )
+
+    def test_with_history_output(self):
+        """ヒストリ出力付きの run_transient_steps."""
+        from xkep_cae.output import run_transient_steps
+
+        M = np.array([[1.0]])
+        K = np.array([[100.0]])
+
+        step = Step(
+            name="step1",
+            total_time=1.0,
+            dt=0.01,
+            history_output=HistoryOutputRequest(
+                dt=0.1,
+                variables=["U", "ALLKE", "ALLIE"],
+                node_sets={"all": [0]},
+            ),
+        )
+
+        db = run_transient_steps(
+            steps=[step],
+            M=M,
+            K=K,
+            f_ext_funcs=[np.zeros(1)],
+            u0=np.array([1.0]),
+            v0=np.array([0.0]),
+            ndof_per_node=1,
+            node_sets={"all": np.array([0])},
+        )
+
+        sr = db.step_results[0]
+        assert "all" in sr.history
+        ke = sr.history["all"]["ALLKE"]
+        ie = sr.history["all"]["ALLIE"]
+        total = ke + ie
+        # エネルギー保存（Newmark β=1/4 は暗黙的にエネルギー保存）
+        assert np.allclose(total, total[0], rtol=1e-3)
+
+
+# ====================================================================
+# 非線形反力計算 (assemble_internal_force) のテスト
+# ====================================================================
+
+
+class TestNonlinearReactionForce:
+    """assemble_internal_force を使った非線形反力計算のテスト."""
+
+    def test_linear_vs_nonlinear_rf(self):
+        """線形ケースで K·u と assemble_internal_force が一致."""
+        result, M, K = _make_sdof_result(omega=10.0, n_steps=100, dt=0.01)
+
+        step = Step(
+            name="step1",
+            total_time=1.0,
+            dt=0.01,
+            history_output=HistoryOutputRequest(
+                dt=0.1,
+                variables=["RF"],
+                node_sets={"fix": [0]},
+            ),
+        )
+
+        # 線形 RF (K·u + M·a)
+        db_linear = build_output_database(
+            steps=[step],
+            solver_results=[result],
+            ndof_per_node=1,
+            node_sets={"fix": np.array([0])},
+            fixed_dofs=np.array([0]),
+            M=M,
+            K=K,
+        )
+
+        # 非線形 RF (f_int(u) + M·a) — 線形の場合 f_int(u) = K·u
+        def f_int_linear(u: np.ndarray) -> np.ndarray:
+            return K @ u
+
+        db_nonlinear = build_output_database(
+            steps=[step],
+            solver_results=[result],
+            ndof_per_node=1,
+            node_sets={"fix": np.array([0])},
+            fixed_dofs=np.array([0]),
+            M=M,
+            K=K,
+            assemble_internal_force=f_int_linear,
+        )
+
+        rf_lin = db_linear.step_results[0].history["fix"]["RF"]
+        rf_nl = db_nonlinear.step_results[0].history["fix"]["RF"]
+
+        np.testing.assert_allclose(rf_lin, rf_nl, rtol=1e-10)
+
+    def test_nonlinear_rf_without_K(self):
+        """K なしでも assemble_internal_force があれば RF 計算可能."""
+        result, M, K = _make_sdof_result(omega=10.0, n_steps=50, dt=0.01)
+
+        step = Step(
+            name="step1",
+            total_time=0.5,
+            dt=0.01,
+            history_output=HistoryOutputRequest(
+                dt=0.1,
+                variables=["RF"],
+                node_sets={"all": [0]},
+            ),
+        )
+
+        # 非線形内力: f_int(u) = 2*K*u（意図的に K と異なる非線形応答）
+        def f_int_nonlinear(u: np.ndarray) -> np.ndarray:
+            return 2.0 * K @ u
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[result],
+            ndof_per_node=1,
+            node_sets={"all": np.array([0])},
+            M=M,
+            assemble_internal_force=f_int_nonlinear,
+        )
+
+        rf = db.step_results[0].history["all"]["RF"]
+        assert rf.shape[0] == 6  # 0.0, 0.1, ..., 0.5
+        # f_int(u) + M·a = 2K·u + M·a ≠ 0（K != 線形の場合）
+        # 自由振動: M·a = -K·u なので RF = 2K·u - K·u = K·u ≠ 0
+        assert np.any(np.abs(rf) > 1e-3)
+
+
+# ====================================================================
+# VTK バイナリ出力のテスト
+# ====================================================================
+
+
+class TestExportVTKBinary:
+    """VTK バイナリ出力モードのテスト."""
+
+    def test_binary_output(self, tmp_path):
+        """バイナリ VTK 出力."""
+        beam_result, node_coords, conn = _make_beam_result(n_nodes=5, n_steps=20)
+        step = Step(
+            name="step1",
+            total_time=0.2,
+            dt=0.01,
+            field_output=FieldOutputRequest(num=2, variables=["U", "V"]),
+        )
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[beam_result],
+            ndof_per_node=3,
+            node_coords=node_coords,
+            connectivity=[(VTK_LINE, conn)],
+        )
+
+        pvd_path = export_vtk(db, tmp_path, binary=True)
+        assert Path(pvd_path).exists()
+
+        # VTU ファイルの検証
+        tree = ET.parse(pvd_path)
+        datasets = tree.findall(".//DataSet")
+        assert len(datasets) == 3  # initial + 2
+
+        # binary format のチェック
+        first_vtu = tmp_path / datasets[0].get("file")
+        vtu_tree = ET.parse(first_vtu)
+        data_arrays = vtu_tree.findall(".//DataArray")
+        for da in data_arrays:
+            assert da.get("format") == "binary"
+
+    def test_binary_data_decodable(self, tmp_path):
+        """バイナリデータが正しく base64 デコードできる."""
+        import base64
+
+        result, M, K = _make_sdof_result(n_steps=10, dt=0.1)
+        step = Step(
+            name="s1",
+            total_time=1.0,
+            dt=0.1,
+            field_output=FieldOutputRequest(num=2, variables=["U"]),
+        )
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[result],
+            ndof_per_node=1,
+            node_coords=np.array([[0.0]]),
+            connectivity=[(VTK_LINE, np.array([[0, 0]]))],
+        )
+
+        pvd_path = export_vtk(db, tmp_path, binary=True)
+        tree = ET.parse(pvd_path)
+        first_vtu = tmp_path / tree.findall(".//DataSet")[0].get("file")
+
+        vtu_tree = ET.parse(first_vtu)
+        for da in vtu_tree.findall(".//DataArray"):
+            text = da.text.strip()
+            # base64 デコードが成功する
+            decoded = base64.b64decode(text)
+            assert len(decoded) > 0
+
+
+# ====================================================================
+# 要素データ出力 (CellData) のテスト
+# ====================================================================
+
+
+class TestElementData:
+    """Frame の element_data と VTK CellData 出力のテスト."""
+
+    def test_frame_element_data(self):
+        """Frame に element_data を設定."""
+        frame = Frame(
+            frame_index=0,
+            time=0.0,
+            displacement=np.zeros(4),
+            element_data={"stress_xx": np.array([1.0, 2.0])},
+        )
+        assert "stress_xx" in frame.element_data
+        assert frame.element_data["stress_xx"].shape == (2,)
+
+    def test_element_data_in_vtk(self, tmp_path):
+        """element_data が VTK CellData として出力される."""
+        beam_result, node_coords, conn = _make_beam_result(n_nodes=5, n_steps=10)
+        n_elems = 4  # 5 nodes - 1
+
+        def elem_data_func(u: np.ndarray) -> dict[str, np.ndarray]:
+            return {"stress_xx": np.ones(n_elems) * np.max(np.abs(u))}
+
+        step = Step(
+            name="step1",
+            total_time=0.1,
+            dt=0.01,
+            field_output=FieldOutputRequest(num=2, variables=["U"]),
+        )
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[beam_result],
+            ndof_per_node=3,
+            node_coords=node_coords,
+            connectivity=[(VTK_LINE, conn)],
+            element_data_func=elem_data_func,
+        )
+
+        # element_data がフレームに設定されているか
+        for frame in db.step_results[0].frames:
+            assert "stress_xx" in frame.element_data
+            assert frame.element_data["stress_xx"].shape == (n_elems,)
+
+        # VTK 出力
+        pvd_path = export_vtk(db, tmp_path)
+        tree = ET.parse(pvd_path)
+        first_vtu = tmp_path / tree.findall(".//DataSet")[0].get("file")
+        vtu_tree = ET.parse(first_vtu)
+
+        # CellData の検証
+        cell_data = vtu_tree.find(".//CellData")
+        assert cell_data is not None
+        stress_arr = cell_data.find("DataArray[@Name='stress_xx']")
+        assert stress_arr is not None
+
+    def test_element_data_multi_component(self, tmp_path):
+        """多成分要素データ（応力テンソル等）."""
+        beam_result, node_coords, conn = _make_beam_result(n_nodes=5, n_steps=10)
+        n_elems = 4
+
+        def elem_data_func(u: np.ndarray) -> dict[str, np.ndarray]:
+            return {"stress": np.zeros((n_elems, 3))}
+
+        step = Step(
+            name="step1",
+            total_time=0.1,
+            dt=0.01,
+            field_output=FieldOutputRequest(num=1, variables=["U"]),
+        )
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[beam_result],
+            ndof_per_node=3,
+            node_coords=node_coords,
+            connectivity=[(VTK_LINE, conn)],
+            element_data_func=elem_data_func,
+        )
+
+        pvd_path = export_vtk(db, tmp_path)
+        tree = ET.parse(pvd_path)
+        first_vtu = tmp_path / tree.findall(".//DataSet")[0].get("file")
+        vtu_tree = ET.parse(first_vtu)
+
+        cell_data = vtu_tree.find(".//CellData")
+        assert cell_data is not None
+        stress_arr = cell_data.find("DataArray[@Name='stress']")
+        assert stress_arr is not None
+        assert stress_arr.get("NumberOfComponents") == "3"
+
+
+# ====================================================================
+# Abaqus .inp パーサー統合のテスト
+# ====================================================================
+
+
+class TestMeshFromAbaqusInp:
+    """mesh_from_abaqus_inp() のテスト."""
+
+    def test_beam_mesh(self, tmp_path):
+        """梁要素の .inp ファイルからメッシュ情報を取得."""
+        from xkep_cae.output import mesh_from_abaqus_inp
+
+        inp_content = """\
+*NODE
+1, 0.0, 0.0
+2, 1.0, 0.0
+3, 2.0, 0.0
+*ELEMENT, TYPE=B21, ELSET=BEAM
+1, 1, 2
+2, 2, 3
+*NSET, NSET=FIX
+1
+*NSET, NSET=LOAD
+3
+"""
+        inp_path = tmp_path / "beam.inp"
+        inp_path.write_text(inp_content)
+
+        result = mesh_from_abaqus_inp(str(inp_path))
+
+        assert result["node_coords"].shape == (3, 2)
+        assert len(result["connectivity"]) == 1
+        vtk_type, conn_arr = result["connectivity"][0]
+        assert vtk_type == 3  # VTK_LINE
+        assert conn_arr.shape == (2, 2)
+
+        # node_sets（0-based インデックス）
+        assert "FIX" in result["node_sets"]
+        assert result["node_sets"]["FIX"][0] == 0  # node 1 → index 0
+        assert "LOAD" in result["node_sets"]
+        assert result["node_sets"]["LOAD"][0] == 2  # node 3 → index 2
+
+    def test_quad_mesh(self, tmp_path):
+        """四角形要素の .inp ファイルからメッシュ情報を取得."""
+        from xkep_cae.output import mesh_from_abaqus_inp
+
+        inp_content = """\
+*NODE
+1, 0.0, 0.0
+2, 1.0, 0.0
+3, 1.0, 1.0
+4, 0.0, 1.0
+*ELEMENT, TYPE=CPS4R, ELSET=SOLID
+1, 1, 2, 3, 4
+"""
+        inp_path = tmp_path / "quad.inp"
+        inp_path.write_text(inp_content)
+
+        result = mesh_from_abaqus_inp(str(inp_path))
+
+        assert result["node_coords"].shape == (4, 2)
+        vtk_type, conn_arr = result["connectivity"][0]
+        assert vtk_type == 9  # VTK_QUAD
+        assert conn_arr.shape == (1, 4)
+
+    def test_3d_mesh(self, tmp_path):
+        """3D 節点座標の処理."""
+        from xkep_cae.output import mesh_from_abaqus_inp
+
+        inp_content = """\
+*NODE
+1, 0.0, 0.0, 0.0
+2, 1.0, 0.0, 0.0
+3, 2.0, 0.0, 1.0
+*ELEMENT, TYPE=B31, ELSET=BEAM3D
+1, 1, 2
+2, 2, 3
+"""
+        inp_path = tmp_path / "beam3d.inp"
+        inp_path.write_text(inp_content)
+
+        result = mesh_from_abaqus_inp(str(inp_path))
+
+        assert result["node_coords"].shape == (3, 3)  # 3D
+        assert result["node_coords"][2, 2] == 1.0  # z 座標
+
+    def test_integration_with_output_database(self, tmp_path):
+        """mesh_from_abaqus_inp → build_output_database → export_vtk の統合."""
+        from xkep_cae.output import mesh_from_abaqus_inp
+
+        inp_content = """\
+*NODE
+1, 0.0, 0.0
+2, 0.5, 0.0
+3, 1.0, 0.0
+*ELEMENT, TYPE=B21, ELSET=BEAM
+1, 1, 2
+2, 2, 3
+*NSET, NSET=FIX
+1
+"""
+        inp_path = tmp_path / "test.inp"
+        inp_path.write_text(inp_content)
+
+        mesh_info = mesh_from_abaqus_inp(str(inp_path))
+
+        # ダミーソルバー結果
+        n_nodes = 3
+        ndof_per_node = 3
+        ndof = n_nodes * ndof_per_node
+        time_arr = np.linspace(0, 0.1, 11)
+        disp = np.zeros((11, ndof))
+        vel = np.zeros((11, ndof))
+        acc = np.zeros((11, ndof))
+
+        result = _DummySolverResult(time_arr, disp, vel, acc)
+
+        step = Step(
+            name="test",
+            total_time=0.1,
+            dt=0.01,
+            field_output=FieldOutputRequest(num=2, variables=["U"]),
+        )
+
+        db = build_output_database(
+            steps=[step],
+            solver_results=[result],
+            ndof_per_node=ndof_per_node,
+            node_coords=mesh_info["node_coords"],
+            connectivity=mesh_info["connectivity"],
+            node_sets=mesh_info["node_sets"],
+        )
+
+        assert db.n_nodes == 3
+        assert db.ndim == 2
+
+        # VTK出力
+        pvd_path = export_vtk(db, tmp_path / "vtk")
+        assert Path(pvd_path).exists()
