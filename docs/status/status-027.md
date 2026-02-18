@@ -68,3 +68,8 @@
 
 - NamedTuple はイミュータブルなので、呼び出し元で結果を変更する必要がある場合は注意。現時点で問題になる箇所はない。
 - `_compute_generalized_stress_plastic` と `_compute_generalized_stress_fiber` はプライベート関数のため型クラス化はスキップした。将来必要に応じて対応可。
+
+---
+
+## 追記
+- assetsにtest用のAbaqus3点曲げ計算結果データを添付。validation時に活用する。今後もvalidation用途でデータは拡充予定。

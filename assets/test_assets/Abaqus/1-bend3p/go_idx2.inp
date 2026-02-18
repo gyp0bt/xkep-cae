@@ -1,0 +1,89 @@
+*INCLUDE, INPUT=mesh.inp
+**
+*material, name=M1
+*elastic
+ 100.e3, 0.3
+*density
+ 8.96e-9
+*plastic
+ 1.00E-01,0.00E+00
+ 7.58E+00,5.00E-04
+ 8.99E+00,1.00E-03
+ 1.07E+01,2.00E-03
+ 1.18E+01,3.00E-03
+ 1.27E+01,4.00E-03
+ 1.34E+01,5.00E-03
+ 1.47E+01,7.30E-03
+ 1.69E+01,1.28E-02
+ 2.08E+01,2.94E-02
+ 2.20E+01,3.68E-02
+ 2.42E+01,5.39E-02
+ 2.53E+01,6.46E-02
+ 2.82E+01,1.00E-01
+ 3.35E+01,2.00E-01
+ 3.71E+01,3.00E-01
+ 3.99E+01,4.00E-01
+ 5.01E+01,1.00E+00
+ 6.59E+01,3.00E+00
+ 8.14E+01,7.00E+00
+ 8.90E+01,1.00E+01
+**
+*beam section, section=circ, material=M1, elset=PWIRE_1
+ 0.5
+*solid section, material=M1, elset=PJIG_FIX
+*solid section, material=M1, elset=PJIG_MOVE
+**
+*node, nset=refmove
+ 999, 0.,0.,0.
+*node, nset=reffix
+ 998, 0.,0.,0.
+*rigid body, elset=PJIG_MOVE, refnode=refmove
+*rigid body, elset=PJIG_FIX, refnode=reffix
+**
+*surface, type=element, name=Swire_1
+ PWIRE_1
+*surface, type=element, name=SJIG_MOVE
+ PJIG_MOVE
+*surface, type=element, name=SJIG_FIX
+ PJIG_FIX
+**
+*SURFACE INTERACTION, NAME=frict001
+*friction
+ 0.01
+*contact
+*contact inclusions, all exterior
+*contact property assignment
+ ,,frict001
+*surface property assignment, property=thickness
+ ,original, 1.0
+**
+*initial condition, type=velocity
+ refmove, 2, 2, -50.
+**
+*parameter
+ dy = - 30.
+ time = 100.
+ vy = dy / time
+ dt = time / 100.
+*step, inc=10000, nlgeom=yes, unsym=Yes
+*dynamic, application=quasi-static
+ <dt>, <time>, 1.e-8, <time>
+*boundary, type=velocity
+ GCENTER, 1, 1, 0.
+ GCENTER, 3, 6, 0.
+ reffix, 1, 6, 0.
+ refmove, 1, 1, 0.
+ refmove, 2, 2, <vy>
+ refmove, 3, 6, 0.
+*OUTPUT,HISTORY,TIME INTERVAL=<dt>
+*NODE OUTPUT,NSET=reffix
+ RF
+*NODE OUTPUT,NSET=refmove
+ RF, U
+*output, field, VARIABLE=PRESELECT, number interval=10
+*ELEMENT OUTPUT
+ SK
+*NODE OUTPUT
+ COORD
+*contact output
+*end step

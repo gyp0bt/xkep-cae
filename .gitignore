@@ -13,10 +13,10 @@
 **/*.prt
 **/*.simlog
 **/*.SMABulk
-**/*.sta
+# **/*.sta
 **/*.dat
-**/*.msg
-**/*.inp
+# **/*.msg
+# **/*.inp
 **/*.jcf
 **/*.modfem
 **/*.stp
