@@ -11,6 +11,21 @@ from __future__ import annotations
 
 import numpy as np
 
+from xkep_cae.elements.beam_eb2d import (
+    eb_beam2d_lumped_mass_local as _beam2d_lumped_mass_local,
+)
+from xkep_cae.elements.beam_eb2d import (
+    eb_beam2d_mass_global as _beam2d_mass_global_fn,
+)
+from xkep_cae.elements.beam_timo3d import (
+    _beam3d_length_and_direction,
+)
+from xkep_cae.elements.beam_timo3d import (
+    timo_beam3d_lumped_mass_local as _beam3d_lumped_mass_local,
+)
+from xkep_cae.elements.beam_timo3d import (
+    timo_beam3d_mass_global as _beam3d_mass_global_fn,
+)
 from xkep_cae.numerical_tests.core import (
     FrequencyResponseConfig,
     FrequencyResponseResult,
@@ -40,178 +55,20 @@ def _dof_name_to_local_index(dof_name: str, beam_type: str) -> int:
 
 
 # ---------------------------------------------------------------------------
-# 整合質量行列（Consistent Mass Matrix）
+# 質量行列 — 要素モジュールの関数に委譲（後方互換エイリアス）
 # ---------------------------------------------------------------------------
-def _beam2d_consistent_mass_local(
-    rho: float,
-    A: float,
-    L: float,
-) -> np.ndarray:
-    """2D梁の局所整合質量行列 (6x6).
-
-    DOF順: [u1, v1, θz1, u2, v2, θz2]
-    Euler-Bernoulli型の質量行列（Timoshenko梁にも実用的に適用可能）。
-
-    Args:
-        rho: 密度 [kg/m³]
-        A: 断面積 [m²]
-        L: 要素長 [m]
-
-    Returns:
-        Me: (6, 6) 局所質量行列
-    """
-    m = rho * A * L
-    Me = np.zeros((6, 6), dtype=float)
-
-    # 軸方向 (u1, u2) → DOF 0, 3
-    Me[0, 0] = m / 3.0
-    Me[0, 3] = m / 6.0
-    Me[3, 0] = m / 6.0
-    Me[3, 3] = m / 3.0
-
-    # 横方向曲げ (v1, θz1, v2, θz2) → DOF 1, 2, 4, 5
-    coeff = m / 420.0
-    bend_idx = [1, 2, 4, 5]
-    M_bend = coeff * np.array(
-        [
-            [156.0, 22.0 * L, 54.0, -13.0 * L],
-            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
-            [54.0, 13.0 * L, 156.0, -22.0 * L],
-            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
-        ]
-    )
-    for i_loc, i_glob in enumerate(bend_idx):
-        for j_loc, j_glob in enumerate(bend_idx):
-            Me[i_glob, j_glob] = M_bend[i_loc, j_loc]
-
-    return Me
 
 
-def _beam3d_consistent_mass_local(
-    rho: float,
-    A: float,
-    Iy: float,
-    Iz: float,
-    L: float,
-) -> np.ndarray:
-    """3D梁の局所整合質量行列 (12x12).
-
-    DOF順: [u1, v1, w1, θx1, θy1, θz1, u2, v2, w2, θx2, θy2, θz2]
-
-    Args:
-        rho: 密度
-        A: 断面積
-        Iy: y軸まわり断面二次モーメント
-        Iz: z軸まわり断面二次モーメント
-        L: 要素長
-
-    Returns:
-        Me: (12, 12) 局所質量行列
-    """
-    m = rho * A * L
-    Me = np.zeros((12, 12), dtype=float)
-
-    # 軸方向 (u1, u2) → DOF 0, 6
-    Me[0, 0] = m / 3.0
-    Me[0, 6] = m / 6.0
-    Me[6, 0] = m / 6.0
-    Me[6, 6] = m / 3.0
-
-    # ねじり (θx1, θx2) → DOF 3, 9
-    Ip = Iy + Iz  # 極慣性モーメント
-    m_torsion = rho * Ip * L
-    Me[3, 3] = m_torsion / 3.0
-    Me[3, 9] = m_torsion / 6.0
-    Me[9, 3] = m_torsion / 6.0
-    Me[9, 9] = m_torsion / 3.0
-
-    # xy面内曲げ (v1, θz1, v2, θz2) → DOF 1, 5, 7, 11
-    coeff = m / 420.0
-    M_xy = coeff * np.array(
-        [
-            [156.0, 22.0 * L, 54.0, -13.0 * L],
-            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
-            [54.0, 13.0 * L, 156.0, -22.0 * L],
-            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
-        ]
-    )
-    xy_idx = [1, 5, 7, 11]
-    for i_loc, i_glob in enumerate(xy_idx):
-        for j_loc, j_glob in enumerate(xy_idx):
-            Me[i_glob, j_glob] = M_xy[i_loc, j_loc]
-
-    # xz面内曲げ (w1, θy1, w2, θy2) → DOF 2, 4, 8, 10
-    # dw/dx = -θy なので符号反転: signs = [+1, -1, +1, -1]
-    signs = np.array([1.0, -1.0, 1.0, -1.0])
-    M_xz_base = coeff * np.array(
-        [
-            [156.0, 22.0 * L, 54.0, -13.0 * L],
-            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
-            [54.0, 13.0 * L, 156.0, -22.0 * L],
-            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
-        ]
-    )
-    M_xz = M_xz_base * np.outer(signs, signs)
-    xz_idx = [2, 4, 8, 10]
-    for i_loc, i_glob in enumerate(xz_idx):
-        for j_loc, j_glob in enumerate(xz_idx):
-            Me[i_glob, j_glob] = M_xz[i_loc, j_loc]
-
-    return Me
-
-
-# ---------------------------------------------------------------------------
-# 質量行列の全体座標系への変換
-# ---------------------------------------------------------------------------
-def _beam2d_mass_global(
-    coords: np.ndarray,
-    rho: float,
-    A: float,
-) -> np.ndarray:
-    """2D梁の全体座標系の質量行列."""
-    dx = coords[1, 0] - coords[0, 0]
-    dy = coords[1, 1] - coords[0, 1]
-    L = np.sqrt(dx**2 + dy**2)
-    c, s = dx / L, dy / L
-
-    Me_local = _beam2d_consistent_mass_local(rho, A, L)
-
-    # 座標変換行列（2D梁: 剛性と同じ変換）
-    T = np.zeros((6, 6), dtype=float)
-    T[0, 0] = c
-    T[0, 1] = s
-    T[1, 0] = -s
-    T[1, 1] = c
-    T[2, 2] = 1.0
-    T[3, 3] = c
-    T[3, 4] = s
-    T[4, 3] = -s
-    T[4, 4] = c
-    T[5, 5] = 1.0
-
-    return T.T @ Me_local @ T
+def _beam2d_mass_global(coords: np.ndarray, rho: float, A: float) -> np.ndarray:
+    """2D梁の全体座標系の整合質量行列（後方互換ラッパー）."""
+    return _beam2d_mass_global_fn(coords, rho, A)
 
 
 def _beam3d_mass_global(
-    coords: np.ndarray,
-    rho: float,
-    A: float,
-    Iy: float,
-    Iz: float,
+    coords: np.ndarray, rho: float, A: float, Iy: float, Iz: float
 ) -> np.ndarray:
-    """3D梁の全体座標系の質量行列."""
-    from xkep_cae.elements.beam_timo3d import (
-        _beam3d_length_and_direction,
-        _build_local_axes,
-        _transformation_matrix_3d,
-    )
-
-    L, e_x = _beam3d_length_and_direction(coords)
-    R = _build_local_axes(e_x)
-    Me_local = _beam3d_consistent_mass_local(rho, A, Iy, Iz, L)
-    T = _transformation_matrix_3d(R)
-
-    return T.T @ Me_local @ T
+    """3D梁の全体座標系の整合質量行列（後方互換ラッパー）."""
+    return _beam3d_mass_global_fn(coords, rho, A, Iy, Iz)
 
 
 # ---------------------------------------------------------------------------
@@ -266,93 +123,6 @@ def _assemble_mass_3d(
     return M
 
 
-# ---------------------------------------------------------------------------
-# 集中質量行列（Lumped Mass Matrix）— HRZ法
-# ---------------------------------------------------------------------------
-def _beam2d_lumped_mass_local(
-    rho: float,
-    A: float,
-    L: float,
-) -> np.ndarray:
-    """2D梁の局所集中質量行列 (6x6, 対角).
-
-    HRZ (Hinton-Rock-Zienkiewicz) 法による集中化。
-    整合質量行列の対角成分を取り、並進方向で全質量が保存されるよう
-    スケーリングする。回転DOFにも小さな慣性を付与し非特異性を確保。
-
-    DOF順: [u1, v1, θz1, u2, v2, θz2]
-
-    HRZ結果:
-        並進: m/2 （各節点・各方向）
-        回転: m·L²/78 （各節点）
-
-    Args:
-        rho: 密度 [kg/m³]
-        A: 断面積 [m²]
-        L: 要素長 [m]
-
-    Returns:
-        Me: (6, 6) 対角集中質量行列
-    """
-    m = rho * A * L
-    # HRZ法: 並進 m/2, 回転 m*L²/78
-    diag = np.array([m / 2.0, m / 2.0, m * L**2 / 78.0, m / 2.0, m / 2.0, m * L**2 / 78.0])
-    return np.diag(diag)
-
-
-def _beam3d_lumped_mass_local(
-    rho: float,
-    A: float,
-    Iy: float,
-    Iz: float,
-    L: float,
-) -> np.ndarray:
-    """3D梁の局所集中質量行列 (12x12, 対角).
-
-    HRZ法による集中化。
-
-    DOF順: [u1, v1, w1, θx1, θy1, θz1, u2, v2, w2, θx2, θy2, θz2]
-
-    HRZ結果:
-        並進: m/2 （各節点・各方向）
-        ねじり: ρ·Ip·L/2 （各節点）
-        曲げ回転: m·L²/78 （各節点・各方向）
-
-    Args:
-        rho: 密度
-        A: 断面積
-        Iy: y軸まわり断面二次モーメント
-        Iz: z軸まわり断面二次モーメント
-        L: 要素長
-
-    Returns:
-        Me: (12, 12) 対角集中質量行列
-    """
-    m = rho * A * L
-    Ip = Iy + Iz
-    m_torsion = rho * Ip * L
-    rot_inertia = m * L**2 / 78.0
-
-    # [u, v, w, θx, θy, θz] × 2ノード
-    diag = np.array(
-        [
-            m / 2.0,
-            m / 2.0,
-            m / 2.0,
-            m_torsion / 2.0,
-            rot_inertia,
-            rot_inertia,
-            m / 2.0,
-            m / 2.0,
-            m / 2.0,
-            m_torsion / 2.0,
-            rot_inertia,
-            rot_inertia,
-        ]
-    )
-    return np.diag(diag)
-
-
 def _assemble_lumped_mass_2d(
     nodes: np.ndarray,
     connectivity: np.ndarray,
@@ -394,8 +164,6 @@ def _assemble_lumped_mass_3d(
 
     集中質量は対角行列なので座標変換不要（回転不変）。
     """
-    from xkep_cae.elements.beam_timo3d import _beam3d_length_and_direction
-
     n_nodes = len(nodes)
     ndof = 6 * n_nodes
     M = np.zeros((ndof, ndof), dtype=float)

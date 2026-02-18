@@ -6,6 +6,7 @@
 - TestNewmarkSDOF: 1自由度系の自由振動・ステップ荷重・減衰付き振動
 - TestNewmarkBeam: 梁の過渡応答（カンチレバー自由振動・エネルギー保存）
 - TestHHTAlpha: HHT-α法の数値減衰特性
+- TestNonlinearTransient: 非線形 Newmark-β の検証
 """
 
 from __future__ import annotations
@@ -829,3 +830,500 @@ class TestLumpedMass:
         u_final = -result.displacement[-1, tip_uy_dof]
         err = abs(u_final - u_static) / u_static
         assert err < 0.05, f"集中質量の静的収束誤差: {err:.3f} ({u_final:.6e} vs {u_static:.6e})"
+
+
+# ====================================================================
+# mass_matrix() メソッドのテスト
+# ====================================================================
+
+
+class TestElementMassMatrix:
+    """梁要素クラスの mass_matrix() メソッドのテスト."""
+
+    # --- 2D EB梁 ---
+    def test_eb2d_consistent_symmetric(self):
+        """EB2D整合質量行列は対称."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (6, 6)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_eb2d_consistent_positive_definite(self):
+        """EB2D整合質量行列は正定値."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        eigvals = np.linalg.eigvalsh(Me)
+        assert np.all(eigvals > 0), f"非正定値の固有値: {eigvals}"
+
+    def test_eb2d_lumped_diagonal(self):
+        """EB2D集中質量行列は対角."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me, np.diag(np.diag(Me)))
+
+    def test_eb2d_lumped_mass_conservation(self):
+        """EB2D集中質量の並進方向合計 = ρAL."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        A = 1e-3
+        rho = 7800.0
+        L = 2.0
+        sec = BeamSection2D(A=A, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [L, 0.0]])
+        Me = elem.mass_matrix(coords, rho=rho, lumped=True)
+        m_total = rho * A * L
+        # ux 方向: Me[0,0] + Me[3,3]
+        np.testing.assert_allclose(Me[0, 0] + Me[3, 3], m_total, rtol=1e-12)
+
+    def test_eb2d_matches_frequency_module(self):
+        """EB2D mass_matrix() と frequency.py の結果が一致."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.numerical_tests.frequency import _beam2d_mass_global
+        from xkep_cae.sections.beam import BeamSection2D
+
+        A = 1e-3
+        rho = 7800.0
+        sec = BeamSection2D(A=A, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.5, 0.0]])
+        Me_elem = elem.mass_matrix(coords, rho=rho)
+        Me_freq = _beam2d_mass_global(coords, rho, A)
+        np.testing.assert_allclose(Me_elem, Me_freq, atol=1e-15)
+
+    # --- 2D Timoshenko梁 ---
+    def test_timo2d_consistent_symmetric(self):
+        """Timo2D整合質量行列は対称."""
+        from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6, shape="rectangle")
+        elem = TimoshenkoBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (6, 6)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_timo2d_lumped(self):
+        """Timo2D集中質量行列はEB2Dと同一."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        eb = EulerBernoulliBeam2D(section=sec)
+        timo = TimoshenkoBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me_eb = eb.mass_matrix(coords, rho=7800.0, lumped=True)
+        Me_timo = timo.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me_timo, Me_eb, atol=1e-15)
+
+    # --- 2D: 傾斜梁の座標変換 ---
+    def test_eb2d_rotated_beam(self):
+        """傾斜梁の整合質量行列: 座標変換が正しく適用される."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        # 水平梁
+        coords_h = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me_h = elem.mass_matrix(coords_h, rho=7800.0)
+        # 45度傾斜梁（同じ長さ）
+        L = 1.0
+        coords_45 = np.array([[0.0, 0.0], [L / np.sqrt(2), L / np.sqrt(2)]])
+        Me_45 = elem.mass_matrix(coords_45, rho=7800.0)
+        # 対称性
+        np.testing.assert_allclose(Me_45, Me_45.T, atol=1e-14)
+        # トレース保存（座標変換で不変）
+        np.testing.assert_allclose(np.trace(Me_45), np.trace(Me_h), rtol=1e-12)
+
+    # --- 3D Timoshenko梁 ---
+    def test_timo3d_consistent_symmetric(self):
+        """Timo3D整合質量行列は対称."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (12, 12)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_timo3d_consistent_positive_definite(self):
+        """Timo3D整合質量行列は正定値."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        eigvals = np.linalg.eigvalsh(Me)
+        assert np.all(eigvals > 0), f"非正定値の固有値: {eigvals}"
+
+    def test_timo3d_lumped_diagonal(self):
+        """Timo3D集中質量行列は対角."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me, np.diag(np.diag(Me)))
+
+    def test_timo3d_lumped_mass_conservation(self):
+        """Timo3D集中質量の並進方向合計 = ρAL."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        rho = 7800.0
+        d = 0.02
+        sec = BeamSection.circle(d=d)
+        elem = TimoshenkoBeam3D(section=sec)
+        L = 1.5
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=rho, lumped=True)
+        m_total = rho * sec.A * L
+        # ux 方向: Me[0,0] + Me[6,6]
+        np.testing.assert_allclose(Me[0, 0] + Me[6, 6], m_total, rtol=1e-12)
+
+    def test_timo3d_matches_frequency_module(self):
+        """Timo3D mass_matrix() と frequency.py の結果が一致."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.numerical_tests.frequency import _beam3d_mass_global
+        from xkep_cae.sections.beam import BeamSection
+
+        rho = 7800.0
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]])
+        Me_elem = elem.mass_matrix(coords, rho=rho)
+        Me_freq = _beam3d_mass_global(coords, rho, sec.A, sec.Iy, sec.Iz)
+        np.testing.assert_allclose(Me_elem, Me_freq, atol=1e-15)
+
+    def test_timo3d_rotated_beam(self):
+        """傾斜3D梁の整合質量行列: 座標変換が正しく適用される."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        # x軸方向
+        coords_x = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me_x = elem.mass_matrix(coords_x, rho=7800.0)
+        # 斜め方向
+        d = 1.0 / np.sqrt(3)
+        coords_diag = np.array([[0.0, 0.0, 0.0], [d, d, d]])
+        Me_diag = elem.mass_matrix(coords_diag, rho=7800.0)
+        # 対称性
+        np.testing.assert_allclose(Me_diag, Me_diag.T, atol=1e-14)
+        # トレース保存
+        np.testing.assert_allclose(np.trace(Me_diag), np.trace(Me_x), rtol=1e-12)
+
+
+# ====================================================================
+# 非線形過渡応答 (Phase 5.4)
+# ====================================================================
+
+
+def _sdof_nl_assemblers(k_lin: float, k_cubic: float = 0.0):
+    """1DOF 非線形ばねのアセンブラを生成する.
+
+    f_int(u) = k_lin * u + k_cubic * u³
+    K_T(u)   = k_lin + 3 * k_cubic * u²
+    """
+
+    def assemble_internal_force(u: np.ndarray) -> np.ndarray:
+        return np.array([k_lin * u[0] + k_cubic * u[0] ** 3])
+
+    def assemble_tangent(u: np.ndarray) -> np.ndarray:
+        return np.array([[k_lin + 3.0 * k_cubic * u[0] ** 2]])
+
+    return assemble_internal_force, assemble_tangent
+
+
+class TestNonlinearTransient:
+    """非線形 Newmark-β 法の検証."""
+
+    def test_linear_matches_linear_solver(self):
+        """線形ばねの非線形ソルバーが線形ソルバーと一致する."""
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        m, k = 1.0, 100.0
+        omega = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega
+        dt = T / 50.0
+        n_steps = int(5 * T / dt)
+
+        M = np.array([[m]])
+        C = np.array([[0.0]])
+        K = np.array([[k]])
+        u0 = np.array([0.5])
+        v0 = np.array([0.0])
+
+        # 線形ソルバー
+        cfg_lin = TransientConfig(dt=dt, n_steps=n_steps)
+        res_lin = solve_transient(M, C, K, np.zeros(1), u0, v0, cfg_lin)
+
+        # 非線形ソルバー（線形ばね）
+        f_int_fn, K_T_fn = _sdof_nl_assemblers(k)
+        cfg_nl = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+        res_nl = solve_nonlinear_transient(
+            M,
+            np.zeros(1),
+            u0,
+            v0,
+            cfg_nl,
+            f_int_fn,
+            K_T_fn,
+            C=C,
+            show_progress=False,
+        )
+
+        assert res_nl.converged
+        np.testing.assert_allclose(res_nl.displacement, res_lin.displacement, atol=1e-10)
+
+    def test_nonlinear_converges_each_step(self):
+        """非線形ばね（Duffing）で各ステップが収束する."""
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        m, k, k3 = 1.0, 100.0, 1000.0
+        omega0 = np.sqrt(k / m)
+        T0 = 2.0 * np.pi / omega0
+        dt = T0 / 40.0
+        n_steps = int(3 * T0 / dt)
+
+        M = np.array([[m]])
+        u0 = np.array([0.1])
+        v0 = np.array([0.0])
+
+        f_int_fn, K_T_fn = _sdof_nl_assemblers(k, k3)
+        cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps)
+        res = solve_nonlinear_transient(
+            M,
+            np.zeros(1),
+            u0,
+            v0,
+            cfg,
+            f_int_fn,
+            K_T_fn,
+            show_progress=False,
+        )
+
+        assert res.converged
+        # 各ステップの反復回数が少ない（非線形効果が小さいので 1-3 回）
+        assert max(res.iterations_per_step) <= 10
+
+    def test_nonlinear_energy_conservation(self):
+        """非減衰非線形系のエネルギー保存.
+
+        U(u) = 0.5*k*u² + 0.25*k3*u⁴
+        T(v) = 0.5*m*v²
+        E_total = T + U ≈ const
+        """
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        m, k, k3 = 1.0, 100.0, 500.0
+        omega0 = np.sqrt(k / m)
+        T0 = 2.0 * np.pi / omega0
+        dt = T0 / 80.0
+        n_steps = int(5 * T0 / dt)
+
+        M = np.array([[m]])
+        u0 = np.array([0.1])
+        v0 = np.array([0.0])
+
+        f_int_fn, K_T_fn = _sdof_nl_assemblers(k, k3)
+        cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+        res = solve_nonlinear_transient(
+            M,
+            np.zeros(1),
+            u0,
+            v0,
+            cfg,
+            f_int_fn,
+            K_T_fn,
+            show_progress=False,
+        )
+
+        assert res.converged
+
+        u_arr = res.displacement[:, 0]
+        v_arr = res.velocity[:, 0]
+        energy = 0.5 * m * v_arr**2 + 0.5 * k * u_arr**2 + 0.25 * k3 * u_arr**4
+        E0 = energy[0]
+
+        err_rel = np.max(np.abs(energy - E0)) / E0
+        # 平均加速度法 (β=1/4, γ=1/2) はエネルギー保存的
+        assert err_rel < 0.01, f"エネルギー保存誤差: {err_rel:.6e}"
+
+    def test_nonlinear_static_convergence_with_damping(self):
+        """減衰付き非線形系が静的平衡に収束する.
+
+        f_int(u) = k*u + k3*u³ = F  →  静的平衡 u_s
+        """
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        m, k, k3 = 1.0, 100.0, 200.0
+        F = 5.0
+
+        # 静的平衡: k*u + k3*u³ = F → Newton法で求解
+        u_s = F / k
+        for _ in range(20):
+            r = k * u_s + k3 * u_s**3 - F
+            dr = k + 3 * k3 * u_s**2
+            u_s -= r / dr
+
+        omega0 = np.sqrt(k / m)
+        T0 = 2.0 * np.pi / omega0
+
+        # 強い減衰
+        c = 2.0 * np.sqrt(k * m) * 0.3  # ξ = 30%
+        dt = T0 / 40.0
+        n_steps = int(30 * T0 / dt)
+
+        M = np.array([[m]])
+        C = np.array([[c]])
+        u0 = np.array([0.0])
+        v0 = np.array([0.0])
+
+        f_int_fn, K_T_fn = _sdof_nl_assemblers(k, k3)
+        cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-10)
+        res = solve_nonlinear_transient(
+            M,
+            np.array([F]),
+            u0,
+            v0,
+            cfg,
+            f_int_fn,
+            K_T_fn,
+            C=C,
+            show_progress=False,
+        )
+
+        assert res.converged
+        u_final = res.displacement[-1, 0]
+        err = abs(u_final - u_s) / abs(u_s)
+        assert err < 0.02, f"静的収束誤差: {err:.4f} ({u_final:.6f} vs {u_s:.6f})"
+
+    def test_fixed_dofs_respected(self):
+        """拘束DOFが正しく処理される（2DOF系、1DOF固定）."""
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        # 2DOF: m1, m2 に直列ばね
+        m1, m2, k = 1.0, 1.0, 100.0
+
+        def f_int_fn(u):
+            return np.array([k * u[0] - k * u[1], -k * u[0] + k * u[1]])
+
+        def K_T_fn(u):
+            return np.array([[k, -k], [-k, k]])
+
+        M = np.diag([m1, m2])
+        u0 = np.array([0.0, 0.1])
+        v0 = np.array([0.0, 0.0])
+
+        omega = np.sqrt(k / m2)
+        T = 2.0 * np.pi / omega
+        dt = T / 50.0
+        n_steps = int(3 * T / dt)
+
+        cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+        res = solve_nonlinear_transient(
+            M,
+            np.zeros(2),
+            u0,
+            v0,
+            cfg,
+            f_int_fn,
+            K_T_fn,
+            fixed_dofs=np.array([0]),
+            show_progress=False,
+        )
+
+        assert res.converged
+        # DOF 0 は固定
+        np.testing.assert_allclose(res.displacement[:, 0], 0.0, atol=1e-14)
+        # DOF 1 は振動
+        assert np.max(np.abs(res.displacement[:, 1])) > 0.01
+
+    def test_hardening_spring_frequency_shift(self):
+        """硬化ばね（k3 > 0）で振動周波数が上昇する.
+
+        Duffing 振動子の特徴: 振幅が大きいほど振動周波数が高い。
+        """
+        from xkep_cae.dynamics import (
+            NonlinearTransientConfig,
+            solve_nonlinear_transient,
+        )
+
+        m, k, k3 = 1.0, 100.0, 5000.0
+        omega0 = np.sqrt(k / m)  # 線形固有振動数
+        T0 = 2.0 * np.pi / omega0
+        dt = T0 / 80.0
+        n_steps = int(10 * T0 / dt)
+
+        M = np.array([[m]])
+        u0 = np.array([0.3])  # 大きな初期変位
+        v0 = np.array([0.0])
+
+        f_int_fn, K_T_fn = _sdof_nl_assemblers(k, k3)
+        cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+        res = solve_nonlinear_transient(
+            M,
+            np.zeros(1),
+            u0,
+            v0,
+            cfg,
+            f_int_fn,
+            K_T_fn,
+            show_progress=False,
+        )
+
+        assert res.converged
+
+        # FFT でピーク周波数を検出
+        u_arr = res.displacement[:, 0]
+        N = len(u_arr)
+        freqs = np.fft.rfftfreq(N, d=dt)
+        fft_mag = np.abs(np.fft.rfft(u_arr))
+        peak_idx = np.argmax(fft_mag[1:]) + 1
+        f_nl = freqs[peak_idx]
+        f_lin = omega0 / (2.0 * np.pi)
+
+        # 硬化ばねなので非線形周波数 > 線形周波数
+        assert f_nl > f_lin, f"硬化ばね周波数シフト: {f_nl:.3f} <= {f_lin:.3f}"

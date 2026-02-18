@@ -15,17 +15,20 @@
 
 ---
 
-## 現在地（Phase 5.1〜5.2 実装完了 + 戻り値型リファクタリング完了）
+## 現在地（Phase 3.4 + Phase 5.4 + 動的三点曲げ 実装完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 完了。Phase 5.1（Newmark-β/HHT-α時間積分）および Phase 5.2（集中質量行列）実装完了（498テスト）。
-メソッド戻り値の NamedTuple 型クラス化（LinearSolveResult, DirichletResult, AssemblyResult 等）完了。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 完了（556テスト）。
+Phase 3.4: Q4要素の幾何学的非線形（TL定式化, Green-Lagrangeひずみ, S2PK応力, 27テスト）。
+Phase 5.2: 梁要素に mass_matrix() メソッド追加。
+Phase 5.4: 非線形動解析ソルバー（Newton-Raphson + Newmark-β/HHT-α, 6テスト）。
+数値三点曲げ試験の非線形動解析対応（dynamic_runner, 11テスト）。
 Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テスト計画](status/status-025.md)策定済み、45テスト予定）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
 ファイバーモデル断面（曲げの塑性化）実装完了。FiberSection + ファイバー積分アセンブリ。
 全 Phase のバリデーションテストを[検証文書](verification/validation.md)に図付きで文書化済み。
 ラインサーチと Lee's frame 等の追加ベンチマークはオプションとして残存。
-動的解析: 整合質量行列・Rayleigh減衰・FRFは Phase 2.6 で先行実装、Newmark-β/HHT-α時間積分・集中質量行列（HRZ法）を追加。
+動的解析: 整合質量行列・Rayleigh減衰・FRFは Phase 2.6 で先行実装、Newmark-β/HHT-α時間積分・集中質量行列（HRZ法）・非線形動解析を追加。
 
 ### 実装済み
 
@@ -37,16 +40,17 @@ Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テ�
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形, 円形, パイプ（2D/3D, Iy/Iz/J 対応） |
 | **非線形ソルバー** | Newton-Raphson（荷重増分 + K_T = K_m + K_g）, 弧長法（Crisfield）, 非線形 Cosserat rod, Euler elastica 検証済み |
-| **動的解析** | Newmark-β/HHT-α時間積分, 整合質量行列（2D/3D梁）, 集中質量行列（HRZ法, 2D/3D梁）, Rayleigh減衰, 周波数応答関数（FRF） |
+| **幾何学的非線形（連続体）** | Q4要素のTL定式化（Green-Lagrangeひずみ, S2PK応力, SVK材料, 幾何剛性, 有限差分接線検証） |
+| **動的解析** | Newmark-β/HHT-α時間積分, 整合質量行列（2D/3D梁）, 集中質量行列（HRZ法, 2D/3D梁）, Rayleigh減衰, 周波数応答関数（FRF）, **非線形動解析（NR+Newmark-β/HHT-α）** |
 | **ポスト処理** | 2D/3D断面力, 最大曲げ応力, 最大せん断応力（ねじり+横せん断） |
-| **数値試験** | 3点曲げ・4点曲げ・引張・ねん回・周波数応答（`numerical_tests`パッケージ） |
+| **数値試験** | 3点曲げ・4点曲げ・引張・ねん回・周波数応答・**動的3点曲げ**（`numerical_tests`パッケージ） |
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力 |
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）（**498テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL）, 非線形動解析, 動的三点曲げ（**556テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md) |
 
 ### 未実装（現状の制約）
@@ -56,7 +60,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装完了、テスト未実装（[テ�
 - 材料非線形は1D弾塑性+ファイバーモデルのみ実装済み（3D von Mises塑性・粘弾性等は未実装、Phase 4.3 で計画）
 - 陽解法（Central Difference）未実装
 - モーダル減衰未実装
-- ElementProtocol への `mass_matrix()` 統合未実装
+- Updated Lagrangian（参照配置更新）未実装（現在はTLのみ）
 - 梁–梁接触モジュールは設計完了・実装未着手
 
 ---
@@ -431,11 +435,16 @@ Cosserat非線形と別ルートの定式化。必要に応じて実装。
 - [ ] 要素ごとのローカルフレーム追従
 - [ ] 剛体回転の分離と変形成分の抽出
 
-### 3.4 Updated Lagrangian（**次の優先**）
+### 3.4 Total/Updated Lagrangian ✓
 
-- [ ] 参照配置の更新
-- [ ] Green-Lagrangeひずみ
-- [ ] 第二Piola-Kirchhoffストレス
+- [x] Green-Lagrangeひずみ（Q4要素, 2×2ガウス求積）
+- [x] 第二Piola-Kirchhoffストレス（Saint-Venant Kirchhoff材料）
+- [x] 変形勾配 F = I + ∂u/∂X、線形化B行列 B_L = B_0 + B_NL
+- [x] 幾何剛性行列 K_geo、材料剛性行列 K_mat
+- [x] 内力ベクトル f_int = ∫ B_L^T S dV₀
+- [x] NRソルバー統合（make_nl_assembler_q4）
+- [x] テスト: パッチテスト、対称性、有限差分接線検証、エネルギー整合性（27テスト）
+- [ ] 参照配置の更新（UL: 現在はTLのみ実装）
 
 ---
 
@@ -520,25 +529,27 @@ Cosserat非線形と別ルートの定式化。必要に応じて実装。
 - [x] α法（HHT法、数値減衰付き）— α ∈ [-1/3, 0], β/γ自動連動
 - [ ] 陽解法（Central Difference、オプション）
 
-### 5.2 質量行列
+### 5.2 質量行列 ✓
 
 - [x] 整合質量行列（consistent mass）— 2D/3D梁、Phase 2.6 で実装済み
 - [x] 集中質量行列（lumped mass）— HRZ法, 2D/3D梁, 回転DOF非特異
-- [ ] ElementProtocol への `mass_matrix()` 統合
+- [x] 梁要素に mass_matrix() メソッド追加（EB2D, Timo2D, Timo3D, Cosserat）
 
 ### 5.3 減衰行列
 
 - [x] Rayleigh減衰（C = αM + βK）— Phase 2.6 で実装済み
 - [ ] モーダル減衰
 
-### 5.4 非線形動解析（**次の優先**）
+### 5.4 非線形動解析 ✓
 
 Newton-Raphson + Newmark-β による非線形過渡応答解析。
-幾何学非線形（UL, Phase 3.4）と組み合わせて大変形動的問題を解く。
+幾何学非線形（TL, Phase 3.4）と組み合わせて大変形動的問題を解く。
 
-- [ ] 非線形 Newmark-β（Newton-Raphson 反復付き暗黙的時間積分）
-- [ ] 数値三点曲げ試験の非線形動解析対応（`numerical_tests` フレームワーク拡張）
-- [ ] エネルギー保存性検証テスト
+- [x] 非線形 Newmark-β（Newton-Raphson 反復付き暗黙的時間積分）— `solve_nonlinear_transient()`
+- [x] HHT-α 数値減衰対応
+- [x] 数値三点曲げ試験の非線形動解析対応（`numerical_tests/dynamic_runner.py`）
+- [x] エネルギー保存性検証テスト（6 + 11テスト）
+- [ ] 陽解法（Central Difference、オプション）
 
 ---
 
@@ -698,9 +709,11 @@ Phase 8 (応用展開) ← 必要に応じて
 **クリティカルパス**: Phase 3 → Phase C → Phase 4.7
 
 **次の優先（上から順）**:
-1. **幾何学非線形 Updated Lagrangian (UL)** — Phase 3.4 の UL 定式化。参照配置の更新、Green-Lagrange ひずみ、第二 Piola-Kirchhoff 応力
-2. **非線形動解析** — Phase 5 拡張。Newton-Raphson + Newmark-β による非線形過渡応答
-3. **数値三点曲げ試験の非線形動解析対応** — 数値試験フレームワークの非線形動解析への拡張
+1. ~~**幾何学非線形 TL定式化**~~ — Phase 3.4 実装完了 ✓（27テスト）
+2. ~~**非線形動解析**~~ — Phase 5.4 実装完了 ✓（6テスト）
+3. ~~**数値三点曲げ試験の非線形動解析対応**~~ — 実装完了 ✓（11テスト）
+4. **Phase 4.3 von Mises 3D 弾塑性テスト** — テスト計画済み（45テスト）、実装待ち
+5. **Phase C 梁–梁接触** — 設計仕様完了、実装着手可
 
 **並行開発可能**:
 - Phase 4（4.1〜4.6）と Phase 5 は Phase 3 完了後に並行可

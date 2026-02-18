@@ -1,7 +1,7 @@
 """数値試験フレームワーク — コアデータクラス・解析解・メッシュ生成.
 
-静的試験（3点曲げ・4点曲げ・引張・ねん回）と周波数応答試験の
-共通データ構造を定義する。
+静的試験（3点曲げ・4点曲げ・引張・ねん回）、周波数応答試験、
+動的試験の共通データ構造を定義する。
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import numpy as np
 # 試験種別定数
 # ---------------------------------------------------------------------------
 TEST_TYPES_STATIC = ("bend3p", "bend4p", "tensile", "torsion")
-TEST_TYPES_ALL = (*TEST_TYPES_STATIC, "freq_response")
+TEST_TYPES_DYNAMIC = ("dynamic_bend3p",)
+TEST_TYPES_ALL = (*TEST_TYPES_STATIC, "freq_response", *TEST_TYPES_DYNAMIC)
 
 BeamType = Literal["eb2d", "timo2d", "timo3d", "cosserat"]
 SupportCondition = Literal["roller", "pin"]
@@ -198,6 +199,137 @@ class FrequencyResponseResult:
     phase_deg: np.ndarray
     natural_frequencies: np.ndarray = field(default_factory=lambda: np.array([]))
     node_coords: np.ndarray = field(default_factory=lambda: np.array([]))
+
+
+# ---------------------------------------------------------------------------
+# 動的試験コンフィグ
+# ---------------------------------------------------------------------------
+@dataclass
+class DynamicTestConfig:
+    """動的試験（非線形過渡応答）の定義.
+
+    3点曲げ等の試験にインパクト荷重を付加し、過渡応答を計算する。
+    非線形動解析ソルバー（solve_nonlinear_transient）を使用する。
+
+    Attributes:
+        name: 試験名 ("dynamic_bend3p")
+        beam_type: 梁タイプ ("eb2d", "timo2d", "timo3d", "cosserat")
+        E: ヤング率 [Pa]
+        nu: ポアソン比
+        rho: 密度 [kg/m³]
+        length: 試料長さ [m]
+        n_elems: 要素分割数
+        load_value: 荷重値 P [N]
+        section_shape: 断面形状
+        section_params: 断面パラメータ
+        support_condition: 支持条件
+        dt: 時間刻み [s]
+        n_steps: 時間ステップ数
+        load_type: 荷重タイプ ("step": ステップ荷重, "ramp": ランプ荷重)
+        ramp_time: ランプ荷重の立ち上がり時間 [s]（load_type="ramp" 時のみ）
+        damping_alpha: Rayleigh減衰 α（質量比例）
+        damping_beta: Rayleigh減衰 β（剛性比例）
+        beta_newmark: Newmark β パラメータ
+        gamma_newmark: Newmark γ パラメータ
+        alpha_hht: HHT-α パラメータ
+        max_iter: Newton反復の最大回数
+        tol_force: 収束判定値
+        mass_type: 質量行列のタイプ ("consistent", "lumped")
+    """
+
+    name: str
+    beam_type: BeamType
+    E: float
+    nu: float
+    rho: float
+    length: float
+    n_elems: int
+    load_value: float
+    section_shape: str = "rectangle"
+    section_params: dict = field(default_factory=lambda: {"b": 10.0, "h": 20.0})
+    support_condition: SupportCondition = "roller"
+    dt: float = 1e-4
+    n_steps: int = 1000
+    load_type: str = "step"
+    ramp_time: float = 0.0
+    damping_alpha: float = 0.0
+    damping_beta: float = 0.0
+    beta_newmark: float = 0.25
+    gamma_newmark: float = 0.5
+    alpha_hht: float = 0.0
+    max_iter: int = 30
+    tol_force: float = 1e-8
+    mass_type: str = "consistent"
+
+    def __post_init__(self) -> None:
+        if self.name not in TEST_TYPES_DYNAMIC:
+            raise ValueError(f"動的試験名は {TEST_TYPES_DYNAMIC} のいずれか: {self.name}")
+        if self.beam_type not in ("eb2d", "timo2d", "timo3d", "cosserat"):
+            raise ValueError(f"beam_type は eb2d/timo2d/timo3d/cosserat: {self.beam_type}")
+        if self.rho <= 0:
+            raise ValueError(f"密度 rho は正値: {self.rho}")
+        if self.dt <= 0:
+            raise ValueError(f"dt は正値: {self.dt}")
+        if self.n_steps < 1:
+            raise ValueError(f"n_steps は1以上: {self.n_steps}")
+        if self.load_type not in ("step", "ramp"):
+            raise ValueError(f"load_type は step/ramp: {self.load_type}")
+        if self.mass_type not in ("consistent", "lumped"):
+            raise ValueError(f"mass_type は consistent/lumped: {self.mass_type}")
+
+    @property
+    def G(self) -> float:
+        """せん断弾性率."""
+        return self.E / (2.0 * (1.0 + self.nu))
+
+    @property
+    def total_time(self) -> float:
+        """総解析時間 [s]."""
+        return self.dt * self.n_steps
+
+    @property
+    def span_ratio(self) -> float:
+        """スパン比 L/h."""
+        h = self.section_params.get("h", self.section_params.get("d", 0.0))
+        if h <= 0:
+            return float("inf")
+        return self.length / h
+
+
+# ---------------------------------------------------------------------------
+# 動的試験結果
+# ---------------------------------------------------------------------------
+@dataclass
+class DynamicTestResult:
+    """動的試験の結果.
+
+    Attributes:
+        config: 元の試験コンフィグ
+        node_coords: 節点座標 (n_nodes, ndim)
+        time: (n_steps+1,) 時刻配列
+        displacement: (n_steps+1, ndof) 変位履歴
+        velocity: (n_steps+1, ndof) 速度履歴
+        acceleration: (n_steps+1, ndof) 加速度履歴
+        displacement_max_final: 最終ステップの着目点最大変位
+        displacement_analytical: 静的解析解（存在する場合）
+        relative_error_final: 最終ステップと静的解析解の相対誤差
+        converged: 全ステップ収束したか
+        iterations_per_step: 各ステップの NR 反復回数
+        solver_info: ソルバー情報 dict
+    """
+
+    config: DynamicTestConfig
+    node_coords: np.ndarray
+    time: np.ndarray
+    displacement: np.ndarray
+    velocity: np.ndarray
+    acceleration: np.ndarray
+    displacement_max_final: float = 0.0
+    displacement_analytical: float | None = None
+    relative_error_final: float | None = None
+    converged: bool = True
+    iterations_per_step: list[int] = field(default_factory=list)
+    solver_info: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,7 @@ from xkep_cae.elements.beam_eb2d import (
     BeamForces2D,
     _beam_length_and_cosines,
     _transformation_matrix_2d,
+    eb_beam2d_mass_global,
 )
 
 if TYPE_CHECKING:
@@ -297,6 +298,27 @@ class TimoshenkoBeam2D:
             shear_g,
             scf=self.scf,
         )
+
+    def mass_matrix(
+        self,
+        coords: np.ndarray,
+        rho: float,
+        *,
+        lumped: bool = False,
+    ) -> np.ndarray:
+        """全体座標系の質量行列を返す.
+
+        EB梁と同じ整合質量行列を使用（実用的に十分な精度）。
+
+        Args:
+            coords: (2, 2) 節点座標
+            rho: 密度 [kg/m³]
+            lumped: True の場合は集中質量行列（HRZ法）
+
+        Returns:
+            Me: (6, 6) 全体座標系の質量行列
+        """
+        return eb_beam2d_mass_global(coords, rho, self.section.A, lumped=lumped)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
         """グローバル節点インデックスから要素DOFインデックスを返す."""
