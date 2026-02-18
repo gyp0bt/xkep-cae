@@ -17,7 +17,7 @@
 
 ## 現在地（Phase 3.4 UL + Phase 5 陽解法・モーダル減衰 + Phase C0 接触骨格 + 過渡応答出力 実装完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0 + 過渡応答出力インターフェース完了（653テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0 + 過渡応答出力インターフェース完了（670テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -25,6 +25,7 @@ Phase 5.4: 非線形動解析ソルバー（Newton-Raphson + Newmark-β/HHT-α, 
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry、30テスト）。
 数値三点曲げ試験の非線形動解析対応（dynamic_runner, 11テスト）。
 **過渡応答出力**: Abaqus準拠 Step/Increment/Frame + InitialConditions + HistoryOutput/FieldOutput + CSV/JSON/VTK出力（38テスト）。
+**過渡応答出力拡張**: run_transient_steps（ステップ列自動実行）, 非線形反力計算（assemble_internal_force）, VTKバイナリ出力, 要素データ出力（CellData）, Abaqus .inpパーサー統合（17テスト）。
 Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検証は**凍結**（[テスト計画](status/status-025.md)策定済み、45テスト予定だが優先度下げ）。
 非線形 Cosserat rod（回転ベクトル定式化）+ 弧長法が動作し、Euler elastica ベンチマーク検証済み。
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
@@ -50,11 +51,11 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **ソルバー** | 直接法（spsolve）, AMG反復法（pyamg） |
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
-| **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力, **過渡応答出力（Step/Increment/Frame, CSV/JSON/VTK）** |
+| **I/O** | Abaqus .inp パーサー, CSV出力, Abaqusライクテキスト入力, **過渡応答出力（Step/Increment/Frame, CSV/JSON/VTK, バイナリ対応）**, **run_transient_steps（ステップ列自動実行）**, **mesh_from_abaqus_inp（.inp→OutputDatabase変換）** |
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
 | **接触（C0骨格）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何, 過渡応答出力（**653テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何, 過渡応答出力+拡張（**670テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）

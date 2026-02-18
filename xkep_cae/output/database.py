@@ -84,6 +84,8 @@ def build_output_database(
     M: np.ndarray | sp.spmatrix | None = None,
     K: np.ndarray | sp.spmatrix | None = None,
     f_ext_funcs: list[Callable[[float], np.ndarray]] | None = None,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray] | None = None,
+    element_data_func: Callable[[np.ndarray], dict[str, np.ndarray]] | None = None,
 ) -> OutputDatabase:
     """既存のソルバー結果から OutputDatabase を構築する.
 
@@ -102,6 +104,10 @@ def build_output_database(
         M: 質量行列（ALLKE 計算用）
         K: 剛性行列（ALLIE 計算用）
         f_ext_funcs: 各ステップの外力関数（CF 出力用）
+        assemble_internal_force: 非線形内力コールバック u → f_int(u)。
+            指定時は反力を RF = f_int(u) + M·a で計算する（線形の K·u + M·a より正確）。
+        element_data_func: 変位ベクトルから要素データを計算するコールバック。
+            u → {"stress_xx": ndarray, ...}。フレーム生成時に呼ばれる。
 
     Returns:
         OutputDatabase
@@ -134,6 +140,8 @@ def build_output_database(
             M=M,
             K=K,
             f_ext_func=f_ext_funcs[step_idx] if f_ext_funcs is not None else None,
+            assemble_internal_force=assemble_internal_force,
+            element_data_func=element_data_func,
         )
         db.step_results.append(sr)
         cumulative_time += step.total_time
@@ -152,6 +160,8 @@ def _build_step_result(
     M: np.ndarray | sp.spmatrix | None,
     K: np.ndarray | sp.spmatrix | None,
     f_ext_func: Callable[[float], np.ndarray] | None,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray] | None = None,
+    element_data_func: Callable[[np.ndarray], dict[str, np.ndarray]] | None = None,
 ) -> StepResult:
     """1ステップのソルバー結果を StepResult に変換する."""
     # ソルバー結果から配列を取得
@@ -192,6 +202,7 @@ def _build_step_result(
         fo = step.field_output
         frame_times = np.linspace(0.0, step.total_time, fo.num + 1)[1:]  # 0 は除外
         # 初期状態もフレーム0として追加
+        elem_data_0 = element_data_func(disp_hist[0]) if element_data_func is not None else {}
         frames.append(
             Frame(
                 frame_index=0,
@@ -199,11 +210,13 @@ def _build_step_result(
                 displacement=disp_hist[0].copy(),
                 velocity=vel_hist[0].copy() if "V" in fo.variables else None,
                 acceleration=acc_hist[0].copy() if "A" in fo.variables else None,
+                element_data=elem_data_0,
             )
         )
         for fi, ft in enumerate(frame_times):
             # 最も近いインクリメントを探す or 内挿
             frame_data = _interpolate_at_time(ft, time_arr, disp_hist, vel_hist, acc_hist)
+            elem_data = element_data_func(frame_data[0]) if element_data_func is not None else {}
             frames.append(
                 Frame(
                     frame_index=fi + 1,
@@ -211,6 +224,7 @@ def _build_step_result(
                     displacement=frame_data[0],
                     velocity=frame_data[1] if "V" in fo.variables else None,
                     acceleration=frame_data[2] if "A" in fo.variables else None,
+                    element_data=elem_data,
                 )
             )
 
@@ -244,6 +258,7 @@ def _build_step_result(
                         M=M,
                         K=K,
                         f_ext_func=f_ext_func,
+                        assemble_internal_force=assemble_internal_force,
                     )
                     history[nset_name][var] = data
                 elif var in ENERGY_VARIABLES:
@@ -315,6 +330,7 @@ def _extract_history_nodal(
     M: np.ndarray | sp.spmatrix | None = None,
     K: np.ndarray | sp.spmatrix | None = None,
     f_ext_func: Callable[[float], np.ndarray] | None = None,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> np.ndarray:
     """節点変数のヒストリデータを抽出する.
 
@@ -329,6 +345,8 @@ def _extract_history_nodal(
         M: 質量行列（RF計算用）
         K: 剛性行列（RF計算用）
         f_ext_func: 外力関数（CF出力用）
+        assemble_internal_force: 非線形内力コールバック u → f_int(u)。
+            指定時は RF = f_int(u) + M·a で計算（線形の K·u + M·a より正確）。
 
     Returns:
         (n_times, n_nodes * ndof_per_node) のデータ配列
@@ -348,12 +366,19 @@ def _extract_history_nodal(
         elif var == "A":
             data[i] = a_full[dof_indices]
         elif var == "RF":
-            # 反力 = f_ext - f_int = f_ext - K*u (線形) or M*a + C*v
-            # 簡易計算: RF = K*u の拘束DOF成分
-            if K is not None and M is not None:
-                K_d = _to_dense(K)
+            # 反力計算
+            if M is not None:
                 M_d = _to_dense(M)
-                rf_full = K_d @ u_full + M_d @ a_full
+                if assemble_internal_force is not None:
+                    # 非線形: RF = f_int(u) + M·a
+                    f_int = assemble_internal_force(u_full)
+                    rf_full = f_int + M_d @ a_full
+                elif K is not None:
+                    # 線形: RF = K·u + M·a
+                    K_d = _to_dense(K)
+                    rf_full = K_d @ u_full + M_d @ a_full
+                else:
+                    rf_full = M_d @ a_full
                 # 拘束DOFのみ反力を持つ
                 if fixed_dofs is not None:
                     mask = np.zeros(len(u_full), dtype=bool)
@@ -426,7 +451,199 @@ def _to_dense(A: np.ndarray | sp.spmatrix) -> np.ndarray:
     return np.asarray(A, dtype=float)
 
 
+def mesh_from_abaqus_inp(
+    filepath: str,
+) -> dict[str, Any]:
+    """Abaqus .inp ファイルからメッシュ情報を OutputDatabase 用の形式で読み込む.
+
+    read_abaqus_inp() のパース結果を、build_output_database() / export_vtk() で
+    使用できる形式（node_coords, connectivity, node_sets）に変換するブリッジ関数。
+
+    Args:
+        filepath: Abaqus .inp ファイルのパス
+
+    Returns:
+        辞書 {
+            "node_coords": ndarray (n_nodes, 2 or 3),
+            "connectivity": [(vtk_cell_type, node_index_array), ...],
+            "node_sets": {name: ndarray of node indices},
+            "mesh": AbaqusMesh（元のパース結果）,
+        }
+    """
+    from xkep_cae.io.abaqus_inp import read_abaqus_inp
+
+    mesh = read_abaqus_inp(filepath)
+
+    # ノードラベル → 0始まりインデックスへのマッピング
+    label_to_idx: dict[int, int] = {}
+    for i, node in enumerate(mesh.nodes):
+        label_to_idx[node.label] = i
+
+    # 節点座標
+    has_z = any(abs(n.z) > 1e-30 for n in mesh.nodes)
+    ndim = 3 if has_z else 2
+    n_nodes = len(mesh.nodes)
+    node_coords = np.zeros((n_nodes, ndim), dtype=float)
+    for i, node in enumerate(mesh.nodes):
+        node_coords[i, 0] = node.x
+        node_coords[i, 1] = node.y
+        if ndim == 3:
+            node_coords[i, 2] = node.z
+
+    # VTK セルタイプマッピング
+    _ELEM_TYPE_TO_VTK: dict[str, int] = {
+        "CPS3": 5,  # VTK_TRIANGLE
+        "CPE3": 5,
+        "CPS4": 9,  # VTK_QUAD
+        "CPS4R": 9,
+        "CPE4": 9,
+        "CPE4R": 9,
+        "CPS6": 22,  # VTK_QUADRATIC_TRIANGLE
+        "CPE6": 22,
+        "B21": 3,  # VTK_LINE
+        "B22": 3,
+        "B31": 3,
+        "B32": 3,
+    }
+
+    connectivity: list[tuple[int, np.ndarray]] = []
+    for group in mesh.element_groups:
+        elem_type_upper = group.elem_type.upper()
+        vtk_type = _ELEM_TYPE_TO_VTK.get(elem_type_upper, 3)
+
+        if not group.elements:
+            continue
+
+        # 各要素の接続を 0-based インデックスに変換
+        elem_rows = []
+        for _label, nodes in group.elements:
+            row = [label_to_idx.get(n, n - 1) for n in nodes]
+            elem_rows.append(row)
+
+        conn_arr = np.array(elem_rows, dtype=int)
+        connectivity.append((vtk_type, conn_arr))
+
+    # ノードセット（ラベル → 0-based インデックスに変換）
+    node_sets: dict[str, np.ndarray] = {}
+    for nset_name, labels in mesh.nsets.items():
+        indices = [label_to_idx.get(lbl, lbl - 1) for lbl in labels]
+        node_sets[nset_name] = np.array(indices, dtype=int)
+
+    return {
+        "node_coords": node_coords,
+        "connectivity": connectivity,
+        "node_sets": node_sets,
+        "mesh": mesh,
+    }
+
+
+def run_transient_steps(
+    steps: list[Step],
+    M: np.ndarray | sp.spmatrix,
+    K: np.ndarray | sp.spmatrix,
+    f_ext_funcs: list[Callable[[float], np.ndarray]],
+    u0: np.ndarray,
+    v0: np.ndarray,
+    *,
+    C: np.ndarray | sp.spmatrix | None = None,
+    fixed_dofs: np.ndarray | None = None,
+    node_coords: np.ndarray | None = None,
+    connectivity: list[tuple[int, np.ndarray]] | None = None,
+    ndof_per_node: int = 2,
+    node_sets: dict[str, np.ndarray] | None = None,
+    solver: str = "newmark",
+    alpha_hht: float = 0.0,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray] | None = None,
+) -> OutputDatabase:
+    """ステップ列を順次実行し、前ステップの終状態を自動引き継ぎする.
+
+    各ステップのソルバーを実行し、前ステップの最終変位・速度を
+    次ステップの初期条件として自動的に引き継ぐ。
+    結果は OutputDatabase としてまとめて返す。
+
+    Args:
+        steps: ステップ定義のリスト
+        M: 質量行列
+        K: 剛性行列
+        f_ext_funcs: 各ステップの外力関数リスト（len == len(steps)）
+        u0: 初期変位ベクトル
+        v0: 初期速度ベクトル
+        C: 減衰行列（None = 減衰なし）
+        fixed_dofs: 拘束 DOF
+        node_coords: 節点座標
+        connectivity: 要素接続情報
+        ndof_per_node: 1節点あたりの DOF 数
+        node_sets: 名前付き節点集合
+        solver: ソルバー種別 ("newmark" / "central_difference")
+        alpha_hht: HHT-α パラメータ（newmark のみ）
+        assemble_internal_force: 非線形内力コールバック（RF 計算用）
+
+    Returns:
+        OutputDatabase
+    """
+    from xkep_cae.dynamics import (
+        CentralDifferenceConfig,
+        TransientConfig,
+        solve_central_difference,
+        solve_transient,
+    )
+
+    if len(steps) != len(f_ext_funcs):
+        raise ValueError(
+            f"steps ({len(steps)}) と f_ext_funcs ({len(f_ext_funcs)}) の数が一致しない"
+        )
+
+    ndof = len(u0)
+    C_mat = C if C is not None else np.zeros((ndof, ndof), dtype=float)
+
+    solver_results: list[Any] = []
+    u_curr = u0.copy()
+    v_curr = v0.copy()
+
+    for step, f_ext in zip(steps, f_ext_funcs, strict=True):
+        n_steps_solver = step.n_increments
+
+        if solver == "newmark":
+            config = TransientConfig(
+                dt=step.dt,
+                n_steps=n_steps_solver,
+                alpha_hht=alpha_hht,
+            )
+            result = solve_transient(
+                M, C_mat, K, f_ext, u_curr, v_curr, config, fixed_dofs=fixed_dofs
+            )
+        elif solver == "central_difference":
+            config_cd = CentralDifferenceConfig(dt=step.dt, n_steps=n_steps_solver)
+            result = solve_central_difference(
+                M, C_mat, K, f_ext, u_curr, v_curr, config_cd, fixed_dofs=fixed_dofs
+            )
+        else:
+            raise ValueError(f"未対応のソルバー: {solver}（対応: newmark, central_difference）")
+
+        solver_results.append(result)
+
+        # 次ステップの初期状態 = 今ステップの終状態
+        u_curr = result.displacement[-1].copy()
+        v_curr = result.velocity[-1].copy()
+
+    return build_output_database(
+        steps=steps,
+        solver_results=solver_results,
+        node_coords=node_coords,
+        connectivity=connectivity,
+        ndof_per_node=ndof_per_node,
+        node_sets=node_sets,
+        fixed_dofs=fixed_dofs,
+        M=M,
+        K=K,
+        f_ext_funcs=f_ext_funcs,
+        assemble_internal_force=assemble_internal_force,
+    )
+
+
 __all__ = [
     "OutputDatabase",
     "build_output_database",
+    "mesh_from_abaqus_inp",
+    "run_transient_steps",
 ]

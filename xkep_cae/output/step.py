@@ -82,6 +82,9 @@ class Frame:
         displacement: (ndof,) 変位ベクトル
         velocity: (ndof,) or None 速度ベクトル
         acceleration: (ndof,) or None 加速度ベクトル
+        element_data: 要素データ辞書 {名前: ndarray}。
+            スカラー: (n_elements,) ベクトル/テンソル: (n_elements, n_components)。
+            例: {"stress_xx": (100,), "stress": (100, 3)}
     """
 
     frame_index: int
@@ -89,6 +92,7 @@ class Frame:
     displacement: np.ndarray
     velocity: np.ndarray | None = None
     acceleration: np.ndarray | None = None
+    element_data: dict[str, np.ndarray] = field(default_factory=dict)
 
 
 @dataclass

@@ -39,6 +39,7 @@
 | [029](status-029.md) | 2026-02-18 | Phase 4.3 von Mises 3D 凍結処理 + TODO整理 | 556 |
 | [030](status-030.md) | 2026-02-18 | Phase 3.4 UL + Phase 5 陽解法・モーダル減衰 + Phase C0 接触骨格 | 615 |
 | [031](status-031.md) | 2026-02-18 | 過渡応答出力インターフェース（Step/Frame/Increment + CSV/JSON/VTK） | 653 |
+| [032](status-032.md) | 2026-02-18 | 過渡応答出力 TODO 消化（run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合） | 670 |
 
 ## テスト数推移
 
@@ -62,6 +63,7 @@
 028-029: 556      (Phase 3.4 TL + Phase 5.4 非線形動解析)
 030:     615      (UL + 陽解法 + モーダル減衰 + Phase C0 接触骨格)
 031:     653      (過渡応答出力インターフェース: Step/Frame/Increment + CSV/JSON/VTK)
+032:     670      (過渡応答出力 TODO 消化: run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合)
 ```
 
 ## 備考

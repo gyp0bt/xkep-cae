@@ -18,7 +18,12 @@ CSV・JSON・VTK（ParaView対応）の3形式でエクスポートする。
     export_vtk: フレームデータを VTK (ParaView) にエクスポート
 """
 
-from xkep_cae.output.database import OutputDatabase, build_output_database
+from xkep_cae.output.database import (
+    OutputDatabase,
+    build_output_database,
+    mesh_from_abaqus_inp,
+    run_transient_steps,
+)
 from xkep_cae.output.export_csv import export_frames_csv, export_history_csv
 from xkep_cae.output.export_json import export_json
 from xkep_cae.output.export_vtk import (
@@ -62,6 +67,8 @@ __all__ = [
     # Database
     "OutputDatabase",
     "build_output_database",
+    "run_transient_steps",
+    "mesh_from_abaqus_inp",
     # Export
     "export_history_csv",
     "export_frames_csv",
