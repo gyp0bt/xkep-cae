@@ -6,6 +6,7 @@
   - *NSET セクションの読み込み（通常/GENERATE）
   - *ELSET セクションの読み込み（通常/GENERATE）
   - *BOUNDARY セクションの読み込み
+  - *MATERIAL / *ELASTIC / *DENSITY / *PLASTIC セクションの読み込み
   - *OUTPUT, FIELD ANIMATION セクションの読み込み
   - 継続行の処理
   - pymesh互換API（get_node_coord_array, get_element_array, get_node_labels_with_nset）
@@ -798,3 +799,215 @@ class TestFieldAnimationParsing:
         assert mesh.field_animation is not None
         assert mesh.field_animation.output_dir == "output/anim"
         assert mesh.field_animation.views == ["xy", "yz"]
+
+
+class TestMaterialParsing:
+    """*MATERIAL / *ELASTIC / *DENSITY / *PLASTIC セクションの読み込みテスト."""
+
+    @pytest.fixture()
+    def tmp_inp(self, tmp_path):
+        """一時 .inp ファイルを作成するヘルパー."""
+
+        def _create(content: str) -> Path:
+            p = tmp_path / "test_mat.inp"
+            p.write_text(dedent(content), encoding="utf-8")
+            return p
+
+        return _create
+
+    def test_material_elastic_only(self, tmp_inp):
+        """弾性定数のみの材料定義."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=steel
+            *ELASTIC
+            210000.0, 0.3
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.materials) == 1
+        mat = mesh.materials[0]
+        assert mat.name == "steel"
+        assert mat.elastic is not None
+        assert abs(mat.elastic[0] - 210000.0) < 1e-8
+        assert abs(mat.elastic[1] - 0.3) < 1e-12
+        assert mat.density is None
+        assert mat.plastic is None
+
+    def test_material_with_density(self, tmp_inp):
+        """弾性定数+密度の材料定義."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=aluminum
+            *ELASTIC
+            70000.0, 0.33
+            *DENSITY
+            2.7e-9
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.name == "aluminum"
+        assert mat.elastic == pytest.approx((70000.0, 0.33))
+        assert mat.density == pytest.approx(2.7e-9)
+
+    def test_material_with_plastic(self, tmp_inp):
+        """弾性+塑性データの材料定義."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=mild_steel
+            *ELASTIC
+            210000.0, 0.3
+            *PLASTIC
+            250.0, 0.0
+            300.0, 0.05
+            350.0, 0.10
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.elastic is not None
+        assert mat.plastic is not None
+        assert len(mat.plastic) == 3
+        assert mat.plastic[0] == pytest.approx((250.0, 0.0))
+        assert mat.plastic[1] == pytest.approx((300.0, 0.05))
+        assert mat.plastic[2] == pytest.approx((350.0, 0.10))
+        assert mat.plastic_hardening == "ISOTROPIC"
+
+    def test_plastic_kinematic_hardening(self, tmp_inp):
+        """移動硬化指定の塑性データ."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=steel_kin
+            *ELASTIC
+            210000.0, 0.3
+            *PLASTIC, HARDENING=KINEMATIC
+            250.0, 0.0
+            400.0, 0.20
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.plastic_hardening == "KINEMATIC"
+        assert len(mat.plastic) == 2
+
+    def test_plastic_combined_hardening(self, tmp_inp):
+        """混合硬化指定の塑性データ."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=steel_comb
+            *ELASTIC
+            210000.0, 0.3
+            *PLASTIC, HARDENING=COMBINED
+            250.0, 0.0
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.plastic_hardening == "COMBINED"
+
+    def test_multiple_materials(self, tmp_inp):
+        """複数材料の定義."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=steel
+            *ELASTIC
+            210000.0, 0.3
+            *DENSITY
+            7.85e-9
+            *MATERIAL, NAME=copper
+            *ELASTIC
+            110000.0, 0.34
+            *DENSITY
+            8.96e-9
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.materials) == 2
+        steel = mesh.get_material("steel")
+        assert steel.elastic == pytest.approx((210000.0, 0.3))
+        assert steel.density == pytest.approx(7.85e-9)
+        copper = mesh.get_material("copper")
+        assert copper.elastic == pytest.approx((110000.0, 0.34))
+        assert copper.density == pytest.approx(8.96e-9)
+
+    def test_get_material_case_insensitive(self, tmp_inp):
+        """材料名の大文字小文字を区別しないこと."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=Steel
+            *ELASTIC
+            210000.0, 0.3
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.get_material("STEEL")
+        assert mat.name == "Steel"
+        mat2 = mesh.get_material("steel")
+        assert mat2.name == "Steel"
+
+    def test_get_material_not_found(self, tmp_inp):
+        """存在しない材料名でKeyErrorが発生すること."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=steel
+            *ELASTIC
+            210000.0, 0.3
+        """)
+        mesh = read_abaqus_inp(p)
+        with pytest.raises(KeyError, match="見つかりません"):
+            mesh.get_material("nonexistent")
+
+    def test_elastic_without_nu(self, tmp_inp):
+        """ポアソン比省略時にデフォルト0.0."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=test
+            *ELASTIC
+            100.0
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.elastic == pytest.approx((100.0, 0.0))
+
+    def test_plastic_without_eps_p(self, tmp_inp):
+        """塑性ひずみ省略時にデフォルト0.0."""
+        p = tmp_inp("""\
+            *MATERIAL, NAME=test
+            *ELASTIC
+            210000.0, 0.3
+            *PLASTIC
+            250.0
+        """)
+        mesh = read_abaqus_inp(p)
+        mat = mesh.materials[0]
+        assert mat.plastic[0] == pytest.approx((250.0, 0.0))
+
+    def test_full_model_with_material(self, tmp_inp):
+        """完全なモデルとの併用テスト."""
+        p = tmp_inp("""\
+            *NODE
+            1, 0.0, 0.0, 0.0
+            2, 1.0, 0.0, 0.0
+            3, 2.0, 0.0, 0.0
+            *ELEMENT, TYPE=B31, ELSET=beams
+            1, 1, 2
+            2, 2, 3
+            *MATERIAL, NAME=steel
+            *ELASTIC
+            210000.0, 0.3
+            *DENSITY
+            7.85e-9
+            *PLASTIC
+            250.0, 0.0
+            300.0, 0.05
+            *BEAM SECTION, SECTION=RECT, ELSET=beams, MATERIAL=steel
+            0.01, 0.01
+            *BOUNDARY
+            1, 1, 6
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.nodes) == 3
+        assert len(mesh.element_groups) == 1
+        assert len(mesh.materials) == 1
+        mat = mesh.get_material("steel")
+        assert mat.elastic is not None
+        assert mat.density is not None
+        assert mat.plastic is not None
+        assert len(mat.plastic) == 2
+        assert len(mesh.beam_sections) == 1
+        assert mesh.beam_sections[0].material == "steel"
+        assert len(mesh.boundaries) == 1
+
+    def test_no_materials(self, tmp_inp):
+        """材料未定義の場合."""
+        p = tmp_inp("""\
+            *NODE
+            1, 0.0, 0.0
+        """)
+        mesh = read_abaqus_inp(p)
+        assert len(mesh.materials) == 0

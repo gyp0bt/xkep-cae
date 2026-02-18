@@ -8,6 +8,10 @@ pymesh 代替として、Abaqus入力ファイルの以下のセクションを�
   - *BEAM SECTION: 梁断面定義（SECTION, ELSET, MATERIAL, 寸法）
   - *TRANSVERSE SHEAR STIFFNESS: 横せん断剛性（K11, K22, K12）
   - *BOUNDARY: 境界条件（節点拘束）
+  - *MATERIAL: 材料定義（NAME指定）
+  - *ELASTIC: 弾性定数（E, nu）
+  - *DENSITY: 密度
+  - *PLASTIC: 塑性データ（降伏応力-塑性ひずみテーブル）
   - *OUTPUT, FIELD ANIMATION: アニメーション出力（独自拡張）
 
 対応要素タイプ:
@@ -110,6 +114,30 @@ class AbaqusFieldAnimation:
 
 
 @dataclass
+class AbaqusMaterial:
+    """Abaqus材料定義（*MATERIAL + サブキーワード）.
+
+    *MATERIAL, NAME=... で定義された材料ブロック内の
+    *ELASTIC, *DENSITY, *PLASTIC の情報を保持する。
+
+    Attributes:
+        name: 材料名（*MATERIAL の NAME= オプション）
+        elastic: (E, nu) タプル。*ELASTIC で定義。None なら未定義
+        density: 密度スカラー。*DENSITY で定義。None なら未定義
+        plastic: 降伏応力-塑性ひずみのテーブル [(sigma_y, eps_p), ...]。
+                 *PLASTIC で定義。None なら未定義
+        plastic_hardening: *PLASTIC の HARDENING= オプション
+                          ("ISOTROPIC", "KINEMATIC", "COMBINED")
+    """
+
+    name: str
+    elastic: tuple[float, float] | None = None
+    density: float | None = None
+    plastic: list[tuple[float, float]] | None = None
+    plastic_hardening: str = "ISOTROPIC"
+
+
+@dataclass
 class AbaqusMesh:
     """パース結果を保持するデータクラス.
 
@@ -122,6 +150,7 @@ class AbaqusMesh:
     elsets: dict[str, list[int]] = field(default_factory=dict)
     beam_sections: list[AbaqusBeamSection] = field(default_factory=list)
     boundaries: list[AbaqusBoundary] = field(default_factory=list)
+    materials: list[AbaqusMaterial] = field(default_factory=list)
     field_animation: AbaqusFieldAnimation | None = None
 
     def get_node_coord_array(self) -> list[dict[str, float]]:
@@ -182,6 +211,25 @@ class AbaqusMesh:
         raise KeyError(
             f"要素セット '{elset_name}' が見つかりません。利用可能: {list(self.elsets.keys())}"
         )
+
+    def get_material(self, name: str) -> AbaqusMaterial:
+        """指定名の材料定義を返す.
+
+        Args:
+            name: 材料名（大文字小文字区別なし）
+
+        Returns:
+            AbaqusMaterial オブジェクト
+
+        Raises:
+            KeyError: 材料が見つからない場合
+        """
+        key = name.upper()
+        for mat in self.materials:
+            if mat.name.upper() == key:
+                return mat
+        available = [m.name for m in self.materials]
+        raise KeyError(f"材料 '{name}' が見つかりません。利用可能: {available}")
 
     def get_element_array(
         self,
@@ -296,6 +344,16 @@ def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
                 idx = _parse_transverse_shear_stiffness(lines, idx + 1, mesh)
             elif keyword == "*BOUNDARY":
                 idx = _parse_boundary_section(lines, idx + 1, mesh)
+            elif keyword == "*MATERIAL":
+                opts = _parse_keyword_options(line)
+                idx = _parse_material_section(lines, idx + 1, opts, mesh)
+            elif keyword == "*ELASTIC":
+                idx = _parse_elastic_section(lines, idx + 1, mesh)
+            elif keyword == "*DENSITY":
+                idx = _parse_density_section(lines, idx + 1, mesh)
+            elif keyword == "*PLASTIC":
+                opts = _parse_keyword_options(line)
+                idx = _parse_plastic_section(lines, idx + 1, opts, mesh)
             elif keyword == "*OUTPUT":
                 opts = _parse_keyword_options(line)
                 if "FIELD ANIMATION" in opts or "FIELD" in opts:
@@ -698,4 +756,152 @@ def _parse_field_animation(
         break  # データは1行のみ
 
     mesh.field_animation = anim
+    return idx
+
+
+def _parse_material_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*MATERIAL セクションをパースする.
+
+    *MATERIAL は材料定義の開始を示すヘッダーキーワード。
+    NAME= オプションで材料名を指定する。後続の *ELASTIC, *DENSITY, *PLASTIC
+    サブキーワードがこの材料に紐づく。
+
+    Returns:
+        次のキーワード行のインデックス（*MATERIAL 直後の行）
+    """
+    name = opts.get("NAME", "UNNAMED")
+    mat = AbaqusMaterial(name=name)
+    mesh.materials.append(mat)
+    # *MATERIAL 自体にはデータ行がないので、次の行をそのまま返す
+    return start_idx
+
+
+def _parse_elastic_section(
+    lines: list[str],
+    start_idx: int,
+    mesh: AbaqusMesh,
+) -> int:
+    """*ELASTIC セクションをパースする.
+
+    形式:
+        *ELASTIC [, TYPE=ISOTROPIC]
+        E, nu
+
+    直前の *MATERIAL に弾性定数を関連付ける。
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        E = float(parts[0])
+        nu = float(parts[1]) if len(parts) > 1 else 0.0
+
+        if mesh.materials:
+            mesh.materials[-1].elastic = (E, nu)
+
+        idx += 1
+        break  # データは1行のみ
+
+    return idx
+
+
+def _parse_density_section(
+    lines: list[str],
+    start_idx: int,
+    mesh: AbaqusMesh,
+) -> int:
+    """*DENSITY セクションをパースする.
+
+    形式:
+        *DENSITY
+        rho
+
+    直前の *MATERIAL に密度を関連付ける。
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        rho = float(parts[0])
+
+        if mesh.materials:
+            mesh.materials[-1].density = rho
+
+        idx += 1
+        break  # データは1行のみ
+
+    return idx
+
+
+def _parse_plastic_section(
+    lines: list[str],
+    start_idx: int,
+    opts: dict[str, str],
+    mesh: AbaqusMesh,
+) -> int:
+    """*PLASTIC セクションをパースする.
+
+    形式:
+        *PLASTIC [, HARDENING=ISOTROPIC|KINEMATIC|COMBINED]
+        sigma_y1, eps_p1
+        sigma_y2, eps_p2
+        ...
+
+    降伏応力-塑性ひずみの表データを複数行で定義する。
+    直前の *MATERIAL に塑性データを関連付ける。
+
+    Returns:
+        次のキーワード行のインデックス
+    """
+    hardening = opts.get("HARDENING", "ISOTROPIC")
+    table: list[tuple[float, float]] = []
+
+    idx = start_idx
+    n_lines = len(lines)
+
+    while idx < n_lines:
+        line = lines[idx].strip()
+        if not line or line.startswith("**"):
+            idx += 1
+            continue
+        if line.startswith("*"):
+            break
+
+        parts = [p.strip() for p in line.split(",") if p.strip()]
+        sigma_y = float(parts[0])
+        eps_p = float(parts[1]) if len(parts) > 1 else 0.0
+        table.append((sigma_y, eps_p))
+        idx += 1
+
+    if mesh.materials:
+        mesh.materials[-1].plastic = table
+        mesh.materials[-1].plastic_hardening = hardening
+
     return idx
