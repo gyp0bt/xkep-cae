@@ -6,8 +6,11 @@ Total Lagrangian (TL) 定式化:
 - 内力: f_int = ∫ B_L^T S dV₀
 - 接線剛性: K_T = K_mat + K_geo
 
-Updated Lagrangian (UL) は参照配置を更新することで実現する。
-各収束ステップ後に参照座標を現配置座標に更新し、変位をリセットする。
+Updated Lagrangian (UL) 定式化:
+- TL定式化と同じ要素計算を再利用
+- 各収束ステップ後に参照配置を現配置に更新し、増分変位をリセット
+- 全体変位は増分変位の累積で管理
+- 各ステップの増分が小さいため数値精度が向上する
 
 対応要素:
 - Q4 双線形四角形要素（平面ひずみ）
@@ -484,3 +487,356 @@ def make_nl_assembler_q4_combined(
         return _cache["K_T"]
 
     return assemble_internal_force, assemble_tangent
+
+
+# ===================================================================
+# Updated Lagrangian (UL) アセンブラ
+# ===================================================================
+
+
+class ULAssemblerQ4:
+    """Q4 要素群の Updated Lagrangian アセンブラ.
+
+    各収束ステップ後に参照配置を現配置に更新し、Gauss点に蓄積応力を
+    保持することで正確な UL を実現する。
+
+    応力追跡:
+    - 各 Gauss 点に蓄積 Cauchy 応力 σ_stored を保持
+    - 内力: f_int = ∫ B_L^T (σ_stored + D:ΔE) dV
+    - 参照配置更新時: σ_stored ← Cauchy stress from converged state
+
+    Usage::
+
+        ul = ULAssemblerQ4(nodes_init, conn, D, t)
+        result = newton_raphson_ul(f_ext_total, fixed_dofs, ul, ...)
+    """
+
+    def __init__(
+        self,
+        nodes_init: np.ndarray,
+        connectivity: np.ndarray,
+        D: np.ndarray,
+        t: float = 1.0,
+    ) -> None:
+        import scipy.sparse as sp
+
+        self._sp = sp
+        self._nodes_ref = nodes_init.copy()
+        self._nodes_init = nodes_init.copy()
+        self._connectivity = connectivity.copy()
+        self._D = D.copy()
+        self._t = t
+        self._n_nodes = len(nodes_init)
+        self._ndof = 2 * self._n_nodes
+        self._n_elems = len(connectivity)
+        self._n_gp = 4  # Q4: 2×2 Gauss 積分
+
+        # 累積変位（初期配置からの全変位）
+        self._u_total = np.zeros(self._ndof, dtype=float)
+
+        # Gauss 点蓄積応力 [n_elems, n_gp, 3] → [σ₁₁, σ₂₂, σ₁₂] (Voigt)
+        self._stress_stored = np.zeros((self._n_elems, self._n_gp, 3), dtype=float)
+
+    @property
+    def nodes_ref(self) -> np.ndarray:
+        """現在の参照配置の節点座標."""
+        return self._nodes_ref.copy()
+
+    @property
+    def u_total(self) -> np.ndarray:
+        """初期配置からの累積変位."""
+        return self._u_total.copy()
+
+    @property
+    def ndof(self) -> int:
+        """全自由度数."""
+        return self._ndof
+
+    def _element_internal_force(
+        self, coords_ref: np.ndarray, u_e: np.ndarray, stress_stored: np.ndarray
+    ) -> np.ndarray:
+        """要素内力ベクトル（蓄積応力込み）.
+
+        f_int = ∫ B_L^T · S_total · dV
+        S_total = σ_stored + D:E_inc (線形化近似)
+        """
+        f_int = np.zeros(8, dtype=float)
+        for gp_idx, (xi, eta) in enumerate(_GAUSS_POINTS_2x2):
+            dN_dxi, dN_deta = _q4_shape_deriv(xi, eta)
+            dN_dX, dN_dY, detJ = _jacobian_2d(dN_dxi, dN_deta, coords_ref)
+            F, H = deformation_gradient_2d(dN_dX, dN_dY, u_e)
+            E_voigt = green_lagrange_strain_2d(F)
+            S_inc = self._D @ E_voigt
+            S_total = stress_stored[gp_idx] + S_inc
+            B_L = b_matrix_nl_2d(dN_dX, dN_dY, H)
+            f_int += B_L.T @ S_total * detJ * self._t
+        return f_int
+
+    def _element_tangent(
+        self, coords_ref: np.ndarray, u_e: np.ndarray, stress_stored: np.ndarray
+    ) -> np.ndarray:
+        """要素接線剛性行列（蓄積応力込み）.
+
+        K_T = K_mat + K_geo
+        K_mat = ∫ B_L^T D B_L dV  (増分の材料剛性)
+        K_geo = ∫ G^T Σ_total G dV  (全応力の幾何剛性)
+        """
+        K_T = np.zeros((8, 8), dtype=float)
+        for gp_idx, (xi, eta) in enumerate(_GAUSS_POINTS_2x2):
+            dN_dxi, dN_deta = _q4_shape_deriv(xi, eta)
+            dN_dX, dN_dY, detJ = _jacobian_2d(dN_dxi, dN_deta, coords_ref)
+            F, H = deformation_gradient_2d(dN_dX, dN_dY, u_e)
+            E_voigt = green_lagrange_strain_2d(F)
+            S_inc = self._D @ E_voigt
+            S_total = stress_stored[gp_idx] + S_inc
+            B_L = b_matrix_nl_2d(dN_dX, dN_dY, H)
+            K_T += B_L.T @ self._D @ B_L * detJ * self._t
+            K_T += _geometric_stiffness_gp(dN_dX, dN_dY, S_total) * detJ * self._t
+        return K_T
+
+    def assemble_internal_force(self, u_inc: np.ndarray) -> np.ndarray:
+        """増分変位 u_inc に対する内力ベクトル（蓄積応力込み）."""
+        f_int = np.zeros(self._ndof, dtype=float)
+        for e_idx, elem_nodes in enumerate(self._connectivity):
+            nids = elem_nodes[:4].astype(int)
+            coords = self._nodes_ref[nids]
+            edofs = np.empty(8, dtype=int)
+            for i, n in enumerate(nids):
+                edofs[2 * i] = 2 * n
+                edofs[2 * i + 1] = 2 * n + 1
+            u_e = u_inc[edofs]
+            fe = self._element_internal_force(coords, u_e, self._stress_stored[e_idx])
+            for ii in range(8):
+                f_int[edofs[ii]] += fe[ii]
+        return f_int
+
+    def assemble_tangent(self, u_inc: np.ndarray):
+        """増分変位 u_inc に対する接線剛性行列（蓄積応力込み）."""
+        sp = self._sp
+        rows_list = []
+        cols_list = []
+        data_list = []
+        for e_idx, elem_nodes in enumerate(self._connectivity):
+            nids = elem_nodes[:4].astype(int)
+            coords = self._nodes_ref[nids]
+            edofs = np.empty(8, dtype=int)
+            for i, n in enumerate(nids):
+                edofs[2 * i] = 2 * n
+                edofs[2 * i + 1] = 2 * n + 1
+            u_e = u_inc[edofs]
+            Ke = self._element_tangent(coords, u_e, self._stress_stored[e_idx])
+            rows_list.append(np.repeat(edofs, 8))
+            cols_list.append(np.tile(edofs, 8))
+            data_list.append(Ke.ravel())
+
+        rows_arr = np.concatenate(rows_list)
+        cols_arr = np.concatenate(cols_list)
+        data_arr = np.concatenate(data_list)
+        K = sp.csr_matrix((data_arr, (rows_arr, cols_arr)), shape=(self._ndof, self._ndof))
+        K.sum_duplicates()
+        return K
+
+    def update_reference(self, u_inc: np.ndarray) -> None:
+        """参照配置を更新し、蓄積応力を保存する.
+
+        1. 収束した増分変位から Cauchy 応力を計算
+        2. 蓄積応力を更新: σ_stored ← Cauchy stress
+        3. 参照座標を現配置に更新: X_ref ← X_ref + Δu
+        4. 累積変位を更新: u_total += Δu
+
+        Args:
+            u_inc: 収束した増分変位ベクトル
+        """
+        # 1. 各 Gauss 点の Cauchy 応力を計算・保存
+        for e_idx, elem_nodes in enumerate(self._connectivity):
+            nids = elem_nodes[:4].astype(int)
+            coords = self._nodes_ref[nids]
+            edofs = np.empty(8, dtype=int)
+            for i, n in enumerate(nids):
+                edofs[2 * i] = 2 * n
+                edofs[2 * i + 1] = 2 * n + 1
+            u_e = u_inc[edofs]
+
+            for gp_idx, (xi, eta) in enumerate(_GAUSS_POINTS_2x2):
+                dN_dxi, dN_deta = _q4_shape_deriv(xi, eta)
+                dN_dX, dN_dY, _ = _jacobian_2d(dN_dxi, dN_deta, coords)
+                F, _ = deformation_gradient_2d(dN_dX, dN_dY, u_e)
+                E_voigt = green_lagrange_strain_2d(F)
+                S_inc = self._D @ E_voigt
+                S_total = self._stress_stored[e_idx, gp_idx] + S_inc
+
+                # S (2nd PK) → σ (Cauchy): σ = (1/J) F·S·F^T
+                J = np.linalg.det(F)
+                S_mat = np.array(
+                    [
+                        [S_total[0], S_total[2]],
+                        [S_total[2], S_total[1]],
+                    ]
+                )
+                sigma_mat = (1.0 / J) * F @ S_mat @ F.T
+
+                # 新しい参照配置での蓄積応力 = Cauchy 応力
+                # (新しい参照 = 現配置なので F_new = I, S_new = σ)
+                self._stress_stored[e_idx, gp_idx] = np.array(
+                    [sigma_mat[0, 0], sigma_mat[1, 1], sigma_mat[0, 1]]
+                )
+
+        # 2. 参照座標を更新
+        for i in range(self._n_nodes):
+            self._nodes_ref[i, 0] += u_inc[2 * i]
+            self._nodes_ref[i, 1] += u_inc[2 * i + 1]
+
+        # 3. 累積変位を更新
+        self._u_total += u_inc
+
+    def reset(self) -> None:
+        """参照配置を初期配置にリセットする."""
+        self._nodes_ref[:] = self._nodes_init
+        self._u_total[:] = 0.0
+        self._stress_stored[:] = 0.0
+
+
+class ULResult:
+    """Updated Lagrangian 解析結果."""
+
+    def __init__(
+        self,
+        u: np.ndarray,
+        converged: bool,
+        n_load_steps: int,
+        total_iterations: int,
+        load_history: list,
+        displacement_history: list,
+        residual_history: list,
+    ) -> None:
+        self.u = u
+        self.converged = converged
+        self.n_load_steps = n_load_steps
+        self.total_iterations = total_iterations
+        self.load_history = load_history
+        self.displacement_history = displacement_history
+        self.residual_history = residual_history
+
+
+def newton_raphson_ul(
+    f_ext_total: np.ndarray,
+    fixed_dofs: np.ndarray,
+    ul_assembler: ULAssemblerQ4,
+    *,
+    n_load_steps: int = 10,
+    max_iter: int = 30,
+    tol_force: float = 1e-8,
+    tol_disp: float = 1e-10,
+    show_progress: bool = True,
+) -> ULResult:
+    """Updated Lagrangian 定式化の Newton-Raphson 荷重増分法.
+
+    各荷重ステップで:
+    1. 荷重増分 Δf = f_ext_total * (step/n) - f_int(u=0 on current ref)
+    2. NR反復で増分変位 Δu を求解（参照は現ステップ開始時の配置）
+    3. 収束後、参照配置を更新: X_ref ← X_ref + Δu, u_total += Δu
+
+    TL版 newton_raphson() との主な違い:
+    - 各ステップで増分変位のみを扱う（全変位ではない）
+    - 収束後に参照配置を更新
+
+    Args:
+        f_ext_total: 最終外力ベクトル
+        fixed_dofs: 拘束DOFインデックス
+        ul_assembler: ULAssemblerQ4 インスタンス
+        n_load_steps: 荷重ステップ数
+        max_iter: NR最大反復回数
+        tol_force: 力残差収束判定値
+        tol_disp: 変位増分収束判定値
+        show_progress: 進捗表示
+
+    Returns:
+        ULResult: 解析結果
+    """
+    ndof = len(f_ext_total)
+    fixed = np.asarray(fixed_dofs, dtype=int)
+    free_mask = np.ones(ndof, dtype=bool)
+    free_mask[fixed] = False
+
+    load_history = []
+    disp_history = []
+    residual_history = []
+    total_iter = 0
+
+    for step in range(1, n_load_steps + 1):
+        lam = step / n_load_steps
+        f_ext_step = lam * f_ext_total
+
+        # 増分変位（各ステップの開始は 0）
+        u_inc = np.zeros(ndof, dtype=float)
+
+        converged = False
+        res_norm = 0.0
+
+        for k in range(max_iter):
+            f_int = ul_assembler.assemble_internal_force(u_inc)
+            R = f_ext_step - f_int
+            R[fixed] = 0.0
+
+            f_ref = max(float(np.linalg.norm(f_ext_step)), 1.0)
+            res_norm = float(np.linalg.norm(R))
+
+            if res_norm / f_ref < tol_force:
+                converged = True
+                total_iter += k + 1
+                if show_progress:
+                    print(
+                        f"  Step {step}/{n_load_steps}: "
+                        f"converged in {k + 1} iter, ||R||/ref = {res_norm / f_ref:.3e}"
+                    )
+                break
+
+            K_T = ul_assembler.assemble_tangent(u_inc)
+            K_T_d = K_T.toarray() if hasattr(K_T, "toarray") else np.array(K_T)
+
+            for dof in fixed:
+                K_T_d[dof, :] = 0.0
+                K_T_d[:, dof] = 0.0
+                K_T_d[dof, dof] = 1.0
+
+            du = np.linalg.solve(K_T_d, R)
+            u_inc += du
+            u_inc[fixed] = 0.0
+
+            u_ref = max(float(np.linalg.norm(u_inc)), 1e-30)
+            if float(np.linalg.norm(du)) / u_ref < tol_disp:
+                converged = True
+                total_iter += k + 1
+                if show_progress:
+                    print(f"  Step {step}/{n_load_steps}: converged (disp) in {k + 1} iter")
+                break
+
+        if not converged:
+            if show_progress:
+                print(f"  Step {step}: not converged in {max_iter} iterations")
+            return ULResult(
+                u=ul_assembler.u_total + u_inc,
+                converged=False,
+                n_load_steps=step,
+                total_iterations=total_iter + max_iter,
+                load_history=load_history,
+                displacement_history=disp_history,
+                residual_history=residual_history,
+            )
+
+        # 参照配置を更新
+        ul_assembler.update_reference(u_inc)
+
+        load_history.append(lam)
+        disp_history.append(ul_assembler.u_total.copy())
+        residual_history.append(res_norm)
+
+    return ULResult(
+        u=ul_assembler.u_total.copy(),
+        converged=True,
+        n_load_steps=n_load_steps,
+        total_iterations=total_iter,
+        load_history=load_history,
+        displacement_history=disp_history,
+        residual_history=residual_history,
+    )

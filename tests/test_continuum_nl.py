@@ -552,3 +552,304 @@ class TestEnergyConsistency:
             f_fd[j] = (strain_energy(u_p) - strain_energy(u_m)) / (2 * eps)
 
         np.testing.assert_allclose(f_int, f_fd, rtol=1e-5, atol=1e-10)
+
+
+# ===================================================================
+# Updated Lagrangian (UL) 定式化テスト
+# ===================================================================
+
+
+class TestUpdatedLagrangian:
+    """Updated Lagrangian 定式化の検証."""
+
+    def _make_mesh(self, n_x=2, n_y=2, Lx=2.0, Ly=1.0):
+        """n_x × n_y 要素のメッシュを生成する."""
+        nodes = []
+        for j in range(n_y + 1):
+            for i in range(n_x + 1):
+                nodes.append([Lx * i / n_x, Ly * j / n_y])
+        nodes = np.array(nodes, dtype=float)
+
+        conn = []
+        for j in range(n_y):
+            for i in range(n_x):
+                n0 = j * (n_x + 1) + i
+                n1 = n0 + 1
+                n2 = n1 + (n_x + 1)
+                n3 = n0 + (n_x + 1)
+                conn.append([n0, n1, n2, n3])
+        conn = np.array(conn, dtype=int)
+        return nodes, conn
+
+    def _get_fixed_and_load(self, nodes, load_x=10.0, Lx=2.0):
+        """左端固定、右端荷重の境界条件."""
+        n_nodes = len(nodes)
+        ndof = 2 * n_nodes
+        fixed = []
+        for i in range(n_nodes):
+            if abs(nodes[i, 0]) < 1e-12:
+                fixed.extend([2 * i, 2 * i + 1])
+        fixed = np.array(fixed, dtype=int)
+
+        f_ext = np.zeros(ndof)
+        for i in range(n_nodes):
+            if abs(nodes[i, 0] - Lx) < 1e-12:
+                f_ext[2 * i] = load_x
+        return fixed, f_ext
+
+    def test_ul_assembler_zero_disp(self):
+        """ULアセンブラ: ゼロ変位でゼロ内力."""
+        from xkep_cae.elements.continuum_nl import ULAssemblerQ4
+
+        nodes, conn = self._make_mesh()
+        ul = ULAssemblerQ4(nodes, conn, D)
+
+        f_int = ul.assemble_internal_force(np.zeros(ul.ndof))
+        np.testing.assert_allclose(f_int, 0.0, atol=1e-14)
+
+    def test_ul_assembler_matches_tl_single_step(self):
+        """ULアセンブラ: 単一ステップでTLと同じ結果."""
+        from xkep_cae.elements.continuum_nl import ULAssemblerQ4
+
+        nodes, conn = self._make_mesh(n_x=2, n_y=1)
+        ndof = 2 * len(nodes)
+
+        rng = np.random.default_rng(42)
+        u = rng.normal(0, 0.01, ndof)
+
+        # TL
+        f_int_tl, K_T_tl = make_nl_assembler_q4(nodes, conn, D)
+        f_tl = f_int_tl(u)
+        K_tl = K_T_tl(u).toarray()
+
+        # UL（参照配置未更新なので同じ）
+        ul = ULAssemblerQ4(nodes, conn, D)
+        f_ul = ul.assemble_internal_force(u)
+        K_ul = ul.assemble_tangent(u).toarray()
+
+        np.testing.assert_allclose(f_ul, f_tl, atol=1e-12)
+        np.testing.assert_allclose(K_ul, K_tl, atol=1e-12)
+
+    def test_ul_reference_update(self):
+        """参照配置更新後、ゼロ変位でも蓄積応力による内力が非ゼロ."""
+        from xkep_cae.elements.continuum_nl import ULAssemblerQ4
+
+        nodes, conn = self._make_mesh(n_x=2, n_y=1)
+        ndof = 2 * len(nodes)
+
+        ul = ULAssemblerQ4(nodes, conn, D)
+
+        # 増分変位を適用して更新
+        u_inc = np.zeros(ndof)
+        for i in range(len(nodes)):
+            u_inc[2 * i] = 0.01 * nodes[i, 0] / 2.0  # 線形分布
+
+        ul.update_reference(u_inc)
+
+        # 累積変位が更新されている
+        np.testing.assert_allclose(ul.u_total, u_inc)
+
+        # 更新後のゼロ変位でも蓄積応力があるため内力は非ゼロ
+        f_int = ul.assemble_internal_force(np.zeros(ndof))
+        assert np.linalg.norm(f_int) > 0, "蓄積応力による内力が存在するはず"
+
+    def test_ul_reset(self):
+        """reset() で初期状態に戻ることを確認."""
+        from xkep_cae.elements.continuum_nl import ULAssemblerQ4
+
+        nodes, conn = self._make_mesh()
+        ul = ULAssemblerQ4(nodes, conn, D)
+
+        # 変位を適用して更新
+        u_inc = np.ones(ul.ndof) * 0.001
+        ul.update_reference(u_inc)
+        assert np.linalg.norm(ul.u_total) > 0
+
+        # リセット
+        ul.reset()
+        np.testing.assert_allclose(ul.u_total, 0.0)
+        np.testing.assert_allclose(ul.nodes_ref, nodes)
+
+    def test_ul_nr_small_tension(self):
+        """UL NRソルバー: 小荷重の引張で収束."""
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+
+        nodes, conn = self._make_mesh(n_x=2, n_y=1)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=10.0)
+
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=1,
+            max_iter=20,
+            tol_force=1e-10,
+            show_progress=False,
+        )
+
+        assert result.converged
+        # 右端のx変位は正
+        for i in range(len(nodes)):
+            if abs(nodes[i, 0] - 2.0) < 1e-12:
+                assert result.u[2 * i] > 0.0
+
+    def test_ul_nr_matches_tl_small_load(self):
+        """UL と TL が小荷重で同じ結果を返す."""
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+        from xkep_cae.solver import newton_raphson
+
+        nodes, conn = self._make_mesh(n_x=3, n_y=2)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=1.0)
+
+        # TL
+        f_int_fn, K_T_fn = make_nl_assembler_q4(nodes, conn, D)
+        result_tl = newton_raphson(
+            f_ext,
+            fixed,
+            K_T_fn,
+            f_int_fn,
+            n_load_steps=1,
+            max_iter=10,
+            tol_force=1e-12,
+            show_progress=False,
+        )
+        assert result_tl.converged
+
+        # UL
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result_ul = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=1,
+            max_iter=10,
+            tol_force=1e-12,
+            show_progress=False,
+        )
+        assert result_ul.converged
+
+        np.testing.assert_allclose(result_ul.u, result_tl.u, rtol=1e-6, atol=1e-12)
+
+    def test_ul_nr_multi_step_convergence(self):
+        """UL NR多ステップ: 中程度の荷重で収束."""
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+
+        nodes, conn = self._make_mesh(n_x=4, n_y=2)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=-100.0)
+
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=5,
+            max_iter=30,
+            tol_force=1e-8,
+            show_progress=False,
+        )
+
+        assert result.converged
+        assert len(result.load_history) == 5
+        assert len(result.displacement_history) == 5
+
+    def test_ul_nr_matches_tl_moderate_load(self):
+        """UL と TL が中程度荷重で近い結果を返す.
+
+        大変形では定式化の違いで微小な差が出るが、
+        十分なステップ数であればほぼ一致する。
+        """
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+        from xkep_cae.solver import newton_raphson
+
+        nodes, conn = self._make_mesh(n_x=4, n_y=2)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=50.0)
+        n_steps = 10
+
+        # TL
+        f_int_fn, K_T_fn = make_nl_assembler_q4(nodes, conn, D)
+        result_tl = newton_raphson(
+            f_ext,
+            fixed,
+            K_T_fn,
+            f_int_fn,
+            n_load_steps=n_steps,
+            max_iter=30,
+            tol_force=1e-10,
+            show_progress=False,
+        )
+        assert result_tl.converged
+
+        # UL
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result_ul = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=n_steps,
+            max_iter=30,
+            tol_force=1e-10,
+            show_progress=False,
+        )
+        assert result_ul.converged
+
+        # TLとULの結果は近い（完全に一致はしない）
+        np.testing.assert_allclose(result_ul.u, result_tl.u, rtol=0.05, atol=1e-8)
+
+    def test_ul_load_history_monotonic(self):
+        """荷重履歴が単調増加."""
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+
+        nodes, conn = self._make_mesh(n_x=2, n_y=1)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=20.0)
+
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=5,
+            show_progress=False,
+        )
+
+        assert result.converged
+        for i in range(1, len(result.load_history)):
+            assert result.load_history[i] > result.load_history[i - 1]
+
+    def test_ul_cumulative_displacement(self):
+        """累積変位が各ステップの増分の合計と一致."""
+        from xkep_cae.elements.continuum_nl import (
+            ULAssemblerQ4,
+            newton_raphson_ul,
+        )
+
+        nodes, conn = self._make_mesh(n_x=2, n_y=1)
+        fixed, f_ext = self._get_fixed_and_load(nodes, load_x=10.0)
+
+        ul = ULAssemblerQ4(nodes, conn, D)
+        result = newton_raphson_ul(
+            f_ext,
+            fixed,
+            ul,
+            n_load_steps=3,
+            show_progress=False,
+        )
+
+        assert result.converged
+        # displacement_history の最後が u と一致
+        np.testing.assert_allclose(result.displacement_history[-1], result.u, atol=1e-14)
