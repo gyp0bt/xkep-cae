@@ -40,6 +40,7 @@
 | [030](status-030.md) | 2026-02-18 | Phase 3.4 UL + Phase 5 陽解法・モーダル減衰 + Phase C0 接触骨格 | 615 |
 | [031](status-031.md) | 2026-02-18 | 過渡応答出力インターフェース（Step/Frame/Increment + CSV/JSON/VTK） | 653 |
 | [032](status-032.md) | 2026-02-18 | 過渡応答出力 TODO 消化（run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合） | 670 |
+| [033](status-033.md) | 2026-02-18 | Phase C1 — Broadphase (AABB格子) + 幾何更新 + Active-setヒステリシス | 701 |
 
 ## テスト数推移
 
@@ -64,6 +65,7 @@
 030:     615      (UL + 陽解法 + モーダル減衰 + Phase C0 接触骨格)
 031:     653      (過渡応答出力インターフェース: Step/Frame/Increment + CSV/JSON/VTK)
 032:     670      (過渡応答出力 TODO 消化: run_transient_steps / 非線形RF / VTKバイナリ / 要素データ / .inp統合)
+033:     701      (Phase C1: Broadphase AABB格子 + 幾何更新 + Active-setヒステリシス)
 ```
 
 ## 備考
