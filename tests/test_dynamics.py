@@ -335,3 +335,298 @@ class TestTransientConfig:
     def test_gamma_too_small_raises(self):
         with pytest.raises(ValueError, match="gamma"):
             TransientConfig(dt=0.01, n_steps=10, gamma=0.3)
+
+
+# ====================================================================
+# HHT-α 法テスト
+# ====================================================================
+
+
+class TestHHTAlpha:
+    """HHT-α法の数値減衰特性を検証."""
+
+    def test_hht_reduces_to_newmark(self):
+        """α=0 で標準 Newmark（平均加速度法）と同一結果."""
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        u0_val = 1.0
+
+        dt = T / 50.0
+        n_steps = int(3 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+
+        # 標準 Newmark
+        cfg_nm = TransientConfig(dt=dt, n_steps=n_steps, alpha_hht=0.0)
+        res_nm = solve_transient(M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg_nm)
+
+        # HHT α=0 明示指定
+        cfg_hht = TransientConfig(dt=dt, n_steps=n_steps, beta=0.25, gamma=0.5, alpha_hht=0.0)
+        res_hht = solve_transient(M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg_hht)
+
+        np.testing.assert_allclose(res_hht.displacement, res_nm.displacement, atol=1e-14)
+        np.testing.assert_allclose(res_hht.velocity, res_nm.velocity, atol=1e-14)
+
+    def test_hht_numerical_damping(self):
+        """HHT-α (α=-0.1) は高周波成分を数値的に減衰させる.
+
+        非減衰 SDOF で α<0 のとき、振幅が徐々に減少する（数値散逸）。
+        α=0（標準 Newmark）と比較して振幅が小さくなることを確認。
+        """
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        u0_val = 1.0
+
+        dt = T / 20.0  # 粗い刻みで数値減衰が顕著に出る
+        n_steps = int(10 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+
+        # 標準 Newmark（数値減衰なし）
+        alpha_hht = -0.1
+        gamma_hht = (1.0 - 2.0 * alpha_hht) / 2.0
+        beta_hht = (1.0 - alpha_hht) ** 2 / 4.0
+
+        cfg_nm = TransientConfig(dt=dt, n_steps=n_steps, beta=0.25, gamma=0.5)
+        res_nm = solve_transient(M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg_nm)
+
+        # HHT-α（数値減衰あり）
+        cfg_hht = TransientConfig(
+            dt=dt, n_steps=n_steps, beta=beta_hht, gamma=gamma_hht, alpha_hht=alpha_hht
+        )
+        res_hht = solve_transient(M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg_hht)
+
+        # 後半の振幅を比較
+        idx_half = n_steps // 2
+        amp_nm = np.max(np.abs(res_nm.displacement[idx_half:, 0]))
+        amp_hht = np.max(np.abs(res_hht.displacement[idx_half:, 0]))
+
+        # HHT の振幅は Newmark より小さい（数値減衰のため）
+        assert amp_hht < amp_nm, f"HHT振幅 ({amp_hht:.6f}) が Newmark振幅 ({amp_nm:.6f}) より大きい"
+
+    def test_hht_step_response_converges(self):
+        """HHT-α でもステップ荷重の静的変位に収束する."""
+        m, k = 1.0, 400.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        F0 = 20.0
+        u_static = F0 / k
+
+        # 減衰を入れて速く収束させる
+        xi = 0.1
+        c = 2.0 * xi * omega_n * m
+
+        alpha_hht = -0.05
+        gamma_hht = (1.0 - 2.0 * alpha_hht) / 2.0
+        beta_hht = (1.0 - alpha_hht) ** 2 / 4.0
+
+        dt = T / 50.0
+        n_steps = int(20 * T / dt)
+
+        M, C, K = _sdof_matrices(m, c, k)
+        cfg = TransientConfig(
+            dt=dt, n_steps=n_steps, beta=beta_hht, gamma=gamma_hht, alpha_hht=alpha_hht
+        )
+        result = solve_transient(M, C, K, np.array([F0]), np.zeros(1), np.zeros(1), cfg)
+
+        # 最終変位が静的変位に収束
+        u_final = result.displacement[-1, 0]
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.01, f"HHTステップ応答の定常偏差: {err:.6e}"
+
+
+# ====================================================================
+# 梁の過渡応答テスト
+# ====================================================================
+
+
+def _build_cantilever_beam_matrices(
+    n_elems: int,
+    L: float,
+    E: float,
+    rho: float,
+    A: float,
+    I: float,  # noqa: E741
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """2D カンチレバー梁の M, C, K 行列と固定 DOF を構築する.
+
+    Euler-Bernoulli 梁。節点0を固定。
+
+    Returns:
+        M, C, K, fixed_dofs
+    """
+    from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+    from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+    from xkep_cae.numerical_tests.frequency import _assemble_mass_2d
+    from xkep_cae.numerical_tests.runner import _assemble_2d
+
+    nodes, conn = generate_beam_mesh_2d(n_elems, L)
+
+    ke_func = lambda coords: eb_beam2d_ke_global(coords, E, A, I)  # noqa: E731
+
+    K_full, _ = _assemble_2d(nodes, conn, ke_func)
+    M_full = _assemble_mass_2d(nodes, conn, rho, A)
+
+    # 固定端: 節点0 の全DOF (ux, uy, θz)
+    fixed_dofs = np.array([0, 1, 2], dtype=int)
+
+    # 減衰なし
+    ndof = K_full.shape[0]
+    C_full = np.zeros((ndof, ndof))
+
+    return M_full, C_full, K_full, fixed_dofs
+
+
+class TestNewmarkBeam:
+    """梁の過渡応答テスト."""
+
+    def test_cantilever_free_vibration_frequency(self):
+        """カンチレバー梁の自由振動周波数が解析解と一致.
+
+        解析解: f₁ = (β₁L)² / (2πL²) · √(EI/ρA)
+        β₁L = 1.8751（1次モード）
+
+        第1固有モードの形状で初期変位を与え、FFTでピーク周波数を検出。
+        """
+        from scipy.linalg import eigh
+
+        L = 1.0
+        E = 2.0e11  # 鋼
+        rho = 7800.0
+        b, h = 0.02, 0.04
+        A = b * h
+        Iz = b * h**3 / 12.0
+        n_elems = 20
+
+        # 解析解
+        beta1L = 1.8751
+        f1_exact = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E * Iz / (rho * A))
+        T1 = 1.0 / f1_exact
+
+        M, C, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        # 第1固有モード形状を初期変位に使用（高次モード励起を回避）
+        free = np.array([i for i in range(ndof) if i not in fixed])
+        K_ff = K[np.ix_(free, free)]
+        M_ff = M[np.ix_(free, free)]
+        eigvals, eigvecs = eigh(K_ff, M_ff)
+        phi1 = eigvecs[:, 0]
+
+        u0 = np.zeros(ndof)
+        u0[free] = phi1 * 0.001 / np.max(np.abs(phi1))  # 正規化して 1mm スケール
+
+        tip_uy_dof = 3 * n_elems + 1
+
+        dt = T1 / 80.0  # Nyquist: f_s = 80/T1 → 十分高い
+        n_steps = int(10 * T1 / dt)
+
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+        result = solve_transient(M, C, K, np.zeros(ndof), u0, np.zeros(ndof), cfg, fixed_dofs=fixed)
+
+        # FFT でピーク周波数を検出
+        u_tip = result.displacement[:, tip_uy_dof]
+        N = len(u_tip)
+        freqs = np.fft.rfftfreq(N, d=dt)
+        fft_mag = np.abs(np.fft.rfft(u_tip))
+        # DC 成分をスキップ
+        peak_idx = np.argmax(fft_mag[1:]) + 1
+        f1_num = freqs[peak_idx]
+
+        err = abs(f1_num - f1_exact) / f1_exact
+        assert err < 0.03, f"固有振動数の誤差: {err:.3f} ({f1_num:.2f} vs {f1_exact:.2f} Hz)"
+
+    def test_cantilever_energy_conservation(self):
+        """非減衰カンチレバー梁で全エネルギーが保存される.
+
+        E_total = 0.5·u^T·K·u + 0.5·v^T·M·v = const
+        """
+        L = 0.5
+        E = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        n_elems = 10
+
+        beta1L = 1.8751
+        f1 = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E * Iz / (rho * A))
+        T1 = 1.0 / f1
+
+        M, C, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        tip_uy_dof = 3 * n_elems + 1
+        u0 = np.zeros(ndof)
+        u0[tip_uy_dof] = 0.0005
+
+        dt = T1 / 40.0
+        n_steps = int(5 * T1 / dt)
+
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+        result = solve_transient(M, C, K, np.zeros(ndof), u0, np.zeros(ndof), cfg, fixed_dofs=fixed)
+
+        # 自由DOFでのエネルギー計算
+        free = np.array([i for i in range(ndof) if i not in fixed])
+        K_ff = K[np.ix_(free, free)]
+        M_ff = M[np.ix_(free, free)]
+
+        energy = np.zeros(n_steps + 1)
+        for i in range(n_steps + 1):
+            u_f = result.displacement[i, free]
+            v_f = result.velocity[i, free]
+            energy[i] = 0.5 * u_f @ K_ff @ u_f + 0.5 * v_f @ M_ff @ v_f
+
+        E0 = energy[0]
+        assert E0 > 0, "初期エネルギーがゼロ"
+
+        err_rel = np.max(np.abs(energy - E0)) / E0
+        assert err_rel < 0.01, f"梁のエネルギー保存誤差: {err_rel:.6e}"
+
+    def test_cantilever_tip_load_static_limit(self):
+        """先端集中荷重のステップ応答が静的解に収束する.
+
+        減衰付きで十分長い時間経過後、u → u_static = PL³/(3EI)
+        """
+        L = 0.5
+        E = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        P = 100.0  # 先端荷重 [N]
+        n_elems = 10
+
+        u_static = P * L**3 / (3.0 * E * Iz)
+
+        beta1L = 1.8751
+        f1 = beta1L**2 / (2.0 * np.pi * L**2) * np.sqrt(E * Iz / (rho * A))
+        omega1 = 2.0 * np.pi * f1
+        T1 = 1.0 / f1
+
+        M, _, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        # Rayleigh 減衰（ξ₁ ≈ 10%）
+        xi1 = 0.1
+        alpha_r = 0.0
+        beta_r = 2.0 * xi1 / omega1
+        C = alpha_r * M + beta_r * K
+
+        # 先端荷重ベクトル
+        tip_uy_dof = 3 * n_elems + 1
+        f = np.zeros(ndof)
+        f[tip_uy_dof] = -P  # 下向き
+
+        dt = T1 / 40.0
+        n_steps = int(20 * T1 / dt)
+
+        cfg = TransientConfig(dt=dt, n_steps=n_steps)
+        result = solve_transient(M, C, K, f, np.zeros(ndof), np.zeros(ndof), cfg, fixed_dofs=fixed)
+
+        # 最終変位が静的解に収束（下向き = 負）
+        u_final = -result.displacement[-1, tip_uy_dof]  # 符号反転して正に
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.05, f"先端変位の静的収束誤差: {err:.3f} ({u_final:.6e} vs {u_static:.6e})"

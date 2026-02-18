@@ -166,7 +166,7 @@ def solve_transient(
     c5 = dt * (gamma / (2.0 * beta) - 1.0)
 
     # HHT-α 修正の有効剛性行列
-    # K_eff = (1+α)·K + c0·M + (1+α)·c1·C
+    # K_eff = c0·M + (1+α)·c1·C + (1+α)·K
     K_eff = c0 * M_ff + (1.0 + alpha) * c1 * C_ff + (1.0 + alpha) * K_ff
 
     # LU 分解を事前計算（定数係数系なので1回で済む）
