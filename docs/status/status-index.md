@@ -44,6 +44,7 @@
 | [034](status-034.md) | 2026-02-18 | FIELD ANIMATION出力 + .inpパーサー拡張（*ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION） | 741 |
 | [035](status-035.md) | 2026-02-18 | .inpパーサー拡張（*MATERIAL / *ELASTIC / *DENSITY / *PLASTIC）+ pyproject.toml更新 | 753 |
 | [036](status-036.md) | 2026-02-18 | テーブル補間型硬化則 + matplotlibテストスキップ対応 | 782 |
+| [037](status-037.md) | 2026-02-18 | GIFアニメーション出力 + examplesディレクトリ追加 | 789 |
 
 ## テスト数推移
 
@@ -72,6 +73,7 @@
 034:     741      (FIELD ANIMATION出力 + .inpパーサー拡張: *ELSET / *BOUNDARY / *OUTPUT, FIELD ANIMATION)
 035:     753      (.inpパーサー拡張: *MATERIAL / *ELASTIC / *DENSITY / *PLASTIC + pyproject.toml更新)
 036:     782      (テーブル補間型硬化則 + matplotlibテストスキップ対応)
+037:     789      (GIFアニメーション出力 + examplesディレクトリ追加)
 ```
 
 ## 備考
