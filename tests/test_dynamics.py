@@ -1327,3 +1327,243 @@ class TestNonlinearTransient:
 
         # 硬化ばねなので非線形周波数 > 線形周波数
         assert f_nl > f_lin, f"硬化ばね周波数シフト: {f_nl:.3f} <= {f_lin:.3f}"
+
+
+# ====================================================================
+# Central Difference 陽解法テスト
+# ====================================================================
+
+
+class TestCentralDifference:
+    """Central Difference 法（陽解法）の検証."""
+
+    def test_free_vibration_undamped(self):
+        """非減衰自由振動: u(t) = u0·cos(ωₙt).
+
+        陽解法でも十分小さなΔtで解析解に一致する。
+        """
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        u0_val = 0.5
+
+        # 安定条件: Δt < 2/ω_n, 余裕をもって T/100
+        dt = T / 100.0
+        n_steps = int(5 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M, C, K, np.zeros(1), np.array([u0_val]), np.zeros(1), cfg
+        )
+
+        assert result.stable
+        t = result.time
+        u_exact = u0_val * np.cos(omega_n * t)
+        u_num = result.displacement[:, 0]
+
+        err = np.max(np.abs(u_num - u_exact))
+        assert err < 0.02, f"Central Difference 自由振動誤差: {err:.4e}"
+
+    def test_step_response_with_damping(self):
+        """減衰付きステップ荷重が静的変位に収束する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 400.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        F0 = 20.0
+        u_static = F0 / k
+
+        xi = 0.1
+        c = 2.0 * xi * omega_n * m
+
+        dt = T / 100.0
+        n_steps = int(30 * T / dt)
+
+        M, C, K = _sdof_matrices(m, c, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(M, C, K, np.array([F0]), np.zeros(1), np.zeros(1), cfg)
+
+        assert result.stable
+        u_final = result.displacement[-1, 0]
+        err = abs(u_final - u_static) / u_static
+        assert err < 0.02, f"Central Difference ステップ応答誤差: {err:.6e}"
+
+    def test_matches_newmark_for_small_dt(self):
+        """十分小さなΔtで暗黙的Newmarkと一致する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+
+        dt = T / 200.0
+        n_steps = int(3 * T / dt)
+
+        M, C, K = _sdof_matrices(m, 0.0, k)
+
+        # Newmark（暗黙的）
+        cfg_nm = TransientConfig(dt=dt, n_steps=n_steps)
+        res_nm = solve_transient(M, C, K, np.zeros(1), np.array([0.5]), np.zeros(1), cfg_nm)
+
+        # Central Difference（陽解法）
+        cfg_cd = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        res_cd = solve_central_difference(
+            M, C, K, np.zeros(1), np.array([0.5]), np.zeros(1), cfg_cd
+        )
+
+        # 変位の比較（周期誤差の蓄積があるので緩めの許容値）
+        err = np.max(np.abs(res_cd.displacement - res_nm.displacement))
+        assert err < 0.05, f"Newmarkとの差: {err:.4e}"
+
+    def test_instability_detection(self):
+        """安定限界超過の検出."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        dt_cr = 2.0 / omega_n
+
+        # 安定限界超過
+        dt = dt_cr * 1.5
+        M, C, K = _sdof_matrices(m, 0.0, k)
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=10)
+        result = solve_central_difference(M, C, K, np.zeros(1), np.array([0.1]), np.zeros(1), cfg)
+
+        assert not result.stable
+
+    def test_critical_time_step(self):
+        """安定限界時間刻みの計算."""
+        from xkep_cae.dynamics import critical_time_step
+
+        m, k = 1.0, 100.0
+        omega_n = np.sqrt(k / m)
+        dt_cr_exact = 2.0 / omega_n
+
+        M, _, K = _sdof_matrices(m, 0.0, k)
+        dt_cr = critical_time_step(M, K)
+
+        np.testing.assert_allclose(dt_cr, dt_cr_exact, rtol=1e-10)
+
+    def test_diagonal_mass_fast_path(self):
+        """対角質量行列（集中質量）で高速パスが動作する."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        m, k = 2.0, 200.0
+        omega_n = np.sqrt(k / m)
+        T = 2.0 * np.pi / omega_n
+        dt = T / 100.0
+        n_steps = int(3 * T / dt)
+
+        M = np.diag([m])
+        C = np.zeros((1, 1))
+        K = np.array([[k]])
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(M, C, K, np.zeros(1), np.array([0.3]), np.zeros(1), cfg)
+
+        u_exact = 0.3 * np.cos(omega_n * result.time)
+        err = np.max(np.abs(result.displacement[:, 0] - u_exact))
+        assert err < 0.02
+
+    def test_fixed_dofs(self):
+        """拘束DOFが正しく処理される（2DOF系、1DOF固定）."""
+        from xkep_cae.dynamics import CentralDifferenceConfig, solve_central_difference
+
+        k = 100.0
+        M = np.diag([1.0, 1.0])
+        C = np.zeros((2, 2))
+        K = np.array([[k, -k], [-k, 2 * k]])
+
+        omega = np.sqrt(2 * k / 1.0)
+        T = 2.0 * np.pi / omega
+        dt = T / 100.0
+        n_steps = int(3 * T / dt)
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M,
+            C,
+            K,
+            np.zeros(2),
+            np.array([0.0, 0.1]),
+            np.zeros(2),
+            cfg,
+            fixed_dofs=np.array([0]),
+        )
+
+        # DOF 0 は常にゼロ
+        np.testing.assert_allclose(result.displacement[:, 0], 0.0, atol=1e-14)
+        # DOF 1 は振動
+        assert np.max(np.abs(result.displacement[:, 1])) > 0.01
+
+    def test_beam_free_vibration(self):
+        """カンチレバー梁の自由振動をCentral Differenceで解く."""
+        from scipy.linalg import eigh
+
+        from xkep_cae.dynamics import (
+            CentralDifferenceConfig,
+            critical_time_step,
+            solve_central_difference,
+        )
+
+        L = 0.5
+        E = 2.0e11
+        rho = 7800.0
+        b, h = 0.01, 0.02
+        A = b * h
+        Iz = b * h**3 / 12.0
+        n_elems = 10
+
+        M, C, K, fixed = _build_cantilever_beam_matrices(n_elems, L, E, rho, A, Iz)
+        ndof = K.shape[0]
+
+        # 安定限界の計算
+        dt_cr = critical_time_step(M, K, fixed_dofs=fixed)
+        dt = 0.8 * dt_cr  # 安全率0.8
+
+        # 第1固有モード形状で初期変位
+        free = np.array([i for i in range(ndof) if i not in fixed])
+        K_ff = K[np.ix_(free, free)]
+        M_ff = M[np.ix_(free, free)]
+        eigvals, eigvecs = eigh(K_ff, M_ff)
+        phi1 = eigvecs[:, 0]
+
+        u0 = np.zeros(ndof)
+        u0[free] = phi1 * 0.001 / np.max(np.abs(phi1))
+
+        # 第1固有振動数
+        f1 = np.sqrt(eigvals[0]) / (2.0 * np.pi)
+        T1 = 1.0 / f1
+        n_steps = int(5 * T1 / dt)
+
+        cfg = CentralDifferenceConfig(dt=dt, n_steps=n_steps)
+        result = solve_central_difference(
+            M, C, K, np.zeros(ndof), u0, np.zeros(ndof), cfg, fixed_dofs=fixed
+        )
+
+        assert result.stable
+
+        # FFTでピーク周波数を検出
+        tip_uy_dof = 3 * n_elems + 1
+        u_tip = result.displacement[:, tip_uy_dof]
+        N = len(u_tip)
+        freqs = np.fft.rfftfreq(N, d=dt)
+        fft_mag = np.abs(np.fft.rfft(u_tip))
+        peak_idx = np.argmax(fft_mag[1:]) + 1
+        f1_num = freqs[peak_idx]
+
+        err = abs(f1_num - f1) / f1
+        assert err < 0.05, f"梁の固有振動数誤差: {err:.3f} ({f1_num:.2f} vs {f1:.2f} Hz)"
+
+    def test_config_validation(self):
+        """CentralDifferenceConfig のバリデーション."""
+        from xkep_cae.dynamics import CentralDifferenceConfig
+
+        with pytest.raises(ValueError, match="dt"):
+            CentralDifferenceConfig(dt=-0.001, n_steps=10)
+        with pytest.raises(ValueError, match="n_steps"):
+            CentralDifferenceConfig(dt=0.001, n_steps=0)

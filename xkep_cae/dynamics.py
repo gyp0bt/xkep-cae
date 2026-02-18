@@ -4,7 +4,10 @@
   - Newmark-β法（平均加速度法がデフォルト: β=1/4, γ=1/2）
   - HHT-α法（数値減衰付き: α ∈ [-1/3, 0]）
 
-線形: M·ä + C·u̇ + K·u = f(t)          → solve_transient()
+陽的時間積分スキーマ:
+  - Central Difference 法（条件付安定: Δt < Δt_cr = 2/ω_max）
+
+線形: M·ä + C·u̇ + K·u = f(t)          → solve_transient() / solve_central_difference()
 非線形: M·ä + C·u̇ + f_int(u) = f(t)   → solve_nonlinear_transient()
 """
 
@@ -541,8 +544,304 @@ def solve_nonlinear_transient(
 
 
 # ====================================================================
+# Central Difference 陽解法
+# ====================================================================
+
+
+@dataclass
+class CentralDifferenceConfig:
+    """Central Difference 法（陽的時間積分）の設定.
+
+    条件付安定: Δt < Δt_cr = 2/ω_max
+    減衰がある場合: Δt_cr = (2/ω_max)·(√(1+ξ²) - ξ)
+
+    Attributes:
+        dt: 時間刻み [s]
+        n_steps: 時間ステップ数
+    """
+
+    dt: float
+    n_steps: int
+
+    def __post_init__(self) -> None:
+        if self.dt <= 0:
+            raise ValueError(f"dt は正値: {self.dt}")
+        if self.n_steps < 1:
+            raise ValueError(f"n_steps は1以上: {self.n_steps}")
+
+
+@dataclass
+class CentralDifferenceResult:
+    """Central Difference 法の結果.
+
+    Attributes:
+        time: (n_steps+1,) 時刻配列
+        displacement: (n_steps+1, ndof) 変位履歴
+        velocity: (n_steps+1, ndof) 速度履歴
+        acceleration: (n_steps+1, ndof) 加速度履歴
+        config: 解析設定
+        stable: 安定条件を満たしたか（事前チェック結果）
+    """
+
+    time: np.ndarray
+    displacement: np.ndarray
+    velocity: np.ndarray
+    acceleration: np.ndarray
+    config: CentralDifferenceConfig
+    stable: bool = True
+
+
+def critical_time_step(
+    M: np.ndarray | sp.spmatrix,
+    K: np.ndarray | sp.spmatrix,
+    *,
+    C: np.ndarray | sp.spmatrix | None = None,
+    fixed_dofs: np.ndarray | None = None,
+) -> float:
+    """安定限界時間刻みを計算する.
+
+    Δt_cr = 2/ω_max（減衰なし）
+    Δt_cr = (2/ω_max)·(√(1+ξ_max²) - ξ_max)（減衰あり, 近似）
+
+    Args:
+        M: 質量行列
+        K: 剛性行列
+        C: 減衰行列（オプション）
+        fixed_dofs: 拘束DOF
+
+    Returns:
+        Δt_cr: 安定限界時間刻み
+    """
+    M_d = _to_dense(M)
+    K_d = _to_dense(K)
+
+    ndof = M_d.shape[0]
+
+    # 拘束DOFの除外
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        fixed = np.asarray(fixed_dofs, dtype=int)
+        free_mask = np.ones(ndof, dtype=bool)
+        free_mask[fixed] = False
+        free = np.where(free_mask)[0]
+        M_ff = M_d[np.ix_(free, free)]
+        K_ff = K_d[np.ix_(free, free)]
+    else:
+        M_ff = M_d
+        K_ff = K_d
+
+    # 一般化固有値問題: K·φ = ω²·M·φ
+    eigvals = np.linalg.eigvalsh(np.linalg.solve(M_ff, K_ff))
+    omega_max_sq = float(np.max(np.abs(eigvals)))
+    omega_max = np.sqrt(omega_max_sq)
+
+    if omega_max < 1e-30:
+        return float("inf")
+
+    dt_cr = 2.0 / omega_max
+
+    # 減衰補正
+    if C is not None:
+        C_d = _to_dense(C)
+        if fixed_dofs is not None and len(fixed_dofs) > 0:
+            C_ff = C_d[np.ix_(free, free)]
+        else:
+            C_ff = C_d
+        # 近似: 最大固有振動数での減衰比
+        # ξ ≈ c_max / (2·m·ω_max) の代わりに Rayleigh 減衰を仮定
+        # ξ_max ≈ trace(C) / (2·trace(M)·ω_max)
+        tr_C = float(np.trace(C_ff))
+        tr_M = float(np.trace(M_ff))
+        if tr_M > 0 and tr_C > 0:
+            xi_max = tr_C / (2.0 * tr_M * omega_max)
+            dt_cr *= np.sqrt(1.0 + xi_max**2) - xi_max
+
+    return dt_cr
+
+
+def solve_central_difference(
+    M: np.ndarray | sp.spmatrix,
+    C: np.ndarray | sp.spmatrix,
+    K: np.ndarray | sp.spmatrix,
+    f_ext: Callable[[float], np.ndarray] | np.ndarray,
+    u0: np.ndarray,
+    v0: np.ndarray,
+    config: CentralDifferenceConfig,
+    *,
+    fixed_dofs: np.ndarray | None = None,
+    check_stability: bool = True,
+) -> CentralDifferenceResult:
+    """Central Difference 法（陽解法）による線形過渡応答解析.
+
+    運動方程式: M·ä + C·u̇ + K·u = f(t)
+
+    Central Difference 近似:
+        u̇_n = (u_{n+1} - u_{n-1}) / (2·Δt)
+        ü_n = (u_{n+1} - 2·u_n + u_{n-1}) / Δt²
+
+    代入して整理すると:
+        (M/Δt² + C/(2Δt)) · u_{n+1}
+          = f_n - (K - 2M/Δt²) · u_n - (M/Δt² - C/(2Δt)) · u_{n-1}
+
+    集中質量行列（対角）の場合、左辺は対角行列の逆で O(n) 。
+
+    Args:
+        M: (ndof, ndof) 質量行列（対角推奨）
+        C: (ndof, ndof) 減衰行列
+        K: (ndof, ndof) 剛性行列
+        f_ext: 外力関数 f(t) → (ndof,)、または定数力ベクトル (ndof,)
+        u0: (ndof,) 初期変位
+        v0: (ndof,) 初期速度
+        config: CentralDifferenceConfig
+        fixed_dofs: 拘束 DOF のインデックス配列（None = 拘束なし）
+        check_stability: True の場合、安定限界チェックを行う
+
+    Returns:
+        CentralDifferenceResult
+    """
+    dt = config.dt
+    n_steps = config.n_steps
+    ndof = len(u0)
+
+    # 外力関数の準備
+    if callable(f_ext):
+        get_force = f_ext
+    else:
+        f_const = np.asarray(f_ext, dtype=float)
+
+        def get_force(t: float) -> np.ndarray:
+            return f_const
+
+    # 密行列化
+    M_d = _to_dense(M)
+    C_d = _to_dense(C)
+    K_d = _to_dense(K)
+
+    # 拘束 DOF の処理
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        fixed = np.asarray(fixed_dofs, dtype=int)
+        free_mask = np.ones(ndof, dtype=bool)
+        free_mask[fixed] = False
+        free = np.where(free_mask)[0]
+    else:
+        fixed = np.array([], dtype=int)
+        free = np.arange(ndof)
+
+    # 自由 DOF に縮約
+    M_ff = M_d[np.ix_(free, free)]
+    C_ff = C_d[np.ix_(free, free)]
+    K_ff = K_d[np.ix_(free, free)]
+
+    # 安定性チェック
+    stable = True
+    if check_stability:
+        dt_cr = critical_time_step(M, K, C=C, fixed_dofs=fixed_dofs)
+        if dt > dt_cr:
+            stable = False
+
+    # Central Difference 係数
+    dt2 = dt * dt
+    a0 = 1.0 / dt2  # M 係数
+    a1 = 1.0 / (2.0 * dt)  # C 係数
+
+    # 有効質量行列（左辺）: M_eff = a0·M + a1·C
+    M_eff = a0 * M_ff + a1 * C_ff
+
+    # 対角行列かチェック → 対角なら高速パス
+    is_diag = _is_diagonal(M_eff)
+    if is_diag:
+        m_eff_diag = np.diag(M_eff)
+    else:
+        lu_piv_eff = _lu_factor(M_eff)
+
+    # 初期加速度: M·a₀ = f(0) - C·v₀ - K·u₀
+    u_f = u0[free].copy()
+    v_f = v0[free].copy()
+    f0 = get_force(0.0)[free]
+    rhs0 = f0 - C_ff @ v_f - K_ff @ u_f
+    if is_diag:
+        a_f = rhs0 / np.diag(M_ff)
+    else:
+        a_f = np.linalg.solve(M_ff, rhs0)
+
+    # u_{-1} = u₀ - Δt·v₀ + 0.5·Δt²·a₀
+    u_prev = u_f - dt * v_f + 0.5 * dt2 * a_f
+    u_curr = u_f.copy()
+
+    # 補助行列
+    K_eff_mid = K_ff - 2.0 * a0 * M_ff  # (K - 2M/Δt²)
+    M_eff_prev = a0 * M_ff - a1 * C_ff  # (M/Δt² - C/(2Δt))
+
+    # 結果配列
+    time_arr = np.linspace(0.0, dt * n_steps, n_steps + 1)
+    u_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+    v_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+    a_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+
+    u_hist[0, free] = u_f
+    v_hist[0, free] = v_f
+    a_hist[0, free] = a_f
+
+    # 時間ステップループ
+    for n in range(n_steps):
+        t_n = time_arr[n]
+        f_n = get_force(t_n)[free]
+
+        # 右辺: f_n - (K - 2M/Δt²)·u_n - (M/Δt² - C/(2Δt))·u_{n-1}
+        rhs = f_n - K_eff_mid @ u_curr - M_eff_prev @ u_prev
+
+        # 求解: M_eff · u_{n+1} = rhs
+        if is_diag:
+            u_next = rhs / m_eff_diag
+        else:
+            u_next = _lu_solve(lu_piv_eff, rhs)
+
+        # 速度（中央差分）: v_n = (u_{n+1} - u_{n-1}) / (2Δt)
+        v_n = (u_next - u_prev) * a1
+
+        # 加速度: a_n = (u_{n+1} - 2u_n + u_{n-1}) / Δt²
+        a_n = (u_next - 2.0 * u_curr + u_prev) * a0
+
+        # 結果格納（n ステップ目の速度・加速度を更新）
+        v_hist[n, free] = v_n
+        a_hist[n, free] = a_n
+
+        # 状態を進める
+        u_prev = u_curr
+        u_curr = u_next
+
+        # 変位格納
+        u_hist[n + 1, free] = u_next
+
+    # 最終ステップの速度・加速度（後方差分近似）
+    v_hist[n_steps, free] = (u_curr - u_prev) / dt
+    f_last = get_force(time_arr[n_steps])[free]
+    rhs_last = f_last - C_ff @ v_hist[n_steps, free] - K_ff @ u_curr
+    if is_diag:
+        a_hist[n_steps, free] = rhs_last / np.diag(M_ff)
+    else:
+        a_hist[n_steps, free] = np.linalg.solve(M_ff, rhs_last)
+
+    return CentralDifferenceResult(
+        time=time_arr,
+        displacement=u_hist,
+        velocity=v_hist,
+        acceleration=a_hist,
+        config=config,
+        stable=stable,
+    )
+
+
+# ====================================================================
 # 内部ヘルパー
 # ====================================================================
+
+
+def _is_diagonal(A: np.ndarray, tol: float = 1e-14) -> bool:
+    """行列が対角かどうかを判定する."""
+    if A.ndim != 2 or A.shape[0] != A.shape[1]:
+        return False
+    off_diag = A - np.diag(np.diag(A))
+    return float(np.max(np.abs(off_diag))) < tol
 
 
 def _to_dense(A: np.ndarray | sp.spmatrix) -> np.ndarray:
