@@ -7,6 +7,10 @@
 陽的時間積分スキーマ:
   - Central Difference 法（条件付安定: Δt < Δt_cr = 2/ω_max）
 
+減衰モデル:
+  - Rayleigh減衰: C = αM + βK（2周波数でξを合わせる）
+  - モーダル減衰: 各固有モードに独立した減衰比 ξ_i を指定 → build_modal_damping_matrix()
+
 線形: M·ä + C·u̇ + K·u = f(t)          → solve_transient() / solve_central_difference()
 非線形: M·ä + C·u̇ + f_int(u) = f(t)   → solve_nonlinear_transient()
 """
@@ -541,6 +545,105 @@ def solve_nonlinear_transient(
         converged=True,
         iterations_per_step=iter_per_step,
     )
+
+
+# ====================================================================
+# モーダル減衰
+# ====================================================================
+
+
+def build_modal_damping_matrix(
+    M: np.ndarray | sp.spmatrix,
+    K: np.ndarray | sp.spmatrix,
+    damping_ratios: np.ndarray | list[float],
+    *,
+    fixed_dofs: np.ndarray | None = None,
+) -> np.ndarray:
+    """モーダル減衰行列を構築する.
+
+    各固有モードに対して独立した減衰比 ξ_i を指定し、
+    物理座標の減衰行列 C を構築する。
+
+    理論:
+        質量正規化固有ベクトル φ_i (φᵢᵀ M φᵢ = 1) を用いて、
+        モーダル空間の減衰行列: diag(2·ξᵢ·ωᵢ)
+        物理空間の減衰行列: C = M·Φ·diag(2·ξᵢ·ωᵢ)·Φᵀ·M
+
+    Rayleigh減衰との違い:
+        - Rayleigh減衰: C = αM + βK → 2モードでのみ ξ を合わせられる
+        - モーダル減衰: 全モードで独立に ξᵢ を指定可能
+
+    Args:
+        M: (ndof, ndof) 質量行列
+        K: (ndof, ndof) 剛性行列
+        damping_ratios: 各モードの減衰比 ξ_i の配列。
+            len < n_modes の場合、残りのモードは最後の値で補完。
+            スカラーの場合は全モードに同一の ξ を適用。
+        fixed_dofs: 拘束 DOF のインデックス。
+            指定された場合、自由 DOF のみで固有値解析を行い、
+            全体サイズの減衰行列を返す。
+
+    Returns:
+        C: (ndof, ndof) モーダル減衰行列（密行列）
+    """
+    from scipy.linalg import eigh
+
+    M_d = _to_dense(M)
+    K_d = _to_dense(K)
+    ndof = M_d.shape[0]
+
+    # 減衰比の配列化
+    xi = np.atleast_1d(np.asarray(damping_ratios, dtype=float))
+
+    # 拘束 DOF の処理
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        fixed = np.asarray(fixed_dofs, dtype=int)
+        free_mask = np.ones(ndof, dtype=bool)
+        free_mask[fixed] = False
+        free = np.where(free_mask)[0]
+        M_ff = M_d[np.ix_(free, free)]
+        K_ff = K_d[np.ix_(free, free)]
+    else:
+        free = np.arange(ndof)
+        M_ff = M_d
+        K_ff = K_d
+
+    n_free = len(free)
+
+    # 一般化固有値問題: K·φ = ω²·M·φ
+    eigvals, eigvecs = eigh(K_ff, M_ff)
+    # eigvals = ω² (mass-normalized: φᵀMφ = I)
+
+    omega = np.sqrt(np.maximum(eigvals, 0.0))
+
+    # 減衰比の補完
+    if len(xi) == 1:
+        xi_full = np.full(n_free, xi[0])
+    elif len(xi) < n_free:
+        xi_full = np.empty(n_free)
+        xi_full[: len(xi)] = xi
+        xi_full[len(xi) :] = xi[-1]
+    else:
+        xi_full = xi[:n_free]
+
+    # モーダル減衰行列（自由 DOF 空間）
+    # C_ff = M·Φ·diag(2·ξᵢ·ωᵢ)·Φᵀ·M
+    # Φ は mass-normalized なので Φᵀ·M·Φ = I
+    # → C_ff = M·Φ·diag(2·ξᵢ·ωᵢ)·Φᵀ·M
+    diag_modal = 2.0 * xi_full * omega  # (n_free,)
+    # C_ff = M_ff @ Φ @ diag @ Φᵀ @ M_ff
+    # = (M_ff @ Φ) @ diag @ (M_ff @ Φ)ᵀ  (Φᵀ·M = (M·Φ)ᵀ)
+    M_Phi = M_ff @ eigvecs  # (n_free, n_free)
+    C_ff = M_Phi @ (diag_modal[:, None] * M_Phi.T)
+
+    # 全体行列に戻す
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        C = np.zeros((ndof, ndof), dtype=float)
+        C[np.ix_(free, free)] = C_ff
+    else:
+        C = C_ff
+
+    return C
 
 
 # ====================================================================
