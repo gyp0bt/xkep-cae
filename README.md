@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力完了。753テストパス。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力完了。782テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -14,6 +14,7 @@ Phase C1: Broadphase（AABB格子）+ ContactManager幾何更新 + Active-setヒ
 過渡応答出力: Abaqus準拠のStep/Increment/Frame階層 + CSV/JSON/VTK(ParaView)出力。
 ステップ列自動実行（run_transient_steps）、非線形反力計算、VTKバイナリ出力、要素データ出力、.inpパーサー統合。
 .inpパーサー拡張: *ELSET, *BOUNDARY, *OUTPUT FIELD ANIMATION, *MATERIAL, *ELASTIC, *DENSITY, *PLASTIC キーワード追加。
+テーブル補間型硬化則: *PLASTIC テーブル → Plasticity1D/PlaneStrainPlasticity 変換（区分線形、コンバータ関数）。
 FIELD ANIMATION出力: 梁要素のx/y/z軸方向2Dプロット（要素セット色分け・凡例対応）。
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
@@ -29,7 +30,7 @@ FIELD ANIMATION出力: 梁要素のx/y/z軸方向2Dプロット（要素セッ�
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
-- [実装状況](docs/status/status-035.md) — 最新のステータス（.inpパーサー材料キーワード拡張）
+- [実装状況](docs/status/status-036.md) — 最新のステータス（テーブル補間型硬化則 + matplotlibテストスキップ）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
