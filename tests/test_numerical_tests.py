@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from xkep_cae.numerical_tests.core import (
+    DynamicTestConfig,
     FrequencyResponseConfig,
     NumericalTestConfig,
     StaticTestResult,
@@ -916,3 +917,257 @@ class TestNonUniformMesh:
             refinement_factor=3.0,
         )
         assert len(conn_nonuniform) >= len(conn_uniform)
+
+
+# ===========================================================================
+# 動的三点曲げ試験
+# ===========================================================================
+class TestDynamicBend3p:
+    """動的3点曲げ試験（非線形動解析フレームワーク統合テスト）."""
+
+    def test_config_validation(self):
+        """DynamicTestConfig のバリデーション."""
+        from xkep_cae.numerical_tests.core import DynamicTestConfig
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=N_ELEMS,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=10,
+        )
+        assert cfg.G == pytest.approx(E_STEEL / (2.0 * (1.0 + NU_STEEL)))
+        assert cfg.total_time == pytest.approx(1e-3)
+        assert cfg.span_ratio == pytest.approx(L_BEAM / 20.0)
+
+    def test_config_invalid_name(self):
+        """無効な試験名を拒否."""
+        from xkep_cae.numerical_tests.core import DynamicTestConfig
+
+        with pytest.raises(ValueError, match="動的試験名"):
+            DynamicTestConfig(
+                name="bend3p",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                rho=RHO_STEEL,
+                length=L_BEAM,
+                n_elems=10,
+                load_value=1000.0,
+            )
+
+    def test_config_invalid_rho(self):
+        """負の密度を拒否."""
+        from xkep_cae.numerical_tests.core import DynamicTestConfig
+
+        with pytest.raises(ValueError, match="rho"):
+            DynamicTestConfig(
+                name="dynamic_bend3p",
+                beam_type="timo2d",
+                E=E_STEEL,
+                nu=NU_STEEL,
+                rho=-1.0,
+                length=L_BEAM,
+                n_elems=10,
+                load_value=1000.0,
+            )
+
+    def test_step_load_converges(self):
+        """ステップ荷重の動的3点曲げが収束する."""
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=50,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged, "全ステップ収束すべき"
+        assert result.displacement.shape == (51, 3 * 11)
+        assert result.time.shape == (51,)
+        assert result.time[-1] == pytest.approx(50 * 1e-4)
+
+    def test_damped_step_converges_to_static(self):
+        """高減衰のステップ荷重で静的解に収束する.
+
+        Rayleigh減衰を十分大きくすると、振動が減衰して
+        最終的に静的たわみに収束する。
+        """
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        # 十分な減衰と長い解析時間
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-3,
+            n_steps=2000,
+            damping_alpha=500.0,  # 強い質量比例減衰
+            damping_beta=1e-5,  # 軽い剛性比例減衰
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+        # 静的解との比較（十分な減衰後は10%以内に収束）
+        assert result.displacement_analytical is not None
+        assert result.relative_error_final is not None
+        assert result.relative_error_final < 0.10, (
+            f"静的解との誤差が大きい: {result.relative_error_final:.3f}"
+        )
+
+    def test_ramp_load(self):
+        """ランプ荷重の動的3点曲げ."""
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=50,
+            load_type="ramp",
+            ramp_time=0.002,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+
+        # ランプ荷重初期は変位がゼロに近い
+        mid_node = result.solver_info["mid_node"]
+        early_disp = abs(result.displacement[1, 3 * mid_node + 1])
+        late_disp = abs(result.displacement[-1, 3 * mid_node + 1])
+        assert late_disp > early_disp, "ランプ荷重で変位が増加すべき"
+
+    def test_eb2d_beam_type(self):
+        """EB2D 梁タイプでの動的3点曲げ."""
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="eb2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=20,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+        assert result.displacement_analytical is not None
+
+    def test_3d_beam_type(self):
+        """3D Timoshenko 梁タイプでの動的3点曲げ."""
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo3d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=20,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+        assert result.displacement.shape[1] == 6 * 11
+
+    def test_lumped_mass(self):
+        """集中質量行列での動的3点曲げ."""
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=20,
+            mass_type="lumped",
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+        assert result.solver_info["mass_type"] == "lumped"
+
+    def test_dynamic_overshoot(self):
+        """ステップ荷重の動的応答は静的解を超える（動的増幅）.
+
+        減衰なしのステップ荷重では、線形系の最大応答は
+        静的解の2倍（動的増幅係数 = 2）に近づく。
+        """
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=500,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
+
+        mid_node = result.solver_info["mid_node"]
+        # 全ステップの中央変位の最大値
+        max_dynamic_disp = np.max(np.abs(result.displacement[:, 3 * mid_node + 1]))
+        delta_static = result.displacement_analytical
+        assert delta_static is not None
+
+        # 動的応答が静的たわみを超えること（動的増幅）
+        assert max_dynamic_disp > delta_static, (
+            f"動的応答 ({max_dynamic_disp:.4e}) が静的解 ({delta_static:.4e}) を超えるべき"
+        )
+
+    def test_run_via_public_api(self):
+        """公開APIからの実行."""
+        from xkep_cae.numerical_tests import DynamicTestConfig, run_dynamic_test
+
+        cfg = DynamicTestConfig(
+            name="dynamic_bend3p",
+            beam_type="timo2d",
+            E=E_STEEL,
+            nu=NU_STEEL,
+            rho=RHO_STEEL,
+            length=L_BEAM,
+            n_elems=10,
+            load_value=abs(P_LOAD),
+            dt=1e-4,
+            n_steps=10,
+        )
+        result = run_dynamic_test(cfg)
+        assert result.converged
