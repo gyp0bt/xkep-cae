@@ -38,6 +38,81 @@ class IsotropicHardening:
     sigma_y0: float
     H_iso: float = 0.0
 
+    def sigma_y(self, alpha: float) -> float:
+        """降伏応力を返す."""
+        return self.sigma_y0 + self.H_iso * alpha
+
+    def dR_dalpha(self, alpha: float) -> float:
+        """硬化係数（勾配）を返す."""
+        return self.H_iso
+
+
+@dataclass
+class TabularIsotropicHardening:
+    """テーブル補間型等方硬化（区分線形）.
+
+    Abaqus *PLASTIC テーブル形式の降伏応力-塑性ひずみ表データを
+    区分線形補間して降伏応力と硬化係数を返す。
+
+    テーブル最終点を超える領域では降伏応力を最終値で一定とする
+    （完全塑性、Abaqus互換）。
+
+    Attributes:
+        table: [(sigma_y, eps_p), ...] 降伏応力-塑性ひずみの表データ。
+            eps_p は単調増加であること。
+    """
+
+    table: list[tuple[float, float]]
+
+    def __post_init__(self) -> None:
+        if len(self.table) < 1:
+            raise ValueError("テーブルは最低1点必要")
+        # eps_p の単調増加チェック
+        for i in range(len(self.table) - 1):
+            if self.table[i + 1][1] < self.table[i][1]:
+                raise ValueError(
+                    f"eps_p は単調増加: table[{i}]={self.table[i][1]}, "
+                    f"table[{i + 1}]={self.table[i + 1][1]}"
+                )
+
+    @property
+    def sigma_y0(self) -> float:
+        """初期降伏応力."""
+        return self.table[0][0]
+
+    def sigma_y(self, alpha: float) -> float:
+        """区分線形補間で降伏応力を返す."""
+        table = self.table
+        if len(table) == 1 or alpha <= table[0][1]:
+            return table[0][0]
+        for i in range(len(table) - 1):
+            sy_i, ep_i = table[i]
+            sy_next, ep_next = table[i + 1]
+            if alpha <= ep_next:
+                if ep_next > ep_i:
+                    t = (alpha - ep_i) / (ep_next - ep_i)
+                    return sy_i + t * (sy_next - sy_i)
+                return sy_i
+        # テーブル範囲外: 最終値で一定（完全塑性）
+        return table[-1][0]
+
+    def dR_dalpha(self, alpha: float) -> float:
+        """硬化係数（テーブルの傾き）を返す."""
+        table = self.table
+        if len(table) == 1 or alpha <= table[0][1]:
+            if len(table) > 1 and table[1][1] > table[0][1]:
+                return (table[1][0] - table[0][0]) / (table[1][1] - table[0][1])
+            return 0.0
+        for i in range(len(table) - 1):
+            ep_i = table[i][1]
+            ep_next = table[i + 1][1]
+            if alpha <= ep_next:
+                if ep_next > ep_i:
+                    return (table[i + 1][0] - table[i][0]) / (ep_next - ep_i)
+                return 0.0
+        # テーブル範囲外: 硬化なし
+        return 0.0
+
 
 @dataclass
 class KinematicHardening:
@@ -103,7 +178,6 @@ class Plasticity1D:
             ReturnMappingResult: (応力, consistent tangent, 新状態)
         """
         E = self.E
-        H_iso = self.iso.H_iso
         sigma_y0 = self.iso.sigma_y0
         C_kin = self.kin.C_kin
         gamma_kin = self.kin.gamma_kin
@@ -112,7 +186,7 @@ class Plasticity1D:
         eps_e_trial = strain - state.eps_p
         sigma_trial = E * eps_e_trial
         xi_trial = sigma_trial - state.beta
-        sigma_y_n = sigma_y0 + H_iso * state.alpha
+        sigma_y_n = self.iso.sigma_y(state.alpha)
         f_trial = abs(xi_trial) - sigma_y_n
 
         # --- Step 2: 弾性判定 ---
@@ -128,26 +202,43 @@ class Plasticity1D:
         # --- Step 3: 塑性修正 ---
         sign_xi = 1.0 if xi_trial >= 0.0 else -1.0
 
-        if gamma_kin == 0.0:
-            # Closed-form（線形移動硬化 or 移動硬化なし）
+        # 線形硬化（IsotropicHardening）かつ動的回復なしの場合は閉形式
+        _is_linear = isinstance(self.iso, IsotropicHardening)
+
+        if gamma_kin == 0.0 and _is_linear:
+            # Closed-form（線形等方硬化 + 線形移動硬化 or 移動硬化なし）
+            H_iso = self.iso.H_iso
             dg = f_trial / (E + H_iso + C_kin)
             beta_new = state.beta + C_kin * dg * sign_xi
         else:
-            # Armstrong-Frederick: Newton 反復
-            dg = f_trial / (E + H_iso + C_kin)  # 初期推定
+            # Newton 反復（テーブル硬化 or Armstrong-Frederick 動的回復）
+            H_iso_init = self.iso.dR_dalpha(state.alpha)
+            dg = f_trial / (E + H_iso_init + C_kin)  # 初期推定
+            beta_new = state.beta  # 初期化（ループ内で更新）
             for _ in range(50):
-                theta = 1.0 / (1.0 + gamma_kin * dg)
-                beta_new = (state.beta + C_kin * dg * sign_xi) * theta
-                sigma_new = sigma_trial - E * dg * sign_xi
-                xi_new = sigma_new - beta_new
-                f_val = abs(xi_new) - (sigma_y0 + H_iso * (state.alpha + dg))
+                if gamma_kin == 0.0:
+                    beta_new = state.beta + C_kin * dg * sign_xi
+                    sigma_new = sigma_trial - E * dg * sign_xi
+                    xi_new = sigma_new - beta_new
+                else:
+                    theta = 1.0 / (1.0 + gamma_kin * dg)
+                    beta_new = (state.beta + C_kin * dg * sign_xi) * theta
+                    sigma_new = sigma_trial - E * dg * sign_xi
+                    xi_new = sigma_new - beta_new
+
+                alpha_trial = state.alpha + dg
+                f_val = abs(xi_new) - self.iso.sigma_y(alpha_trial)
 
                 if abs(f_val) < 1e-12 * sigma_y0:
                     break
 
                 # df/d(dg)
-                H_kin_eff = (C_kin - gamma_kin * beta_new * sign_xi) * theta
-                df_ddg = -(E + H_iso + H_kin_eff)
+                H_iso_curr = self.iso.dR_dalpha(alpha_trial)
+                if gamma_kin > 0.0:
+                    H_kin_eff = (C_kin - gamma_kin * beta_new * sign_xi) * theta
+                else:
+                    H_kin_eff = C_kin
+                df_ddg = -(E + H_iso_curr + H_kin_eff)
                 dg -= f_val / df_ddg
                 dg = max(dg, 0.0)
 
@@ -157,11 +248,12 @@ class Plasticity1D:
         sigma = E * (strain - eps_p_new)
 
         # --- Step 5: Consistent tangent ---
+        H_iso_final = self.iso.dR_dalpha(alpha_new)
         if gamma_kin == 0.0:
-            H_bar = H_iso + C_kin
+            H_bar = H_iso_final + C_kin
         else:
             theta = 1.0 / (1.0 + gamma_kin * dg)
-            H_bar = H_iso + theta * (C_kin - gamma_kin * beta_new * sign_xi)
+            H_bar = H_iso_final + theta * (C_kin - gamma_kin * beta_new * sign_xi)
 
         if E + H_bar > 0.0:
             D_ep = E * H_bar / (E + H_bar)
