@@ -119,9 +119,10 @@ Abaqus .inp パーサーに `*ELSET`, `*BOUNDARY`, `*OUTPUT, FIELD ANIMATION` �
 
 ## TODO
 
-- [ ] `pyproject.toml` に matplotlib をオプショナル依存として追加
+- [x] `pyproject.toml` に matplotlib をオプショナル依存として追加 → status-035 で対応
 - [ ] GIF/MP4 出力のサポート（ffmpeg連携）
 - [ ] 連続体要素のメッシュプロット対応（将来）
-- [ ] *MATERIAL, *ELASTIC, *DENSITY キーワードのパーサー追加
+- [x] *MATERIAL, *ELASTIC, *DENSITY キーワードのパーサー追加 → status-035 で対応
+- [x] *PLASTIC キーワードのパーサー追加 → status-035 で対応
 
 ---

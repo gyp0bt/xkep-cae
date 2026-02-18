@@ -17,6 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
+plot = ["matplotlib>=3.5"]
 dev = [
     "pytest>=7.0",
     "ruff>=0.4",
