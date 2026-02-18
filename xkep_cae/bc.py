@@ -6,6 +6,8 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse import SparseEfficiencyWarning
 
+from xkep_cae.core.results import DirichletResult
+
 warnings.simplefilter("ignore", SparseEfficiencyWarning)
 
 
@@ -14,7 +16,7 @@ def apply_dirichlet(
     f: np.ndarray,
     fixed_dofs: np.ndarray,
     values: float | np.ndarray = 0.0,
-) -> tuple[sp.csr_matrix, np.ndarray]:
+) -> DirichletResult:
     """Dirichlet境界条件（行・列消去＋右辺補正）を適用する.
 
     - 元のK, fから:
@@ -29,7 +31,7 @@ def apply_dirichlet(
         values: 拘束変位値（スカラー or 同長配列）
 
     Returns:
-        Kbc, fbc: 拘束適用後（CSR）
+        DirichletResult: (K, f) の NamedTuple。拘束適用後の剛性行列と右辺ベクトル。
     """
     Kbc = K.tocsr(copy=True)
     fbc = f.astype(float, copy=True)
@@ -60,7 +62,7 @@ def apply_dirichlet(
         Kbc[dof, dof] = 1.0
         fbc[dof] = val
 
-    return Kbc, fbc
+    return DirichletResult(K=Kbc, f=fbc)
 
 
 def apply_dirichlet_penalty(
@@ -69,7 +71,7 @@ def apply_dirichlet_penalty(
     fixed_dofs: np.ndarray,
     values: float | np.ndarray = 0.0,
     penalty: float = 1.0e20,
-) -> tuple[sp.csr_matrix, np.ndarray]:
+) -> DirichletResult:
     """Penalty法でDirichlet境界条件を課す軽量版.
 
     目的:
@@ -93,12 +95,11 @@ def apply_dirichlet_penalty(
             対角に足すペナルティ係数。大きいほど拘束が強くなる。
 
     Returns:
-        Kbc, fbc:
-            Penalty適用後の(実質)境界条件付き系。
+        DirichletResult: (K, f) の NamedTuple。Penalty適用後の系。
     """
     if fixed_dofs.size == 0:
         # 拘束なしなら何もしない
-        return K, f
+        return DirichletResult(K=K, f=f)
 
     Kbc = K.copy().tocsr()
     fbc = f.copy()
@@ -119,4 +120,4 @@ def apply_dirichlet_penalty(
         Kbc[dof, dof] += penalty
         fbc[dof] += penalty * val
 
-    return Kbc, fbc
+    return DirichletResult(K=Kbc, f=fbc)

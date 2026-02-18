@@ -41,6 +41,11 @@ from xkep_cae.math.quaternion import (
 
 if TYPE_CHECKING:
     from xkep_cae.core.constitutive import ConstitutiveProtocol
+    from xkep_cae.core.results import (
+        AssemblyResult,
+        FiberAssemblyResult,
+        PlasticAssemblyResult,
+    )
     from xkep_cae.core.state import CosseratFiberPlasticState, CosseratPlasticState
     from xkep_cae.materials.plasticity_1d import Plasticity1D
     from xkep_cae.sections.beam import BeamSection
@@ -1572,7 +1577,7 @@ def assemble_cosserat_beam(
     *,
     stiffness: bool = True,
     internal_force: bool = True,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
+) -> AssemblyResult:
     """Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
 
     非線形解析のコールバック用にアセンブリ関数を提供する。
@@ -1587,7 +1592,7 @@ def assemble_cosserat_beam(
         internal_force: 内力ベクトルを計算するか
 
     Returns:
-        (K_T, f_int): 接線剛性行列と内力ベクトル（不要なものはNone）
+        AssemblyResult: (K_T, f_int) の NamedTuple。不要なものは None。
     """
     n_nodes = n_elems + 1
     total_dof = n_nodes * 6
@@ -1615,7 +1620,9 @@ def assemble_cosserat_beam(
             f_int_e = rod.internal_force(coords, u_elem, material)
             f_int[dof_start:dof_end] += f_int_e
 
-    return K_T, f_int
+    from xkep_cae.core.results import AssemblyResult
+
+    return AssemblyResult(K_T=K_T, f_int=f_int)
 
 
 # ===========================================================================
@@ -1673,7 +1680,7 @@ def assemble_cosserat_beam_plastic(
     *,
     stiffness: bool = True,
     internal_force: bool = True,
-) -> tuple[np.ndarray | None, np.ndarray | None, list[CosseratPlasticState]]:
+) -> PlasticAssemblyResult:
     """弾塑性 Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
 
     assemble_cosserat_beam() の弾塑性版。軸方向(Γ₁)のみ return mapping を適用し、
@@ -1695,10 +1702,7 @@ def assemble_cosserat_beam_plastic(
         internal_force: 内力ベクトルを計算するか
 
     Returns:
-        (K_T, f_int, states_new):
-            K_T: 接線剛性行列（None可）
-            f_int: 内力ベクトル（None可）
-            states_new: 更新された塑性状態リスト
+        PlasticAssemblyResult: (K_T, f_int, states) の NamedTuple
     """
     E, G, nu = rod._extract_material_props(material)
     kappa_y = rod._resolve_kappa_y(nu)
@@ -1827,7 +1831,9 @@ def assemble_cosserat_beam_plastic(
         if stiffness and K_T is not None:
             K_T[dof_s:dof_e, dof_s:dof_e] += T.T @ K_local @ T
 
-    return K_T, f_int, states_new
+    from xkep_cae.core.results import PlasticAssemblyResult
+
+    return PlasticAssemblyResult(K_T=K_T, f_int=f_int, states=states_new)
 
 
 # ===========================================================================
@@ -1932,7 +1938,7 @@ def assemble_cosserat_beam_fiber(
     *,
     stiffness: bool = True,
     internal_force: bool = True,
-) -> tuple[np.ndarray | None, np.ndarray | None, list[CosseratFiberPlasticState]]:
+) -> FiberAssemblyResult:
     """ファイバーモデル Cosserat rod 梁のアセンブリ（直線梁、x軸方向）.
 
     断面をファイバーに分割し、各ファイバーに1D弾塑性構成則を適用することで
@@ -1955,7 +1961,7 @@ def assemble_cosserat_beam_fiber(
         internal_force: 内力ベクトルを計算するか
 
     Returns:
-        (K_T, f_int, states_new)
+        FiberAssemblyResult: (K_T, f_int, states) の NamedTuple
     """
     E, G, nu = rod._extract_material_props(material)
     kappa_y = rod._resolve_kappa_y(nu)
@@ -2082,4 +2088,6 @@ def assemble_cosserat_beam_fiber(
         if stiffness and K_T is not None:
             K_T[dof_s:dof_e, dof_s:dof_e] += T.T @ K_local @ T
 
-    return K_T, f_int, states_new
+    from xkep_cae.core.results import FiberAssemblyResult
+
+    return FiberAssemblyResult(K_T=K_T, f_int=f_int, states=states_new)

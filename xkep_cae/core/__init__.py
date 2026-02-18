@@ -1,7 +1,14 @@
-"""xkep_cae.core - 要素・構成則・断面の抽象インタフェース定義."""
+"""xkep_cae.core - 要素・構成則・断面の抽象インタフェース定義・戻り値型."""
 
 from xkep_cae.core.constitutive import ConstitutiveProtocol
 from xkep_cae.core.element import ElementProtocol
+from xkep_cae.core.results import (
+    AssemblyResult,
+    DirichletResult,
+    FiberAssemblyResult,
+    LinearSolveResult,
+    PlasticAssemblyResult,
+)
 from xkep_cae.core.state import (
     CosseratFiberPlasticState,
     CosseratPlasticState,
@@ -14,4 +21,9 @@ __all__ = [
     "PlasticState1D",
     "CosseratPlasticState",
     "CosseratFiberPlasticState",
+    "LinearSolveResult",
+    "DirichletResult",
+    "AssemblyResult",
+    "PlasticAssemblyResult",
+    "FiberAssemblyResult",
 ]
