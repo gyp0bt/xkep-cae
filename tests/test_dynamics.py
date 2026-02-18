@@ -829,3 +829,211 @@ class TestLumpedMass:
         u_final = -result.displacement[-1, tip_uy_dof]
         err = abs(u_final - u_static) / u_static
         assert err < 0.05, f"集中質量の静的収束誤差: {err:.3f} ({u_final:.6e} vs {u_static:.6e})"
+
+
+# ====================================================================
+# mass_matrix() メソッドのテスト
+# ====================================================================
+
+
+class TestElementMassMatrix:
+    """梁要素クラスの mass_matrix() メソッドのテスト."""
+
+    # --- 2D EB梁 ---
+    def test_eb2d_consistent_symmetric(self):
+        """EB2D整合質量行列は対称."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (6, 6)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_eb2d_consistent_positive_definite(self):
+        """EB2D整合質量行列は正定値."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        eigvals = np.linalg.eigvalsh(Me)
+        assert np.all(eigvals > 0), f"非正定値の固有値: {eigvals}"
+
+    def test_eb2d_lumped_diagonal(self):
+        """EB2D集中質量行列は対角."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me, np.diag(np.diag(Me)))
+
+    def test_eb2d_lumped_mass_conservation(self):
+        """EB2D集中質量の並進方向合計 = ρAL."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        A = 1e-3
+        rho = 7800.0
+        L = 2.0
+        sec = BeamSection2D(A=A, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [L, 0.0]])
+        Me = elem.mass_matrix(coords, rho=rho, lumped=True)
+        m_total = rho * A * L
+        # ux 方向: Me[0,0] + Me[3,3]
+        np.testing.assert_allclose(Me[0, 0] + Me[3, 3], m_total, rtol=1e-12)
+
+    def test_eb2d_matches_frequency_module(self):
+        """EB2D mass_matrix() と frequency.py の結果が一致."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.numerical_tests.frequency import _beam2d_mass_global
+        from xkep_cae.sections.beam import BeamSection2D
+
+        A = 1e-3
+        rho = 7800.0
+        sec = BeamSection2D(A=A, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.5, 0.0]])
+        Me_elem = elem.mass_matrix(coords, rho=rho)
+        Me_freq = _beam2d_mass_global(coords, rho, A)
+        np.testing.assert_allclose(Me_elem, Me_freq, atol=1e-15)
+
+    # --- 2D Timoshenko梁 ---
+    def test_timo2d_consistent_symmetric(self):
+        """Timo2D整合質量行列は対称."""
+        from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6, shape="rectangle")
+        elem = TimoshenkoBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (6, 6)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_timo2d_lumped(self):
+        """Timo2D集中質量行列はEB2Dと同一."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        eb = EulerBernoulliBeam2D(section=sec)
+        timo = TimoshenkoBeam2D(section=sec)
+        coords = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me_eb = eb.mass_matrix(coords, rho=7800.0, lumped=True)
+        Me_timo = timo.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me_timo, Me_eb, atol=1e-15)
+
+    # --- 2D: 傾斜梁の座標変換 ---
+    def test_eb2d_rotated_beam(self):
+        """傾斜梁の整合質量行列: 座標変換が正しく適用される."""
+        from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
+        from xkep_cae.sections.beam import BeamSection2D
+
+        sec = BeamSection2D(A=1e-3, I=1e-6)
+        elem = EulerBernoulliBeam2D(section=sec)
+        # 水平梁
+        coords_h = np.array([[0.0, 0.0], [1.0, 0.0]])
+        Me_h = elem.mass_matrix(coords_h, rho=7800.0)
+        # 45度傾斜梁（同じ長さ）
+        L = 1.0
+        coords_45 = np.array([[0.0, 0.0], [L / np.sqrt(2), L / np.sqrt(2)]])
+        Me_45 = elem.mass_matrix(coords_45, rho=7800.0)
+        # 対称性
+        np.testing.assert_allclose(Me_45, Me_45.T, atol=1e-14)
+        # トレース保存（座標変換で不変）
+        np.testing.assert_allclose(np.trace(Me_45), np.trace(Me_h), rtol=1e-12)
+
+    # --- 3D Timoshenko梁 ---
+    def test_timo3d_consistent_symmetric(self):
+        """Timo3D整合質量行列は対称."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        assert Me.shape == (12, 12)
+        np.testing.assert_allclose(Me, Me.T, atol=1e-15)
+
+    def test_timo3d_consistent_positive_definite(self):
+        """Timo3D整合質量行列は正定値."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0)
+        eigvals = np.linalg.eigvalsh(Me)
+        assert np.all(eigvals > 0), f"非正定値の固有値: {eigvals}"
+
+    def test_timo3d_lumped_diagonal(self):
+        """Timo3D集中質量行列は対角."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=7800.0, lumped=True)
+        np.testing.assert_allclose(Me, np.diag(np.diag(Me)))
+
+    def test_timo3d_lumped_mass_conservation(self):
+        """Timo3D集中質量の並進方向合計 = ρAL."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        rho = 7800.0
+        d = 0.02
+        sec = BeamSection.circle(d=d)
+        elem = TimoshenkoBeam3D(section=sec)
+        L = 1.5
+        coords = np.array([[0.0, 0.0, 0.0], [L, 0.0, 0.0]])
+        Me = elem.mass_matrix(coords, rho=rho, lumped=True)
+        m_total = rho * sec.A * L
+        # ux 方向: Me[0,0] + Me[6,6]
+        np.testing.assert_allclose(Me[0, 0] + Me[6, 6], m_total, rtol=1e-12)
+
+    def test_timo3d_matches_frequency_module(self):
+        """Timo3D mass_matrix() と frequency.py の結果が一致."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.numerical_tests.frequency import _beam3d_mass_global
+        from xkep_cae.sections.beam import BeamSection
+
+        rho = 7800.0
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        coords = np.array([[0.0, 0.0, 0.0], [1.5, 0.0, 0.0]])
+        Me_elem = elem.mass_matrix(coords, rho=rho)
+        Me_freq = _beam3d_mass_global(coords, rho, sec.A, sec.Iy, sec.Iz)
+        np.testing.assert_allclose(Me_elem, Me_freq, atol=1e-15)
+
+    def test_timo3d_rotated_beam(self):
+        """傾斜3D梁の整合質量行列: 座標変換が正しく適用される."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection.circle(d=0.02)
+        elem = TimoshenkoBeam3D(section=sec)
+        # x軸方向
+        coords_x = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        Me_x = elem.mass_matrix(coords_x, rho=7800.0)
+        # 斜め方向
+        d = 1.0 / np.sqrt(3)
+        coords_diag = np.array([[0.0, 0.0, 0.0], [d, d, d]])
+        Me_diag = elem.mass_matrix(coords_diag, rho=7800.0)
+        # 対称性
+        np.testing.assert_allclose(Me_diag, Me_diag.T, atol=1e-14)
+        # トレース保存
+        np.testing.assert_allclose(np.trace(Me_diag), np.trace(Me_x), rtol=1e-12)

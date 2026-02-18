@@ -523,6 +523,167 @@ def beam3d_max_shear_stress(
     return tau_torsion + max(tau_vy, tau_vz)
 
 
+def timo_beam3d_mass_local(
+    rho: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    L: float,
+) -> np.ndarray:
+    """3D梁の局所整合質量行列 (12x12) を返す.
+
+    DOF順: [u1, v1, w1, θx1, θy1, θz1, u2, v2, w2, θx2, θy2, θz2]
+
+    Args:
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        Iy: y軸まわり断面二次モーメント [m⁴]
+        Iz: z軸まわり断面二次モーメント [m⁴]
+        L: 要素長 [m]
+
+    Returns:
+        Me: (12, 12) 局所整合質量行列
+    """
+    m = rho * A * L
+    Me = np.zeros((12, 12), dtype=float)
+
+    # 軸方向 (u1, u2) → DOF 0, 6
+    Me[0, 0] = m / 3.0
+    Me[0, 6] = m / 6.0
+    Me[6, 0] = m / 6.0
+    Me[6, 6] = m / 3.0
+
+    # ねじり (θx1, θx2) → DOF 3, 9
+    Ip = Iy + Iz  # 極慣性モーメント
+    m_torsion = rho * Ip * L
+    Me[3, 3] = m_torsion / 3.0
+    Me[3, 9] = m_torsion / 6.0
+    Me[9, 3] = m_torsion / 6.0
+    Me[9, 9] = m_torsion / 3.0
+
+    # xy面内曲げ (v1, θz1, v2, θz2) → DOF 1, 5, 7, 11
+    coeff = m / 420.0
+    M_xy = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
+    xy_idx = [1, 5, 7, 11]
+    for i_loc, i_glob in enumerate(xy_idx):
+        for j_loc, j_glob in enumerate(xy_idx):
+            Me[i_glob, j_glob] = M_xy[i_loc, j_loc]
+
+    # xz面内曲げ (w1, θy1, w2, θy2) → DOF 2, 4, 8, 10
+    # dw/dx = -θy なので符号反転: signs = [+1, -1, +1, -1]
+    signs = np.array([1.0, -1.0, 1.0, -1.0])
+    M_xz_base = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
+    M_xz = M_xz_base * np.outer(signs, signs)
+    xz_idx = [2, 4, 8, 10]
+    for i_loc, i_glob in enumerate(xz_idx):
+        for j_loc, j_glob in enumerate(xz_idx):
+            Me[i_glob, j_glob] = M_xz[i_loc, j_loc]
+
+    return Me
+
+
+def timo_beam3d_lumped_mass_local(
+    rho: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    L: float,
+) -> np.ndarray:
+    """3D梁の局所集中質量行列 (12x12, 対角) を返す.
+
+    HRZ法による集中化。
+
+    DOF順: [u1, v1, w1, θx1, θy1, θz1, u2, v2, w2, θx2, θy2, θz2]
+
+    HRZ結果:
+        並進: m/2 （各節点・各方向）
+        ねじり: ρ·Ip·L/2 （各節点）
+        曲げ回転: m·L²/78 （各節点・各方向）
+
+    Args:
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        Iy: y軸まわり断面二次モーメント [m⁴]
+        Iz: z軸まわり断面二次モーメント [m⁴]
+        L: 要素長 [m]
+
+    Returns:
+        Me: (12, 12) 対角集中質量行列
+    """
+    m = rho * A * L
+    Ip = Iy + Iz
+    m_torsion = rho * Ip * L
+    rot_inertia = m * L**2 / 78.0
+
+    diag = np.array(
+        [
+            m / 2.0,
+            m / 2.0,
+            m / 2.0,
+            m_torsion / 2.0,
+            rot_inertia,
+            rot_inertia,
+            m / 2.0,
+            m / 2.0,
+            m / 2.0,
+            m_torsion / 2.0,
+            rot_inertia,
+            rot_inertia,
+        ]
+    )
+    return np.diag(diag)
+
+
+def timo_beam3d_mass_global(
+    coords: np.ndarray,
+    rho: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    *,
+    v_ref: np.ndarray | None = None,
+    lumped: bool = False,
+) -> np.ndarray:
+    """全体座標系での3D梁の質量行列 (12x12) を返す.
+
+    Args:
+        coords: (2, 3) 節点座標 [[x1,y1,z1],[x2,y2,z2]]
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        Iy: y軸まわり断面二次モーメント [m⁴]
+        Iz: z軸まわり断面二次モーメント [m⁴]
+        v_ref: 局所y軸の参照ベクトル（オプション）
+        lumped: True の場合は集中質量行列（HRZ法）
+
+    Returns:
+        Me_global: (12, 12) 全体座標系の質量行列
+    """
+    L, e_x = _beam3d_length_and_direction(coords)
+
+    if lumped:
+        # 集中質量は対角行列 → 座標変換不要（回転不変）
+        return timo_beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
+
+    R = _build_local_axes(e_x, v_ref)
+    Me_local = timo_beam3d_mass_local(rho, A, Iy, Iz, L)
+    T = _transformation_matrix_3d(R)
+    return T.T @ Me_local @ T
+
+
 class TimoshenkoBeam3D:
     """3D Timoshenko 梁要素（ElementProtocol適合）.
 
@@ -642,6 +803,33 @@ class TimoshenkoBeam3D:
             kappa_z_val,
             v_ref=self.v_ref,
             scf=self.scf,
+        )
+
+    def mass_matrix(
+        self,
+        coords: np.ndarray,
+        rho: float,
+        *,
+        lumped: bool = False,
+    ) -> np.ndarray:
+        """全体座標系の質量行列を返す.
+
+        Args:
+            coords: (2, 3) 節点座標
+            rho: 密度 [kg/m³]
+            lumped: True の場合は集中質量行列（HRZ法）
+
+        Returns:
+            Me: (12, 12) 全体座標系の質量行列
+        """
+        return timo_beam3d_mass_global(
+            coords,
+            rho,
+            self.section.A,
+            self.section.Iy,
+            self.section.Iz,
+            v_ref=self.v_ref,
+            lumped=lumped,
         )
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:

@@ -203,6 +203,100 @@ def eb_beam2d_distributed_load(
     return T.T @ f_local
 
 
+def eb_beam2d_mass_local(rho: float, A: float, L: float) -> np.ndarray:
+    """2D梁の局所整合質量行列 (6x6) を返す.
+
+    DOF順: [u1, v1, θz1, u2, v2, θz2]
+    Euler-Bernoulli型の質量行列（Timoshenko梁にも実用的に適用可能）。
+
+    Args:
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        L: 要素長 [m]
+
+    Returns:
+        Me: (6, 6) 局所整合質量行列
+    """
+    m = rho * A * L
+    Me = np.zeros((6, 6), dtype=float)
+
+    # 軸方向 (u1, u2) → DOF 0, 3
+    Me[0, 0] = m / 3.0
+    Me[0, 3] = m / 6.0
+    Me[3, 0] = m / 6.0
+    Me[3, 3] = m / 3.0
+
+    # 横方向曲げ (v1, θz1, v2, θz2) → DOF 1, 2, 4, 5
+    coeff = m / 420.0
+    bend_idx = [1, 2, 4, 5]
+    M_bend = coeff * np.array(
+        [
+            [156.0, 22.0 * L, 54.0, -13.0 * L],
+            [22.0 * L, 4.0 * L**2, 13.0 * L, -3.0 * L**2],
+            [54.0, 13.0 * L, 156.0, -22.0 * L],
+            [-13.0 * L, -3.0 * L**2, -22.0 * L, 4.0 * L**2],
+        ]
+    )
+    for i_loc, i_glob in enumerate(bend_idx):
+        for j_loc, j_glob in enumerate(bend_idx):
+            Me[i_glob, j_glob] = M_bend[i_loc, j_loc]
+
+    return Me
+
+
+def eb_beam2d_lumped_mass_local(rho: float, A: float, L: float) -> np.ndarray:
+    """2D梁の局所集中質量行列 (6x6, 対角) を返す.
+
+    HRZ (Hinton-Rock-Zienkiewicz) 法による集中化。
+
+    DOF順: [u1, v1, θz1, u2, v2, θz2]
+
+    HRZ結果:
+        並進: m/2 （各節点・各方向）
+        回転: m·L²/78 （各節点）
+
+    Args:
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        L: 要素長 [m]
+
+    Returns:
+        Me: (6, 6) 対角集中質量行列
+    """
+    m = rho * A * L
+    diag = np.array([m / 2.0, m / 2.0, m * L**2 / 78.0, m / 2.0, m / 2.0, m * L**2 / 78.0])
+    return np.diag(diag)
+
+
+def eb_beam2d_mass_global(
+    coords: np.ndarray,
+    rho: float,
+    A: float,
+    *,
+    lumped: bool = False,
+) -> np.ndarray:
+    """全体座標系での2D梁の質量行列 (6x6) を返す.
+
+    Args:
+        coords: (2, 2) 節点座標 [[x1,y1],[x2,y2]]
+        rho: 密度 [kg/m³]
+        A: 断面積 [m²]
+        lumped: True の場合は集中質量行列（HRZ法）
+
+    Returns:
+        Me_global: (6, 6) 全体座標系の質量行列
+    """
+    length, c, s = _beam_length_and_cosines(coords)
+
+    if lumped:
+        # 集中質量は対角行列 → 座標変換不要（回転不変）
+        return eb_beam2d_lumped_mass_local(rho, A, length)
+
+    Me_local = eb_beam2d_mass_local(rho, A, length)
+    T = _transformation_matrix_2d(c, s)
+    return T.T @ Me_local @ T
+
+
 class EulerBernoulliBeam2D:
     """2D Euler-Bernoulli 梁要素（ElementProtocol適合）.
 
@@ -246,6 +340,25 @@ class EulerBernoulliBeam2D:
                 f"梁要素にはスカラーまたは(1,1)の弾性テンソルが必要です。shape={D.shape}"
             )
         return eb_beam2d_ke_global(coords, young_e, self.section.A, self.section.I)
+
+    def mass_matrix(
+        self,
+        coords: np.ndarray,
+        rho: float,
+        *,
+        lumped: bool = False,
+    ) -> np.ndarray:
+        """全体座標系の質量行列を返す.
+
+        Args:
+            coords: (2, 2) 節点座標
+            rho: 密度 [kg/m³]
+            lumped: True の場合は集中質量行列（HRZ法）
+
+        Returns:
+            Me: (6, 6) 全体座標系の質量行列
+        """
+        return eb_beam2d_mass_global(coords, rho, self.section.A, lumped=lumped)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
         """グローバル節点インデックスから要素DOFインデックスを返す.
