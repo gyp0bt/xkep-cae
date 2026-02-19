@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了。789テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了。802テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -15,6 +15,7 @@ Phase C1: Broadphase（AABB格子）+ ContactManager幾何更新 + Active-setヒ
 ステップ列自動実行（run_transient_steps）、非線形反力計算、VTKバイナリ出力、要素データ出力、.inpパーサー統合。
 .inpパーサー拡張: *ELSET, *BOUNDARY, *OUTPUT FIELD ANIMATION, *MATERIAL, *ELASTIC, *DENSITY, *PLASTIC キーワード追加。
 テーブル補間型硬化則: *PLASTIC テーブル → Plasticity1D/PlaneStrainPlasticity 変換（区分線形、コンバータ関数）。
+HARDENING=KINEMATIC テーブル → Armstrong-Frederick 移動硬化パラメータ変換（線形/非線形AF近似）。
 FIELD ANIMATION出力: 梁要素のx/y/z軸方向2Dプロット（要素セット色分け・凡例対応）。
 GIFアニメーション出力: Pillow連携、ビュー方向ごとのGIF生成、フレーム間描画範囲固定。
 サンプル入力ファイル: 5つの `.inp` ファイルを `examples/` に追加。
@@ -33,7 +34,7 @@ GIFアニメーション出力: Pillow連携、ビュー方向ごとのGIF生成
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
-- [実装状況](docs/status/status-037.md) — 最新のステータス（GIFアニメーション出力 + examplesディレクトリ追加）
+- [実装状況](docs/status/status-038.md) — 最新のステータス（KINEMATIC→AF変換 + TODO整理）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール

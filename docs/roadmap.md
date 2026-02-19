@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C1 + FIELD ANIMATION出力 + GIFアニメーション + examples追加 完了）
+## 現在地（Phase C1 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了（789テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了（802テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -53,10 +53,10 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **境界条件** | Dirichlet（行列消去法 / Penalty法） |
 | **API** | Protocol API（一本化）, ラベルベース高レベルAPI |
 | **I/O** | Abaqus .inp パーサー（*NODE/*ELEMENT/*NSET/**ELSET**/**BOUNDARY**/*BEAM SECTION/*TRANSVERSE SHEAR STIFFNESS/**OUTPUT, FIELD ANIMATION**/**MATERIAL**/**ELASTIC**/**DENSITY**/**PLASTIC**）, CSV出力, Abaqusライクテキスト入力, **過渡応答出力（Step/Increment/Frame, CSV/JSON/VTK, バイナリ対応）**, **FIELD ANIMATION出力（梁2Dプロット, 要素セット色分け, xy/xz/yz 3ビュー）**, **GIFアニメーション出力（Pillow連携, ビュー方向ごとGIF, フレーム間描画範囲固定）**, **run_transient_steps（ステップ列自動実行）**, **mesh_from_abaqus_inp（.inp→OutputDatabase変換）** |
-| **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, ファイバーモデル断面（曲げの塑性化） |
+| **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
 | **接触（C0〜C1）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, **Broadphase（AABB格子）**, **幾何更新（detect_candidates/update_geometry）**, **Active-setヒステリシス** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ（**789テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ（**802テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）
