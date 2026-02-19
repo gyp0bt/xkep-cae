@@ -22,6 +22,7 @@ GIFアニメーション出力: Pillow連携、ビュー方向ごとのGIF生成
 サンプル入力ファイル: 5つの `.inp` ファイルを `examples/` に追加。
 .inp実行スクリプト: `examples/run_examples.py` でサンプル .inp の解析実行・解析解比較。
 Abaqus三点曲げバリデーション: `assets/test_assets/Abaqus/1-bend3p/` の結果と比較（剛性差異1.09%）。
+三点曲げ非線形動解析スクリプト: Abaqus準拠パラメータで非線形動解析を実施、GIFアニメーション・比較プロット出力。
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -37,7 +38,7 @@ Abaqus三点曲げバリデーション: `assets/test_assets/Abaqus/1-bend3p/` �
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
-- [実装状況](docs/status/status-040.md) — 最新のステータス（.inp実行スクリプト + Abaqus三点曲げバリデーション）
+- [実装状況](docs/status/status-041.md) — 最新のステータス（三点曲げ非線形動解析スクリプト + GIFアニメーション出力）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
