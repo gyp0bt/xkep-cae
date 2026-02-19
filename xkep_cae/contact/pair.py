@@ -2,6 +2,7 @@
 
 Phase C0: ContactPair / ContactState と solver_hooks の骨格。
 Phase C1: broadphase候補探索 + 幾何更新 + Active-setヒステリシス。
+Phase C2: 法線AL接触力評価 + 乗数更新 + ペナルティ初期化。
 """
 
 from __future__ import annotations
@@ -342,3 +343,36 @@ class ContactManager:
             # 活性 → 非活性化判定
             if gap >= g_off:
                 pair.state.status = ContactStatus.INACTIVE
+
+    # -- Phase C2: 法線AL接触力 + 乗数更新 + ペナルティ初期化 ----
+
+    def evaluate_contact_forces(self) -> None:
+        """全 ACTIVE ペアの法線接触反力 p_n を評価する.
+
+        AL: p_n = max(0, lambda_n + k_pen * (-g))
+        """
+        from xkep_cae.contact.law_normal import evaluate_normal_force
+
+        for pair in self.pairs:
+            evaluate_normal_force(pair)
+
+    def update_al_multipliers(self) -> None:
+        """全ペアの AL 乗数を更新する（Outer loop 終了時）."""
+        from xkep_cae.contact.law_normal import update_al_multiplier
+
+        for pair in self.pairs:
+            update_al_multiplier(pair)
+
+    def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
+        """全 ACTIVE ペアのペナルティ剛性を初期化する.
+
+        Args:
+            k_pen: 法線ペナルティ剛性
+            k_t_ratio: 接線/法線比（None なら config から取得）
+        """
+        from xkep_cae.contact.law_normal import initialize_penalty_stiffness
+
+        ratio = k_t_ratio if k_t_ratio is not None else self.config.k_t_ratio
+        for pair in self.pairs:
+            if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
+                initialize_penalty_stiffness(pair, k_pen, ratio)

@@ -15,15 +15,16 @@
 
 ---
 
-## 現在地（Phase C1 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C2 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C1 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了（802テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C2 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了（845テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
 Phase 5.4: 非線形動解析ソルバー（Newton-Raphson + Newmark-β/HHT-α, 6テスト）。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry、30テスト）。
-**Phase C1**: Broadphase（AABB格子）+ ContactManager幾何更新（narrowphase）+ Active-setヒステリシス（31テスト）。
+Phase C1: Broadphase（AABB格子）+ ContactManager幾何更新（narrowphase）+ Active-setヒステリシス（31テスト）。
+**Phase C2**: 法線AL接触力 + 接触接線剛性（主項）+ 接触付きNRソルバー（Outer/Inner分離）（43テスト）。
 数値三点曲げ試験の非線形動解析対応（dynamic_runner, 11テスト）。
 **過渡応答出力**: Abaqus準拠 Step/Increment/Frame + InitialConditions + HistoryOutput/FieldOutput + CSV/JSON/VTK出力（38テスト）。
 **過渡応答出力拡張**: run_transient_steps（ステップ列自動実行）, 非線形反力計算（assemble_internal_force）, VTKバイナリ出力, 要素データ出力（CellData）, Abaqus .inpパーサー統合（17テスト）。
@@ -55,8 +56,8 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **I/O** | Abaqus .inp パーサー（*NODE/*ELEMENT/*NSET/**ELSET**/**BOUNDARY**/*BEAM SECTION/*TRANSVERSE SHEAR STIFFNESS/**OUTPUT, FIELD ANIMATION**/**MATERIAL**/**ELASTIC**/**DENSITY**/**PLASTIC**）, CSV出力, Abaqusライクテキスト入力, **過渡応答出力（Step/Increment/Frame, CSV/JSON/VTK, バイナリ対応）**, **FIELD ANIMATION出力（梁2Dプロット, 要素セット色分け, xy/xz/yz 3ビュー）**, **GIFアニメーション出力（Pillow連携, ビュー方向ごとGIF, フレーム間描画範囲固定）**, **run_transient_steps（ステップ列自動実行）**, **mesh_from_abaqus_inp（.inp→OutputDatabase変換）** |
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
-| **接触（C0〜C1）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, **Broadphase（AABB格子）**, **幾何更新（detect_candidates/update_geometry）**, **Active-setヒステリシス** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ（**802テスト**）, [バリデーション文書](verification/validation.md) |
+| **接触（C0〜C2）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_pen·g·g^T, 主項）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）** |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ（**845テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）
@@ -64,7 +65,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 - ラインサーチ・Lee's frame 等の追加ベンチマーク（Phase 3 オプション）
 - 3次元連続体要素なし（平面問題限定）
 - 材料非線形は1D弾塑性+ファイバーモデルのみ実装済み（3D von Mises塑性は実装コード完了だがテスト凍結中、粘弾性等は未実装）
-- 梁–梁接触モジュールは C0〜C1（データ構造+幾何+broadphase+Active-set）まで。法線接触力則・摩擦・ソルバー統合は C2〜C4 で実装予定
+- 梁–梁接触モジュールは C0〜C2（データ構造+幾何+broadphase+Active-set+法線AL+接触接線+NRソルバー）まで。摩擦は C3、merit line search は C4 で実装予定
 
 ---
 
@@ -567,7 +568,7 @@ Newton-Raphson + Newmark-β による非線形過渡応答解析。
 - [x] 設計仕様書 v0.1（AL + Active-set + return mapping + Outer/Inner分離）
 - [x] C0: ContactPair/ContactState/ContactManager + geometry（closest_point_segments, compute_gap, build_contact_frame）— 30テスト
 - [x] C1: broadphase（AABB格子）+ ContactManager幾何更新（detect_candidates/update_geometry）+ Active-setヒステリシス — 31テスト
-- [ ] C2: 法線AL + Active-setヒステリシス + 主項接線
+- [x] C2: 法線AL + 接触接線剛性（主項）+ 接触付きNRソルバー（Outer/Inner分離）— 43テスト
 - [ ] C3: 摩擦return mapping + μランプ
 - [ ] C4: merit line search + 探索/求解分離の運用強化
 
@@ -722,7 +723,8 @@ Phase 8 (応用展開) ← 必要に応じて
 7. ~~**Updated Lagrangian**~~ — 実装完了 ✓（10テスト）
 8. ~~**Phase C0 梁–梁接触骨格**~~ — 実装完了 ✓（30テスト）
 9. ~~**Phase C1 Broadphase + 幾何更新 + Active-set**~~ — 実装完了 ✓（31テスト）
-10. **Phase C2 法線AL + Active-setヒステリシス + 主項接線** — 次の実装候補
+10. ~~**Phase C2 法線AL + 接触接線 + 接触付きNR**~~ — 実装完了 ✓（43テスト）
+11. **Phase C3 摩擦 return mapping + μランプ** — 次の実装候補
 
 **並行開発可能**:
 - Phase 4（4.1〜4.6）と Phase 5 は Phase 3 完了後に並行可
