@@ -10,6 +10,7 @@ xkep-cae独自のアニメーション出力機能。
 
 出力:
   - PNG画像ファイル（各ビュー方向ごと、各フレームごと）
+  - GIFアニメーション（各ビュー方向ごと、全フレーム結合）
 """
 
 from __future__ import annotations
@@ -254,7 +255,134 @@ def export_field_animation(
     return output_files
 
 
+def export_field_animation_gif(
+    mesh: AbaqusMesh,
+    output_dir: str | Path = "animation",
+    views: list[str] | None = None,
+    *,
+    node_coords_frames: list[np.ndarray] | None = None,
+    frame_labels: list[str] | None = None,
+    figsize: tuple[float, float] = (10.0, 8.0),
+    dpi: int = 100,
+    duration: int = 200,
+    loop: int = 0,
+) -> list[Path]:
+    """梁要素のアニメーションをGIF画像として出力する.
+
+    各ビュー方向ごとに1つのGIFファイルを生成する。
+    複数フレームの場合、全フレームを通じて描画範囲を固定し、
+    滑らかなアニメーションを生成する。
+
+    Args:
+        mesh: AbaqusMesh オブジェクト
+        output_dir: 出力ディレクトリパス
+        views: 描画するビュー方向リスト。Noneの場合 ["xy", "xz", "yz"]
+        node_coords_frames: フレームごとの節点座標リスト。
+            Noneの場合は初期配置のみ1フレーム出力
+        frame_labels: フレームのラベルリスト（タイトルに使用）
+        figsize: 図のサイズ
+        dpi: 解像度
+        duration: フレーム間の表示時間（ミリ秒、デフォルト200ms）
+        loop: ループ回数（0=無限ループ）
+
+    Returns:
+        出力されたGIFファイルのパスリスト
+    """
+    import io
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image as PILImage
+
+    if views is None:
+        views = ["xy", "xz", "yz"]
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    if node_coords_frames is None:
+        node_coords_frames = [None]
+        if frame_labels is None:
+            frame_labels = ["Initial"]
+
+    if frame_labels is None:
+        frame_labels = [f"Frame {i}" for i in range(len(node_coords_frames))]
+
+    output_files: list[Path] = []
+
+    for view in views:
+        ax_h, ax_v, _label_h, _label_v = _VIEW_AXES[view]
+
+        # 全フレームを通じた描画範囲を計算（ビュー範囲固定でアニメーションを安定化）
+        all_h: list[float] = []
+        all_v: list[float] = []
+        for coords in node_coords_frames:
+            segments = _collect_beam_segments(mesh, coords)
+            for segs in segments.values():
+                for p0, p1 in segs:
+                    all_h.extend([p0[ax_h], p1[ax_h]])
+                    all_v.extend([p0[ax_v], p1[ax_v]])
+
+        fixed_xlim: tuple[float, float] | None = None
+        fixed_ylim: tuple[float, float] | None = None
+        if all_h and all_v:
+            h_min, h_max = min(all_h), max(all_h)
+            v_min, v_max = min(all_v), max(all_v)
+            h_range = h_max - h_min if h_max > h_min else 1.0
+            v_range = v_max - v_min if v_max > v_min else 1.0
+            margin_h = h_range * 0.1
+            margin_v = v_range * 0.1
+            fixed_xlim = (h_min - margin_h, h_max + margin_h)
+            fixed_ylim = (v_min - margin_v, v_max + margin_v)
+
+        # 各フレームを描画してPIL Imageに変換
+        pil_images: list[PILImage.Image] = []
+        for coords, label in zip(node_coords_frames, frame_labels, strict=True):
+            title = f"{label} — {view.upper()} view"
+            fig, ax = render_beam_animation_frame(
+                mesh,
+                view=view,
+                node_coords=coords,
+                title=title,
+                figsize=figsize,
+                dpi=dpi,
+            )
+
+            # 全フレーム共通の描画範囲を適用
+            if fixed_xlim is not None:
+                ax.set_xlim(fixed_xlim)
+                ax.set_ylim(fixed_ylim)
+
+            # matplotlib Figure → PIL Image
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            plt.close(fig)
+            buf.seek(0)
+            img = PILImage.open(buf).convert("RGB")
+            pil_images.append(img)
+
+        # GIF出力
+        gif_path = out_path / f"animation_{view}.gif"
+        if len(pil_images) == 1:
+            pil_images[0].save(gif_path, format="GIF")
+        else:
+            pil_images[0].save(
+                gif_path,
+                format="GIF",
+                save_all=True,
+                append_images=pil_images[1:],
+                duration=duration,
+                loop=loop,
+            )
+        output_files.append(gif_path)
+
+    return output_files
+
+
 __all__ = [
     "export_field_animation",
+    "export_field_animation_gif",
     "render_beam_animation_frame",
 ]

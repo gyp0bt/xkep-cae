@@ -7,6 +7,7 @@
   - 要素セット凡例の表示
   - 変形後座標でのフレーム描画
   - PNG画像ファイルの出力
+  - GIFアニメーション出力
   - AbaqusMesh からの統合テスト
 """
 
@@ -36,7 +37,21 @@ from xkep_cae.io.abaqus_inp import (  # noqa: E402
 from xkep_cae.output.export_animation import (  # noqa: E402
     _collect_beam_segments,
     export_field_animation,
+    export_field_animation_gif,
     render_beam_animation_frame,
+)
+
+try:
+    from PIL import Image as PILImage  # noqa: F401
+
+    _has_pillow = True
+except ImportError:
+    _has_pillow = False
+
+needs_pillow = pytest.mark.skipif(not _has_pillow, reason="Pillow is not installed")
+needs_matplotlib_and_pillow = pytest.mark.skipif(
+    not (_has_matplotlib and _has_pillow),
+    reason="matplotlib and/or Pillow is not installed",
 )
 
 
@@ -408,3 +423,120 @@ class TestIntegrationWithInpParser:
         assert len(files) == 9
         for f in files:
             assert f.exists()
+
+
+@needs_matplotlib_and_pillow
+class TestExportFieldAnimationGif:
+    """GIFアニメーション出力のテスト."""
+
+    def test_single_frame_default_views(self, simple_beam_mesh, tmp_path):
+        """デフォルトビュー（3方向）の初期フレームGIF出力."""
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+        )
+        assert len(files) == 3
+        for f in files:
+            assert f.exists()
+            assert f.suffix == ".gif"
+            assert f.stat().st_size > 0
+        names = sorted(f.name for f in files)
+        assert "animation_xy.gif" in names
+        assert "animation_xz.gif" in names
+        assert "animation_yz.gif" in names
+
+    def test_single_view_gif(self, simple_beam_mesh, tmp_path):
+        """単一ビューのGIF出力."""
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+        )
+        assert len(files) == 1
+        assert files[0].name == "animation_xy.gif"
+
+    def test_multiple_frames_gif(self, simple_beam_mesh, tmp_path):
+        """複数フレームのGIFアニメーション出力."""
+        frames = [
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.3, 0.0]]),
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.2, 0.0], [2.0, 0.6, 0.0]]),
+        ]
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+            node_coords_frames=frames,
+            frame_labels=["t=0.0", "t=0.5", "t=1.0"],
+        )
+        assert len(files) == 1
+        gif_path = files[0]
+        assert gif_path.exists()
+        # GIFファイルをPILで開いてフレーム数を検証
+        from PIL import Image as PILImage
+
+        with PILImage.open(gif_path) as img:
+            n_frames = getattr(img, "n_frames", 1)
+            assert n_frames == 3
+
+    def test_gif_is_animated(self, simple_beam_mesh, tmp_path):
+        """複数フレームのGIFがアニメーションGIFであること."""
+        frames = [
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.15, 0.0], [2.0, 0.4, 0.0]]),
+        ]
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+            node_coords_frames=frames,
+        )
+        from PIL import Image as PILImage
+
+        with PILImage.open(files[0]) as img:
+            assert getattr(img, "is_animated", False)
+
+    def test_custom_duration(self, simple_beam_mesh, tmp_path):
+        """カスタムフレーム間隔のGIF出力."""
+        frames = [
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]),
+            np.array([[0.0, 0.0, 0.0], [1.0, 0.1, 0.0], [2.0, 0.3, 0.0]]),
+        ]
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+            node_coords_frames=frames,
+            duration=500,
+        )
+        assert len(files) == 1
+        assert files[0].exists()
+
+    def test_output_dir_creation(self, simple_beam_mesh, tmp_path):
+        """存在しない出力ディレクトリの自動作成."""
+        output_dir = tmp_path / "deep" / "nested" / "gif_anim"
+        assert not output_dir.exists()
+        files = export_field_animation_gif(
+            simple_beam_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+        )
+        assert output_dir.exists()
+        assert len(files) == 1
+
+    def test_multi_elset_gif(self, multi_elset_mesh, tmp_path):
+        """複数要素セットのGIF出力."""
+        output_dir = tmp_path / "gif_anim"
+        files = export_field_animation_gif(
+            multi_elset_mesh,
+            output_dir=output_dir,
+            views=["xy"],
+        )
+        assert len(files) == 1
+        assert files[0].exists()
+        assert files[0].stat().st_size > 0
