@@ -105,11 +105,12 @@ xkep-caeの非線形動解析（`solve_nonlinear_transient`）を実行するス
 
 ## TODO
 
+- [ ] **Timoshenko 3D 梁の UL（Updated Lagrangian）定式化** — Q4要素で実装済みのULを梁要素に拡張。幾何学的非線形（大変形・大回転）を Timoshenko 3D 梁で扱えるようにし、Abaqus NLGEOM 三点曲げとの大ストローク比較を可能にする
+- [ ] Cosserat rod 非線形モードでの大変形三点曲げ比較（既存の `assemble_cosserat_beam()` + `solve_nonlinear_transient()` で実現可能）
 - [ ] `apply_dirichlet` のスパース行列非ゼロ規定変位バグの修正
 - [ ] Abaqus弾塑性三点曲げ（idx2）のバリデーション
 - [ ] 要素単体剛性のAbaqus比較（接触フェーズ完了後に入念に実施）
 - [ ] Phase C3: 摩擦 return mapping + μランプ
 - [ ] Phase C4: merit line search + 探索/求解分離の運用強化
-- [ ] Cosserat rod 非線形モードでの大変形三点曲げ比較
 
 ---
