@@ -920,3 +920,293 @@ class TimoshenkoBeam3D:
             qx_local,
             v_ref=self.v_ref,
         )
+
+
+# =====================================================================
+# Corotational (CR) 定式化 — Timoshenko 3D 梁の幾何学的非線形対応
+# =====================================================================
+#
+# 線形 Timoshenko 3D 梁要素に Corotational 定式化を適用し、
+# Updated Lagrangian 的な幾何学的非線形解析を実現する。
+#
+# アルゴリズム:
+#   1. 変形後の節点座標から corotated フレームを構築
+#   2. 節点回転を Rodrigues 公式で回転行列に変換
+#   3. 剛体回転を除去して「自然変形」を抽出
+#   4. 線形 Timoshenko 剛性で局所内力を計算
+#   5. corotated 変換行列で全体座標系に変換
+#
+# 接線剛性は中心差分による数値微分（Cosserat rod 非線形と同じ手法）
+# =====================================================================
+
+
+def _rotvec_to_rotmat(theta: np.ndarray) -> np.ndarray:
+    """回転ベクトル → 回転行列 (Rodrigues の公式).
+
+    Args:
+        theta: (3,) 回転ベクトル
+
+    Returns:
+        R: (3, 3) 回転行列
+    """
+    from xkep_cae.math.quaternion import quat_from_rotvec, quat_to_rotation_matrix
+
+    q = quat_from_rotvec(theta)
+    return quat_to_rotation_matrix(q)
+
+
+def _rotmat_to_rotvec(R: np.ndarray) -> np.ndarray:
+    """回転行列 → 回転ベクトル (対数写像).
+
+    Args:
+        R: (3, 3) 回転行列
+
+    Returns:
+        theta: (3,) 回転ベクトル
+    """
+    from xkep_cae.math.quaternion import quat_to_rotvec, rotation_matrix_to_quat
+
+    q = rotation_matrix_to_quat(R)
+    return quat_to_rotvec(q)
+
+
+def timo_beam3d_cr_internal_force(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+) -> np.ndarray:
+    """Corotational 定式化による Timoshenko 3D 梁の非線形内力ベクトル.
+
+    線形梁剛性を corotated フレームで使い、幾何学的非線形性を捕捉する。
+    メッシュ細分化（要素あたりの回転が小さい）条件で正確。
+
+    Args:
+        coords_init: (2, 3) 初期節点座標
+        u_elem: (12,) 全体座標系の変位ベクトル
+        E, G: ヤング率、せん断弾性率
+        A: 断面積
+        Iy, Iz: 断面二次モーメント
+        J: ねじり定数
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        scf: スレンダネス補償係数
+
+    Returns:
+        f_global: (12,) 全体座標系の内力ベクトル
+    """
+    # --- 初期形状 ---
+    L_0, e_x_0 = _beam3d_length_and_direction(coords_init)
+    R_0 = _build_local_axes(e_x_0, v_ref)
+    # 初期ローカル y 軸を v_ref として固定（corotated フレームとの一貫性を保証）
+    v_ref_stable = R_0[1, :]
+
+    # --- 変形後の形状 ---
+    x1_def = coords_init[0] + u_elem[0:3]
+    x2_def = coords_init[1] + u_elem[6:9]
+    coords_def = np.array([x1_def, x2_def])
+    L_def, e_x_def = _beam3d_length_and_direction(coords_def)
+    R_cr = _build_local_axes(e_x_def, v_ref_stable)
+
+    # --- 剛体回転を除去して自然変形回転を抽出 ---
+    # R_def_i = R_cr @ R_node_i @ R_0^T
+    #   R_cr: global→corotated (変形後ローカルフレーム)
+    #   R_node_i: 節点iの全体回転 (global frame)
+    #   R_0^T: initial local→global
+    # 剛体回転時 (R_node = R_cr^T @ R_0) → R_def = I → θ_def = 0
+    R_node1 = _rotvec_to_rotmat(u_elem[3:6])
+    R_node2 = _rotvec_to_rotmat(u_elem[9:12])
+
+    R_def1 = R_cr @ R_node1 @ R_0.T
+    R_def2 = R_cr @ R_node2 @ R_0.T
+    theta_def1 = _rotmat_to_rotvec(R_def1)
+    theta_def2 = _rotmat_to_rotvec(R_def2)
+
+    # --- corotated フレームでの自然変形 ---
+    d_cr = np.zeros(12, dtype=float)
+    # 節点1: 並進 = 0（corotated フレームの原点）
+    d_cr[3:6] = theta_def1  # 節点1 回転
+    d_cr[6] = L_def - L_0  # 軸伸び
+    # 節点2: 横方向並進 = 0（corotated x軸上）
+    d_cr[9:12] = theta_def2  # 節点2 回転
+
+    # --- 線形局所剛性（初期長さベース）---
+    Ke_local = timo_beam3d_ke_local(E, G, A, Iy, Iz, J, L_0, kappa_y, kappa_z, scf=scf)
+
+    # --- 局所内力 ---
+    f_cr = Ke_local @ d_cr
+
+    # --- 全体座標系へ変換 ---
+    T_cr = _transformation_matrix_3d(R_cr)
+    return T_cr.T @ f_cr
+
+
+def timo_beam3d_cr_tangent(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+) -> np.ndarray:
+    """Corotational Timoshenko 3D 梁の接線剛性行列（数値微分）.
+
+    中心差分で f_int の DOF 微分を計算する。
+    Cosserat rod 非線形と同じ手法。
+
+    Args:
+        coords_init: (2, 3) 初期節点座標
+        u_elem: (12,) 全体座標系の変位ベクトル
+        E, G, A, Iy, Iz, J, kappa_y, kappa_z: 材料・断面定数
+        v_ref: 局所y軸の参照ベクトル
+        scf: スレンダネス補償係数
+
+    Returns:
+        K_T: (12, 12) 接線剛性行列（全体座標系、対称化済み）
+    """
+    eps = 1e-7
+    K_T = np.zeros((12, 12), dtype=float)
+    u_p = u_elem.copy()
+    u_m = u_elem.copy()
+
+    for j in range(12):
+        u_p[j] = u_elem[j] + eps
+        u_m[j] = u_elem[j] - eps
+        f_p = timo_beam3d_cr_internal_force(
+            coords_init,
+            u_p,
+            E,
+            G,
+            A,
+            Iy,
+            Iz,
+            J,
+            kappa_y,
+            kappa_z,
+            v_ref=v_ref,
+            scf=scf,
+        )
+        f_m = timo_beam3d_cr_internal_force(
+            coords_init,
+            u_m,
+            E,
+            G,
+            A,
+            Iy,
+            Iz,
+            J,
+            kappa_y,
+            kappa_z,
+            v_ref=v_ref,
+            scf=scf,
+        )
+        K_T[:, j] = (f_p - f_m) / (2.0 * eps)
+        u_p[j] = u_elem[j]
+        u_m[j] = u_elem[j]
+
+    # 対称化（数値誤差の補正）
+    return 0.5 * (K_T + K_T.T)
+
+
+def assemble_cr_beam3d(
+    nodes_init: np.ndarray,
+    connectivity: np.ndarray,
+    u: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    *,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Corotational Timoshenko 3D 梁のグローバルアセンブリ.
+
+    Args:
+        nodes_init: (n_nodes, 3) 初期節点座標
+        connectivity: (n_elems, 2) 要素接続（節点インデックス）
+        u: (ndof,) 全体変位ベクトル
+        E, G: ヤング率、せん断弾性率
+        A, Iy, Iz, J: 断面定数
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        scf: スレンダネス補償係数
+        stiffness: True の場合、接線剛性行列を計算
+        internal_force: True の場合、内力ベクトルを計算
+
+    Returns:
+        (K_T, f_int): 接線剛性行列 (ndof, ndof) と内力ベクトル (ndof,)
+            要求されなかった場合は None
+    """
+    n_nodes = len(nodes_init)
+    ndof = 6 * n_nodes
+
+    K_T_global = np.zeros((ndof, ndof), dtype=float) if stiffness else None
+    f_int_global = np.zeros(ndof, dtype=float) if internal_force else None
+
+    for elem in connectivity:
+        n1, n2 = int(elem[0]), int(elem[1])
+        coords = nodes_init[np.array([n1, n2])]
+
+        # 要素 DOF インデックス
+        edofs = np.array(
+            [6 * n1 + d for d in range(6)] + [6 * n2 + d for d in range(6)],
+            dtype=int,
+        )
+        u_elem = u[edofs]
+
+        if internal_force:
+            f_e = timo_beam3d_cr_internal_force(
+                coords,
+                u_elem,
+                E,
+                G,
+                A,
+                Iy,
+                Iz,
+                J,
+                kappa_y,
+                kappa_z,
+                v_ref=v_ref,
+                scf=scf,
+            )
+            f_int_global[edofs] += f_e
+
+        if stiffness:
+            K_e = timo_beam3d_cr_tangent(
+                coords,
+                u_elem,
+                E,
+                G,
+                A,
+                Iy,
+                Iz,
+                J,
+                kappa_y,
+                kappa_z,
+                v_ref=v_ref,
+                scf=scf,
+            )
+            K_T_global[np.ix_(edofs, edofs)] += K_e
+
+    return K_T_global, f_int_global
