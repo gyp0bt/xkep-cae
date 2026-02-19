@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C2 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C2 + CR梁定式化 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C2 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了（865テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C2 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）**完了（887テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -41,7 +41,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | カテゴリ | 内容 |
 |---------|------|
 | **平面要素** | Q4（双線形四角形）, TRI3（一次三角形）, TRI6（二次三角形）, Q4_BBAR（B̄法）, **Q4_EAS（EAS-4, デフォルト）** |
-| **梁要素** | Euler-Bernoulli梁（2D）, Timoshenko梁（2D, Cowper κ(ν), SCF対応）, **Timoshenko梁（3D空間, 12DOF）** |
+| **梁要素** | Euler-Bernoulli梁（2D）, Timoshenko梁（2D, Cowper κ(ν), SCF対応）, **Timoshenko梁（3D空間, 12DOF）**, **CR定式化（Corotational, 幾何学的非線形）** |
 | **Cosserat rod** | 四元数回転, B行列定式化, 線形化版要素, 内力ベクトル, 幾何剛性行列, 初期曲率, SRI |
 | **材料** | 線形弾性（平面ひずみ）, 1D梁弾性 |
 | **断面** | 矩形, 円形, パイプ（2D/3D, Iy/Iz/J 対応） |
@@ -57,7 +57,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性） |
 | **接触（C0〜C2）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_pen·g·g^T, 主項）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト（**865テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**（**887テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）
@@ -432,12 +432,17 @@ class TestResult:
   - 先端荷重: PL²/EI = 1, 2, 5, 10 — elastica 厳密解と一致（< 5%）
 - [ ] テスト：Lee's frame等の標準ベンチマーク
 
-### 3.3 共回転定式化（オプション）
+### 3.3 共回転（Corotational）定式化 ✓
 
-Cosserat非線形と別ルートの定式化。必要に応じて実装。
+Timoshenko 3D 梁に対する CR 定式化。Cosserat非線形と別ルートの幾何学的非線形。
 
-- [ ] 要素ごとのローカルフレーム追従
-- [ ] 剛体回転の分離と変形成分の抽出
+- [x] 要素ごとのローカルフレーム追従（corotated フレーム構築）
+- [x] 剛体回転の分離と変形成分の抽出（`R_def = R_cr @ R_node @ R_0^T`）
+- [x] CR内力ベクトル `timo_beam3d_cr_internal_force()`
+- [x] 数値微分接線剛性 `timo_beam3d_cr_tangent()`（中心差分, eps=1e-7）
+- [x] グローバルアセンブリ `assemble_cr_beam3d()`
+- [x] dynamic_runner 統合（`nlgeom=True` + `beam_type="timo3d"`）
+- [x] テスト: 小変位線形一致(13), 接線剛性(3), 剛体運動(1), 大変形(2), アセンブリ(3), NR統合(2) — **24テスト**
 
 ### 3.4 Total/Updated Lagrangian ✓
 

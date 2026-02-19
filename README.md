@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C2 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力完了。865テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C2 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化完了。887テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -23,6 +23,7 @@ GIFアニメーション出力: Pillow連携、ビュー方向ごとのGIF生成
 .inp実行スクリプト: `examples/run_examples.py` でサンプル .inp の解析実行・解析解比較。
 Abaqus三点曲げバリデーション: `assets/test_assets/Abaqus/1-bend3p/` の結果と比較（剛性差異1.09%）。
 三点曲げ非線形動解析スクリプト: Abaqus準拠パラメータで非線形動解析を実施、GIFアニメーション・比較プロット出力。
+CR梁定式化: Timoshenko 3D梁のCorotational定式化による幾何学的非線形（大変形・大回転）対応。dynamic_runner統合（nlgeom=True）。
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -38,7 +39,7 @@ Abaqus三点曲げバリデーション: `assets/test_assets/Abaqus/1-bend3p/` �
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
-- [実装状況](docs/status/status-041.md) — 最新のステータス（三点曲げ非線形動解析スクリプト + GIFアニメーション出力）
+- [実装状況](docs/status/status-042.md) — 最新のステータス（CR定式化によるTimoshenko 3D梁の幾何学的非線形）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
