@@ -1154,6 +1154,95 @@ def cosserat_tangent_stiffness_nonlinear(
     return K_T
 
 
+def assemble_cosserat_nonlinear(
+    nodes_init: np.ndarray,
+    connectivity: np.ndarray,
+    u: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    *,
+    v_ref: np.ndarray | None = None,
+    kappa_0: np.ndarray | None = None,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """非線形 Cosserat rod のグローバルアセンブリ.
+
+    Args:
+        nodes_init: (n_nodes, 3) 初期節点座標
+        connectivity: (n_elems, 2) 要素接続（節点インデックス）
+        u: (ndof,) 全体変位ベクトル
+        E, G: ヤング率、せん断弾性率
+        A, Iy, Iz, J: 断面定数
+        kappa_y, kappa_z: せん断補正係数
+        v_ref: 局所y軸の参照ベクトル
+        kappa_0: (3,) 初期曲率
+        stiffness: True の場合、接線剛性行列を計算
+        internal_force: True の場合、内力ベクトルを計算
+
+    Returns:
+        (K_T, f_int): 接線剛性行列 (ndof, ndof) と内力ベクトル (ndof,)
+            要求されなかった場合は None
+    """
+    n_nodes = len(nodes_init)
+    ndof = 6 * n_nodes
+
+    K_T_global = np.zeros((ndof, ndof), dtype=float) if stiffness else None
+    f_int_global = np.zeros(ndof, dtype=float) if internal_force else None
+
+    for elem in connectivity:
+        n1, n2 = int(elem[0]), int(elem[1])
+        coords = nodes_init[np.array([n1, n2])]
+
+        edofs = np.array(
+            [6 * n1 + d for d in range(6)] + [6 * n2 + d for d in range(6)],
+            dtype=int,
+        )
+        u_elem = u[edofs]
+
+        if internal_force and f_int_global is not None:
+            f_e = cosserat_internal_force_nonlinear(
+                coords,
+                u_elem,
+                E,
+                G,
+                A,
+                Iy,
+                Iz,
+                J,
+                kappa_y,
+                kappa_z,
+                v_ref=v_ref,
+                kappa_0=kappa_0,
+            )
+            f_int_global[edofs] += f_e
+
+        if stiffness and K_T_global is not None:
+            K_e = cosserat_tangent_stiffness_nonlinear(
+                coords,
+                u_elem,
+                E,
+                G,
+                A,
+                Iy,
+                Iz,
+                J,
+                kappa_y,
+                kappa_z,
+                v_ref=v_ref,
+                kappa_0=kappa_0,
+            )
+            K_T_global[np.ix_(edofs, edofs)] += K_e
+
+    return K_T_global, f_int_global
+
+
 class CosseratRod:
     """Cosserat rod 要素（ElementProtocol 適合）.
 
