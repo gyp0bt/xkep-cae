@@ -13,6 +13,7 @@ from xkep_cae.io.abaqus_inp import (
 from xkep_cae.io.material_converter import (
     abaqus_material_to_plane_strain_plasticity,
     abaqus_material_to_plasticity_1d,
+    kinematic_table_to_armstrong_frederick,
 )
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "AbaqusNode",
     "abaqus_material_to_plane_strain_plasticity",
     "abaqus_material_to_plasticity_1d",
+    "kinematic_table_to_armstrong_frederick",
     "read_abaqus_inp",
 ]
