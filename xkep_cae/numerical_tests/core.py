@@ -260,6 +260,8 @@ class DynamicTestConfig:
     max_iter: int = 30
     tol_force: float = 1e-8
     mass_type: str = "consistent"
+    nlgeom: bool = False
+    n_load_steps: int = 10
 
     def __post_init__(self) -> None:
         if self.name not in TEST_TYPES_DYNAMIC:

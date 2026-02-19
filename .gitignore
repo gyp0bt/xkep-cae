@@ -31,3 +31,4 @@ dist/
 build/
 .pytest_cache/
 .venv
+examples/output/
