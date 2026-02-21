@@ -132,6 +132,10 @@ class ContactConfig:
         tol_geometry: 最近接点の収束判定値
         use_friction: 摩擦の有無
         mu_ramp_steps: μランプのステップ数（0 = ランプなし）
+        use_line_search: merit line search の有効化
+        line_search_max_steps: backtracking の最大縮小回数
+        merit_alpha: merit function の貫通ペナルティ重み
+        merit_beta: merit function の散逸ペナルティ重み
     """
 
     k_pen_scale: float = 1.0
@@ -143,6 +147,10 @@ class ContactConfig:
     tol_geometry: float = 1e-6
     use_friction: bool = False
     mu_ramp_steps: int = 0
+    use_line_search: bool = False
+    line_search_max_steps: int = 5
+    merit_alpha: float = 1.0
+    merit_beta: float = 1.0
 
 
 @dataclass

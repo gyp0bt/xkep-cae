@@ -2,17 +2,20 @@
 
 Phase C2: 法線接触のみ（摩擦なし）。
 Phase C3: 摩擦 return mapping + μランプ対応。
+Phase C4: merit line search + Outer loop 運用強化。
 
 設計方針:
 - 既存の ``newton_raphson()`` を内部利用する「包装関数」方式
 - Outer loop: 接触候補検出 + 幾何更新 + AL乗数更新 + μランプ
 - Inner loop: 最近接点 (s,t) 固定で Newton-Raphson + 摩擦力
+- Line search: merit function が減少する step length を採用
 
 収束判定（Outer）:
 - 最近接パラメータ |Δs|, |Δt| が閾値以下
+- merit function の改善停滞による早期終了
 - または Inner が 1 反復で収束
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §6, §12
+設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §6, §8, §12
 """
 
 from __future__ import annotations
@@ -34,6 +37,7 @@ from xkep_cae.contact.law_normal import (
     initialize_penalty_stiffness,
     update_al_multiplier,
 )
+from xkep_cae.contact.line_search import backtracking_line_search, merit_function
 from xkep_cae.contact.pair import ContactManager, ContactStatus
 
 
@@ -48,6 +52,7 @@ class ContactSolveResult:
         total_newton_iterations: 全ステップの合計 Newton 反復回数
         total_outer_iterations: 全ステップの合計 Outer 反復回数
         n_active_final: 最終的な ACTIVE ペア数
+        total_line_search_steps: 全ステップの合計 line search 縮小ステップ数
         load_history: 各ステップの荷重係数
         displacement_history: 各ステップの変位
         contact_force_history: 各ステップの接触力ノルム
@@ -59,6 +64,7 @@ class ContactSolveResult:
     total_newton_iterations: int
     total_outer_iterations: int
     n_active_final: int
+    total_line_search_steps: int = 0
     load_history: list[float] = field(default_factory=list)
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
@@ -154,7 +160,8 @@ def newton_raphson_with_contact(
     各荷重ステップで:
     1. Outer loop: 候補検出 + 幾何更新 + k_pen 初期化
     2. Inner loop: NR 反復（最近接固定、接触力/剛性を追加）
-    3. Outer 収束判定: |Δs|, |Δt| < tol_geometry
+       - use_line_search=True: merit line search で step length を適応制御
+    3. Outer 収束判定: |Δs|, |Δt| < tol_geometry + merit 改善停滞判定
     4. AL 乗数更新
 
     Args:
@@ -189,11 +196,18 @@ def newton_raphson_with_contact(
     n_outer_max = manager.config.n_outer_max
     tol_geometry = manager.config.tol_geometry
 
+    # Line search 設定
+    use_line_search = manager.config.use_line_search
+    ls_max_steps = manager.config.line_search_max_steps
+    merit_alpha = manager.config.merit_alpha
+    merit_beta = manager.config.merit_beta
+
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
     total_newton = 0
     total_outer = 0
+    total_ls = 0
     global_ramp_counter = 0  # μランプカウンタ（全ステップ通算 Outer 回数）
 
     use_friction = manager.config.use_friction
@@ -218,6 +232,7 @@ def newton_raphson_with_contact(
                 z_t_conv[pair_idx] = pair.state.z_t.copy()
 
         step_converged = False
+        merit_prev_outer = float("inf")  # Outer loop merit 追跡
 
         for outer in range(n_outer_max):
             total_outer += 1
@@ -381,7 +396,71 @@ def newton_raphson_with_contact(
                         f"active={manager.n_active}"
                     )
 
-                u += du
+                # --- Line search ---
+                if use_line_search and manager.n_active > 0:
+                    phi_current = merit_function(
+                        residual,
+                        manager,
+                        alpha=merit_alpha,
+                        beta=merit_beta,
+                    )
+
+                    # 摩擦力を固定して merit 評価する closure
+                    ff_snapshot = dict(friction_forces) if friction_forces else None
+                    # f_ext をローカルにキャプチャ（B023 回避）
+                    _f_ext_ls = f_ext
+                    _ff_ls = ff_snapshot
+
+                    def _eval_merit(
+                        u_trial: np.ndarray,
+                        _fe: np.ndarray = _f_ext_ls,
+                        _ff: dict | None = _ff_ls,
+                    ) -> float:
+                        _update_gaps_fixed_st(
+                            manager,
+                            node_coords_ref,
+                            u_trial,
+                            ndof_per_node,
+                        )
+                        f_int_t = assemble_internal_force(u_trial)
+                        f_c_t = compute_contact_force(
+                            manager,
+                            ndof,
+                            ndof_per_node=ndof_per_node,
+                            friction_forces=_ff,
+                        )
+                        res_t = _fe - f_int_t - f_c_t
+                        res_t[fixed_dofs] = 0.0
+                        return merit_function(
+                            res_t,
+                            manager,
+                            alpha=merit_alpha,
+                            beta=merit_beta,
+                        )
+
+                    eta, n_ls = backtracking_line_search(
+                        u,
+                        du,
+                        phi_current,
+                        _eval_merit,
+                        max_steps=ls_max_steps,
+                    )
+                    total_ls += n_ls
+
+                    u = u + eta * du
+
+                    if show_progress and eta < 1.0:
+                        print(f"    line search: eta={eta:.3f} ({n_ls} steps)")
+
+                    # gap を最終状態に復元
+                    _update_gaps_fixed_st(
+                        manager,
+                        node_coords_ref,
+                        u,
+                        ndof_per_node,
+                    )
+                else:
+                    u += du
 
                 # 変位ノルム判定
                 if u_norm > 1e-30 and du_norm / u_norm < tol_disp:
@@ -417,6 +496,7 @@ def newton_raphson_with_contact(
                     total_newton_iterations=total_newton,
                     total_outer_iterations=total_outer,
                     n_active_final=manager.n_active,
+                    total_line_search_steps=total_ls,
                     load_history=load_history,
                     displacement_history=disp_history,
                     contact_force_history=contact_force_history,
@@ -441,19 +521,58 @@ def newton_raphson_with_contact(
             for pair in manager.pairs:
                 update_al_multiplier(pair)
 
+            # --- Merit-based Outer 終了判定 ---
+            # Inner 収束後の残差で merit を評価
+            if use_line_search:
+                _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
+                f_int_post = assemble_internal_force(u)
+                f_c_post = compute_contact_force(
+                    manager,
+                    ndof,
+                    ndof_per_node=ndof_per_node,
+                )
+                res_post = f_ext - f_int_post - f_c_post
+                res_post[fixed_dofs] = 0.0
+                merit_cur = merit_function(
+                    res_post,
+                    manager,
+                    alpha=merit_alpha,
+                    beta=merit_beta,
+                )
+
             if show_progress:
                 friction_info = ""
                 if use_friction:
                     friction_info = f", μ_eff={mu_eff:.3f}"
+                merit_info = ""
+                if use_line_search:
+                    merit_info = f", merit={merit_cur:.3e}"
                 print(
                     f"  Step {step}, outer {outer}: "
                     f"max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}, "
-                    f"active={manager.n_active}{friction_info}"
+                    f"active={manager.n_active}{friction_info}{merit_info}"
                 )
 
             if max_ds < tol_geometry and max_dt < tol_geometry:
                 step_converged = True
                 break
+
+            # Merit 改善停滞による早期終了（2回目以降の Outer で判定）
+            if use_line_search and outer > 0:
+                merit_ratio = merit_cur / max(merit_prev_outer, 1e-30)
+                if merit_ratio > 0.99:
+                    # merit が改善していない → (s,t) 更新が効果なし
+                    if show_progress:
+                        print(
+                            f"  Step {step}, outer {outer}: "
+                            f"merit stagnated (ratio={merit_ratio:.4f}). "
+                            f"Accepting."
+                        )
+                    step_converged = True
+                    break
+
+            if use_line_search:
+                merit_prev_outer = merit_cur
 
         if not step_converged:
             # Outer ループ上限到達でも Inner は収束している → 受容
@@ -483,6 +602,7 @@ def newton_raphson_with_contact(
         total_newton_iterations=total_newton,
         total_outer_iterations=total_outer,
         n_active_final=manager.n_active,
+        total_line_search_steps=total_ls,
         load_history=load_history,
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
