@@ -93,10 +93,10 @@ Q4要素のULではなく、梁要素に自然な **Corotational (CR) 定式化*
 ## TODO
 
 - [x] ~~Timoshenko 3D 梁の UL（Updated Lagrangian）定式化~~ → CR 定式化で実装完了
-- [ ] Abaqus NLGEOM との大ストローク比較（大変形域でのCR梁 vs Abaqus B31）
-- [ ] Cosserat rod 非線形モードでの大変形三点曲げ比較
-- [ ] `apply_dirichlet` のスパース行列非ゼロ規定変位バグの修正
-- [ ] Abaqus弾塑性三点曲げ（idx2）のバリデーション
+- [x] Abaqus NLGEOM との大ストローク比較（大変形域でのCR梁 vs Abaqus B31）→ status-043 で完了
+- [x] Cosserat rod 非線形モードでの大変形三点曲げ比較 → status-043 で完了
+- [x] `apply_dirichlet` のスパース行列非ゼロ規定変位バグの修正 → status-043 で完了
+- [x] Abaqus弾塑性三点曲げ（idx2）のバリデーション → status-043 で完了
 - [ ] Phase C3: 摩擦 return mapping + μランプ
 - [ ] Phase C4: merit line search + 探索/求解分離の運用強化
 

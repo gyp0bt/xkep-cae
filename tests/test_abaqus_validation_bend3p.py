@@ -298,6 +298,171 @@ class TestAbaqusBend3pCurvature:
         assert abs(curvature_approx) > 1e-6, f"中心付近の曲率がゼロに近い: {curvature_approx}"
 
 
+class TestAbaqusBend3pNLGEOM:
+    """Abaqus NLGEOM 大ストローク比較（CR梁 vs Abaqus B31）."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """モデルとAbaqusデータを読み込む."""
+        self.model = build_bend3p_half_model()
+        rf_path = ASSET_DIR / "go_idx1_RF.csv"
+        if rf_path.exists():
+            self.abaqus_rf = load_abaqus_rf(rf_path)
+        else:
+            pytest.skip("Abaqus RF データが見つかりません")
+
+    @staticmethod
+    def _solve_cr_displacement_control(
+        model: dict,
+        delta_y: float,
+        n_steps: int = 20,
+        tol: float = 1e-6,
+        max_iter: int = 50,
+    ) -> list[dict]:
+        """CR梁による変位制御NR解析.
+
+        Args:
+            model: build_bend3p_half_model() の戻り値
+            delta_y: 最終規定変位 [mm]（負=下向き）
+            n_steps: 荷重ステップ数
+            tol: NR収束トレランス
+            max_iter: NR最大反復回数
+
+        Returns:
+            各ステップの {"delta": float, "reaction": float, "converged": bool} のリスト
+        """
+        from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
+
+        nodes = model["nodes"]
+        conn = model["conn"]
+        E = model["material"].E
+        nu = model["material"].nu
+        G = E / (2.0 * (1.0 + nu))
+        sec = model["section"]
+        ky = sec.cowper_kappa_y(nu)
+        kz = sec.cowper_kappa_z(nu)
+
+        ndof = model["ndof_total"]
+        u = np.zeros(ndof, dtype=float)
+
+        center_uy_dof = model["center_uy_dof"]
+        all_fixed = np.unique(np.concatenate([model["fixed_dofs"], [center_uy_dof]]))
+        free = np.setdiff1d(np.arange(ndof), all_fixed)
+
+        results = []
+        for step in range(1, n_steps + 1):
+            target = delta_y * step / n_steps
+            u[center_uy_dof] = target
+
+            converged = False
+            for _k in range(max_iter):
+                K_T, f_int = assemble_cr_beam3d(
+                    nodes,
+                    conn,
+                    u,
+                    E,
+                    G,
+                    sec.A,
+                    sec.Iy,
+                    sec.Iz,
+                    sec.J,
+                    ky,
+                    kz,
+                    stiffness=True,
+                    internal_force=True,
+                )
+                R = -f_int.copy()
+                R[all_fixed] = 0.0
+                res_norm = float(np.linalg.norm(R[free]))
+                ref_norm = max(float(np.linalg.norm(f_int)), 1.0)
+                if res_norm / ref_norm < tol:
+                    converged = True
+                    break
+                K_ff = K_T[np.ix_(free, free)]
+                du = np.linalg.solve(K_ff, R[free])
+                u[free] += du
+
+            _, f_int_final = assemble_cr_beam3d(
+                nodes,
+                conn,
+                u,
+                E,
+                G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                ky,
+                kz,
+                stiffness=False,
+                internal_force=True,
+            )
+            reaction_y = f_int_final[model["support_uy_dof"]]
+            results.append(
+                {
+                    "delta": target,
+                    "reaction": reaction_y,
+                    "converged": converged,
+                }
+            )
+
+        return results
+
+    def test_nlgeom_converges_all_steps(self):
+        """CR梁NLGEOMが全ステップで収束する（δ=-15mm, 20ステップ）."""
+        results = self._solve_cr_displacement_control(self.model, delta_y=-15.0, n_steps=20)
+        for i, r in enumerate(results):
+            assert r["converged"], f"Step {i + 1} (δ={r['delta']:.2f}) not converged"
+
+    def test_nlgeom_initial_stiffness_matches_abaqus(self):
+        """NLGEOM初期線形域の剛性がAbaqusと一致（< 10%）."""
+        results = self._solve_cr_displacement_control(self.model, delta_y=-5.0, n_steps=10)
+        K_cr = abs(results[0]["reaction"] / results[0]["delta"])
+
+        t = self.abaqus_rf["t"]
+        rf2 = self.abaqus_rf["RF2"]
+        mask = (t >= 5) & (t <= 15)
+        if not np.any(mask):
+            pytest.skip("Abaqus データの時間範囲が不十分")
+        K_abaqus = np.mean(np.abs(rf2[mask]) / (0.3 * t[mask]))
+
+        rel_diff = abs(K_cr - K_abaqus) / K_abaqus
+        assert rel_diff < 0.10, f"初期剛性差異 {rel_diff * 100:.1f}% > 10%"
+
+    def test_nlgeom_large_stroke_reaction_trend(self):
+        """大ストロークで反力が単調増加する."""
+        results = self._solve_cr_displacement_control(self.model, delta_y=-15.0, n_steps=15)
+        reactions = [abs(r["reaction"]) for r in results]
+        for i in range(1, len(reactions)):
+            assert reactions[i] >= reactions[i - 1] * 0.95, (
+                f"反力が減少: step {i}: {reactions[i - 1]:.4f} → {reactions[i]:.4f}"
+            )
+
+    def test_nlgeom_rf_curve_within_envelope(self):
+        """RF曲線がAbaqusと同オーダー（δ ≤ 10mm, 点支持vs接触の差異を考慮）.
+
+        大ストローク（δ > 10mm）では接触分布と点支持の差が大きくなるため、
+        比較範囲をδ ≤ 10mm に限定する。
+        """
+        cr_results = self._solve_cr_displacement_control(self.model, delta_y=-10.0, n_steps=10)
+        t = self.abaqus_rf["t"]
+        rf2 = self.abaqus_rf["RF2"]
+
+        for r in cr_results:
+            delta_mm = abs(r["delta"])
+            t_abaqus = delta_mm / 0.3
+            if t_abaqus < 1.0 or t_abaqus > 99.0:
+                continue
+            idx = np.argmin(np.abs(t - t_abaqus))
+            rf_abaqus = abs(rf2[idx])
+            rf_cr = abs(r["reaction"])
+            if rf_abaqus > 0.01:
+                ratio = rf_cr / rf_abaqus
+                assert 0.3 < ratio < 3.0, (
+                    f"δ={delta_mm:.1f}mm: CR={rf_cr:.4f}, Abaqus={rf_abaqus:.4f}, ratio={ratio:.2f}"
+                )
+
+
 class TestModelConstruction:
     """モデル構築の基本検証."""
 

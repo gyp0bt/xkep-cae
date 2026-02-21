@@ -19,10 +19,15 @@ def apply_dirichlet(
 ) -> DirichletResult:
     """Dirichlet境界条件（行・列消去＋右辺補正）を適用する.
 
-    - 元のK, fから:
-      1) f <- f - K[:,d]*val
-      2) K[:,d] = 0
-      3) K[d,:] = 0, K[d,d] = 1, f[d] = val
+    アルゴリズム（元のK, fから）:
+      1) f <- f - K[:, fixed_dofs] @ values  （元のKで一括補正）
+      2) K[:, fixed_dofs] = 0, K[fixed_dofs, :] = 0
+      3) K[d,d] = 1, f[d] = val
+
+    Note:
+        右辺補正は元のK行列（変更前）を使って一括計算する。
+        以前の実装ではCSR行列をループ内で順次変更していたため、
+        非ゼロ規定変位でスパース構造の不整合が発生していた。
 
     Args:
         K: CSR剛性行列
@@ -33,7 +38,6 @@ def apply_dirichlet(
     Returns:
         DirichletResult: (K, f) の NamedTuple。拘束適用後の剛性行列と右辺ベクトル。
     """
-    Kbc = K.tocsr(copy=True)
     fbc = f.astype(float, copy=True)
 
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
@@ -42,27 +46,30 @@ def apply_dirichlet(
     else:
         values = np.asarray(values, dtype=float)
 
-    n = Kbc.shape[0]
+    n = K.shape[0]
     if fbc.shape[0] != n:
         raise ValueError("K と f のサイズが一致していません。")
 
-    for dof, val in zip(fixed_dofs, values, strict=True):
-        # 1) 既知変位の影響を右辺へ移す: f <- f - K[:,dof]*val
-        col = Kbc[:, dof]  # (n,1) CSR
-        coeffs = col.data
-        rows = col.indices
-        if coeffs.size > 0:
-            fbc[rows] -= coeffs * val
+    # 1) 元のK行列（変更前）を使って右辺補正を一括実行
+    #    f <- f - K[:, fixed_dofs] @ values
+    nonzero_mask = values != 0.0
+    if np.any(nonzero_mask):
+        nz_dofs = fixed_dofs[nonzero_mask]
+        nz_vals = values[nonzero_mask]
+        K_csc = K.tocsc()
+        fbc -= K_csc[:, nz_dofs] @ nz_vals
 
-        # 2) 列をゼロに
-        Kbc[:, dof] = 0.0
-
-        # 3) 行をゼロにして対角1, 右辺=val
+    # 2) LIL形式で行・列ゼロクリア（行・列両方の変更が効率的）
+    Kbc = K.tolil(copy=True)
+    for dof in fixed_dofs:
         Kbc[dof, :] = 0.0
+        Kbc[:, dof] = 0.0
         Kbc[dof, dof] = 1.0
-        fbc[dof] = val
 
-    return DirichletResult(K=Kbc, f=fbc)
+    # 3) 固定DOFの右辺を規定値に設定
+    fbc[fixed_dofs] = values
+
+    return DirichletResult(K=Kbc.tocsr(), f=fbc)
 
 
 def apply_dirichlet_penalty(
