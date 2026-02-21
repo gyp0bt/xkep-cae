@@ -1,6 +1,7 @@
 """Coulomb 摩擦則（return mapping）.
 
 Phase C3: 接線方向の摩擦力計算（Coulomb return mapping）。
+Phase C5: slip consistent tangent の実装 + q_trial_norm 記録。
 
 設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5
 
@@ -14,6 +15,10 @@ Phase C3: 接線方向の摩擦力計算（Coulomb return mapping）。
 μランプ:
     μ_eff = μ_target * min(1, ramp_counter / mu_ramp_steps)
     Outer loop ごとに ramp_counter を漸増し、初期の収束を安定化する。
+
+slip consistent tangent (Phase C5):
+    D_t = (μ*p_n / ||q_trial||) * k_t * (I₂ - q̂⊗q̂)
+    v0.1 では stick と同じ k_t*I₂ を使用していたが、v0.2 では正確な式を使用。
 """
 
 from __future__ import annotations
@@ -112,6 +117,9 @@ def friction_return_mapping(
     # Coulomb 条件
     f_yield = mu * p_n
 
+    # q_trial_norm を記録（slip consistent tangent 用、Phase C5）
+    pair.state.q_trial_norm = q_trial_norm
+
     if q_trial_norm <= f_yield:
         # stick
         q = q_trial.copy()
@@ -138,9 +146,12 @@ def friction_tangent_2x2(
 ) -> np.ndarray:
     """摩擦の接線剛性（2×2 局所座標系）を返す.
 
-    - stick: D_t = k_t * I_2
-    - slip:  D_t = (μ * p_n / ||q_trial||) * (I_2 - q̂ ⊗ q̂) * k_t
-             ただし v0.1 では近似として k_t * I_2 を使用
+    - stick: D_t = k_t * I₂
+    - slip:  D_t = (μ * p_n / ||q_trial||) * k_t * (I₂ - q̂ ⊗ q̂)
+
+    Phase C5 で slip consistent tangent を実装。
+    v0.1 では slip 時も k_t * I₂ を使用していたが、
+    v0.2 では正確な式で Newton 収束性を改善する。
 
     Args:
         pair: 接触ペア
@@ -159,15 +170,19 @@ def friction_tangent_2x2(
         # stick: 完全弾性接線
         return k_t * np.eye(2)
     else:
-        # slip: consistent tangent
+        # slip: consistent tangent (Phase C5)
+        # D_t = (μ*p_n / ||q_trial||) * k_t * (I₂ - q̂⊗q̂)
         z_t = pair.state.z_t
         z_norm = float(np.linalg.norm(z_t))
-        if z_norm < 1e-30:
+        q_tn = pair.state.q_trial_norm
+
+        if z_norm < 1e-30 or q_tn < 1e-30:
             return k_t * np.eye(2)
 
-        # slip の consistent tangent: (μ*p_n) * k_t / ||q_trial|| * (I - q̂⊗q̂)
-        # v0.1 では近似として stick 同等の k_t*I を使用（過大推定だが安定）
-        return k_t * np.eye(2)
+        # q̂ = z_t / ||z_t|| = q_trial / ||q_trial||（同じ方向）
+        q_hat = z_t / z_norm
+        ratio = (mu * p_n) / q_tn
+        return ratio * k_t * (np.eye(2) - np.outer(q_hat, q_hat))
 
 
 def compute_mu_effective(

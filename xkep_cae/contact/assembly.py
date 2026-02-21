@@ -2,17 +2,20 @@
 
 Phase C2: 法線接触力のグローバルベクトル/行列への組み込み。
 Phase C3: 摩擦力 + 摩擦接線剛性の追加。
+Phase C5: 幾何微分込み一貫接線（K_geo）の追加。
 
 接触力の節点配分:
     セグメント A: p(s) = xA0 + s*(xA1 - xA0)
     → 節点 A0 に (1-s)*f,  節点 A1 に s*f を配分
     セグメント B: 反作用力を同様に (1-t), t で配分
 
-法線接線剛性（主項のみ, v0.1）:
-    K_n = k_pen * g_n g_n^T
+法線接線剛性:
+    K_n = k_pen * g_n g_n^T                     (主項)
+    K_geo = -p_n/dist * G^T * (I₃ - n⊗n) * G    (幾何剛性, Phase C5)
 
-摩擦接線剛性（stick 時）:
-    K_f = k_t * (g_t1 g_t1^T + g_t2 g_t2^T)
+摩擦接線剛性:
+    stick: K_f = k_t * (g_t1 g_t1^T + g_t2 g_t2^T)
+    slip:  K_f = ratio * k_t * (I₂ - q̂⊗q̂) に基づく (Phase C5)
 
 設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §7
 """
@@ -113,6 +116,56 @@ def _contact_tangent_shape_vector(pair: ContactPair, axis: int) -> np.ndarray:
     return g_t
 
 
+def _contact_geometric_stiffness_local(pair: ContactPair) -> np.ndarray:
+    """接触幾何剛性（法線回転効果）の局所行列を計算する.
+
+    K_geo = -p_n / dist * G^T * (I₃ - n⊗n) * G
+
+    ここで:
+    - G は gap gradient 行列 (3×12): ∂(pA - pB)/∂u
+    - (I₃ - n⊗n) は法線に垂直な面への射影
+    - p_n は法線接触反力
+    - dist は中心線間距離
+
+    この項は法線方向の回転に伴う剛性補正を表し、
+    法線主項（k_pen * g_n g_n^T）と合わせて一貫接線を構成する。
+
+    Args:
+        pair: 接触ペア
+
+    Returns:
+        K_geo: (12, 12) 幾何剛性行列（局所 DOF 順序: A0, A1, B0, B1 × 3）
+    """
+    p_n = pair.state.p_n
+    if p_n <= 0.0:
+        return np.zeros((12, 12))
+
+    s = pair.state.s
+    t = pair.state.t
+    n = pair.state.normal
+    dist = pair.state.gap + pair.radius_a + pair.radius_b
+
+    if dist < 1e-30:
+        return np.zeros((12, 12))
+
+    # Gap gradient 行列 G (3×12): ∂Δ/∂u where Δ = pA - pB
+    # pA = (1-s)*xA0 + s*xA1, pB = (1-t)*xB0 + t*xB1
+    G = np.zeros((3, 12))
+    G[:, 0:3] = (1.0 - s) * np.eye(3)
+    G[:, 3:6] = s * np.eye(3)
+    G[:, 6:9] = -(1.0 - t) * np.eye(3)
+    G[:, 9:12] = -t * np.eye(3)
+
+    # 射影行列: I₃ - n⊗n（法線に垂直な面）
+    P = np.eye(3) - np.outer(n, n)
+
+    # K_geo = -p_n / dist * G^T * P * G  (12×12)
+    PG = P @ G  # (3, 12)
+    K_geo = -(p_n / dist) * (G.T @ PG)  # (12, 12)
+
+    return K_geo
+
+
 def compute_contact_force(
     manager: ContactManager,
     ndof_total: int,
@@ -176,16 +229,18 @@ def compute_contact_stiffness(
     *,
     ndof_per_node: int = 6,
     friction_tangents: dict[int, np.ndarray] | None = None,
+    use_geometric_stiffness: bool = True,
 ) -> sp.csr_matrix:
     """全接触ペアの接触接線剛性行列を計算する.
 
     法線主項:
         K_n = k_pen * g_n g_n^T
 
+    幾何剛性（Phase C5, use_geometric_stiffness=True）:
+        K_geo = -p_n / dist * G^T * (I₃ - n⊗n) * G
+
     摩擦接線剛性（friction_tangents が指定されている場合）:
         K_f = Σ_axis Σ_axis2 D_t[a1,a2] * g_t1 g_t2^T
-
-    幾何微分（法線変化 dn/du）は v0.2 で追加予定。
 
     Args:
         manager: 接触マネージャ
@@ -193,6 +248,7 @@ def compute_contact_stiffness(
         ndof_per_node: 1節点あたりの DOF 数
         friction_tangents: {pair_index: D_t (2,2)} 摩擦接線剛性マップ。
             None なら法線剛性のみ（後方互換）。
+        use_geometric_stiffness: 幾何微分込み一貫接線の有効化（Phase C5）。
 
     Returns:
         K_contact: (ndof_total, ndof_total) CSR 形式接触剛性行列
@@ -213,13 +269,24 @@ def compute_contact_stiffness(
             for d in range(3):
                 gdofs[i * 3 + d] = node * ndof_per_node + d
 
-        # --- 法線接線剛性 ---
+        # --- 法線接線剛性（主項）---
         k_eff = normal_force_linearization(pair)
         if k_eff > 0.0:
             g_n = _contact_shape_vector(pair)
             for i in range(12):
                 for j in range(12):
                     val = k_eff * g_n[i] * g_n[j]
+                    if abs(val) > 1e-30:
+                        rows.append(gdofs[i])
+                        cols.append(gdofs[j])
+                        data.append(val)
+
+        # --- 幾何剛性（Phase C5）---
+        if use_geometric_stiffness and pair.state.p_n > 0.0:
+            K_geo_local = _contact_geometric_stiffness_local(pair)
+            for i in range(12):
+                for j in range(12):
+                    val = K_geo_local[i, j]
                     if abs(val) > 1e-30:
                         rows.append(gdofs[i])
                         cols.append(gdofs[j])

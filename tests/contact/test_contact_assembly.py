@@ -187,21 +187,38 @@ class TestComputeContactStiffness:
         assert np.allclose(K_dense, K_dense.T, atol=1e-10)
 
     def test_positive_semidefinite(self):
-        """接触剛性行列が半正定値（固有値 >= 0）."""
+        """主項のみの接触剛性行列が半正定値（固有値 >= 0）.
+
+        幾何剛性を除外した主項 k_eff * g_n * g_n^T のみを検証。
+        幾何剛性は負半定値であり、含めると全体は正定値にならない。
+        """
         pair = _make_active_pair(gap=-0.01, k_pen=1e4)
         evaluate_normal_force(pair)
         mgr = ContactManager(pairs=[pair], config=ContactConfig())
-        K_c = compute_contact_stiffness(mgr, 24, ndof_per_node=6)
+        K_c = compute_contact_stiffness(
+            mgr,
+            24,
+            ndof_per_node=6,
+            use_geometric_stiffness=False,
+        )
 
         eigvals = np.linalg.eigvalsh(K_c.toarray())
         assert all(eigvals >= -1e-10)
 
     def test_rank_one(self):
-        """1ペアの接触剛性行列はランク1（K = k*g*g^T）."""
+        """1ペアの主項接触剛性行列はランク1（K = k*g*g^T）.
+
+        幾何剛性を除外した主項のみを検証。
+        """
         pair = _make_active_pair(gap=-0.01, k_pen=1e4)
         evaluate_normal_force(pair)
         mgr = ContactManager(pairs=[pair], config=ContactConfig())
-        K_c = compute_contact_stiffness(mgr, 24, ndof_per_node=6)
+        K_c = compute_contact_stiffness(
+            mgr,
+            24,
+            ndof_per_node=6,
+            use_geometric_stiffness=False,
+        )
 
         K_dense = K_c.toarray()
         eigvals = np.linalg.eigvalsh(K_dense)

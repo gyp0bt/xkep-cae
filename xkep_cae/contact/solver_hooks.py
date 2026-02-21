@@ -3,12 +3,14 @@
 Phase C2: 法線接触のみ（摩擦なし）。
 Phase C3: 摩擦 return mapping + μランプ対応。
 Phase C4: merit line search + Outer loop 運用強化。
+Phase C5: 幾何微分込み一貫接線 + PDAS Active-set + slip consistent tangent。
 
 設計方針:
 - 既存の ``newton_raphson()`` を内部利用する「包装関数」方式
 - Outer loop: 接触候補検出 + 幾何更新 + AL乗数更新 + μランプ
 - Inner loop: 最近接点 (s,t) 固定で Newton-Raphson + 摩擦力
 - Line search: merit function が減少する step length を採用
+- PDAS: Inner loop 内で Active-set を動的更新（実験的、Phase C5）
 
 収束判定（Outer）:
 - 最近接パラメータ |Δs|, |Δt| が閾値以下
@@ -202,6 +204,10 @@ def newton_raphson_with_contact(
     merit_alpha = manager.config.merit_alpha
     merit_beta = manager.config.merit_beta
 
+    # Phase C5 設定
+    use_geometric_stiffness = manager.config.use_geometric_stiffness
+    use_pdas = manager.config.use_pdas
+
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
@@ -286,6 +292,22 @@ def newton_raphson_with_contact(
                 # gap 更新（s, t, normal 固定で変位に基づく gap 再計算）
                 _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
 
+                # --- PDAS Active-set 更新（Phase C5, 実験的）---
+                if use_pdas:
+                    for pair in manager.pairs:
+                        if pair.state.status == ContactStatus.INACTIVE:
+                            # 非活性ペア: 試行反力が正なら活性化
+                            if pair.state.k_pen > 0.0:
+                                p_trial = pair.state.lambda_n + pair.state.k_pen * (-pair.state.gap)
+                                if p_trial > 0.0 and pair.state.gap <= manager.config.g_on:
+                                    pair.state.status = ContactStatus.ACTIVE
+                        else:
+                            # 活性ペア: 試行反力が非正なら非活性化
+                            p_trial = pair.state.lambda_n + pair.state.k_pen * (-pair.state.gap)
+                            if p_trial <= 0.0:
+                                pair.state.status = ContactStatus.INACTIVE
+                                pair.state.p_n = 0.0
+
                 # --- 摩擦 return mapping ---
                 friction_forces: dict[int, np.ndarray] = {}
                 friction_tangents: dict[int, np.ndarray] = {}
@@ -366,6 +388,7 @@ def newton_raphson_with_contact(
                     ndof,
                     ndof_per_node=ndof_per_node,
                     friction_tangents=friction_tangents if friction_tangents else None,
+                    use_geometric_stiffness=use_geometric_stiffness,
                 )
                 K_total = K_T + K_c
 

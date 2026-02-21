@@ -3,6 +3,7 @@
 Phase C0: ContactPair / ContactState と solver_hooks の骨格。
 Phase C1: broadphase候補探索 + 幾何更新 + Active-setヒステリシス。
 Phase C2: 法線AL接触力評価 + 乗数更新 + ペナルティ初期化。
+Phase C5: q_trial_norm 追加 + use_geometric_stiffness / use_pdas 設定追加。
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ class ContactState:
         k_t: 接線ペナルティ剛性
         p_n: 法線反力（≥ 0）
         z_t: 接線履歴ベクトル (2,)（摩擦用）
+        q_trial_norm: 摩擦 trial force ノルム（slip consistent tangent 用）
         status: 接触状態
         stick: stick 状態フラグ
         dissipation: 散逸エネルギー増分
@@ -60,6 +62,7 @@ class ContactState:
     k_t: float = 0.0
     p_n: float = 0.0
     z_t: np.ndarray = field(default_factory=lambda: np.zeros(2))
+    q_trial_norm: float = 0.0
     status: ContactStatus = ContactStatus.INACTIVE
     stick: bool = True
     dissipation: float = 0.0
@@ -78,6 +81,7 @@ class ContactState:
             k_t=self.k_t,
             p_n=self.p_n,
             z_t=self.z_t.copy(),
+            q_trial_norm=self.q_trial_norm,
             status=self.status,
             stick=self.stick,
             dissipation=self.dissipation,
@@ -136,6 +140,8 @@ class ContactConfig:
         line_search_max_steps: backtracking の最大縮小回数
         merit_alpha: merit function の貫通ペナルティ重み
         merit_beta: merit function の散逸ペナルティ重み
+        use_geometric_stiffness: 幾何微分込み一貫接線の有効化
+        use_pdas: PDAS Active-set 更新の有効化（実験的）
     """
 
     k_pen_scale: float = 1.0
@@ -151,6 +157,8 @@ class ContactConfig:
     line_search_max_steps: int = 5
     merit_alpha: float = 1.0
     merit_beta: float = 1.0
+    use_geometric_stiffness: bool = True
+    use_pdas: bool = False
 
 
 @dataclass
@@ -311,12 +319,15 @@ class ContactManager:
             # ギャップ計算
             gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
 
-            # 接触フレーム更新（法線履歴を使って連続性を保持）
+            # 接触フレーム更新（法線履歴 + 平行輸送で連続性を保持）
             prev_t1 = pair.state.tangent1
+            prev_n = pair.state.normal
             has_prev = float(np.linalg.norm(prev_t1)) > 1e-10
+            has_prev_n = float(np.linalg.norm(prev_n)) > 1e-10
             n, t1, t2 = build_contact_frame(
                 result.normal,
                 prev_tangent1=prev_t1 if has_prev else None,
+                prev_normal=prev_n if has_prev_n else None,
             )
 
             # 状態を更新
