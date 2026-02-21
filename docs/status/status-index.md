@@ -52,6 +52,7 @@
 | [042](status-042.md) | 2026-02-19 | Corotational (CR) 定式化による Timoshenko 3D 梁の幾何学的非線形 | 887 |
 | [043](status-043.md) | 2026-02-21 | Abaqus弾塑性三点曲げ（idx2）ファイバーモデルバリデーション | 905 |
 | [044](status-044.md) | 2026-02-21 | Phase C3 — 摩擦 return mapping + μランプ | 932 |
+| [045](status-045.md) | 2026-02-21 | Phase C4 — merit line search + 探索/求解分離の運用強化 | 958 |
 
 ## テスト数推移
 
@@ -88,6 +89,7 @@
 042:     887      (CR定式化 Timoshenko 3D梁 幾何学的非線形)
 043:     905      (Abaqus弾塑性三点曲げ ファイバーモデルバリデーション)
 044:     932      (Phase C3: 摩擦 return mapping + μランプ)
+045:     958      (Phase C4: merit line search + 探索/求解分離の運用強化)
 ```
 
 ## 備考

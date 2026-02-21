@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C3 + CR梁定式化 + CR梁ファイバー弾塑性 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C4 + CR梁定式化 + CR梁ファイバー弾塑性 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C3 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）**完了（932テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C4 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）**完了（958テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -26,6 +26,7 @@ Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geomet
 Phase C1: Broadphase（AABB格子）+ ContactManager幾何更新（narrowphase）+ Active-setヒステリシス（31テスト）。
 **Phase C2**: 法線AL接触力 + 接触接線剛性（主項）+ 接触付きNRソルバー（Outer/Inner分離）（43テスト）。
 **Phase C3**: Coulomb摩擦 return mapping + μランプ + 摩擦接線剛性 + 接線相対変位追跡（27テスト）。
+**Phase C4**: merit line search + merit-based Outer終了判定 + backtracking step length制御（26テスト）。
 数値三点曲げ試験の非線形動解析対応（dynamic_runner, 11テスト）。
 **過渡応答出力**: Abaqus準拠 Step/Increment/Frame + InitialConditions + HistoryOutput/FieldOutput + CSV/JSON/VTK出力（38テスト）。
 **過渡応答出力拡張**: run_transient_steps（ステップ列自動実行）, 非線形反力計算（assemble_internal_force）, VTKバイナリ出力, 要素データ出力（CellData）, Abaqus .inpパーサー統合（17テスト）。
@@ -576,7 +577,7 @@ Newton-Raphson + Newmark-β による非線形過渡応答解析。
 - [x] C1: broadphase（AABB格子）+ ContactManager幾何更新（detect_candidates/update_geometry）+ Active-setヒステリシス — 31テスト
 - [x] C2: 法線AL + 接触接線剛性（主項）+ 接触付きNRソルバー（Outer/Inner分離）— 43テスト
 - [x] C3: 摩擦return mapping + μランプ（27テスト）
-- [ ] C4: merit line search + 探索/求解分離の運用強化
+- [x] C4: merit line search + 探索/求解分離の運用強化（26テスト）
 
 ---
 
@@ -731,7 +732,8 @@ Phase 8 (応用展開) ← 必要に応じて
 9. ~~**Phase C1 Broadphase + 幾何更新 + Active-set**~~ — 実装完了 ✓（31テスト）
 10. ~~**Phase C2 法線AL + 接触接線 + 接触付きNR**~~ — 実装完了 ✓（43テスト）
 11. ~~**Phase C3 摩擦 return mapping + μランプ**~~ — 実装完了 ✓（27テスト）
-12. **Phase C4 merit line search + 探索/求解分離の運用強化** — 次の実装候補
+12. ~~**Phase C4 merit line search + 探索/求解分離の運用強化**~~ — 実装完了 ✓（26テスト）
+13. **Phase C5 幾何微分込み一貫接線 + semi-smooth Newton** — 次の実装候補
 
 **並行開発可能**:
 - Phase 4（4.1〜4.6）と Phase 5 は Phase 3 完了後に並行可

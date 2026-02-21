@@ -6,13 +6,14 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C3 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性完了。932テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C4 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性完了。958テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
 Phase C1: Broadphase（AABB格子）+ ContactManager幾何更新 + Active-setヒステリシス実装完了。
 Phase C2: 法線AL接触力 + 接触接線剛性（主項）+ 接触付きNRソルバー（Outer/Inner分離）実装完了。
 Phase C3: Coulomb摩擦 return mapping + μランプ + 摩擦接線剛性 + 接線相対変位追跡 実装完了。
+Phase C4: merit line search（Armijo backtracking） + merit-based Outer終了判定 + step length適応制御 実装完了。
 過渡応答出力: Abaqus準拠のStep/Increment/Frame階層 + CSV/JSON/VTK(ParaView)出力。
 ステップ列自動実行（run_transient_steps）、非線形反力計算、VTKバイナリ出力、要素データ出力、.inpパーサー統合。
 .inpパーサー拡張: *ELSET, *BOUNDARY, *OUTPUT FIELD ANIMATION, *MATERIAL, *ELASTIC, *DENSITY, *PLASTIC キーワード追加。
@@ -41,7 +42,7 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
-- [実装状況](docs/status/status-044.md) — 最新のステータス（Phase C3 摩擦 return mapping）
+- [実装状況](docs/status/status-045.md) — 最新のステータス（Phase C4 merit line search）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
