@@ -53,6 +53,7 @@
 | [043](status-043.md) | 2026-02-21 | Abaqus弾塑性三点曲げ（idx2）ファイバーモデルバリデーション | 905 |
 | [044](status-044.md) | 2026-02-21 | Phase C3 — 摩擦 return mapping + μランプ | 932 |
 | [045](status-045.md) | 2026-02-21 | Phase C4 — merit line search + 探索/求解分離の運用強化 | 958 |
+| [046](status-046.md) | 2026-02-21 | Phase C5 — 幾何微分込み一貫接線 + slip consistent tangent + PDAS + 平行輸送フレーム | 993 |
 
 ## テスト数推移
 
@@ -90,6 +91,7 @@
 043:     905      (Abaqus弾塑性三点曲げ ファイバーモデルバリデーション)
 044:     932      (Phase C3: 摩擦 return mapping + μランプ)
 045:     958      (Phase C4: merit line search + 探索/求解分離の運用強化)
+046:     993      (Phase C5: 幾何微分込み一貫接線 + slip consistent tangent + PDAS + 平行輸送フレーム)
 ```
 
 ## 備考
