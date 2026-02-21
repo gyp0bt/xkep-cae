@@ -1,17 +1,18 @@
 """接触付き Newton-Raphson ソルバー（Outer/Inner 分離）.
 
 Phase C2: 法線接触のみ（摩擦なし）。
+Phase C3: 摩擦 return mapping + μランプ対応。
 
 設計方針:
 - 既存の ``newton_raphson()`` を内部利用する「包装関数」方式
-- Outer loop: 接触候補検出 + 幾何更新 + AL乗数更新
-- Inner loop: 最近接点 (s,t) 固定で Newton-Raphson
+- Outer loop: 接触候補検出 + 幾何更新 + AL乗数更新 + μランプ
+- Inner loop: 最近接点 (s,t) 固定で Newton-Raphson + 摩擦力
 
 収束判定（Outer）:
 - 最近接パラメータ |Δs|, |Δt| が閾値以下
 - または Inner が 1 反復で収束
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §6, §12
+設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §6, §12
 """
 
 from __future__ import annotations
@@ -23,6 +24,12 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
+from xkep_cae.contact.law_friction import (
+    compute_mu_effective,
+    compute_tangential_displacement,
+    friction_return_mapping,
+    friction_tangent_2x2,
+)
 from xkep_cae.contact.law_normal import (
     initialize_penalty_stiffness,
     update_al_multiplier,
@@ -187,6 +194,11 @@ def newton_raphson_with_contact(
     contact_force_history: list[float] = []
     total_newton = 0
     total_outer = 0
+    global_ramp_counter = 0  # μランプカウンタ（全ステップ通算 Outer 回数）
+
+    use_friction = manager.config.use_friction
+    mu_target = manager.config.mu
+    mu_ramp_steps = manager.config.mu_ramp_steps
 
     f_ext_ref_norm = float(np.linalg.norm(f_ext_total))
     if f_ext_ref_norm < 1e-30:
@@ -196,10 +208,25 @@ def newton_raphson_with_contact(
         lam = step / n_load_steps
         f_ext = lam * f_ext_total
 
+        # ステップ開始時の変位を参照状態として保存（摩擦用）
+        u_step_ref = u.copy()
+
+        # ステップ開始時の z_t を保存（NR iteration ごとにリセットするため）
+        z_t_conv: dict[int, np.ndarray] = {}
+        if use_friction:
+            for pair_idx, pair in enumerate(manager.pairs):
+                z_t_conv[pair_idx] = pair.state.z_t.copy()
+
         step_converged = False
 
         for outer in range(n_outer_max):
             total_outer += 1
+            global_ramp_counter += 1
+
+            # --- μランプ ---
+            mu_eff = 0.0
+            if use_friction:
+                mu_eff = compute_mu_effective(mu_target, global_ramp_counter, mu_ramp_steps)
 
             # --- Outer: 変形座標を計算し、候補検出 + 幾何更新 ---
             coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
@@ -213,8 +240,8 @@ def newton_raphson_with_contact(
             )
             manager.update_geometry(coords_def)
 
-            # k_pen 未設定のペアを初期化
-            for pair in manager.pairs:
+            # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加
+            for pair_idx, pair in enumerate(manager.pairs):
                 if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
                     # EA/L ベースの推定（簡易版: k_pen_scale をそのまま使用）
                     initialize_penalty_stiffness(
@@ -222,6 +249,9 @@ def newton_raphson_with_contact(
                         k_pen=manager.config.k_pen_scale,
                         k_t_ratio=manager.config.k_t_ratio,
                     )
+                # 新規ペアの z_t_conv エントリ追加
+                if use_friction and pair_idx not in z_t_conv:
+                    z_t_conv[pair_idx] = np.zeros(2)
 
             # 前回の (s, t) を保存（Outer 収束判定用）
             prev_st = []
@@ -241,14 +271,55 @@ def newton_raphson_with_contact(
                 # gap 更新（s, t, normal 固定で変位に基づく gap 再計算）
                 _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
 
+                # --- 摩擦 return mapping ---
+                friction_forces: dict[int, np.ndarray] = {}
+                friction_tangents: dict[int, np.ndarray] = {}
+
+                if use_friction and mu_eff > 0.0:
+                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
+
+                    for pair_idx, pair in enumerate(manager.pairs):
+                        if pair.state.status == ContactStatus.INACTIVE:
+                            continue
+
+                        # 現在の gap から p_n を更新（摩擦計算に必要）
+                        _eval_pn(pair)
+                        if pair.state.p_n <= 0.0:
+                            continue
+
+                        # z_t をステップ開始時の収束値にリセット
+                        # （delta_ut は全量で計算するため、z_t も全量ベースにする）
+                        if pair_idx in z_t_conv:
+                            pair.state.z_t = z_t_conv[pair_idx].copy()
+                        else:
+                            pair.state.z_t = np.zeros(2)
+
+                        # 接線相対変位増分（ステップ開始からの全量）
+                        delta_ut = compute_tangential_displacement(
+                            pair,
+                            u,
+                            u_step_ref,
+                            node_coords_ref,
+                            ndof_per_node,
+                        )
+
+                        # return mapping（全量ベース）
+                        q_t = friction_return_mapping(pair, delta_ut, mu_eff)
+
+                        if float(np.linalg.norm(q_t)) > 1e-30:
+                            friction_forces[pair_idx] = q_t
+                            D_t = friction_tangent_2x2(pair, mu_eff)
+                            friction_tangents[pair_idx] = D_t
+
                 # 構造内力
                 f_int = assemble_internal_force(u)
 
-                # 接触内力
+                # 接触内力（法線 + 摩擦）
                 f_c = compute_contact_force(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
+                    friction_forces=friction_forces if friction_forces else None,
                 )
 
                 # 残差
@@ -260,19 +331,26 @@ def newton_raphson_with_contact(
                 if res_norm / f_ext_ref_norm < tol_force:
                     inner_converged = True
                     if show_progress:
+                        friction_info = ""
+                        if use_friction:
+                            n_slip = sum(
+                                1 for p in manager.pairs if p.state.status == ContactStatus.SLIDING
+                            )
+                            friction_info = f", μ={mu_eff:.3f}, slip={n_slip}"
                         print(
                             f"  Step {step}/{n_load_steps}, outer {outer}, "
                             f"iter {it}, ||R||/||f|| = {res_norm / f_ext_ref_norm:.3e} "
-                            f"(force converged, {manager.n_active} active)"
+                            f"(force converged, {manager.n_active} active{friction_info})"
                         )
                     break
 
-                # 接線剛性（構造 + 接触）
+                # 接線剛性（構造 + 接触法線 + 接触摩擦）
                 K_T = assemble_tangent(u)
                 K_c = compute_contact_stiffness(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
+                    friction_tangents=friction_tangents if friction_tangents else None,
                 )
                 K_total = K_T + K_c
 
@@ -364,10 +442,13 @@ def newton_raphson_with_contact(
                 update_al_multiplier(pair)
 
             if show_progress:
+                friction_info = ""
+                if use_friction:
+                    friction_info = f", μ_eff={mu_eff:.3f}"
                 print(
                     f"  Step {step}, outer {outer}: "
                     f"max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}, "
-                    f"active={manager.n_active}"
+                    f"active={manager.n_active}{friction_info}"
                 )
 
             if max_ds < tol_geometry and max_dt < tol_geometry:
