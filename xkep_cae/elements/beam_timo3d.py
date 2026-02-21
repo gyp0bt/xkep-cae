@@ -1210,3 +1210,316 @@ def assemble_cr_beam3d(
             K_T_global[np.ix_(edofs, edofs)] += K_e
 
     return K_T_global, f_int_global
+
+
+# ---------------------------------------------------------------------------
+# Corotational + ファイバー弾塑性
+# ---------------------------------------------------------------------------
+
+
+def _cr_extract_deformations(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    v_ref: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """CR kinematics: corotated フレームの自然変形を抽出する.
+
+    Args:
+        coords_init: (2, 3) 初期節点座標
+        u_elem: (12,) 全体座標系の変位ベクトル
+        v_ref: 局所y軸の参照ベクトル
+
+    Returns:
+        (d_cr, R_cr, L_0): corotated 変形 (12,), 回転行列 (3,3), 初期長
+    """
+    L_0, e_x_0 = _beam3d_length_and_direction(coords_init)
+    R_0 = _build_local_axes(e_x_0, v_ref)
+    v_ref_stable = R_0[1, :]
+
+    x1_def = coords_init[0] + u_elem[0:3]
+    x2_def = coords_init[1] + u_elem[6:9]
+    coords_def = np.array([x1_def, x2_def])
+    L_def, e_x_def = _beam3d_length_and_direction(coords_def)
+    R_cr = _build_local_axes(e_x_def, v_ref_stable)
+
+    R_node1 = _rotvec_to_rotmat(u_elem[3:6])
+    R_node2 = _rotvec_to_rotmat(u_elem[9:12])
+
+    R_def1 = R_cr @ R_node1 @ R_0.T
+    R_def2 = R_cr @ R_node2 @ R_0.T
+    theta_def1 = _rotmat_to_rotvec(R_def1)
+    theta_def2 = _rotmat_to_rotvec(R_def2)
+
+    d_cr = np.zeros(12, dtype=float)
+    d_cr[3:6] = theta_def1
+    d_cr[6] = L_def - L_0
+    d_cr[9:12] = theta_def2
+
+    return d_cr, R_cr, L_0
+
+
+def cr_beam3d_fiber_internal_force(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    G: float,
+    kappa_y: float,
+    kappa_z: float,
+    fiber_integrator,
+    v_ref: np.ndarray | None = None,
+) -> tuple[np.ndarray, list]:
+    """CR梁＋ファイバー弾塑性の内力ベクトルを計算する.
+
+    CR kinematics で corotated フレームの自然変形を抽出し、
+    軸ひずみ・曲率をファイバー断面積分器に渡して断面力を得る。
+    せん断・ねじりは弾性のまま。
+
+    変位ベース定式化（1積分点、reduced integration for shear）:
+      一般化ひずみ: ε = B @ d_cr
+      断面力:       S = [N, Vy, Vz, T, My, Mz]
+      内力:         f_cr = L * B^T @ S
+
+    スレンダーな梁（L/d >> 1）では Timoshenko 精解と一致する。
+
+    Args:
+        coords_init: (2, 3) 初期節点座標
+        u_elem: (12,) 全体座標系の変位ベクトル
+        G: せん断弾性率
+        kappa_y, kappa_z: せん断補正係数
+        fiber_integrator: FiberIntegrator インスタンス
+        v_ref: 局所y軸の参照ベクトル
+
+    Returns:
+        (f_global, states_new): 全体内力 (12,) と更新された塑性状態
+    """
+    d_cr, R_cr, L_0 = _cr_extract_deformations(coords_init, u_elem, v_ref)
+
+    # --- 一般化ひずみ（B行列による、要素中央 1点積分）---
+    # DOF順: [u1,v1,w1, θx1,θy1,θz1, u2,v2,w2, θx2,θy2,θz2]
+    eps_axial = (d_cr[6] - d_cr[0]) / L_0         # 軸ひずみ
+    gamma_y = (d_cr[7] - d_cr[1]) / L_0 - (d_cr[5] + d_cr[11]) / 2.0  # せん断 y
+    gamma_z = (d_cr[8] - d_cr[2]) / L_0 + (d_cr[4] + d_cr[10]) / 2.0  # せん断 z
+    kappa_x = (d_cr[9] - d_cr[3]) / L_0           # ねじり率
+    kappa_y_sec = (d_cr[10] - d_cr[4]) / L_0      # 曲率 y（xz面曲げ）
+    kappa_z_sec = (d_cr[11] - d_cr[5]) / L_0      # 曲率 z（xy面曲げ）
+
+    # CR フレームでは v1=v2=w1=w2=u1=0 なので簡略化される:
+    # eps_axial = d_cr[6] / L_0
+    # gamma_y = -(d_cr[5] + d_cr[11]) / 2.0
+    # gamma_z = (d_cr[4] + d_cr[10]) / 2.0
+
+    # --- ファイバー断面積分（軸力・曲げモーメント）---
+    fiber_result = fiber_integrator.integrate(eps_axial, kappa_y_sec, kappa_z_sec)
+
+    # --- 弾性断面力（せん断・ねじり）---
+    sec = fiber_integrator.section
+    Vy = G * sec.A * kappa_y * gamma_y
+    Vz = G * sec.A * kappa_z * gamma_z
+    T = G * sec.J * kappa_x
+
+    # --- 断面力ベクトル ---
+    S = np.array([
+        fiber_result.N,   # 軸力（ファイバー）
+        Vy,               # せん断力 y（弾性）
+        Vz,               # せん断力 z（弾性）
+        T,                # ねじりモーメント（弾性）
+        fiber_result.My,  # 曲げモーメント y（ファイバー）
+        fiber_result.Mz,  # 曲げモーメント z（ファイバー）
+    ])
+
+    # --- 内力 = L * B^T @ S ---
+    # B^T の各行 = B の各列（転置）
+    f_cr = np.zeros(12, dtype=float)
+
+    # DOF 0 (u1): B[0,0]=-1/L → f[0] = L*(-1/L)*N = -N
+    f_cr[0] = -S[0]
+    # DOF 1 (v1): B[1,1]=-1/L → f[1] = L*(-1/L)*Vy = -Vy
+    f_cr[1] = -S[1]
+    # DOF 2 (w1): B[2,2]=-1/L → f[2] = L*(-1/L)*Vz = -Vz
+    f_cr[2] = -S[2]
+    # DOF 3 (θx1): B[3,3]=-1/L → f[3] = L*(-1/L)*T = -T
+    f_cr[3] = -S[3]
+    # DOF 4 (θy1): B[2,4]=1/2, B[4,4]=-1/L → f[4] = L*(Vz/2 - My/L) = L*Vz/2 - My
+    f_cr[4] = L_0 * S[2] / 2.0 - S[4]
+    # DOF 5 (θz1): B[1,5]=-1/2, B[5,5]=-1/L → f[5] = L*(-Vy/2 - Mz/L) = -L*Vy/2 - Mz
+    f_cr[5] = -L_0 * S[1] / 2.0 - S[5]
+    # DOF 6 (u2): B[0,6]=1/L → f[6] = L*(1/L)*N = N
+    f_cr[6] = S[0]
+    # DOF 7 (v2): B[1,7]=1/L → f[7] = L*(1/L)*Vy = Vy
+    f_cr[7] = S[1]
+    # DOF 8 (w2): B[2,8]=1/L → f[8] = L*(1/L)*Vz = Vz
+    f_cr[8] = S[2]
+    # DOF 9 (θx2): B[3,9]=1/L → f[9] = L*(1/L)*T = T
+    f_cr[9] = S[3]
+    # DOF 10 (θy2): B[2,10]=1/2, B[4,10]=1/L → f[10] = L*(Vz/2 + My/L) = L*Vz/2 + My
+    f_cr[10] = L_0 * S[2] / 2.0 + S[4]
+    # DOF 11 (θz2): B[1,11]=-1/2, B[5,11]=1/L → f[11] = L*(-Vy/2 + Mz/L) = -L*Vy/2 + Mz
+    f_cr[11] = -L_0 * S[1] / 2.0 + S[5]
+
+    # --- 全体座標系へ変換 ---
+    T_cr = _transformation_matrix_3d(R_cr)
+    return T_cr.T @ f_cr, fiber_result.states_new
+
+
+def _build_fiber_B_matrix(L: float) -> np.ndarray:
+    """ファイバー梁要素の B 行列 (6×12) を構築する.
+
+    一般化ひずみ [ε, γy, γz, κx, κy, κz] = B @ d_cr / L 的に定義。
+    ただし内力は f = L * B^T @ S なので、B は 1/L のスケーリングを含む。
+
+    DOF 順: [u1,v1,w1, θx1,θy1,θz1, u2,v2,w2, θx2,θy2,θz2]
+    ひずみ順: [ε, γy, γz, κx, κy, κz]
+    """
+    inv_L = 1.0 / L
+    B = np.zeros((6, 12), dtype=float)
+    # ε = (u2 - u1) / L
+    B[0, 0] = -inv_L
+    B[0, 6] = inv_L
+    # γy = (v2 - v1) / L - (θz1 + θz2) / 2
+    B[1, 1] = -inv_L
+    B[1, 7] = inv_L
+    B[1, 5] = -0.5
+    B[1, 11] = -0.5
+    # γz = (w2 - w1) / L + (θy1 + θy2) / 2
+    B[2, 2] = -inv_L
+    B[2, 8] = inv_L
+    B[2, 4] = 0.5
+    B[2, 10] = 0.5
+    # κx = (θx2 - θx1) / L
+    B[3, 3] = -inv_L
+    B[3, 9] = inv_L
+    # κy = (θy2 - θy1) / L
+    B[4, 4] = -inv_L
+    B[4, 10] = inv_L
+    # κz = (θz2 - θz1) / L
+    B[5, 5] = -inv_L
+    B[5, 11] = inv_L
+    return B
+
+
+def cr_beam3d_fiber_tangent(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    G: float,
+    kappa_y: float,
+    kappa_z: float,
+    fiber_integrator,
+    v_ref: np.ndarray | None = None,
+) -> np.ndarray:
+    """CR梁＋ファイバー弾塑性の解析的接線剛性行列.
+
+    K = L * B^T @ D @ B
+
+    D は 6×6 断面構成マトリクス:
+      - (ε, κy, κz) ブロック: ファイバー consistent tangent C_sec (3×3)
+      - γy: G*A*κ_y
+      - γz: G*A*κ_z
+      - κx: G*J
+
+    Args:
+        coords_init, u_elem, G, kappa_y, kappa_z, fiber_integrator, v_ref:
+            cr_beam3d_fiber_internal_force と同じ
+
+    Returns:
+        K_T: (12, 12) 接線剛性行列（全体座標系）
+    """
+    d_cr, R_cr, L_0 = _cr_extract_deformations(coords_init, u_elem, v_ref)
+
+    # 一般化ひずみ（内力と同じ計算）
+    eps_axial = (d_cr[6] - d_cr[0]) / L_0
+    kappa_y_sec = (d_cr[10] - d_cr[4]) / L_0
+    kappa_z_sec = (d_cr[11] - d_cr[5]) / L_0
+
+    # ファイバー積分で C_sec を得る
+    fiber_result = fiber_integrator.integrate(eps_axial, kappa_y_sec, kappa_z_sec)
+    C_sec = fiber_result.C_sec  # (3, 3): (ε, κy, κz)
+
+    # 断面構成マトリクス D (6×6)
+    # ひずみ順: [ε(0), γy(1), γz(2), κx(3), κy(4), κz(5)]
+    sec = fiber_integrator.section
+    D = np.zeros((6, 6), dtype=float)
+    # ファイバー tangent (ε, κy, κz) → D の (0,4,5) 行列ブロック
+    fiber_idx = [0, 4, 5]
+    for i_f, i_d in enumerate(fiber_idx):
+        for j_f, j_d in enumerate(fiber_idx):
+            D[i_d, j_d] = C_sec[i_f, j_f]
+    # 弾性せん断・ねじり
+    D[1, 1] = G * sec.A * kappa_y
+    D[2, 2] = G * sec.A * kappa_z
+    D[3, 3] = G * sec.J
+
+    # B 行列
+    B = _build_fiber_B_matrix(L_0)
+
+    # K_cr = L * B^T @ D @ B
+    K_cr = L_0 * (B.T @ D @ B)
+
+    # 全体座標系へ変換
+    T_cr = _transformation_matrix_3d(R_cr)
+    return T_cr.T @ K_cr @ T_cr
+
+
+def assemble_cr_beam3d_fiber(
+    nodes_init: np.ndarray,
+    connectivity: np.ndarray,
+    u: np.ndarray,
+    G: float,
+    kappa_y: float,
+    kappa_z: float,
+    fiber_integrators: list,
+    *,
+    v_ref: np.ndarray | None = None,
+    stiffness: bool = True,
+    internal_force: bool = True,
+) -> tuple[np.ndarray | None, np.ndarray | None, list[list]]:
+    """CR梁＋ファイバー弾塑性のグローバルアセンブリ.
+
+    Args:
+        nodes_init: (n_nodes, 3) 初期節点座標
+        connectivity: (n_elems, 2) 要素接続
+        u: (ndof,) 全体変位ベクトル
+        G: せん断弾性率
+        kappa_y, kappa_z: せん断補正係数
+        fiber_integrators: 各要素の FiberIntegrator のリスト
+        v_ref: 局所y軸の参照ベクトル
+        stiffness: 接線剛性を計算するか
+        internal_force: 内力を計算するか
+
+    Returns:
+        (K_T, f_int, all_states_new):
+            K_T: 接線剛性行列 (ndof, ndof) or None
+            f_int: 内力ベクトル (ndof,) or None
+            all_states_new: 各要素の更新された塑性状態リスト
+    """
+    n_nodes = len(nodes_init)
+    ndof = 6 * n_nodes
+
+    K_T_global = np.zeros((ndof, ndof), dtype=float) if stiffness else None
+    f_int_global = np.zeros(ndof, dtype=float) if internal_force else None
+    all_states_new: list[list] = []
+
+    for ie, elem in enumerate(connectivity):
+        n1, n2 = int(elem[0]), int(elem[1])
+        coords = nodes_init[np.array([n1, n2])]
+        edofs = np.array(
+            [6 * n1 + d for d in range(6)] + [6 * n2 + d for d in range(6)],
+            dtype=int,
+        )
+        u_elem = u[edofs]
+        fi = fiber_integrators[ie]
+
+        if internal_force:
+            f_e, states_new = cr_beam3d_fiber_internal_force(
+                coords, u_elem, G, kappa_y, kappa_z, fi, v_ref,
+            )
+            f_int_global[edofs] += f_e
+            all_states_new.append(states_new)
+        else:
+            all_states_new.append([])
+
+        if stiffness:
+            K_e = cr_beam3d_fiber_tangent(
+                coords, u_elem, G, kappa_y, kappa_z, fi, v_ref,
+            )
+            K_T_global[np.ix_(edofs, edofs)] += K_e
+
+    return K_T_global, f_int_global, all_states_new
