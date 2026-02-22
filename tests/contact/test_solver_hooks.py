@@ -1,7 +1,10 @@
 """接触付き Newton-Raphson ソルバーのテスト.
 
 Phase C2: solver_hooks.py の統合テスト。
-摩擦なし梁–梁接触が安定収束することを検証する。
+Phase C3: 摩擦あり接触の統合テスト。
+Phase C4: merit line search + Outer 運用強化の統合テスト。
+
+摩擦なし / 摩擦あり / line search付き梁–梁接触が安定収束することを検証する。
 """
 
 import numpy as np
@@ -394,3 +397,898 @@ class TestContactManagerPhaseC2:
 
         mgr.initialize_penalty(k_pen=1e5)
         assert abs(pair.state.k_pen - 5e4) < 1e-10  # 変更されない
+
+
+# ====================================================================
+# Phase C3: 摩擦あり接触の統合テスト
+# ====================================================================
+
+
+def _make_spring_system_3d(
+    k_spring: float = 1e4,
+    ndof_per_node: int = 6,
+    z_sep: float = 0.041,
+    radii: float = 0.04,
+):
+    """2本の交差するばね要素（z方向ばね + x,y方向ばね付き）.
+
+    摩擦テスト用: x,y 方向にもばね剛性を追加して、
+    接線方向の変位を許容しつつ安定化する。
+    """
+    n_nodes = 4
+    ndof_total = n_nodes * ndof_per_node
+
+    node_coords_ref = np.array(
+        [
+            [0.0, 0.0, z_sep],
+            [1.0, 0.0, z_sep],
+            [0.5, -0.5, -z_sep],
+            [0.5, 0.5, -z_sep],
+        ]
+    )
+
+    connectivity = np.array([[0, 1], [2, 3]])
+
+    def assemble_tangent(u):
+        """全方向ばね剛性."""
+        K = sp.lil_matrix((ndof_total, ndof_total))
+        for elem_nodes in connectivity:
+            n0, n1 = elem_nodes
+            for d in range(3):  # x, y, z 全て
+                d0 = n0 * ndof_per_node + d
+                d1 = n1 * ndof_per_node + d
+                K[d0, d0] += k_spring
+                K[d0, d1] -= k_spring
+                K[d1, d0] -= k_spring
+                K[d1, d1] += k_spring
+        return K.tocsr()
+
+    def assemble_internal_force(u):
+        """全方向ばね内力."""
+        f_int = np.zeros(ndof_total)
+        for elem_nodes in connectivity:
+            n0, n1 = elem_nodes
+            for d in range(3):
+                d0 = n0 * ndof_per_node + d
+                d1 = n1 * ndof_per_node + d
+                delta = u[d1] - u[d0]
+                f_int[d0] -= k_spring * delta
+                f_int[d1] += k_spring * delta
+        return f_int
+
+    return (
+        node_coords_ref,
+        connectivity,
+        radii,
+        ndof_total,
+        assemble_tangent,
+        assemble_internal_force,
+    )
+
+
+def _fixed_dofs_xyz(n_nodes, ndof_per_node=6, free_nodes=None, free_dirs=None):
+    """指定ノード/方向以外を全固定する."""
+    if free_nodes is None:
+        free_nodes = []
+    if free_dirs is None:
+        free_dirs = [0, 1, 2]
+    fixed = []
+    for node in range(n_nodes):
+        for d in range(ndof_per_node):
+            if node in free_nodes and d in free_dirs:
+                continue
+            fixed.append(node * ndof_per_node + d)
+    return np.array(fixed, dtype=int)
+
+
+class TestContactSolverWithFriction:
+    """Phase C3: 摩擦あり接触の統合テスト."""
+
+    def test_friction_contact_converges(self):
+        """摩擦あり接触が収束する.
+
+        梁A(node1)に z↓, 梁B(node3)に z↑ を載荷（法線方向押し付け）。
+        摩擦あり（μ=0.3）で NR が安定収束するか検証。
+        """
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0  # node1 z↓
+        f_ext[3 * 6 + 2] = 50.0  # node3 z↑
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,  # 摩擦剛性を法線の 10%（安定化）
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,  # μランプで段階的に導入
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,  # 細かいステップ
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_friction_with_tangential_load(self):
+        """接線方向荷重で摩擦が作用する.
+
+        法線方向（z）の押し付け + 接線方向（x）の荷重を同時に載荷。
+        摩擦力が滑り方向に作用することを確認。
+        """
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        # 法線押し付け
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        # 接線方向荷重（x方向、node1 のみ）
+        f_ext[1 * 6 + 0] = 5.0
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        # node1 が x 方向に変位しているはず
+        ux_node1 = result.u[1 * 6 + 0]
+        assert abs(ux_node1) > 1e-8, "Tangential displacement expected"
+
+    def test_mu_ramp_converges(self):
+        """μランプ付き接触が収束する.
+
+        μランプを5ステップで漸増。初期はμ=0で法線接触のみ、
+        段階的に摩擦を導入することで収束を安定化。
+        """
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 5.0  # 接線方向荷重
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=5,  # 5 Outer steps でフルμに到達
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+
+    def test_friction_dissipation_nonnegative(self):
+        """摩擦散逸が非負であることを確認.
+
+        接線方向荷重を載荷し、最終状態でのペアの散逸が非負。
+        """
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 10.0  # 大きめの接線荷重で slip を誘発
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=5,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        # 全ペアの散逸を確認
+        for pair in mgr.pairs:
+            if pair.state.status != ContactStatus.INACTIVE:
+                assert pair.state.dissipation >= -1e-12, (
+                    f"Negative dissipation: {pair.state.dissipation}"
+                )
+
+    def test_use_friction_false_is_backward_compatible(self):
+        """use_friction=False（デフォルト）で C2 と同じ動作."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        # use_friction=False（デフォルト）
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=False,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+
+# ====================================================================
+# Phase C4: merit line search + Outer 運用強化の統合テスト
+# ====================================================================
+
+
+class TestContactSolverWithLineSearch:
+    """Phase C4: line search 付き接触の統合テスト."""
+
+    def test_line_search_converges_normal_contact(self):
+        """line search 付き法線接触が収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_line_search=True,
+                line_search_max_steps=5,
+                merit_alpha=1.0,
+                merit_beta=0.0,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_line_search_prevents_penetration(self):
+        """line search 付きで貫通が防止される."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -100.0
+        f_ext[3 * 6 + 2] = 100.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_line_search=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+
+        u = result.u
+        za1 = node_coords_ref[1, 2] + u[1 * 6 + 2]
+        zb1 = node_coords_ref[3, 2] + u[3 * 6 + 2]
+        dist = abs(za1 - zb1)
+        assert dist >= 0.08 * 0.8, f"Excessive penetration: dist={dist:.4f}"
+
+    def test_line_search_with_friction(self):
+        """摩擦 + line search の組み合わせが収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 5.0  # 接線方向荷重
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,
+                use_line_search=True,
+                line_search_max_steps=5,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_line_search_result_has_ls_steps(self):
+        """ContactSolveResult に total_line_search_steps が含まれる."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_line_search=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert hasattr(result, "total_line_search_steps")
+        assert result.total_line_search_steps >= 0
+
+    def test_line_search_disabled_backward_compatible(self):
+        """use_line_search=False（デフォルト）で従来と同じ動作."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_line_search=False,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.total_line_search_steps == 0
+
+
+# ====================================================================
+# Phase C5: 幾何微分込み一貫接線 + PDAS の統合テスト
+# ====================================================================
+
+
+class TestContactSolverPhaseC5:
+    """Phase C5: 幾何剛性 + PDAS + slip consistent tangent の統合テスト."""
+
+    def test_geometric_stiffness_converges(self):
+        """幾何剛性込み接触が収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_geometric_stiffness=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_geometric_stiffness_disabled(self):
+        """use_geometric_stiffness=False で従来と同じ動作."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_geometric_stiffness=False,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+
+    def test_pdas_converges(self):
+        """PDAS モードで接触が収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+
+        fixed_dofs = _all_fixed_except_z_free(4, z_fixed_nodes=[0, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_pdas=True,
+                use_geometric_stiffness=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_slip_consistent_tangent_with_friction(self):
+        """slip consistent tangent + 摩擦で収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 10.0  # 接線方向荷重（slip を誘発）
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,
+                use_geometric_stiffness=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+        assert result.n_active_final > 0
+
+    def test_pdas_with_friction(self):
+        """PDAS + 摩擦の組み合わせが収束する."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 5.0
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,
+                use_pdas=True,
+                use_geometric_stiffness=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged
+
+    def test_all_c5_features_combined(self):
+        """幾何剛性 + PDAS + line search + 摩擦の全組み合わせ."""
+        (
+            node_coords_ref,
+            connectivity,
+            radii,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_spring_system_3d(k_spring=1e4, z_sep=0.041, radii=0.04)
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * 6 + 2] = -50.0
+        f_ext[3 * 6 + 2] = 50.0
+        f_ext[1 * 6 + 0] = 5.0
+
+        fixed_dofs = _fixed_dofs_xyz(4, free_nodes=[1, 3], free_dirs=[0, 1, 2])
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.1,
+                mu=0.3,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=5,
+                use_friction=True,
+                mu_ramp_steps=3,
+                use_line_search=True,
+                line_search_max_steps=5,
+                use_geometric_stiffness=True,
+                use_pdas=True,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        assert result.converged

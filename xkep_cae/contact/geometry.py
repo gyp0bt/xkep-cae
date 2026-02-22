@@ -1,6 +1,9 @@
 """接触幾何: segment-to-segment 最近接点計算.
 
 2線分間の最近接点をパラメトリックに求める。
+
+Phase C5: build_contact_frame に平行輸送（parallel transport）ベースの
+フレーム連続更新を追加。法線回転が大きい場合のフレーム不連続を防止する。
 """
 
 from __future__ import annotations
@@ -145,18 +148,64 @@ def compute_gap(
     return distance - (radius_a + radius_b)
 
 
+def _parallel_transport(
+    t1_old: np.ndarray,
+    n_old: np.ndarray,
+    n_new: np.ndarray,
+) -> np.ndarray:
+    """平行輸送で接線ベクトルを新しい法線面に輸送する.
+
+    n_old → n_new の最短回転（Rodrigues 公式）を t1_old に適用する。
+    Gram-Schmidt よりも大きな法線回転に対して連続性が高い。
+
+    Args:
+        t1_old: 旧接線基底1 (3,)
+        n_old: 旧法線ベクトル (3,)
+        n_new: 新法線ベクトル (3,)
+
+    Returns:
+        t1_new: 輸送された接線ベクトル (3,)（未正規化）
+    """
+    v = np.cross(n_old, n_new)
+    s = float(np.linalg.norm(v))
+    c = float(n_old @ n_new)
+
+    if s < 1e-12:
+        if c > 0:
+            # n_old ≈ n_new: 回転なし
+            return t1_old.copy()
+        else:
+            # n_old ≈ -n_new: 180° 回転（t1 はそのまま反転不要、n だけ反転）
+            return t1_old.copy()
+
+    # Rodrigues 公式: R(v, θ) * t1_old
+    # R = I + [v]_x + [v]_x^2 * (1 - c) / s^2
+    vx = np.array(
+        [
+            [0.0, -v[2], v[1]],
+            [v[2], 0.0, -v[0]],
+            [-v[1], v[0], 0.0],
+        ]
+    )
+    R = np.eye(3) + vx + (vx @ vx) * ((1.0 - c) / (s * s))
+    return R @ t1_old
+
+
 def build_contact_frame(
     normal: np.ndarray,
     prev_tangent1: np.ndarray | None = None,
+    prev_normal: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """接触ローカルフレーム (n, t1, t2) を構築する.
 
     法線 n に対して接線基底 t1, t2 を生成する。
-    前ステップの t1 が与えられた場合、連続性を保つ。
+    前ステップの法線と接線が与えられた場合、平行輸送で連続性を保つ。
+    前ステップの法線がない場合は Gram-Schmidt で直交化する。
 
     Args:
         normal: 法線ベクトル (3,)
         prev_tangent1: 前ステップの接線基底1（連続更新用）
+        prev_normal: 前ステップの法線ベクトル（平行輸送用、Phase C5）
 
     Returns:
         n, t1, t2: 正規直交基底 (3,) × 3
@@ -164,7 +213,19 @@ def build_contact_frame(
     n = normal / max(float(np.linalg.norm(normal)), 1e-30)
 
     if prev_tangent1 is not None:
-        # 前ステップの t1 を法線に直交化
+        if prev_normal is not None:
+            # Phase C5: 平行輸送による連続フレーム更新
+            n_old = prev_normal / max(float(np.linalg.norm(prev_normal)), 1e-30)
+            t1_transported = _parallel_transport(prev_tangent1, n_old, n)
+            # 正規化（数値誤差で n に完全直交でない可能性）
+            t1_raw = t1_transported - (t1_transported @ n) * n
+            t1_norm = float(np.linalg.norm(t1_raw))
+            if t1_norm > 1e-10:
+                t1 = t1_raw / t1_norm
+                t2 = np.cross(n, t1)
+                return n, t1, t2
+
+        # Gram-Schmidt フォールバック: 前ステップの t1 を新法線に直交化
         t1_raw = prev_tangent1 - (prev_tangent1 @ n) * n
         t1_norm = float(np.linalg.norm(t1_raw))
         if t1_norm > 1e-10:

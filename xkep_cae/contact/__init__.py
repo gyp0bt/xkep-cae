@@ -7,13 +7,20 @@
 - broadphase: AABB格子による候補ペア探索
 - pair: 接触ペア・状態管理・幾何更新・Active-set
 - law_normal: 法線接触（Augmented Lagrangian）
+- law_friction: Coulomb 摩擦（return mapping）
+- line_search: merit function + backtracking line search
 - assembly: 接触内力・接線の組み込み
 - solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
-- law_friction: Coulomb 摩擦（return mapping）  [未実装]
 """
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
 from xkep_cae.contact.broadphase import broadphase_aabb, compute_segment_aabb
+from xkep_cae.contact.law_friction import (
+    compute_mu_effective,
+    compute_tangential_displacement,
+    friction_return_mapping,
+    friction_tangent_2x2,
+)
 from xkep_cae.contact.law_normal import (
     auto_penalty_stiffness,
     evaluate_normal_force,
@@ -21,6 +28,7 @@ from xkep_cae.contact.law_normal import (
     normal_force_linearization,
     update_al_multiplier,
 )
+from xkep_cae.contact.line_search import backtracking_line_search, merit_function
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,
@@ -41,12 +49,18 @@ __all__ = [
     "ContactState",
     "ContactStatus",
     "auto_penalty_stiffness",
+    "backtracking_line_search",
     "broadphase_aabb",
     "compute_contact_force",
     "compute_contact_stiffness",
+    "compute_mu_effective",
     "compute_segment_aabb",
+    "compute_tangential_displacement",
     "evaluate_normal_force",
+    "friction_return_mapping",
+    "friction_tangent_2x2",
     "initialize_penalty_stiffness",
+    "merit_function",
     "newton_raphson_with_contact",
     "normal_force_linearization",
     "update_al_multiplier",
