@@ -54,6 +54,7 @@
 | [044](status-044.md) | 2026-02-21 | Phase C3 — 摩擦 return mapping + μランプ | 932 |
 | [045](status-045.md) | 2026-02-21 | Phase C4 — merit line search + 探索/求解分離の運用強化 | 958 |
 | [046](status-046.md) | 2026-02-21 | Phase C5 — 幾何微分込み一貫接線 + slip consistent tangent + PDAS + 平行輸送フレーム | 993 |
+| [047](status-047.md) | 2026-02-22 | 摩擦接触バリデーション + 接触付き弧長法設計検討 | 1009 |
 
 ## テスト数推移
 
@@ -92,6 +93,7 @@
 044:     932      (Phase C3: 摩擦 return mapping + μランプ)
 045:     958      (Phase C4: merit line search + 探索/求解分離の運用強化)
 046:     993      (Phase C5: 幾何微分込み一貫接線 + slip consistent tangent + PDAS + 平行輸送フレーム)
+047:     1009     (摩擦接触バリデーション + 接触付き弧長法設計検討)
 ```
 
 ## 備考
