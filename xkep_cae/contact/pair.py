@@ -159,6 +159,11 @@ class ContactConfig:
     merit_beta: float = 1.0
     use_geometric_stiffness: bool = True
     use_pdas: bool = False
+    # --- 適応的ペナルティ増強（貫入制約チューニング）---
+    adaptive_penalty: bool = False
+    adaptive_penalty_factor: float = 2.0
+    adaptive_penalty_max_scale: float = 100.0
+    gap_tol_ratio: float = 0.01
 
 
 @dataclass

@@ -36,6 +36,7 @@ from xkep_cae.contact.law_friction import (
     friction_tangent_2x2,
 )
 from xkep_cae.contact.law_normal import (
+    augment_penalty_if_needed,
     initialize_penalty_stiffness,
     update_al_multiplier,
 )
@@ -543,6 +544,25 @@ def newton_raphson_with_contact(
             # AL 乗数更新
             for pair in manager.pairs:
                 update_al_multiplier(pair)
+
+            # --- 適応的ペナルティ増強（Simo & Laursen 1992）---
+            if manager.config.adaptive_penalty:
+                gap_tol_ratio = manager.config.gap_tol_ratio
+                aug_factor = manager.config.adaptive_penalty_factor
+                aug_max = manager.config.adaptive_penalty_max_scale
+                k_t_ratio_cfg = manager.config.k_t_ratio
+                for pair in manager.pairs:
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    r_ref = pair.radius_a + pair.radius_b
+                    gap_tol = gap_tol_ratio * r_ref if r_ref > 0.0 else 1e-6
+                    augment_penalty_if_needed(
+                        pair,
+                        gap_tol=gap_tol,
+                        factor=aug_factor,
+                        max_scale=aug_max,
+                        k_t_ratio=k_t_ratio_cfg,
+                    )
 
             # --- Merit-based Outer 終了判定 ---
             # Inner 収束後の残差で merit を評価

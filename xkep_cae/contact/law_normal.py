@@ -98,6 +98,48 @@ def initialize_penalty_stiffness(
     pair.state.k_t = k_t_ratio * k_pen
 
 
+def augment_penalty_if_needed(
+    pair: ContactPair,
+    gap_tol: float,
+    factor: float = 2.0,
+    max_scale: float = 100.0,
+    k_pen_base: float = 0.0,
+    k_t_ratio: float = 0.5,
+) -> bool:
+    """ギャップ違反が許容値を超える場合にペナルティ剛性を増強する.
+
+    Simo & Laursen (1992) の適応的ペナルティ増強に基づく。
+    貫入量 |gap| > gap_tol の場合、k_pen を factor 倍に増強し、
+    同時に k_t も比率を維持して更新する。
+
+    Args:
+        pair: 接触ペア
+        gap_tol: ギャップ許容値（正値; 例: 断面半径 × 0.01）
+        factor: 増強倍率（デフォルト: 2.0）
+        max_scale: k_pen_base に対する最大倍率（デフォルト: 100.0）
+        k_pen_base: ペナルティ剛性の基準値（0 の場合は現在値を基準とする）
+        k_t_ratio: 接線/法線ペナルティ比
+
+    Returns:
+        augmented: 増強が実施されたかどうか
+    """
+    if pair.state.status == ContactStatus.INACTIVE:
+        return False
+
+    g = pair.state.gap
+    if g >= -gap_tol:
+        return False
+
+    base = k_pen_base if k_pen_base > 0.0 else pair.state.k_pen
+    k_max = max_scale * base
+    if pair.state.k_pen >= k_max:
+        return False
+
+    pair.state.k_pen = min(pair.state.k_pen * factor, k_max)
+    pair.state.k_t = k_t_ratio * pair.state.k_pen
+    return True
+
+
 def auto_penalty_stiffness(
     E: float,
     A: float,
