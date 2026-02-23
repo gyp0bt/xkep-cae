@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性完了。993テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション完了。1009テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -43,7 +43,8 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
-- [実装状況](docs/status/status-046.md) — 最新のステータス（Phase C5 幾何剛性 + slip consistent tangent + PDAS + 平行輸送）
+- [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
+- [実装状況](docs/status/status-047.md) — 最新のステータス（摩擦接触バリデーション + 接触付き弧長法設計検討）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
