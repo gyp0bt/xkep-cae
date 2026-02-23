@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討**完了（1009テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討** + **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響, 11テスト）**完了（1034テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -60,7 +60,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性）, **FiberIntegrator（FiberSection+Plasticity1D統合, consistent tangent C_sec, 状態管理）** |
 | **接触（C0〜C5）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_eff·g·g^T + K_geo, 主項+幾何剛性）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）**, **Coulomb摩擦（friction_return_mapping, stick/slip, 散逸監視）**, **μランプ（compute_mu_effective, 段階的摩擦導入）**, **摩擦接線剛性（friction_tangent_2x2, slip consistent tangent v0.2）**, **merit line search（backtracking, merit-based Outer終了）**, **幾何剛性（K_geo = -p_n/dist·G^T·(I-n⊗n)·G）**, **PDAS（実験的Inner loop active-set更新）**, **平行輸送フレーム更新（Rodrigues formula）** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, **摩擦return mapping+μランプ+散逸非負性+統合テスト（27テスト）**, **幾何剛性（対称性+負半定値+法線方向ゼロ+有限差分検証, 10テスト）**, **slip consistent tangent（公式検証+ランク不足+正半定値, 8テスト）**, **平行輸送フレーム（連続性+直交保存, 7テスト）**, **PDAS+統合テスト（6テスト）**, **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性/μ依存, 16テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**, **Abaqus弾塑性三点曲げバリデーション（idx2, CR梁ファイバーモデル, 5テスト）**（**1009テスト**）, [バリデーション文書](verification/validation.md) |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, **摩擦return mapping+μランプ+散逸非負性+統合テスト（27テスト）**, **幾何剛性（対称性+負半定値+法線方向ゼロ+有限差分検証, 10テスト）**, **slip consistent tangent（公式検証+ランク不足+正半定値, 8テスト）**, **平行輸送フレーム（連続性+直交保存, 7テスト）**, **PDAS+統合テスト（6テスト）**, **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性/μ依存, 16テスト）**, **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響, 11テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**, **Abaqus弾塑性三点曲げバリデーション（idx2, CR梁ファイバーモデル, 5テスト）**（**1034テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）
