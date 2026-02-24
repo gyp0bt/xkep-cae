@@ -308,6 +308,113 @@ class ContactGraphHistory:
         """全スナップショットの辞書リスト（JSON出力用）."""
         return [g.to_dict() for g in self.snapshots]
 
+    # -- 統計分析メソッド --
+
+    def stick_slip_ratio_series(self) -> np.ndarray:
+        """各ステップの stick/(stick+slip) 比率の時系列.
+
+        全エッジが stick の場合 1.0、全 slip の場合 0.0。
+        エッジがない場合は 1.0（デフォルト）。
+        """
+        ratios = []
+        for g in self.snapshots:
+            n_total = len(g.edges)
+            if n_total == 0:
+                ratios.append(1.0)
+                continue
+            n_stick = sum(1 for e in g.edges if e.stick)
+            ratios.append(n_stick / n_total)
+        return np.array(ratios)
+
+    def mean_normal_force_series(self) -> np.ndarray:
+        """各ステップの平均法線反力の時系列.
+
+        アクティブエッジがない場合は 0.0。
+        """
+        means = []
+        for g in self.snapshots:
+            if not g.edges:
+                means.append(0.0)
+            else:
+                means.append(sum(e.p_n for e in g.edges) / len(g.edges))
+        return np.array(means)
+
+    def max_normal_force_series(self) -> np.ndarray:
+        """各ステップの最大法線反力の時系列."""
+        maxes = []
+        for g in self.snapshots:
+            if not g.edges:
+                maxes.append(0.0)
+            else:
+                maxes.append(max(e.p_n for e in g.edges))
+        return np.array(maxes)
+
+    def connected_component_count_series(self) -> np.ndarray:
+        """各ステップの連結成分数の時系列."""
+        return np.array([len(g.connected_components()) for g in self.snapshots])
+
+    def contact_duration_map(self) -> dict[tuple[int, int], int]:
+        """各エッジ (elem_a, elem_b) が接触していたステップ数.
+
+        全ステップを走査し、エッジが出現したステップ数をカウントする。
+        """
+        durations: dict[tuple[int, int], int] = {}
+        for g in self.snapshots:
+            for e in g.edges:
+                key = (min(e.elem_a, e.elem_b), max(e.elem_a, e.elem_b))
+                durations[key] = durations.get(key, 0) + 1
+        return durations
+
+    def cumulative_dissipation_series(self) -> np.ndarray:
+        """散逸エネルギーの累積時系列."""
+        diss = self.dissipation_series()
+        return np.cumsum(diss)
+
+    def summary(self) -> dict:
+        """時系列の要約統計を辞書で返す.
+
+        Returns:
+            dict: 各キーに統計値を格納
+                - n_steps: ステップ数
+                - max_edges: 最大エッジ数
+                - max_nodes: 最大ノード数
+                - max_normal_force: 全ステップ中の最大法線反力
+                - total_dissipation: 散逸エネルギー合計
+                - n_topology_changes: トポロジー変化回数
+                - unique_contacts: ユニークな接触ペア数
+                - mean_stick_ratio: 平均 stick 比率
+        """
+        if not self.snapshots:
+            return {
+                "n_steps": 0,
+                "max_edges": 0,
+                "max_nodes": 0,
+                "max_normal_force": 0.0,
+                "total_dissipation": 0.0,
+                "n_topology_changes": 0,
+                "unique_contacts": 0,
+                "mean_stick_ratio": 1.0,
+            }
+
+        edges = self.edge_count_series()
+        nodes = self.node_count_series()
+        forces = self.max_normal_force_series()
+        diss = self.dissipation_series()
+        stick_ratios = self.stick_slip_ratio_series()
+        topo_changes = self.topology_change_steps()
+        durations = self.contact_duration_map()
+
+        return {
+            "n_steps": self.n_steps,
+            "max_edges": int(edges.max()) if len(edges) > 0 else 0,
+            "max_nodes": int(nodes.max()) if len(nodes) > 0 else 0,
+            "max_normal_force": float(forces.max()) if len(forces) > 0 else 0.0,
+            "total_dissipation": float(diss.sum()),
+            "n_topology_changes": len(topo_changes),
+            "unique_contacts": len(durations),
+            "mean_stick_ratio": float(stick_ratios.mean()) if len(stick_ratios) > 0 else 1.0,
+        }
+
 
 # ====================================================================
 # 可視化関数
