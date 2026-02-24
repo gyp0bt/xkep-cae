@@ -22,6 +22,7 @@ from xkep_cae.contact.law_friction import (
     friction_tangent_2x2,
 )
 from xkep_cae.contact.law_normal import (
+    auto_beam_penalty_stiffness,
     auto_penalty_stiffness,
     evaluate_normal_force,
     initialize_penalty_stiffness,
@@ -48,6 +49,7 @@ __all__ = [
     "ContactSolveResult",
     "ContactState",
     "ContactStatus",
+    "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
     "backtracking_line_search",
     "broadphase_aabb",

@@ -150,6 +150,9 @@ class ContactConfig:
     """
 
     k_pen_scale: float = 1.0
+    k_pen_mode: str = "manual"  # "manual" | "beam_ei" （自動推定モード）
+    beam_E: float = 0.0  # 梁ヤング率（beam_ei モード用）
+    beam_I: float = 0.0  # 梁代表断面二次モーメント（beam_ei モード用）
     k_t_ratio: float = 0.5
     mu: float = 0.3
     g_on: float = 0.0
@@ -167,6 +170,8 @@ class ContactConfig:
     tol_penetration_ratio: float = 0.01
     penalty_growth_factor: float = 2.0
     k_pen_max: float = 1e12
+    staged_activation_steps: int = 0  # 段階的アクティベーション（0=無効）
+    elem_layer_map: dict[int, int] | None = None  # 要素→層インデックスのマッピング
 
 
 @dataclass
@@ -399,6 +404,66 @@ class ContactManager:
 
         for pair in self.pairs:
             update_al_multiplier(pair)
+
+    def max_layer(self) -> int:
+        """elem_layer_map の最大層番号を返す（未設定なら 0）."""
+        lm = self.config.elem_layer_map
+        if not lm:
+            return 0
+        return max(lm.values()) if lm else 0
+
+    def compute_active_layer_for_step(self, step: int, n_load_steps: int) -> int:
+        """段階的アクティベーション: 現在ステップで許容する最大層番号を計算.
+
+        staged_activation_steps ステップをかけて層を段階的にオンにする。
+        例: 3層構造で staged_activation_steps=6, n_load_steps=20 の場合:
+          - step 1-2: layer 0 のみ（中心素線どうし）
+          - step 3-4: layer 0-1
+          - step 5-6: layer 0-2（全層）
+          - step 7+: 全層
+
+        Args:
+            step: 現在の荷重ステップ（1-indexed）
+            n_load_steps: 全荷重ステップ数
+
+        Returns:
+            最大許容層番号
+        """
+        n_staged = self.config.staged_activation_steps
+        if n_staged <= 0:
+            return self.max_layer()
+
+        max_lay = self.max_layer()
+        if max_lay <= 0:
+            return 0
+
+        # n_staged ステップで全層をオンにする
+        # ステップ per 層 = n_staged / (max_lay + 1)
+        steps_per_layer = max(1, n_staged // (max_lay + 1))
+        current_max_layer = min(max_lay, (step - 1) // steps_per_layer)
+        return current_max_layer
+
+    def filter_pairs_by_layer(self, max_layer: int) -> None:
+        """許容層より上の接触ペアを INACTIVE にする.
+
+        elem_layer_map が設定されている場合、両方の要素の層番号が
+        max_layer 以下であるペアのみをアクティブに維持する。
+
+        Args:
+            max_layer: 許容する最大層番号
+        """
+        lm = self.config.elem_layer_map
+        if not lm:
+            return
+
+        for pair in self.pairs:
+            if pair.state.status == ContactStatus.INACTIVE:
+                continue
+            layer_a = lm.get(pair.elem_a, 0)
+            layer_b = lm.get(pair.elem_b, 0)
+            # 接触は層間のペア。両方の層が max_layer 以内であること
+            if layer_a > max_layer or layer_b > max_layer:
+                pair.state.status = ContactStatus.INACTIVE
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

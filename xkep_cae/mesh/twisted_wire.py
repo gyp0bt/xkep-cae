@@ -109,6 +109,22 @@ class TwistedWireMesh:
         start, end = self.strand_elem_ranges[strand_id]
         return np.arange(start, end)
 
+    def build_elem_layer_map(self) -> dict[int, int]:
+        """要素インデックス→層番号のマッピングを構築する.
+
+        各素線の層情報（StrandInfo.layer）を全要素に展開する。
+        接触ペアのフィルタリング（段階的アクティベーション）に使用。
+
+        Returns:
+            {elem_index: layer_number} の辞書
+        """
+        lmap: dict[int, int] = {}
+        for info in self.strand_infos:
+            elems = self.strand_elems(info.strand_id)
+            for e in elems:
+                lmap[int(e)] = info.layer
+        return lmap
+
 
 def _helix_points(
     n_points: int,

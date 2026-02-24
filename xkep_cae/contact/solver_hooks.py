@@ -264,17 +264,51 @@ def newton_raphson_with_contact(
                 margin=broadphase_margin,
                 cell_size=broadphase_cell_size,
             )
+
+            # --- 段階的接触アクティベーション ---
+            if manager.config.staged_activation_steps > 0:
+                max_layer = manager.compute_active_layer_for_step(step, n_load_steps)
+                manager.filter_pairs_by_layer(max_layer)
+
             manager.update_geometry(coords_def)
 
             # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加
             for pair_idx, pair in enumerate(manager.pairs):
                 if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                    # EA/L ベースの推定（簡易版: k_pen_scale をそのまま使用）
-                    initialize_penalty_stiffness(
-                        pair,
-                        k_pen=manager.config.k_pen_scale,
-                        k_t_ratio=manager.config.k_t_ratio,
-                    )
+                    if manager.config.k_pen_mode == "beam_ei":
+                        # EI/L³ ベースの自動推定
+                        from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                        # 代表要素長さ: ペアのセグメント長の平均
+                        xA0 = coords_def[pair.nodes_a[0]]
+                        xA1 = coords_def[pair.nodes_a[1]]
+                        xB0 = coords_def[pair.nodes_b[0]]
+                        xB1 = coords_def[pair.nodes_b[1]]
+                        L_a = float(np.linalg.norm(xA1 - xA0))
+                        L_b = float(np.linalg.norm(xB1 - xB0))
+                        L_avg = 0.5 * (L_a + L_b)
+                        if L_avg < 1e-30:
+                            L_avg = 1.0
+
+                        k_auto = auto_beam_penalty_stiffness(
+                            manager.config.beam_E,
+                            manager.config.beam_I,
+                            L_avg,
+                            n_contact_pairs=max(1, manager.n_active),
+                            scale=manager.config.k_pen_scale,
+                        )
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=k_auto,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
+                    else:
+                        # manual モード: k_pen_scale をそのまま使用
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=manager.config.k_pen_scale,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
                 # 新規ペアの z_t_conv エントリ追加
                 if use_friction and pair_idx not in z_t_conv:
                     z_t_conv[pair_idx] = np.zeros(2)
