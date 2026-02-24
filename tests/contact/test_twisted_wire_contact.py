@@ -160,23 +160,30 @@ def _make_contact_manager(
     k_pen_mode="manual",
     beam_E=0.0,
     beam_I=0.0,
+    k_t_ratio=None,
+    mu_ramp_steps=None,
     staged_activation_steps=0,
     elem_layer_map=None,
 ):
     """撚線用の接触マネージャを構築."""
+    # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
+    if k_t_ratio is None:
+        k_t_ratio = 0.01 if use_friction else 0.1
+    if mu_ramp_steps is None:
+        mu_ramp_steps = 10 if use_friction else 0
     return ContactManager(
         config=ContactConfig(
             k_pen_scale=k_pen_scale,
             k_pen_mode=k_pen_mode,
             beam_E=beam_E,
             beam_I=beam_I,
-            k_t_ratio=0.1,
+            k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=0.0,
             g_off=1e-5,
             n_outer_max=n_outer_max,
             use_friction=use_friction,
-            mu_ramp_steps=3 if use_friction else 0,
+            mu_ramp_steps=mu_ramp_steps,
             use_line_search=True,
             line_search_max_steps=5,
             use_geometric_stiffness=True,
@@ -576,14 +583,12 @@ class TestThreeStrandAutoKpen:
 
 
 class TestTwistedWireFriction:
-    """撚線の摩擦接触テスト（xfail: 撚線幾何では摩擦収束に改善が必要）.
+    """撚線の摩擦接触テスト.
 
-    撚線幾何では接触ペアの法線方向と接線方向が複雑に変化するため、
-    摩擦 return mapping の収束が困難。
-    Phase 4.7 Level 0 で摩擦反復戦略の改善後に再挑戦予定。
+    摩擦履歴の平行輸送（rotate_friction_history）+ 低 k_t_ratio + auto k_pen で
+    ヘリカル幾何での摩擦 return mapping を安定化。
     """
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_tension(self):
         """3本撚り + 摩擦 + 引張が収束する."""
         result, mgr, mesh = _solve_twisted_wire(
@@ -593,11 +598,12 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged, "3本撚り摩擦引張が収束しなかった"
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_lateral(self):
         """3本撚り + 摩擦 + 横力が収束する."""
         result, _, _ = _solve_twisted_wire(
@@ -607,11 +613,12 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_bending(self):
         """3本撚り + 摩擦 + 曲げが収束する."""
         result, _, _ = _solve_twisted_wire(
@@ -621,7 +628,9 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged
 

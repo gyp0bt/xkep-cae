@@ -27,6 +27,7 @@ from xkep_cae.contact.law_friction import (
     compute_tangential_displacement,
     friction_return_mapping,
     friction_tangent_2x2,
+    rotate_friction_history,
 )
 from xkep_cae.contact.law_normal import (
     auto_beam_penalty_stiffness,
@@ -75,6 +76,7 @@ __all__ = [
     "merit_function",
     "newton_raphson_with_contact",
     "normal_force_linearization",
+    "rotate_friction_history",
     "snapshot_contact_graph",
     "update_al_multiplier",
 ]

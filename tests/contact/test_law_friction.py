@@ -21,6 +21,7 @@ from xkep_cae.contact.law_friction import (
     compute_tangential_displacement,
     friction_return_mapping,
     friction_tangent_2x2,
+    rotate_friction_history,
 )
 from xkep_cae.contact.pair import ContactPair, ContactState, ContactStatus
 
@@ -324,3 +325,65 @@ class TestTangentialDisplacement:
 
         # B 側: 0.25*0 + 0.75*0.04 = 0.03
         np.testing.assert_allclose(delta_ut, [0.03, 0.0], atol=1e-14)
+
+
+class TestRotateFrictionHistory:
+    """rotate_friction_history() のテスト."""
+
+    def test_identity_frame(self):
+        """同一フレームでは z_t が変化しない."""
+        t1 = np.array([1.0, 0.0, 0.0])
+        t2 = np.array([0.0, 1.0, 0.0])
+        z_t = np.array([3.0, 4.0])
+        z_new = rotate_friction_history(z_t, t1, t2, t1, t2)
+        np.testing.assert_allclose(z_new, z_t, atol=1e-14)
+
+    def test_90deg_rotation(self):
+        """90度回転で成分が入れ替わる."""
+        t1_old = np.array([1.0, 0.0, 0.0])
+        t2_old = np.array([0.0, 1.0, 0.0])
+        # 90度回転: t1_new = t2_old, t2_new = -t1_old
+        t1_new = np.array([0.0, 1.0, 0.0])
+        t2_new = np.array([-1.0, 0.0, 0.0])
+        z_t = np.array([3.0, 4.0])
+        # physical = 3*t1_old + 4*t2_old = (3, 4, 0)
+        # z1_new = physical · t1_new = 4, z2_new = physical · t2_new = -3
+        z_new = rotate_friction_history(z_t, t1_old, t2_old, t1_new, t2_new)
+        np.testing.assert_allclose(z_new, [4.0, -3.0], atol=1e-14)
+
+    def test_norm_preserved(self):
+        """回転はノルムを保存する."""
+        angle = 0.73  # 任意の角度
+        c, s = np.cos(angle), np.sin(angle)
+        t1_old = np.array([1.0, 0.0, 0.0])
+        t2_old = np.array([0.0, 1.0, 0.0])
+        t1_new = np.array([c, s, 0.0])
+        t2_new = np.array([-s, c, 0.0])
+        z_t = np.array([5.0, 12.0])
+        z_new = rotate_friction_history(z_t, t1_old, t2_old, t1_new, t2_new)
+        assert abs(np.linalg.norm(z_new) - np.linalg.norm(z_t)) < 1e-12
+
+    def test_zero_vector(self):
+        """ゼロベクトルはゼロのまま."""
+        t1_old = np.array([1.0, 0.0, 0.0])
+        t2_old = np.array([0.0, 1.0, 0.0])
+        t1_new = np.array([0.0, 0.0, 1.0])
+        t2_new = np.array([0.0, 1.0, 0.0])
+        z_t = np.array([0.0, 0.0])
+        z_new = rotate_friction_history(z_t, t1_old, t2_old, t1_new, t2_new)
+        np.testing.assert_allclose(z_new, [0.0, 0.0], atol=1e-14)
+
+    def test_3d_frame_rotation(self):
+        """3D空間でのフレーム回転（法線が z → 傾斜）."""
+        t1_old = np.array([1.0, 0.0, 0.0])
+        t2_old = np.array([0.0, 1.0, 0.0])
+        # 法線が z → 45度傾斜
+        sq2 = np.sqrt(2.0) / 2.0
+        t1_new = np.array([sq2, 0.0, -sq2])  # x-z 面で傾斜
+        t2_new = np.array([0.0, 1.0, 0.0])  # y 方向は変化なし
+        z_t = np.array([1.0, 2.0])
+        # physical = 1*t1_old + 2*t2_old = (1, 2, 0)
+        # z1_new = (1,2,0) · (sq2,0,-sq2) = sq2
+        # z2_new = (1,2,0) · (0,1,0) = 2
+        z_new = rotate_friction_history(z_t, t1_old, t2_old, t1_new, t2_new)
+        np.testing.assert_allclose(z_new, [sq2, 2.0], atol=1e-14)

@@ -35,6 +35,7 @@ from xkep_cae.contact.law_friction import (
     compute_tangential_displacement,
     friction_return_mapping,
     friction_tangent_2x2,
+    rotate_friction_history,
 )
 from xkep_cae.contact.law_normal import (
     initialize_penalty_stiffness,
@@ -274,7 +275,34 @@ def newton_raphson_with_contact(
                 max_layer = manager.compute_active_layer_for_step(step, n_load_steps)
                 manager.filter_pairs_by_layer(max_layer)
 
+            # --- 摩擦フレーム回転のために旧フレームを保存 ---
+            old_frames: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+            if use_friction:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair.state.status != ContactStatus.INACTIVE:
+                        t1_norm = float(np.linalg.norm(pair.state.tangent1))
+                        if t1_norm > 1e-10:
+                            old_frames[pair_idx] = (
+                                pair.state.tangent1.copy(),
+                                pair.state.tangent2.copy(),
+                            )
+
             manager.update_geometry(coords_def)
+
+            # --- 摩擦履歴の平行輸送: 旧フレーム → 新フレーム ---
+            if use_friction and old_frames:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair_idx not in old_frames:
+                        continue
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    t1_old, t2_old = old_frames[pair_idx]
+                    t1_new = pair.state.tangent1
+                    t2_new = pair.state.tangent2
+                    if pair_idx in z_t_conv:
+                        z_t_conv[pair_idx] = rotate_friction_history(
+                            z_t_conv[pair_idx], t1_old, t2_old, t1_new, t2_new,
+                        )
 
             # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加
             for pair_idx, pair in enumerate(manager.pairs):
