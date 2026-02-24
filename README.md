@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト完了。1064テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価完了。1075テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -37,14 +37,15 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 - [ロードマップ](docs/roadmap.md) — 全体開発計画（Phase 1〜8 + Phase C）
 - [使用例](docs/examples.md) — API・梁要素・非線形・弾塑性のコード例
 - [バリデーション文書](docs/verification/validation.md) — 全Phase の解析解・厳密解との比較検証
-- [検証図](docs/verification/) — 解析解比較の検証プロット（12枚）
+- [検証図](docs/verification/) — 解析解比較の検証プロット（15枚）
+- [接触テストカタログ](docs/verification/contact_test_catalog.md) — 全接触テスト（~240テスト）の系統的一覧
 - [Cosserat rod 設計仕様書](docs/cosserat-design.md) — 四元数回転・Cosserat rod の設計
 - [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
 - [梁–梁接触モジュール仕様書](docs/contact/beam_beam_contact_spec_v0.1.md) — 接触アルゴリズムの実装指針
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
 - [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
-- [実装状況](docs/status/status-050.md) — 最新のステータス（実梁要素接触テスト + 長距離スライド）
+- [実装状況](docs/status/status-051.md) — 最新のステータス（接触バリデーションドキュメント + 大規模マルチセグメント性能評価）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
