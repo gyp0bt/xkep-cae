@@ -156,24 +156,42 @@ def _make_contact_manager(
     use_friction=False,
     mu=0.3,
     n_outer_max=8,
+    *,
+    k_pen_mode="manual",
+    beam_E=0.0,
+    beam_I=0.0,
+    k_t_ratio=None,
+    mu_ramp_steps=None,
+    staged_activation_steps=0,
+    elem_layer_map=None,
 ):
     """撚線用の接触マネージャを構築."""
+    # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
+    if k_t_ratio is None:
+        k_t_ratio = 0.01 if use_friction else 0.1
+    if mu_ramp_steps is None:
+        mu_ramp_steps = 10 if use_friction else 0
     return ContactManager(
         config=ContactConfig(
             k_pen_scale=k_pen_scale,
-            k_t_ratio=0.1,
+            k_pen_mode=k_pen_mode,
+            beam_E=beam_E,
+            beam_I=beam_I,
+            k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=0.0,
             g_off=1e-5,
             n_outer_max=n_outer_max,
             use_friction=use_friction,
-            mu_ramp_steps=3 if use_friction else 0,
+            mu_ramp_steps=mu_ramp_steps,
             use_line_search=True,
             line_search_max_steps=5,
             use_geometric_stiffness=True,
             tol_penetration_ratio=0.02,
             penalty_growth_factor=2.0,
             k_pen_max=1e12,
+            staged_activation_steps=staged_activation_steps,
+            elem_layer_map=elem_layer_map,
         ),
     )
 
@@ -230,6 +248,9 @@ def _solve_twisted_wire(
     max_iter: int = _DEFAULT_MAX_ITER,
     gap: float = 0.0,
     n_elems_per_strand: int = _N_ELEM_PER_STRAND,
+    auto_kpen: bool = False,
+    staged_activation: bool = False,
+    n_outer_max: int = 8,
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -243,6 +264,9 @@ def _solve_twisted_wire(
         mu: 摩擦係数
         gap: 素線間初期ギャップ [m]
         n_elems_per_strand: 1素線あたり要素数
+        auto_kpen: True で EI/L³ ベース自動推定
+        staged_activation: True で層別段階的接触アクティベーション
+        n_outer_max: Outer loop 最大反復数
 
     Returns:
         (result, mgr, mesh)
@@ -302,10 +326,36 @@ def _solve_twisted_wire(
     else:
         raise ValueError(f"未知の荷重タイプ: {load_type}")
 
+    # 自動 k_pen 推定
+    kpen_mode = "manual"
+    beam_E = 0.0
+    beam_I = 0.0
+    kpen_scale = k_pen_scale
+    if auto_kpen:
+        kpen_mode = "beam_ei"
+        beam_E = _E
+        beam_I = _SECTION.Iy
+        kpen_scale = 0.1  # auto_beam_penalty_stiffness のデフォルトスケール
+
+    # 段階的アクティベーション
+    elem_layer_map = None
+    staged_steps = 0
+    if staged_activation:
+        elem_layer_map = mesh.build_elem_layer_map()
+        # 層数×2ステップで段階的にオン
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
     mgr = _make_contact_manager(
-        k_pen_scale=k_pen_scale,
+        k_pen_scale=kpen_scale,
         use_friction=use_friction,
         mu=mu,
+        n_outer_max=n_outer_max,
+        k_pen_mode=kpen_mode,
+        beam_E=beam_E,
+        beam_I=beam_I,
+        staged_activation_steps=staged_steps,
+        elem_layer_map=elem_layer_map,
     )
 
     result = newton_raphson_with_contact(
@@ -391,23 +441,25 @@ class TestThreeStrandBasicContact:
 
 
 class TestSevenStrandMultiContact:
-    """7本撚りの多点接触テスト（xfail: 収束改善が必要）.
+    """7本撚りの多点接触テスト（xfail: さらなる収束改善が必要）.
 
     1+6構造: 中心1本 + 外層6本。
-    現在のAL+NRソルバーでは7本撚りの同時多点接触（24+ペア）で
-    条件数の悪化とline searchの不足により収束困難。
+    auto_beam_penalty_stiffness + staged_activation を導入したが、
+    36+ペア同時アクティブ状態では NR 内部ループの収束が困難。
 
-    収束に必要な改善（Phase 4.7 Level 0 で着手予定）:
-    - k_pen の構造剛性適応型自動推定
-    - 段階的接触活性化（レイヤーごとに接触をオン）
-    - Outer loop の反復戦略改善
+    残る課題:
+    - 接触専用プレコンディショナー
+    - 内部ループの準ニュートン法
+    - より積極的なペナルティスケーリング（n_pairs 線形除算）
     """
 
     _GAP = 0.0005
     _N_ELEM = 4
-    _K_PEN = 1e4
 
-    @pytest.mark.xfail(reason="7本撚り多点接触: 現ソルバーでは収束困難", strict=False)
+    @pytest.mark.xfail(
+        reason="7本撚り多点接触: auto k_pen + staged activation でも36ペア同時収束は困難",
+        strict=False,
+    )
     def test_timo3d_tension_converges(self):
         """7本撚り Timo3D 引張が収束する."""
         result, mgr, mesh = _solve_twisted_wire(
@@ -419,11 +471,16 @@ class TestSevenStrandMultiContact:
             gap=self._GAP,
             n_elems_per_strand=self._N_ELEM,
             assembler_type="timo3d",
-            k_pen_scale=self._K_PEN,
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=10,
         )
         assert result.converged, "7本撚りTimo3D引張が収束しなかった"
 
-    @pytest.mark.xfail(reason="7本撚り多点接触: 現ソルバーでは収束困難", strict=False)
+    @pytest.mark.xfail(
+        reason="7本撚り多点接触: auto k_pen + staged activation でも36ペア同時収束は困難",
+        strict=False,
+    )
     def test_timo3d_torsion_converges(self):
         """7本撚り Timo3D ねじりが収束する."""
         result, mgr, mesh = _solve_twisted_wire(
@@ -435,11 +492,16 @@ class TestSevenStrandMultiContact:
             gap=self._GAP,
             n_elems_per_strand=self._N_ELEM,
             assembler_type="timo3d",
-            k_pen_scale=self._K_PEN,
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=10,
         )
         assert result.converged, "7本撚りTimo3Dねじりが収束しなかった"
 
-    @pytest.mark.xfail(reason="7本撚り多点接触: 現ソルバーでは収束困難", strict=False)
+    @pytest.mark.xfail(
+        reason="7本撚り多点接触: auto k_pen + staged activation でも36ペア同時収束は困難",
+        strict=False,
+    )
     def test_timo3d_bending_converges(self):
         """7本撚り Timo3D 曲げが収束する."""
         result, mgr, mesh = _solve_twisted_wire(
@@ -451,9 +513,68 @@ class TestSevenStrandMultiContact:
             gap=self._GAP,
             n_elems_per_strand=self._N_ELEM,
             assembler_type="timo3d",
-            k_pen_scale=self._K_PEN,
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=10,
         )
         assert result.converged, "7本撚りTimo3D曲げが収束しなかった"
+
+
+# ====================================================================
+# テスト: auto k_pen + staged activation（3本撚り）
+# ====================================================================
+
+
+class TestThreeStrandAutoKpen:
+    """3本撚りで auto k_pen + staged activation の動作確認."""
+
+    def test_auto_kpen_tension_converges(self):
+        """auto k_pen で3本撚り引張が収束する."""
+        result, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            auto_kpen=True,
+        )
+        assert result.converged
+
+    def test_auto_kpen_lateral_converges(self):
+        """auto k_pen で3本撚り横力が収束する."""
+        result, _, _ = _solve_twisted_wire(
+            3,
+            "lateral",
+            10.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            auto_kpen=True,
+        )
+        assert result.converged
+
+    def test_staged_activation_tension_converges(self):
+        """staged activation で3本撚り引張が収束する."""
+        result, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            staged_activation=True,
+        )
+        assert result.converged
+
+    def test_auto_kpen_bending_converges(self):
+        """auto k_pen で3本撚り曲げが収束する."""
+        result, _, _ = _solve_twisted_wire(
+            3,
+            "bending",
+            0.05,
+            n_pitches=1.0,
+            n_load_steps=10,
+            auto_kpen=True,
+        )
+        assert result.converged
 
 
 # ====================================================================
@@ -462,14 +583,12 @@ class TestSevenStrandMultiContact:
 
 
 class TestTwistedWireFriction:
-    """撚線の摩擦接触テスト（xfail: 撚線幾何では摩擦収束に改善が必要）.
+    """撚線の摩擦接触テスト.
 
-    撚線幾何では接触ペアの法線方向と接線方向が複雑に変化するため、
-    摩擦 return mapping の収束が困難。
-    Phase 4.7 Level 0 で摩擦反復戦略の改善後に再挑戦予定。
+    摩擦履歴の平行輸送（rotate_friction_history）+ 低 k_t_ratio + auto k_pen で
+    ヘリカル幾何での摩擦 return mapping を安定化。
     """
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_tension(self):
         """3本撚り + 摩擦 + 引張が収束する."""
         result, mgr, mesh = _solve_twisted_wire(
@@ -479,11 +598,12 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged, "3本撚り摩擦引張が収束しなかった"
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_lateral(self):
         """3本撚り + 摩擦 + 横力が収束する."""
         result, _, _ = _solve_twisted_wire(
@@ -493,11 +613,12 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged
 
-    @pytest.mark.xfail(reason="撚線摩擦: ヘリカル接触幾何で収束困難", strict=False)
     def test_3_strand_friction_bending(self):
         """3本撚り + 摩擦 + 曲げが収束する."""
         result, _, _ = _solve_twisted_wire(
@@ -507,7 +628,9 @@ class TestTwistedWireFriction:
             n_pitches=1.0,
             use_friction=True,
             mu=0.3,
-            n_load_steps=10,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
         )
         assert result.converged
 
@@ -615,3 +738,93 @@ class TestContactDataCollection:
         result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=10)
         assert result.converged
         assert len(result.contact_force_history) == 10
+
+
+# ====================================================================
+# テスト: 接触グラフ時系列データ収集
+# ====================================================================
+
+
+class TestContactGraphCollection:
+    """撚線接触テストでの接触グラフ時系列データ収集テスト.
+
+    solver_hooks の ContactSolveResult.graph_history を通じて
+    各ステップの接触グラフスナップショットが正しく記録されることを検証する。
+    """
+
+    def test_graph_history_length(self):
+        """graph_history のスナップショット数 == ステップ数."""
+        n_steps = 10
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
+        assert result.converged
+        assert result.graph_history.n_steps == n_steps
+
+    def test_graph_history_load_factors(self):
+        """graph_history の荷重係数が load_history と一致."""
+        n_steps = 10
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
+        assert result.converged
+        lf_graph = result.graph_history.load_factor_series()
+        for i in range(n_steps):
+            assert abs(lf_graph[i] - result.load_history[i]) < 1e-12
+
+    def test_graph_history_step_numbers(self):
+        """各スナップショットの step 番号が 1..n_steps."""
+        n_steps = 10
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
+        assert result.converged
+        for i, snap in enumerate(result.graph_history.snapshots):
+            assert snap.step == i + 1
+
+    def test_graph_edges_increase_with_load(self):
+        """荷重が増えると接触エッジ数が非減少（3本撚り引張）."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
+        assert result.converged
+        edges = result.graph_history.edge_count_series()
+        # 最終ステップでは少なくとも1本の接触エッジが存在
+        assert edges[-1] > 0
+
+    def test_graph_total_force_series(self):
+        """法線反力合計の時系列が取得可能."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
+        assert result.converged
+        forces = result.graph_history.total_force_series()
+        assert len(forces) == 15
+        # 反力は非負
+        assert np.all(forces >= -1e-10)
+
+    def test_graph_topology_changes(self):
+        """トポロジー変化ステップが検出可能."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
+        assert result.converged
+        changes = result.graph_history.topology_change_steps()
+        # トポロジー変化はリストとして返される
+        assert isinstance(changes, list)
+
+    def test_graph_node_count_series(self):
+        """ノード数時系列が取得可能."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
+        assert result.converged
+        nodes = result.graph_history.node_count_series()
+        assert len(nodes) == 15
+        # ノード数は非負
+        assert np.all(nodes >= 0)
+
+    def test_graph_dissipation_series(self):
+        """散逸エネルギー時系列が取得可能."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
+        assert result.converged
+        diss = result.graph_history.dissipation_series()
+        assert len(diss) == 15
+
+    def test_graph_snapshot_structure(self):
+        """各スナップショットが正しい構造を持つ."""
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=10)
+        assert result.converged
+        for snap in result.graph_history.snapshots:
+            assert snap.n_total_pairs >= 0
+            assert snap.n_edges >= 0
+            assert snap.n_nodes >= 0
+            for edge in snap.edges:
+                assert edge.p_n >= -1e-10
+                assert edge.status in ("ACTIVE", "SLIDING")

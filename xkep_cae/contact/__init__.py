@@ -11,17 +11,26 @@
 - line_search: merit function + backtracking line search
 - assembly: 接触内力・接線の組み込み
 - solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
+- graph: 接触グラフ表現・可視化
 """
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
 from xkep_cae.contact.broadphase import broadphase_aabb, compute_segment_aabb
+from xkep_cae.contact.graph import (
+    ContactEdge,
+    ContactGraph,
+    ContactGraphHistory,
+    snapshot_contact_graph,
+)
 from xkep_cae.contact.law_friction import (
     compute_mu_effective,
     compute_tangential_displacement,
     friction_return_mapping,
     friction_tangent_2x2,
+    rotate_friction_history,
 )
 from xkep_cae.contact.law_normal import (
+    auto_beam_penalty_stiffness,
     auto_penalty_stiffness,
     evaluate_normal_force,
     initialize_penalty_stiffness,
@@ -43,11 +52,15 @@ from xkep_cae.contact.solver_hooks import (
 
 __all__ = [
     "ContactConfig",
+    "ContactEdge",
+    "ContactGraph",
+    "ContactGraphHistory",
     "ContactManager",
     "ContactPair",
     "ContactSolveResult",
     "ContactState",
     "ContactStatus",
+    "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
     "backtracking_line_search",
     "broadphase_aabb",
@@ -63,5 +76,7 @@ __all__ = [
     "merit_function",
     "newton_raphson_with_contact",
     "normal_force_linearization",
+    "rotate_friction_history",
+    "snapshot_contact_graph",
     "update_al_multiplier",
 ]

@@ -29,11 +29,13 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
+from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
 from xkep_cae.contact.law_friction import (
     compute_mu_effective,
     compute_tangential_displacement,
     friction_return_mapping,
     friction_tangent_2x2,
+    rotate_friction_history,
 )
 from xkep_cae.contact.law_normal import (
     initialize_penalty_stiffness,
@@ -58,6 +60,7 @@ class ContactSolveResult:
         load_history: 各ステップの荷重係数
         displacement_history: 各ステップの変位
         contact_force_history: 各ステップの接触力ノルム
+        graph_history: 接触グラフの時系列（各ステップ終了時のスナップショット）
     """
 
     u: np.ndarray
@@ -70,6 +73,7 @@ class ContactSolveResult:
     load_history: list[float] = field(default_factory=list)
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
+    graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
 
 
 def _deformed_coords(
@@ -216,6 +220,7 @@ def newton_raphson_with_contact(
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
+    graph_history = ContactGraphHistory()
     total_newton = 0
     total_outer = 0
     total_ls = 0
@@ -264,17 +269,82 @@ def newton_raphson_with_contact(
                 margin=broadphase_margin,
                 cell_size=broadphase_cell_size,
             )
+
+            # --- 段階的接触アクティベーション ---
+            if manager.config.staged_activation_steps > 0:
+                max_layer = manager.compute_active_layer_for_step(step, n_load_steps)
+                manager.filter_pairs_by_layer(max_layer)
+
+            # --- 摩擦フレーム回転のために旧フレームを保存 ---
+            old_frames: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+            if use_friction:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair.state.status != ContactStatus.INACTIVE:
+                        t1_norm = float(np.linalg.norm(pair.state.tangent1))
+                        if t1_norm > 1e-10:
+                            old_frames[pair_idx] = (
+                                pair.state.tangent1.copy(),
+                                pair.state.tangent2.copy(),
+                            )
+
             manager.update_geometry(coords_def)
+
+            # --- 摩擦履歴の平行輸送: 旧フレーム → 新フレーム ---
+            if use_friction and old_frames:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair_idx not in old_frames:
+                        continue
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    t1_old, t2_old = old_frames[pair_idx]
+                    t1_new = pair.state.tangent1
+                    t2_new = pair.state.tangent2
+                    if pair_idx in z_t_conv:
+                        z_t_conv[pair_idx] = rotate_friction_history(
+                            z_t_conv[pair_idx],
+                            t1_old,
+                            t2_old,
+                            t1_new,
+                            t2_new,
+                        )
 
             # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加
             for pair_idx, pair in enumerate(manager.pairs):
                 if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                    # EA/L ベースの推定（簡易版: k_pen_scale をそのまま使用）
-                    initialize_penalty_stiffness(
-                        pair,
-                        k_pen=manager.config.k_pen_scale,
-                        k_t_ratio=manager.config.k_t_ratio,
-                    )
+                    if manager.config.k_pen_mode == "beam_ei":
+                        # EI/L³ ベースの自動推定
+                        from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                        # 代表要素長さ: ペアのセグメント長の平均
+                        xA0 = coords_def[pair.nodes_a[0]]
+                        xA1 = coords_def[pair.nodes_a[1]]
+                        xB0 = coords_def[pair.nodes_b[0]]
+                        xB1 = coords_def[pair.nodes_b[1]]
+                        L_a = float(np.linalg.norm(xA1 - xA0))
+                        L_b = float(np.linalg.norm(xB1 - xB0))
+                        L_avg = 0.5 * (L_a + L_b)
+                        if L_avg < 1e-30:
+                            L_avg = 1.0
+
+                        k_auto = auto_beam_penalty_stiffness(
+                            manager.config.beam_E,
+                            manager.config.beam_I,
+                            L_avg,
+                            n_contact_pairs=max(1, manager.n_active),
+                            scale=manager.config.k_pen_scale,
+                        )
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=k_auto,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
+                    else:
+                        # manual モード: k_pen_scale をそのまま使用
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=manager.config.k_pen_scale,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
                 # 新規ペアの z_t_conv エントリ追加
                 if use_friction and pair_idx not in z_t_conv:
                     z_t_conv[pair_idx] = np.zeros(2)
@@ -528,6 +598,7 @@ def newton_raphson_with_contact(
                     load_history=load_history,
                     displacement_history=disp_history,
                     contact_force_history=contact_force_history,
+                    graph_history=graph_history,
                 )
 
             # --- Outer 収束判定 ---
@@ -663,6 +734,9 @@ def newton_raphson_with_contact(
         disp_history.append(u.copy())
         contact_force_history.append(fc_norm)
 
+        # 接触グラフのスナップショット記録
+        graph_history.add(snapshot_contact_graph(manager, step=step, load_factor=lam))
+
     return ContactSolveResult(
         u=u,
         converged=True,
@@ -674,4 +748,5 @@ def newton_raphson_with_contact(
         load_history=load_history,
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
+        graph_history=graph_history,
     )

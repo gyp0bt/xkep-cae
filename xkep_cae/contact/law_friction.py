@@ -185,6 +185,43 @@ def friction_tangent_2x2(
         return ratio * k_t * (np.eye(2) - np.outer(q_hat, q_hat))
 
 
+def rotate_friction_history(
+    z_t: np.ndarray,
+    t1_old: np.ndarray,
+    t2_old: np.ndarray,
+    t1_new: np.ndarray,
+    t2_new: np.ndarray,
+) -> np.ndarray:
+    """摩擦履歴ベクトルを旧フレームから新フレームに回転する.
+
+    z_t は局所接線座標系 (t1, t2) での2成分ベクトル。
+    接触フレームが回転した場合、物理的な摩擦力ベクトルは同じでも
+    局所座標成分が変わるため、フレーム変換が必要。
+
+    変換行列 R_{2×2}:
+        R[i,j] = t_i_new · t_j_old  (i,j = 1,2)
+
+    Args:
+        z_t: (2,) 旧フレームでの摩擦履歴
+        t1_old, t2_old: 旧接線基底 (3,)
+        t1_new, t2_new: 新接線基底 (3,)
+
+    Returns:
+        z_t_new: (2,) 新フレームでの摩擦履歴
+    """
+    if float(np.linalg.norm(z_t)) < 1e-30:
+        return z_t.copy()
+
+    # 2×2 回転行列: 旧フレーム → 新フレーム
+    R = np.array(
+        [
+            [float(t1_new @ t1_old), float(t1_new @ t2_old)],
+            [float(t2_new @ t1_old), float(t2_new @ t2_old)],
+        ]
+    )
+    return R @ z_t
+
+
 def compute_mu_effective(
     mu_target: float,
     ramp_counter: int,
