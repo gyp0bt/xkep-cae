@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的接触アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集完了。1206テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的接触アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り収束改善 + 撚線ヒステリシス観測 + 接触グラフ統計分析完了。1234テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -34,6 +34,9 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 k_pen自動推定: EI/L³ベースのペナルティ剛性自動推定（接触ペア数スケーリング）。段階的接触アクティベーション。
 ヘリカル摩擦安定化: 摩擦履歴の平行輸送（rotate_friction_history）でヘリカル接触幾何の収束を実現。
 接触グラフ可視化: matplotlib描画（plot_contact_graph/history）+ GIFアニメーション（save_contact_graph_gif）。時系列自動収集。
+7本撚り収束改善: Modified Newton法 + contact damping + sqrt k_penスケーリング（線形アセンブラでは効果限定的、7本撚りxfail維持）。
+撚線ヒステリシス観測: サイクリック荷重ランナー（run_contact_cyclic）+ CyclicContactResult + 3本撚り引張/曲げ/ねじり往復荷重テスト。
+接触グラフ統計分析: stick/slip比率、法線力統計、連結成分数、接触持続マップ、累積散逸エネルギー、サマリーメソッド。
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -51,7 +54,7 @@ k_pen自動推定: EI/L³ベースのペナルティ剛性自動推定（接触�
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
 - [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
-- [実装状況](docs/status/status-053.md) — 最新のステータス（k_pen自動推定 + 段階的アクティベーション + 摩擦安定化 + 接触グラフ可視化・時系列収集）
+- [実装状況](docs/status/status-054.md) — 最新のステータス（7本撚り収束改善 + 撚線ヒステリシス観測 + 接触グラフ統計分析）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
