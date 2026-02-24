@@ -142,6 +142,11 @@ class ContactConfig:
         merit_beta: merit function の散逸ペナルティ重み
         use_geometric_stiffness: 幾何微分込み一貫接線の有効化
         use_pdas: PDAS Active-set 更新の有効化（実験的）
+        tol_penetration_ratio: 貫入許容比（search_radius = r_a + r_b 基準）。
+            0.01 は 1% 許容を意味する。Outer loop で貫入がこの閾値を超えると
+            ペナルティ剛性を自動増大する。0 で無効。
+        penalty_growth_factor: 貫入超過時のペナルティ成長係数（> 1）
+        k_pen_max: ペナルティ剛性の上限（条件数悪化防止）
     """
 
     k_pen_scale: float = 1.0
@@ -159,6 +164,9 @@ class ContactConfig:
     merit_beta: float = 1.0
     use_geometric_stiffness: bool = True
     use_pdas: bool = False
+    tol_penetration_ratio: float = 0.01
+    penalty_growth_factor: float = 2.0
+    k_pen_max: float = 1e12
 
 
 @dataclass
@@ -258,12 +266,22 @@ class ContactManager:
             segments.append((coords[ni], coords[nj]))
 
         # broadphase 実行
-        candidates = broadphase_aabb(
+        raw_candidates = broadphase_aabb(
             segments,
             r_arr,
             margin=margin,
             cell_size=cell_size,
         )
+
+        # 共有節点フィルタ: 同一梁内の隣接セグメントを除外
+        # 2セグメントが節点を共有する場合は接触候補から除外する
+        candidates = []
+        for i, j in raw_candidates:
+            nodes_i = set(int(n) for n in conn[i])
+            nodes_j = set(int(n) for n in conn[j])
+            if nodes_i & nodes_j:
+                continue  # 共有節点あり → 同一梁の隣接セグメント
+            candidates.append((i, j))
 
         # 既存ペアをマップ化（(elem_a, elem_b) → index）
         existing: dict[tuple[int, int], int] = {}
