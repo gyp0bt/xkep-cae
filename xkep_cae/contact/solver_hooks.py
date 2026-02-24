@@ -301,7 +301,11 @@ def newton_raphson_with_contact(
                     t2_new = pair.state.tangent2
                     if pair_idx in z_t_conv:
                         z_t_conv[pair_idx] = rotate_friction_history(
-                            z_t_conv[pair_idx], t1_old, t2_old, t1_new, t2_new,
+                            z_t_conv[pair_idx],
+                            t1_old,
+                            t2_old,
+                            t1_new,
+                            t2_new,
                         )
 
             # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加

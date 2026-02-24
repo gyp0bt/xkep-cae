@@ -755,18 +755,14 @@ class TestContactGraphCollection:
     def test_graph_history_length(self):
         """graph_history のスナップショット数 == ステップ数."""
         n_steps = 10
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
         assert result.converged
         assert result.graph_history.n_steps == n_steps
 
     def test_graph_history_load_factors(self):
         """graph_history の荷重係数が load_history と一致."""
         n_steps = 10
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
         assert result.converged
         lf_graph = result.graph_history.load_factor_series()
         for i in range(n_steps):
@@ -775,18 +771,14 @@ class TestContactGraphCollection:
     def test_graph_history_step_numbers(self):
         """各スナップショットの step 番号が 1..n_steps."""
         n_steps = 10
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 50.0, n_pitches=1.0, n_load_steps=n_steps)
         assert result.converged
         for i, snap in enumerate(result.graph_history.snapshots):
             assert snap.step == i + 1
 
     def test_graph_edges_increase_with_load(self):
         """荷重が増えると接触エッジ数が非減少（3本撚り引張）."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=15
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
         assert result.converged
         edges = result.graph_history.edge_count_series()
         # 最終ステップでは少なくとも1本の接触エッジが存在
@@ -794,9 +786,7 @@ class TestContactGraphCollection:
 
     def test_graph_total_force_series(self):
         """法線反力合計の時系列が取得可能."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=15
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
         assert result.converged
         forces = result.graph_history.total_force_series()
         assert len(forces) == 15
@@ -805,9 +795,7 @@ class TestContactGraphCollection:
 
     def test_graph_topology_changes(self):
         """トポロジー変化ステップが検出可能."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=15
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
         assert result.converged
         changes = result.graph_history.topology_change_steps()
         # トポロジー変化はリストとして返される
@@ -815,9 +803,7 @@ class TestContactGraphCollection:
 
     def test_graph_node_count_series(self):
         """ノード数時系列が取得可能."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=15
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
         assert result.converged
         nodes = result.graph_history.node_count_series()
         assert len(nodes) == 15
@@ -826,18 +812,14 @@ class TestContactGraphCollection:
 
     def test_graph_dissipation_series(self):
         """散逸エネルギー時系列が取得可能."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=15
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=15)
         assert result.converged
         diss = result.graph_history.dissipation_series()
         assert len(diss) == 15
 
     def test_graph_snapshot_structure(self):
         """各スナップショットが正しい構造を持つ."""
-        result, _, _ = _solve_twisted_wire(
-            3, "tension", 100.0, n_pitches=1.0, n_load_steps=10
-        )
+        result, _, _ = _solve_twisted_wire(3, "tension", 100.0, n_pitches=1.0, n_load_steps=10)
         assert result.converged
         for snap in result.graph_history.snapshots:
             assert snap.n_total_pairs >= 0
