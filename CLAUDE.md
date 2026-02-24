@@ -66,5 +66,5 @@ docs/
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + KINEMATIC→AF変換 + 摩擦接触バリデーション + 梁梁接触貫入テスト完了（1034テスト）。Phase 4.3（von Mises 3D）は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + KINEMATIC→AF変換 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価完了（1075テスト）。Phase 4.3（von Mises 3D）は凍結。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。

@@ -1295,12 +1295,12 @@ def cr_beam3d_fiber_internal_force(
 
     # --- 一般化ひずみ（B行列による、要素中央 1点積分）---
     # DOF順: [u1,v1,w1, θx1,θy1,θz1, u2,v2,w2, θx2,θy2,θz2]
-    eps_axial = (d_cr[6] - d_cr[0]) / L_0         # 軸ひずみ
+    eps_axial = (d_cr[6] - d_cr[0]) / L_0  # 軸ひずみ
     gamma_y = (d_cr[7] - d_cr[1]) / L_0 - (d_cr[5] + d_cr[11]) / 2.0  # せん断 y
     gamma_z = (d_cr[8] - d_cr[2]) / L_0 + (d_cr[4] + d_cr[10]) / 2.0  # せん断 z
-    kappa_x = (d_cr[9] - d_cr[3]) / L_0           # ねじり率
-    kappa_y_sec = (d_cr[10] - d_cr[4]) / L_0      # 曲率 y（xz面曲げ）
-    kappa_z_sec = (d_cr[11] - d_cr[5]) / L_0      # 曲率 z（xy面曲げ）
+    kappa_x = (d_cr[9] - d_cr[3]) / L_0  # ねじり率
+    kappa_y_sec = (d_cr[10] - d_cr[4]) / L_0  # 曲率 y（xz面曲げ）
+    kappa_z_sec = (d_cr[11] - d_cr[5]) / L_0  # 曲率 z（xy面曲げ）
 
     # CR フレームでは v1=v2=w1=w2=u1=0 なので簡略化される:
     # eps_axial = d_cr[6] / L_0
@@ -1317,14 +1317,16 @@ def cr_beam3d_fiber_internal_force(
     T = G * sec.J * kappa_x
 
     # --- 断面力ベクトル ---
-    S = np.array([
-        fiber_result.N,   # 軸力（ファイバー）
-        Vy,               # せん断力 y（弾性）
-        Vz,               # せん断力 z（弾性）
-        T,                # ねじりモーメント（弾性）
-        fiber_result.My,  # 曲げモーメント y（ファイバー）
-        fiber_result.Mz,  # 曲げモーメント z（ファイバー）
-    ])
+    S = np.array(
+        [
+            fiber_result.N,  # 軸力（ファイバー）
+            Vy,  # せん断力 y（弾性）
+            Vz,  # せん断力 z（弾性）
+            T,  # ねじりモーメント（弾性）
+            fiber_result.My,  # 曲げモーメント y（ファイバー）
+            fiber_result.Mz,  # 曲げモーメント z（ファイバー）
+        ]
+    )
 
     # --- 内力 = L * B^T @ S ---
     # B^T の各行 = B の各列（転置）
@@ -1509,7 +1511,13 @@ def assemble_cr_beam3d_fiber(
 
         if internal_force:
             f_e, states_new = cr_beam3d_fiber_internal_force(
-                coords, u_elem, G, kappa_y, kappa_z, fi, v_ref,
+                coords,
+                u_elem,
+                G,
+                kappa_y,
+                kappa_z,
+                fi,
+                v_ref,
             )
             f_int_global[edofs] += f_e
             all_states_new.append(states_new)
@@ -1518,7 +1526,13 @@ def assemble_cr_beam3d_fiber(
 
         if stiffness:
             K_e = cr_beam3d_fiber_tangent(
-                coords, u_elem, G, kappa_y, kappa_z, fi, v_ref,
+                coords,
+                u_elem,
+                G,
+                kappa_y,
+                kappa_z,
+                fi,
+                v_ref,
             )
             K_T_global[np.ix_(edofs, edofs)] += K_e
 

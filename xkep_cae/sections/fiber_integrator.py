@@ -72,8 +72,7 @@ class FiberIntegrator:
             self.states = [PlasticState1D() for _ in range(self.section.n_fibers)]
         if len(self.states) != self.section.n_fibers:
             raise ValueError(
-                f"states の数がファイバー数と不一致: "
-                f"{len(self.states)} != {self.section.n_fibers}"
+                f"states の数がファイバー数と不一致: {len(self.states)} != {self.section.n_fibers}"
             )
 
     def integrate(
