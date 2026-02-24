@@ -208,8 +208,14 @@ def _solve_fiber_displacement_control(
         for it in range(max_iter):
             # アセンブリ
             K_T, f_int, all_states_new = assemble_cr_beam3d_fiber(
-                nodes, conn, u, G_MPA, model["kappa_y"], model["kappa_z"],
-                fis, v_ref=np.array([0.0, 0.0, 1.0]),
+                nodes,
+                conn,
+                u,
+                G_MPA,
+                model["kappa_y"],
+                model["kappa_z"],
+                fis,
+                v_ref=np.array([0.0, 0.0, 1.0]),
             )
 
             # 残差 = -f_int（free DOFs のみ）
@@ -246,8 +252,14 @@ def _solve_fiber_displacement_control(
         # 反力 = f_int[load_dof]
         if converged:
             _, f_int_final, _ = assemble_cr_beam3d_fiber(
-                nodes, conn, u, G_MPA, model["kappa_y"], model["kappa_z"],
-                fis, v_ref=np.array([0.0, 0.0, 1.0]),
+                nodes,
+                conn,
+                u,
+                G_MPA,
+                model["kappa_y"],
+                model["kappa_z"],
+                fis,
+                v_ref=np.array([0.0, 0.0, 1.0]),
                 stiffness=False,
             )
             rf = f_int_final[load_dof]
@@ -279,7 +291,11 @@ class TestAbaqusBend3pElastoplastic:
     def result(self, model):
         """δ=-0.5mm を 100 ステップで解く."""
         return _solve_fiber_displacement_control(
-            model, delta_y=-0.5, n_steps=100, tol=1e-6, max_iter=50,
+            model,
+            delta_y=-0.5,
+            n_steps=100,
+            tol=1e-6,
+            max_iter=50,
         )
 
     def test_fiber_nr_converges(self, result):
@@ -306,8 +322,7 @@ class TestAbaqusBend3pElastoplastic:
 
         ratio = K_xkep / K_abaqus
         assert 0.1 < ratio < 10.0, (
-            f"剛性比 {ratio:.2f} が 0.1-10x の範囲外: "
-            f"K_xkep={K_xkep:.4f}, K_abaqus={K_abaqus:.4f}"
+            f"剛性比 {ratio:.2f} が 0.1-10x の範囲外: K_xkep={K_xkep:.4f}, K_abaqus={K_abaqus:.4f}"
         )
 
     def test_reaction_force_sign(self, result):
