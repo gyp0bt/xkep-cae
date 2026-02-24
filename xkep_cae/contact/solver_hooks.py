@@ -208,6 +208,11 @@ def newton_raphson_with_contact(
     use_geometric_stiffness = manager.config.use_geometric_stiffness
     use_pdas = manager.config.use_pdas
 
+    # 適応的ペナルティ設定
+    tol_pen_ratio = manager.config.tol_penetration_ratio
+    pen_growth = manager.config.penalty_growth_factor
+    k_pen_max = manager.config.k_pen_max
+
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
@@ -544,6 +549,29 @@ def newton_raphson_with_contact(
             for pair in manager.pairs:
                 update_al_multiplier(pair)
 
+            # --- 適応的ペナルティ増大 ---
+            # 貫入量が tol_penetration_ratio * search_radius を超えるペアの k_pen を増大
+            pen_exceeded = False
+            max_pen_ratio = 0.0
+            if tol_pen_ratio > 0.0:
+                for pair in manager.pairs:
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    if pair.state.gap >= 0.0:
+                        continue
+                    penetration = abs(pair.state.gap)
+                    sr = pair.search_radius
+                    if sr < 1e-30:
+                        continue
+                    pen_ratio = penetration / sr
+                    max_pen_ratio = max(max_pen_ratio, pen_ratio)
+                    if pen_ratio > tol_pen_ratio:
+                        pen_exceeded = True
+                        if pair.state.k_pen < k_pen_max:
+                            new_k = min(pair.state.k_pen * pen_growth, k_pen_max)
+                            pair.state.k_pen = new_k
+                            pair.state.k_t = new_k * manager.config.k_t_ratio
+
             # --- Merit-based Outer 終了判定 ---
             # Inner 収束後の残差で merit を評価
             if use_line_search:
@@ -570,20 +598,37 @@ def newton_raphson_with_contact(
                 merit_info = ""
                 if use_line_search:
                     merit_info = f", merit={merit_cur:.3e}"
+                pen_info = ""
+                if tol_pen_ratio > 0.0 and max_pen_ratio > 0.0:
+                    pen_info = f", pen_ratio={max_pen_ratio:.4f}"
                 print(
                     f"  Step {step}, outer {outer}: "
                     f"max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}, "
-                    f"active={manager.n_active}{friction_info}{merit_info}"
+                    f"active={manager.n_active}"
+                    f"{friction_info}{merit_info}{pen_info}"
                 )
 
-            if max_ds < tol_geometry and max_dt < tol_geometry:
+            # (s,t) 収束 かつ 貫入量が許容範囲内 → 収束
+            if max_ds < tol_geometry and max_dt < tol_geometry and not pen_exceeded:
                 step_converged = True
                 break
+
+            # (s,t) 収束だが貫入超過 → ペナルティ増大済みなので次の outer へ
+            if max_ds < tol_geometry and max_dt < tol_geometry and pen_exceeded:
+                if show_progress:
+                    print(
+                        f"  Step {step}, outer {outer}: "
+                        f"(s,t) converged but pen_ratio={max_pen_ratio:.4f} > "
+                        f"tol={tol_pen_ratio:.4f}. "
+                        f"Increasing k_pen and continuing."
+                    )
+                # 次の outer で再解を試みる
+                continue
 
             # Merit 改善停滞による早期終了（2回目以降の Outer で判定）
             if use_line_search and outer > 0:
                 merit_ratio = merit_cur / max(merit_prev_outer, 1e-30)
-                if merit_ratio > 0.99:
+                if merit_ratio > 0.99 and not pen_exceeded:
                     # merit が改善していない → (s,t) 更新が効果なし
                     if show_progress:
                         print(
