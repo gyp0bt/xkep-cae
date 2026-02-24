@@ -29,6 +29,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
+from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
 from xkep_cae.contact.law_friction import (
     compute_mu_effective,
     compute_tangential_displacement,
@@ -58,6 +59,7 @@ class ContactSolveResult:
         load_history: 各ステップの荷重係数
         displacement_history: 各ステップの変位
         contact_force_history: 各ステップの接触力ノルム
+        graph_history: 接触グラフの時系列（各ステップ終了時のスナップショット）
     """
 
     u: np.ndarray
@@ -70,6 +72,7 @@ class ContactSolveResult:
     load_history: list[float] = field(default_factory=list)
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
+    graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
 
 
 def _deformed_coords(
@@ -216,6 +219,7 @@ def newton_raphson_with_contact(
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
+    graph_history = ContactGraphHistory()
     total_newton = 0
     total_outer = 0
     total_ls = 0
@@ -562,6 +566,7 @@ def newton_raphson_with_contact(
                     load_history=load_history,
                     displacement_history=disp_history,
                     contact_force_history=contact_force_history,
+                    graph_history=graph_history,
                 )
 
             # --- Outer 収束判定 ---
@@ -697,6 +702,9 @@ def newton_raphson_with_contact(
         disp_history.append(u.copy())
         contact_force_history.append(fc_norm)
 
+        # 接触グラフのスナップショット記録
+        graph_history.add(snapshot_contact_graph(manager, step=step, load_factor=lam))
+
     return ContactSolveResult(
         u=u,
         converged=True,
@@ -708,4 +716,5 @@ def newton_raphson_with_contact(
         load_history=load_history,
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
+        graph_history=graph_history,
     )
