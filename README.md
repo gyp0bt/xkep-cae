@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価完了。1075テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現完了。1147テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -28,6 +28,9 @@ Abaqus三点曲げバリデーション: `assets/test_assets/Abaqus/1-bend3p/` �
 三点曲げ非線形動解析スクリプト: Abaqus準拠パラメータで非線形動解析を実施、GIFアニメーション・比較プロット出力。
 CR梁定式化: Timoshenko 3D梁のCorotational定式化による幾何学的非線形（大変形・大回転）対応。dynamic_runner統合（nlgeom=True）。
 CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接線剛性。Abaqus B31弾塑性三点曲げ（idx2）とのバリデーション。
+撚線メッシュファクトリ: 理想ヘリカル配置に基づく撚線梁メッシュ生成（3/7/19/37/61/91本対応）。
+多点接触撚線テスト: 3本撚り5荷重タイプ成功、7本・摩擦は収束課題をxfailで記録。
+接触グラフ表現: 多点接触の無向グラフ表現（トポロジー変遷追跡、連結成分分析、隣接行列出力）。
 バリデーションテスト結果は[検証文書](docs/verification/validation.md)に図付きで文書化済み。
 
 詳細は[ロードマップ](docs/roadmap.md)を参照。
@@ -45,7 +48,7 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
 - [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
-- [実装状況](docs/status/status-051.md) — 最新のステータス（接触バリデーションドキュメント + 大規模マルチセグメント性能評価）
+- [実装状況](docs/status/status-052.md) — 最新のステータス（撚線メッシュファクトリ + 多点接触テスト + 接触グラフ表現）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
