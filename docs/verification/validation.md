@@ -16,6 +16,7 @@ CAE ソフトウェアの品質保証における重要な資産として、今�
 - [7. 1D 弾塑性構成則（Phase 4.1）](#7-1d-弾塑性構成則phase-41)
 - [8. ファイバーモデル弾塑性（Phase 4.2）](#8-ファイバーモデル弾塑性phase-42)
 - [9. 2D 連続体要素（Phase 1）](#9-2d-連続体要素phase-1)
+- [10. 梁–梁接触（Phase C0〜C5）](#10-梁梁接触phase-c0c5)
 - [検証図の生成方法](#検証図の生成方法)
 - [テスト実行方法](#テスト実行方法)
 
@@ -368,6 +369,105 @@ Newton-Raphson 法による非線形解析結果（赤丸）が弾性解（黒�
 
 ---
 
+## 10. 梁–梁接触（Phase C0〜C5）
+
+**テストファイル**: `tests/contact/` 配下の12ファイル（約240テスト）
+
+梁–梁接触モジュールは以下のフェーズで段階的に実装・検証を行った。
+全テストの詳細カタログは [接触テストカタログ](contact_test_catalog.md) を参照。
+
+### 10.1 幾何アルゴリズム（C0–C1）
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| 最近接点計算 | 8 | 直交/平行/ねじれセグメントの解析解比較 (< 10⁻¹²) |
+| ギャップ計算 | 3 | g = distance − r_a − r_b の直接検証 |
+| 接触フレーム | 5 | 正規直交基底条件、右手系、前回フレームとの連続性 |
+| AABB Broadphase | 15 | 交差/非交差/半径拡大/自己除外/重複排除 |
+| Active-set ヒステリシス | 5 | g_on/g_off 閾値による活性/非活性遷移 |
+
+### 10.2 法線接触力（C2）
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| Augmented Lagrangian | 6 | p_n = max(0, λ_n + k·(−g)) の解析式検証 |
+| AL乗数更新 | 3 | 反復収束性（5反復で λ_n 単調増加） |
+| 接触アセンブリ | 12 | 作用反作用、対称性、rank-1構造、有限差分接線 |
+| NRソルバー統合 | 8 | 接触検出・貫入阻止・力履歴の統合テスト |
+
+### 10.3 Coulomb 摩擦（C3）
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| Return mapping | 10 | Stick/slip判定、2D方向保存、散逸非負、履歴更新 |
+| 摩擦接線 | 4 | Stick: k_t·I₂, Slip: 対称+正半定値 |
+| μランプ | 5 | μ_eff = μ·min(1, counter/steps) の段階的導入 |
+| NR統合 | 5 | 摩擦+NR収束、散逸非負性 |
+
+### 10.4 Merit line search（C4）
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| Merit関数 | 12 | Φ = ‖R‖ + α·Σgap² + β·D の各項検証 |
+| Backtracking | 9 | Armijo条件、縮小因子、最良η選択 |
+| NR統合 | 5 | LS+接触/摩擦の収束 |
+
+### 10.5 一貫接線・PDAS（C5）
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| 幾何剛性 K_geo | 10 | 対称性、負半定値、法線ゼロ、有限差分、p_n/dist比例 |
+| Slip consistent tangent | 8 | D_t = (μp_n/‖q_trial‖)·k_t·(I₂−q̂⊗q̂) の公式+ランク検証 |
+| 平行輸送フレーム | 7 | Rodrigues式、直交性保存、多ステップ連続性 |
+| PDAS | 4 | 設定・状態コピー検証 |
+| NR統合 | 6 | C5全機能統合テスト（幾何剛性+PDAS+LS+摩擦） |
+
+### 10.6 摩擦物理バリデーション
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| Coulomb 条件 | 4 | ‖q_t‖ ≤ μ·p_n（全ペア）, Slip: ‖q‖ ≈ μ·p_n (< 1%) |
+| 力均衡 | 2 | f_ext = f_int + f_contact（相対残差 < 5%） |
+| Stick-slip 遷移 | 2 | f_t 増加で stick→slip、変位の増大 |
+| エネルギー散逸 | 2 | Slip: D > 0, 全ペア: D ≥ 0（熱力学第二法則） |
+| 対称性 | 2 | ±f_t で変位反転、f_t=0 で u_t=0 |
+| μ依存性 | 3 | μ=0→q=0, μ↑→u_t↓, Slip: q/p_n ≈ μ (± 5%) |
+| 貫入影響 | 1 | 摩擦による貫入増加 < 0.1% |
+
+### 10.7 梁梁接触貫入テスト
+
+| テスト分類 | テスト数 | 検証方法 |
+|-----------|---------|---------|
+| 適応的ペナルティ増大 | 4 | 貫入 < 1% search_radius（自動 k_pen 成長） |
+| マルチセグメント | 3 | 4セグメント分割での接触検出・貫入制限 |
+| スライド接触 | 5 | 横方向スライド＋接触維持 |
+| 実梁要素（Timo3D/CR） | 15 | FEM梁要素での接触テスト、EI/L³ベース k_pen |
+| 長距離スライド | 6 | 8セグメント梁スライド、セグメント境界通過 |
+
+### 検証図
+
+![Contact Crossing Beam](contact_crossing_beam.png)
+
+**図の説明**: 交差梁の接触問題における荷重ステップ応答。
+(a) node 3（梁B端部）のz変位履歴: 接触が発生すると変位の進行が抑制される。
+(b) 接触力ノルムの推移: 荷重増加とともに接触力が単調に増加。
+(c) 荷重係数の推移: 全ステップで線形に増加（安定収束）。
+
+![Contact Penetration Control](contact_penetration_control.png)
+
+**図の説明**: ペナルティ剛性 k_pen と貫入量の関係。
+適応的ペナルティ増大（青）により、初期 k_pen が小さくても最終的に貫入を 1% 以下に
+制限できることを示す。非適応（赤）では初期 k_pen に強く依存する。
+
+![Contact Friction Stick-Slip](contact_friction_stick_slip.png)
+
+**図の説明**: 摩擦の stick→slip 遷移の検証。
+(a) 摩擦力 |q_t| と Coulomb 限界 μ·p_n の比較: 摩擦力が Coulomb 錐内に
+収まっていることを確認。
+(b) 接線変位: 接線荷重の増大に伴い、slip 後に変位が加速的に増加。
+
+---
+
 ## 検証図の生成方法
 
 ```bash
@@ -376,7 +476,7 @@ python tests/generate_verification_plots.py
 
 出力先: `docs/verification/*.png`
 
-以下の12枚の検証図が生成される:
+以下の15枚の検証図が生成される:
 
 | Phase | ファイル名 | 内容 |
 |-------|-----------|------|
@@ -392,6 +492,9 @@ python tests/generate_verification_plots.py
 | 4.1 | `load_displacement_bar.png` | 弾塑性棒 荷重-変位曲線 |
 | 4.2 | `fiber_moment_curvature.png` | ファイバーモデル モーメント-曲率曲線 |
 | 4.2 | `fiber_cantilever_moment.png` | ファイバー片持ち梁 荷重-回転曲線 |
+| C | `contact_crossing_beam.png` | 交差梁接触の荷重ステップ応答 |
+| C | `contact_penetration_control.png` | 適応的ペナルティ増大と貫入制御 |
+| C | `contact_friction_stick_slip.png` | 摩擦 stick→slip 遷移 |
 
 ---
 
@@ -410,7 +513,7 @@ pytest tests/ -m "bend3p" -v
 pytest tests/test_plasticity_1d.py -v
 ```
 
-**現在のテスト数**: 471 passed, 2 skipped
+**現在のテスト数**: 1064+ passed, 24 skipped
 
 ---
 
@@ -425,3 +528,6 @@ pytest tests/test_plasticity_1d.py -v
 7. Armstrong, P.J. and Frederick, C.O. (1966). "A mathematical representation of the multiaxial Bauschinger effect." *CEGB Report RD/B/N731.*
 8. de Souza Neto, E.A. et al. (2008). *Computational Methods for Plasticity: Theory and Applications.* Wiley, Ch.14.
 9. Spacone, E. et al. (1996). "Fibre beam-column model for non-linear analysis of R/C frames." *Earthquake Eng. Struct. Dyn.*, 25, 711–725.
+10. Wriggers, P. (2006). *Computational Contact Mechanics.* Springer, Ch.5–10.
+11. Simo, J.C. & Laursen, T.A. (1992). "An augmented Lagrangian treatment of contact problems involving friction." *Comp. Struct.*, 42, 97–116.
+12. Laursen, T.A. (2002). *Computational Contact and Impact Mechanics.* Springer.

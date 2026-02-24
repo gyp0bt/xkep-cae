@@ -1297,6 +1297,453 @@ def plot_fiber_cantilever_load_displacement():
 
 
 # =====================================================================
+# Phase C: 梁–梁接触 — 交差梁の接触力・ギャップ収束・ペナルティ依存
+# =====================================================================
+
+_CONTACT_NDOF_PER_NODE = 6
+
+
+def _make_contact_crossing_beams(
+    k_spring=1e4,
+    z_top=0.082,
+    radii=0.04,
+):
+    """交差梁ばねモデル（検証図用）."""
+    n_nodes = 4
+    ndof_total = n_nodes * _CONTACT_NDOF_PER_NODE
+
+    node_coords_ref = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.5, -0.5, z_top],
+            [0.5, 0.5, z_top],
+        ]
+    )
+    connectivity = np.array([[0, 1], [2, 3]])
+
+    def assemble_tangent(u):
+        K = sp.lil_matrix((ndof_total, ndof_total))
+        for n0, n1 in connectivity:
+            for d in range(3):
+                d0 = n0 * _CONTACT_NDOF_PER_NODE + d
+                d1 = n1 * _CONTACT_NDOF_PER_NODE + d
+                K[d0, d0] += k_spring
+                K[d0, d1] -= k_spring
+                K[d1, d0] -= k_spring
+                K[d1, d1] += k_spring
+        return K.tocsr()
+
+    def assemble_internal_force(u):
+        f_int = np.zeros(ndof_total)
+        for n0, n1 in connectivity:
+            for d in range(3):
+                d0 = n0 * _CONTACT_NDOF_PER_NODE + d
+                d1 = n1 * _CONTACT_NDOF_PER_NODE + d
+                delta = u[d1] - u[d0]
+                f_int[d0] -= k_spring * delta
+                f_int[d1] += k_spring * delta
+        return f_int
+
+    return (
+        node_coords_ref,
+        connectivity,
+        radii,
+        ndof_total,
+        assemble_tangent,
+        assemble_internal_force,
+    )
+
+
+def _contact_fixed_dofs():
+    """交差梁の拘束DOF."""
+    fixed = []
+    for d in range(_CONTACT_NDOF_PER_NODE):
+        fixed.append(d)
+    for d in range(_CONTACT_NDOF_PER_NODE):
+        if d != 0:
+            fixed.append(1 * _CONTACT_NDOF_PER_NODE + d)
+    for d in range(_CONTACT_NDOF_PER_NODE):
+        fixed.append(2 * _CONTACT_NDOF_PER_NODE + d)
+    for d in range(_CONTACT_NDOF_PER_NODE):
+        if d not in (1, 2):
+            fixed.append(3 * _CONTACT_NDOF_PER_NODE + d)
+    return np.array(fixed, dtype=int)
+
+
+def plot_contact_crossing_beam():
+    """交差梁接触の荷重ステップ応答（ギャップ・接触力・変位）."""
+    plt = _setup_matplotlib()
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    (
+        node_coords_ref,
+        connectivity,
+        radii,
+        ndof_total,
+        assemble_tangent,
+        assemble_internal_force,
+    ) = _make_contact_crossing_beams()
+
+    f_ext = np.zeros(ndof_total)
+    f_ext[1 * _CONTACT_NDOF_PER_NODE + 0] = 10.0
+    f_ext[3 * _CONTACT_NDOF_PER_NODE + 1] = 5.0
+    f_ext[3 * _CONTACT_NDOF_PER_NODE + 2] = -50.0
+
+    fixed_dofs = _contact_fixed_dofs()
+    n_steps = 20
+
+    mgr = ContactManager(
+        config=ContactConfig(
+            k_pen_scale=1e5,
+            k_t_ratio=0.1,
+            mu=0.3,
+            g_on=0.0,
+            g_off=1e-4,
+            n_outer_max=8,
+            use_friction=False,
+            use_line_search=True,
+            line_search_max_steps=5,
+            use_geometric_stiffness=True,
+            tol_penetration_ratio=0.01,
+            penalty_growth_factor=2.0,
+            k_pen_max=1e12,
+        ),
+    )
+
+    result = newton_raphson_with_contact(
+        f_ext,
+        fixed_dofs,
+        assemble_tangent,
+        assemble_internal_force,
+        mgr,
+        node_coords_ref,
+        connectivity,
+        radii,
+        n_load_steps=n_steps,
+        max_iter=50,
+        show_progress=False,
+        broadphase_margin=0.05,
+    )
+
+    # 荷重ステップ
+    steps = np.arange(1, len(result.load_history) + 1)
+    loads = np.array(result.load_history)
+
+    # ギャップ履歴の取得（最終ステップのペアから）
+    final_gaps = []
+    final_pns = []
+    for pair in mgr.pairs:
+        if pair.is_active():
+            final_gaps.append(pair.state.gap)
+            final_pns.append(pair.state.p_n)
+
+    # 接触力履歴
+    cf_hist = np.array(result.contact_force_history)
+
+    # z変位履歴（node3）
+    z_dof = 3 * _CONTACT_NDOF_PER_NODE + 2
+    z_hist = [uh[z_dof] for uh in result.displacement_history]
+
+    fig, axes = plt.subplots(1, 3, figsize=(14, 4.5))
+
+    # (a) z変位 vs 荷重ステップ
+    ax = axes[0]
+    ax.plot(
+        steps,
+        [z_hist[i] * 1000 for i in range(len(steps))],
+        "b-o",
+        ms=3,
+        lw=1.5,
+        label="Node 3 (beam B)",
+    )
+    ax.set_xlabel("Load step")
+    ax.set_ylabel("z-displacement [mm]")
+    ax.set_title("(a) Displacement history")
+    ax.legend(fontsize=8)
+
+    # (b) 接触力 vs 荷重ステップ
+    ax = axes[1]
+    ax.plot(steps, cf_hist[: len(steps)], "r-s", ms=3, lw=1.5)
+    ax.set_xlabel("Load step")
+    ax.set_ylabel("Contact force norm [N]")
+    ax.set_title("(b) Contact force history")
+
+    # (c) 荷重係数 vs ステップ
+    ax = axes[2]
+    ax.plot(steps, loads[: len(steps)], "g-^", ms=3, lw=1.5)
+    ax.set_xlabel("Load step")
+    ax.set_ylabel("Load factor")
+    ax.set_title("(c) Load factor history")
+
+    fig.suptitle(
+        "Crossing Beam Contact (spring model, k_pen=1e5, f_z=50N)",
+        fontsize=11,
+        y=1.02,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "contact_crossing_beam.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> contact_crossing_beam.png")
+
+
+def plot_contact_penetration_control():
+    """ペナルティ剛性と貫入量の関係（適応的ペナルティ増大の効果）."""
+    plt = _setup_matplotlib()
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    k_pen_values = [1e3, 1e4, 1e5, 1e6]
+    pen_ratios_noadapt = []
+    pen_ratios_adapt = []
+
+    radii = 0.04
+    search_radius = 2 * radii  # r_a + r_b
+
+    for k_pen in k_pen_values:
+        for adaptive, results_list in [
+            (False, pen_ratios_noadapt),
+            (True, pen_ratios_adapt),
+        ]:
+            (
+                node_coords_ref,
+                connectivity,
+                radii_val,
+                ndof_total,
+                assemble_tangent,
+                assemble_internal_force,
+            ) = _make_contact_crossing_beams()
+
+            f_ext = np.zeros(ndof_total)
+            f_ext[1 * _CONTACT_NDOF_PER_NODE + 0] = 10.0
+            f_ext[3 * _CONTACT_NDOF_PER_NODE + 1] = 5.0
+            f_ext[3 * _CONTACT_NDOF_PER_NODE + 2] = -50.0
+
+            fixed_dofs = _contact_fixed_dofs()
+
+            mgr = ContactManager(
+                config=ContactConfig(
+                    k_pen_scale=k_pen,
+                    k_t_ratio=0.1,
+                    mu=0.3,
+                    g_on=0.0,
+                    g_off=1e-4,
+                    n_outer_max=8,
+                    use_friction=False,
+                    use_line_search=True,
+                    use_geometric_stiffness=True,
+                    tol_penetration_ratio=0.01 if adaptive else 0.0,
+                    penalty_growth_factor=2.0,
+                    k_pen_max=1e12,
+                ),
+            )
+
+            newton_raphson_with_contact(
+                f_ext,
+                fixed_dofs,
+                assemble_tangent,
+                assemble_internal_force,
+                mgr,
+                node_coords_ref,
+                connectivity,
+                radii_val,
+                n_load_steps=20,
+                max_iter=50,
+                show_progress=False,
+                broadphase_margin=0.05,
+            )
+
+            # 最終ギャップの最大貫入比
+            max_pen = 0.0
+            for pair in mgr.pairs:
+                if pair.is_active() and pair.state.gap < 0:
+                    pen = abs(pair.state.gap) / search_radius
+                    max_pen = max(max_pen, pen)
+            results_list.append(max_pen * 100)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x = np.arange(len(k_pen_values))
+    width = 0.35
+
+    bars1 = ax.bar(
+        x - width / 2,
+        pen_ratios_noadapt,
+        width,
+        label="Without adaptive penalty",
+        color="salmon",
+        edgecolor="black",
+    )
+    bars2 = ax.bar(
+        x + width / 2,
+        pen_ratios_adapt,
+        width,
+        label="With adaptive penalty",
+        color="steelblue",
+        edgecolor="black",
+    )
+
+    ax.axhline(1.0, color="red", ls="--", lw=1.5, alpha=0.7, label="1% target")
+    ax.set_xlabel("Initial penalty stiffness k_pen")
+    ax.set_ylabel("Max penetration / search_radius [%]")
+    ax.set_title(
+        "Penetration Control: Adaptive Penalty Augmentation\n(crossing beams, f_z=50N, radii=40mm)"
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"$10^{{{int(np.log10(k))}}}$" for k in k_pen_values])
+    ax.legend(fontsize=9)
+    ax.set_ylim(bottom=0)
+
+    # 数値ラベル
+    for bar in bars1:
+        h = bar.get_height()
+        if h > 0.01:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + 0.1,
+                f"{h:.1f}%",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+    for bar in bars2:
+        h = bar.get_height()
+        if h > 0.01:
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                h + 0.1,
+                f"{h:.2f}%",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+            )
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "contact_penetration_control.png")
+    plt.close(fig)
+    print("  -> contact_penetration_control.png")
+
+
+def plot_contact_friction_stick_slip():
+    """摩擦 return mapping: stick→slip 遷移の検証."""
+    plt = _setup_matplotlib()
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    # 接線荷重を変化させて stick→slip 遷移を観察
+    f_tangential_values = [1.0, 3.0, 5.0, 10.0, 20.0, 30.0, 50.0]
+    mu = 0.3
+
+    friction_forces = []
+    normal_forces = []
+    tangential_disps = []
+
+    for f_t in f_tangential_values:
+        (
+            node_coords_ref,
+            connectivity,
+            radii_val,
+            ndof_total,
+            assemble_tangent,
+            assemble_internal_force,
+        ) = _make_contact_crossing_beams()
+
+        f_ext = np.zeros(ndof_total)
+        f_ext[1 * _CONTACT_NDOF_PER_NODE + 0] = f_t  # 接線方向荷重
+        f_ext[3 * _CONTACT_NDOF_PER_NODE + 1] = 5.0
+        f_ext[3 * _CONTACT_NDOF_PER_NODE + 2] = -50.0  # 法線押し込み
+
+        fixed_dofs = _contact_fixed_dofs()
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                k_t_ratio=0.5,
+                mu=mu,
+                g_on=0.0,
+                g_off=1e-4,
+                n_outer_max=8,
+                use_friction=True,
+                mu_ramp_steps=3,
+                use_line_search=True,
+                use_geometric_stiffness=True,
+                tol_penetration_ratio=0.01,
+                penalty_growth_factor=2.0,
+                k_pen_max=1e12,
+            ),
+        )
+
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            node_coords_ref,
+            connectivity,
+            radii_val,
+            n_load_steps=20,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        max_q = 0.0
+        max_pn = 0.0
+        for pair in mgr.pairs:
+            if pair.is_active():
+                q_norm = float(np.linalg.norm(pair.state.z_t))
+                max_q = max(max_q, q_norm)
+                max_pn = max(max_pn, pair.state.p_n)
+
+        friction_forces.append(max_q)
+        normal_forces.append(max_pn)
+        # x変位（node1）
+        x_dof = 1 * _CONTACT_NDOF_PER_NODE + 0
+        tangential_disps.append(result.u[x_dof] * 1000)  # mm
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # (a) 摩擦力 vs 接線荷重
+    ax = axes[0]
+    ax.plot(
+        f_tangential_values, friction_forces, "ro-", ms=5, lw=1.5, label=r"$|q_t|$ (friction force)"
+    )
+    # Coulomb limit
+    mu_pn = [mu * pn for pn in normal_forces]
+    ax.plot(
+        f_tangential_values,
+        mu_pn,
+        "b--s",
+        ms=4,
+        lw=1,
+        alpha=0.7,
+        label=r"$\mu \cdot p_n$ (Coulomb limit)",
+    )
+    ax.set_xlabel("Tangential load [N]")
+    ax.set_ylabel("Force [N]")
+    ax.set_title(r"(a) Friction force vs Coulomb limit ($\mu$=0.3)")
+    ax.legend(fontsize=9)
+
+    # (b) 接線変位 vs 接線荷重
+    ax = axes[1]
+    ax.plot(f_tangential_values, tangential_disps, "g^-", ms=5, lw=1.5)
+    ax.set_xlabel("Tangential load [N]")
+    ax.set_ylabel("Tangential displacement [mm]")
+    ax.set_title("(b) Tangential displacement response")
+
+    fig.suptitle(
+        r"Friction Stick-Slip Transition (crossing beams, $\mu$=0.3, f_z=50N)",
+        fontsize=11,
+        y=1.02,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "contact_friction_stick_slip.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> contact_friction_stick_slip.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -1331,6 +1778,11 @@ def main():
     print("[Phase 4.2] ファイバーモデル")
     plot_fiber_moment_curvature()
     plot_fiber_cantilever_load_displacement()
+
+    print("[Phase C] 梁–梁接触")
+    plot_contact_crossing_beam()
+    plot_contact_penetration_control()
+    plot_contact_friction_stick_slip()
 
     print()
     print("Done. All verification plots generated.")
