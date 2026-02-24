@@ -125,6 +125,7 @@ def auto_beam_penalty_stiffness(
     *,
     n_contact_pairs: int = 1,
     scale: float = 0.1,
+    scaling: str = "linear",
 ) -> float:
     """梁要素の曲げ剛性 EI/L³ ベースのペナルティ剛性自動推定.
 
@@ -133,11 +134,11 @@ def auto_beam_penalty_stiffness(
     接触ペア数が多い場合にスケールダウンして条件数悪化を抑制する。
 
     推定式:
-        k_pen = scale * 12 * E * I / L³ / max(1, n_contact_pairs)
+        linear: k_pen = scale * 12 * E * I / L³ / max(1, n_contact_pairs)
+        sqrt:   k_pen = scale * 12 * E * I / L³ / max(1, sqrt(n_contact_pairs))
 
-    n_contact_pairs による線形スケーリングの根拠:
-        多点接触で全ペアに同じ k_pen を与えると、等価的な接触剛性が
-        n_pairs 倍になり条件数が悪化する。n で線形除算して全体剛性を抑制。
+    sqrt スケーリングは多ペア時（>10）に k_pen が過度に小さくなることを
+    防ぎ、貫入抑制と条件数のバランスを改善する。
 
     Args:
         E: ヤング率 [Pa]
@@ -145,6 +146,7 @@ def auto_beam_penalty_stiffness(
         L_elem: 代表要素長さ [m]
         n_contact_pairs: 予想される同時アクティブ接触ペア数（デフォルト1）
         scale: 基本スケーリング係数（デフォルト0.1）
+        scaling: ペア数スケーリング方式 ("linear" | "sqrt")
 
     Returns:
         k_pen: 推定ペナルティ剛性 [N/m]
@@ -165,4 +167,9 @@ def auto_beam_penalty_stiffness(
     k_bend = 12.0 * E * I / L_elem**3
     n_eff = max(1, n_contact_pairs)
 
-    return scale * k_bend / n_eff
+    if scaling == "sqrt":
+        import math
+
+        return scale * k_bend / max(1.0, math.sqrt(n_eff))
+    else:
+        return scale * k_bend / n_eff

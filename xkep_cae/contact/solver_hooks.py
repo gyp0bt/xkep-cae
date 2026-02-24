@@ -160,6 +160,7 @@ def newton_raphson_with_contact(
     ndof_per_node: int = 6,
     broadphase_margin: float = 0.0,
     broadphase_cell_size: float | None = None,
+    f_ext_base: np.ndarray | None = None,
 ) -> ContactSolveResult:
     """接触付き Newton-Raphson（Outer/Inner 分離）.
 
@@ -189,6 +190,8 @@ def newton_raphson_with_contact(
         ndof_per_node: 1節点あたりの DOF 数
         broadphase_margin: broadphase 探索マージン
         broadphase_cell_size: broadphase セルサイズ
+        f_ext_base: (ndof,) ベース外荷重（サイクリック荷重用）。
+            設定時の実効荷重: f_ext = f_ext_base + lam * f_ext_total
 
     Returns:
         ContactSolveResult
@@ -217,6 +220,12 @@ def newton_raphson_with_contact(
     pen_growth = manager.config.penalty_growth_factor
     k_pen_max = manager.config.k_pen_max
 
+    # Modified Newton + contact damping 設定
+    use_modified_newton = manager.config.use_modified_newton
+    modified_newton_refresh = manager.config.modified_newton_refresh
+    contact_damping = manager.config.contact_damping
+    k_pen_scaling_mode = manager.config.k_pen_scaling
+
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
@@ -234,9 +243,11 @@ def newton_raphson_with_contact(
     if f_ext_ref_norm < 1e-30:
         f_ext_ref_norm = 1.0
 
+    _f_ext_base = f_ext_base if f_ext_base is not None else np.zeros(ndof)
+
     for step in range(1, n_load_steps + 1):
         lam = step / n_load_steps
-        f_ext = lam * f_ext_total
+        f_ext = _f_ext_base + lam * f_ext_total
 
         # ステップ開始時の変位を参照状態として保存（摩擦用）
         u_step_ref = u.copy()
@@ -332,6 +343,7 @@ def newton_raphson_with_contact(
                             L_avg,
                             n_contact_pairs=max(1, manager.n_active),
                             scale=manager.config.k_pen_scale,
+                            scaling=k_pen_scaling_mode,
                         )
                         initialize_penalty_stiffness(
                             pair,
@@ -360,6 +372,8 @@ def newton_raphson_with_contact(
             # --- Inner: NR 反復（最近接点固定）---
             inner_converged = False
             energy_ref = None
+            K_T_frozen = None  # Modified Newton用: 構造剛性キャッシュ
+            f_c_prev = None  # Contact damping用: 前回の接触力
 
             for it in range(max_iter):
                 total_newton += 1
@@ -427,12 +441,19 @@ def newton_raphson_with_contact(
                 f_int = assemble_internal_force(u)
 
                 # 接触内力（法線 + 摩擦）
-                f_c = compute_contact_force(
+                f_c_raw = compute_contact_force(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
                     friction_forces=friction_forces if friction_forces else None,
                 )
+
+                # Contact damping: under-relaxation で接触力の急変を抑制
+                if contact_damping < 1.0 and f_c_prev is not None:
+                    f_c = contact_damping * f_c_raw + (1.0 - contact_damping) * f_c_prev
+                else:
+                    f_c = f_c_raw
+                f_c_prev = f_c_raw.copy()
 
                 # 残差
                 residual = f_ext - f_int - f_c
@@ -457,7 +478,13 @@ def newton_raphson_with_contact(
                     break
 
                 # 接線剛性（構造 + 接触法線 + 接触摩擦）
-                K_T = assemble_tangent(u)
+                # Modified Newton: K_T を初回とrefresh間隔でのみ再計算
+                if use_modified_newton:
+                    if it == 0 or it % modified_newton_refresh == 0:
+                        K_T_frozen = assemble_tangent(u)
+                    K_T = K_T_frozen
+                else:
+                    K_T = assemble_tangent(u)
                 K_c = compute_contact_stiffness(
                     manager,
                     ndof,
@@ -749,4 +776,178 @@ def newton_raphson_with_contact(
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
         graph_history=graph_history,
+    )
+
+
+@dataclass
+class CyclicContactResult:
+    """サイクリック荷重解析の結果.
+
+    Attributes:
+        phases: 各フェーズの ContactSolveResult
+        amplitudes: 各フェーズの目標荷重振幅
+        load_factors: 全フェーズ通した荷重係数の時系列（f_ext_unit に対する倍率）
+        displacements: 全フェーズ通した変位の時系列
+        contact_forces: 全フェーズ通した接触力ノルムの時系列
+        graph_history: 全フェーズ通した接触グラフ時系列
+        converged: 全フェーズが収束したか
+    """
+
+    phases: list[ContactSolveResult]
+    amplitudes: list[float]
+    load_factors: list[float] = field(default_factory=list)
+    displacements: list[np.ndarray] = field(default_factory=list)
+    contact_forces: list[float] = field(default_factory=list)
+    graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
+    converged: bool = True
+
+    @property
+    def n_phases(self) -> int:
+        """フェーズ数."""
+        return len(self.phases)
+
+    @property
+    def n_total_steps(self) -> int:
+        """全ステップ数."""
+        return len(self.load_factors)
+
+
+def run_contact_cyclic(
+    f_ext_unit: np.ndarray,
+    fixed_dofs: np.ndarray,
+    assemble_tangent: Callable[[np.ndarray], sp.csr_matrix],
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray],
+    manager: ContactManager,
+    node_coords_ref: np.ndarray,
+    connectivity: np.ndarray,
+    radii: np.ndarray | float,
+    *,
+    amplitudes: list[float],
+    n_steps_per_phase: int = 10,
+    max_iter: int = 30,
+    tol_force: float = 1e-8,
+    tol_disp: float = 1e-8,
+    tol_energy: float = 1e-10,
+    show_progress: bool = True,
+    ndof_per_node: int = 6,
+    broadphase_margin: float = 0.0,
+    broadphase_cell_size: float | None = None,
+) -> CyclicContactResult:
+    """サイクリック荷重解析（往復荷重による接触ヒステリシス観測）.
+
+    amplitudes リストに従って荷重を段階的に変化させ、
+    接触状態（摩擦履歴・AL乗数等）を各フェーズ間で引き継ぐ。
+
+    例: amplitudes=[1.0, -1.0, 1.0] で 0→+F→-F→+F の往復荷重。
+
+    各フェーズでの荷重:
+        f_ext = amp_prev * f_ext_unit + lam * (amp - amp_prev) * f_ext_unit
+        （lam は 0→1 で増分）
+
+    Args:
+        f_ext_unit: (ndof,) 単位荷重ベクトル（振幅1の荷重方向）
+        fixed_dofs: 拘束DOF
+        assemble_tangent: u → K_T(u) コールバック
+        assemble_internal_force: u → f_int(u) コールバック
+        manager: 接触マネージャ（フェーズ間で状態を引き継ぐ）
+        node_coords_ref: (n_nodes, 3) 参照節点座標
+        connectivity: (n_elems, 2) 要素接続
+        radii: 断面半径
+        amplitudes: 荷重振幅の列 [amp_1, amp_2, ...]
+        n_steps_per_phase: 各フェーズの荷重増分数
+        max_iter: Inner Newton の最大反復数
+        tol_force: 力ノルム収束判定
+        tol_disp: 変位ノルム収束判定
+        tol_energy: エネルギーノルム収束判定
+        show_progress: 進捗表示
+        ndof_per_node: 1節点あたりの DOF 数
+        broadphase_margin: broadphase 探索マージン
+        broadphase_cell_size: broadphase セルサイズ
+
+    Returns:
+        CyclicContactResult
+    """
+    ndof = f_ext_unit.shape[0]
+    u = np.zeros(ndof, dtype=float)
+    current_amp = 0.0
+
+    all_phases: list[ContactSolveResult] = []
+    all_load_factors: list[float] = []
+    all_disps: list[np.ndarray] = []
+    all_cf: list[float] = []
+    combined_graph = ContactGraphHistory()
+    global_step = 0
+    all_converged = True
+
+    for phase_idx, amp in enumerate(amplitudes):
+        delta_amp = amp - current_amp
+        f_ext_total = delta_amp * f_ext_unit
+        f_ext_base = current_amp * f_ext_unit
+
+        if show_progress:
+            print(
+                f"\n=== Cyclic Phase {phase_idx + 1}/{len(amplitudes)}: "
+                f"amp {current_amp:.3f} → {amp:.3f} ==="
+            )
+
+        result = newton_raphson_with_contact(
+            f_ext_total,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            manager,
+            node_coords_ref,
+            connectivity,
+            radii,
+            n_load_steps=n_steps_per_phase,
+            max_iter=max_iter,
+            tol_force=tol_force,
+            tol_disp=tol_disp,
+            tol_energy=tol_energy,
+            show_progress=show_progress,
+            u0=u,
+            ndof_per_node=ndof_per_node,
+            broadphase_margin=broadphase_margin,
+            broadphase_cell_size=broadphase_cell_size,
+            f_ext_base=f_ext_base,
+        )
+
+        u = result.u.copy()
+        all_phases.append(result)
+
+        if not result.converged:
+            all_converged = False
+
+        # 荷重係数を絶対振幅に変換して記録
+        for lam_local in result.load_history:
+            abs_amp = current_amp + lam_local * delta_amp
+            all_load_factors.append(abs_amp)
+
+        all_disps.extend(result.displacement_history)
+        all_cf.extend(result.contact_force_history)
+
+        # グラフ時系列を統合（ステップ番号をグローバルに変換）
+        for snap in result.graph_history.snapshots:
+            global_step += 1
+            from xkep_cae.contact.graph import ContactGraph
+
+            merged = ContactGraph(
+                step=global_step,
+                load_factor=all_load_factors[-1] if all_load_factors else 0.0,
+                nodes=snap.nodes,
+                edges=snap.edges,
+                n_total_pairs=snap.n_total_pairs,
+            )
+            combined_graph.add(merged)
+
+        current_amp = amp
+
+    return CyclicContactResult(
+        phases=all_phases,
+        amplitudes=amplitudes,
+        load_factors=all_load_factors,
+        displacements=all_disps,
+        contact_forces=all_cf,
+        graph_history=combined_graph,
+        converged=all_converged,
     )

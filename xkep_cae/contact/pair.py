@@ -172,6 +172,10 @@ class ContactConfig:
     k_pen_max: float = 1e12
     staged_activation_steps: int = 0  # 段階的アクティベーション（0=無効）
     elem_layer_map: dict[int, int] | None = None  # 要素→層インデックスのマッピング
+    use_modified_newton: bool = False  # Modified Newton法（構造剛性再利用）
+    modified_newton_refresh: int = 5  # K_T再計算間隔（反復数）
+    contact_damping: float = 1.0  # 接触力under-relaxation係数（1.0=無緩和）
+    k_pen_scaling: str = "linear"  # k_penのn_pairsスケーリング: "linear" | "sqrt"
 
 
 @dataclass
