@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討** + **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触, 20テスト）** + **適応的ペナルティ増大（Adaptive Penalty Augmentation, 貫入1%目標, 共有節点フィルタ）** + **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, 15テスト）** + **長距離スライドテスト（8セグメント梁, 境界付近, 摩擦, 6テスト）** + **接触バリデーションドキュメント（テストカタログ~240テスト + 検証図15枚 + validation.mdセクション10）** + **大規模マルチセグメント性能評価テスト（16+seg DOFスケーリング/broadphase効率/収束/接触検出, 11テスト）**完了（1075テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討** + **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触, 20テスト）** + **適応的ペナルティ増大（Adaptive Penalty Augmentation, 貫入1%目標, 共有節点フィルタ）** + **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, 15テスト）** + **長距離スライドテスト（8セグメント梁, 境界付近, 摩擦, 6テスト）** + **接触バリデーションドキュメント（テストカタログ~240テスト + 検証図15枚 + validation.mdセクション10）** + **大規模マルチセグメント性能評価テスト（16+seg DOFスケーリング/broadphase効率/収束/接触検出, 11テスト）** + **撚線メッシュファクトリ（理想ヘリカル配置, 3/7/19/37/61/91本対応, 32テスト）** + **多点接触撚線テスト（3本撚り5荷重タイプ + Timo3D/CR比較 + データ収集, 16テスト）** + **接触グラフ表現（ContactGraph/ContactGraphHistory, トポロジー変遷追跡, 24テスト）**完了（1147テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -36,6 +36,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 1D弾塑性構成則（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）実装完了。
 ファイバーモデル断面（曲げの塑性化）実装完了。FiberSection + ファイバー積分アセンブリ。
 全 Phase のバリデーションテストを[検証文書](verification/validation.md)に図付きで文書化済み（15枚）。接触テストの系統的カタログ（~240テスト）を[接触テストカタログ](verification/contact_test_catalog.md)で整理。
+撚線メッシュファクトリ（make_twisted_wire_mesh, 32テスト）+ 多点接触撚線テスト（3本撚り5荷重タイプ, 16テスト）+ 接触グラフ表現（ContactGraph/ContactGraphHistory, 24テスト）実装完了。
 ラインサーチと Lee's frame 等の追加ベンチマークはオプションとして残存。
 動的解析: 整合質量行列・Rayleigh減衰・FRFは Phase 2.6 で先行実装、Newmark-β/HHT-α時間積分・集中質量行列（HRZ法）・非線形動解析・**陽解法（Central Difference）・モーダル減衰**を追加。
 
@@ -59,8 +60,9 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **I/O** | Abaqus .inp パーサー（*NODE/*ELEMENT/*NSET/**ELSET**/**BOUNDARY**/*BEAM SECTION/*TRANSVERSE SHEAR STIFFNESS/**OUTPUT, FIELD ANIMATION**/**MATERIAL**/**ELASTIC**/**DENSITY**/**PLASTIC**）, CSV出力, Abaqusライクテキスト入力, **過渡応答出力（Step/Increment/Frame, CSV/JSON/VTK, バイナリ対応）**, **FIELD ANIMATION出力（梁2Dプロット, 要素セット色分け, xy/xz/yz 3ビュー）**, **GIFアニメーション出力（Pillow連携, ビュー方向ごとGIF, フレーム間描画範囲固定）**, **run_transient_steps（ステップ列自動実行）**, **mesh_from_abaqus_inp（.inp→OutputDatabase変換）** |
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性）, **FiberIntegrator（FiberSection+Plasticity1D統合, consistent tangent C_sec, 状態管理）** |
-| **接触（C0〜C5）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_eff·g·g^T + K_geo, 主項+幾何剛性）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）**, **Coulomb摩擦（friction_return_mapping, stick/slip, 散逸監視）**, **μランプ（compute_mu_effective, 段階的摩擦導入）**, **摩擦接線剛性（friction_tangent_2x2, slip consistent tangent v0.2）**, **merit line search（backtracking, merit-based Outer終了）**, **幾何剛性（K_geo = -p_n/dist·G^T·(I-n⊗n)·G）**, **PDAS（実験的Inner loop active-set更新）**, **平行輸送フレーム更新（Rodrigues formula）**, **適応的ペナルティ増大（Adaptive Penalty Augmentation, k_pen自動成長, 貫入1%目標）**, **共有節点フィルタ（マルチセグメント梁の自己接触除外）** |
-| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, **摩擦return mapping+μランプ+散逸非負性+統合テスト（27テスト）**, **幾何剛性（対称性+負半定値+法線方向ゼロ+有限差分検証, 10テスト）**, **slip consistent tangent（公式検証+ランク不足+正半定値, 8テスト）**, **平行輸送フレーム（連続性+直交保存, 7テスト）**, **PDAS+統合テスト（6テスト）**, **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性/μ依存, 16テスト）**, **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触/適応的ペナルティ増大, 20テスト）**, **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, マルチセグメント, 摩擦, 15テスト）**, **長距離スライドテスト（8セグメント梁, セグメント境界付近, 摩擦スライド, CR梁, 6テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**, **Abaqus弾塑性三点曲げバリデーション（idx2, CR梁ファイバーモデル, 5テスト）**（**1075テスト**）, [バリデーション文書](verification/validation.md) |
+| **接触（C0〜C5）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_eff·g·g^T + K_geo, 主項+幾何剛性）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）**, **Coulomb摩擦（friction_return_mapping, stick/slip, 散逸監視）**, **μランプ（compute_mu_effective, 段階的摩擦導入）**, **摩擦接線剛性（friction_tangent_2x2, slip consistent tangent v0.2）**, **merit line search（backtracking, merit-based Outer終了）**, **幾何剛性（K_geo = -p_n/dist·G^T·(I-n⊗n)·G）**, **PDAS（実験的Inner loop active-set更新）**, **平行輸送フレーム更新（Rodrigues formula）**, **適応的ペナルティ増大（Adaptive Penalty Augmentation, k_pen自動成長, 貫入1%目標）**, **共有節点フィルタ（マルチセグメント梁の自己接触除外）**, **接触グラフ表現（ContactGraph/ContactGraphHistory, snapshot_contact_graph, 連結成分分析, 隣接行列出力, トポロジー変遷追跡）** |
+| **メッシュ生成** | **撚線メッシュファクトリ（TwistedWireMesh, make_twisted_wire_mesh, make_strand_layout, 理想ヘリカル配置, 3/7/19/37/61/91本対応, 交互撚り方向, ヘリックス角/弧長ユーティリティ）** |
+| **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, **摩擦return mapping+μランプ+散逸非負性+統合テスト（27テスト）**, **幾何剛性（対称性+負半定値+法線方向ゼロ+有限差分検証, 10テスト）**, **slip consistent tangent（公式検証+ランク不足+正半定値, 8テスト）**, **平行輸送フレーム（連続性+直交保存, 7テスト）**, **PDAS+統合テスト（6テスト）**, **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性/μ依存, 16テスト）**, **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触/適応的ペナルティ増大, 20テスト）**, **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, マルチセグメント, 摩擦, 15テスト）**, **長距離スライドテスト（8セグメント梁, セグメント境界付近, 摩擦スライド, CR梁, 6テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**, **Abaqus弾塑性三点曲げバリデーション（idx2, CR梁ファイバーモデル, 5テスト）**, **撚線メッシュファクトリ（ヘリカル配置+幾何整合性+素線交差無し, 32テスト）**, **多点接触撚線テスト（3本撚り5荷重+Timo3D/CR比較+データ収集, 16テスト）**, **接触グラフ表現（スナップショット+分析メソッド+時系列, 24テスト）**（**1147テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
 ### 未実装（現状の制約）
@@ -606,9 +608,13 @@ Newton-Raphson + Newmark-β による非線形過渡応答解析。
 ### 段階的実装計画
 
 **Level 0: 基礎同定用**
-- [ ] 素線は軸方向のみ（曲げ剛性無視）
-- [ ] 接触は法線方向 penalty、摩擦は正則化 Coulomb
-- [ ] テスト: 引張・ねじり・曲げの基本ヒステリシス
+- [x] 撚線メッシュファクトリ（理想ヘリカル配置, 3/7/19/37/61/91本, 32テスト）
+- [x] 多点接触撚線テスト（3本撚り5荷重タイプ成功, 7本/摩擦xfail記録, 16テスト）
+- [x] 接触グラフ表現（ContactGraph/ContactGraphHistory, 24テスト）
+- [ ] 7本撚り収束改善（k_pen自動推定, 段階的接触アクティベーション）
+- [ ] ヘリカル摩擦安定化（return mapping改善）
+- [ ] 接触グラフ可視化（matplotlib + GIF）
+- [ ] テスト: 引張・ねじり・曲げの基本ヒステリシス（グラフ時系列データ収集）
 
 **Level 1: 撚り解き**
 - [ ] `θ_i(s)` を未知量化（ヘリックス拘束を解く）
