@@ -26,15 +26,16 @@ class ElementProtocol(Protocol):
     """有限要素の共通インタフェース（線形弾性アセンブリ用）.
 
     Attributes:
+        element_type: Abaqus 準拠の要素タイプ名（任意属性、例: "CPE4", "C3D8", "B31"）
         ndof_per_node: 1節点あたりの自由度数（平面問題=2, 梁=3or6, 3D固体=3, etc.）
         nnodes: 要素の節点数（Q4=4, TRI3=3, TRI6=6, HEX8=8, Beam=2, etc.）
         ndof: 要素あたりの総自由度数（= ndof_per_node * nnodes）
 
-    適合クラス例:
-      - Quad4PlaneStrain, Tri3PlaneStrain, Tri6PlaneStrain  (2D連続体)
-      - Hex8BBar                                             (3D連続体)
-      - EulerBernoulliBeam2D, TimoshenkoBeam2D              (2D梁)
-      - TimoshenkoBeam3D, CosseratRod                       (3D梁)
+    要素タイプ名（Abaqus 準拠）:
+      2D連続体: CPE4, CPE4B, CPE4E, CPE4I, CPE3, CPE6
+      3D連続体: C3D8 (SRI), C3D8R (低減積分), C3D8I (非適合モード)
+      梁 (2D):  B21 (Timoshenko), B21E (Euler-Bernoulli)
+      梁 (3D):  B31 (Timoshenko 3D), B31C (Cosserat rod)
     """
 
     ndof_per_node: int
