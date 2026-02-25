@@ -15,9 +15,9 @@
 
 ---
 
-## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り収束改善 + 撚線ヒステリシス観測 + 接触グラフ統計分析 + ヒステリシス可視化 + 統計ダッシュボード + 被膜モデル + シースモデル + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
+## 現在地（Phase C5 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り収束改善 + 撚線ヒステリシス観測 + 接触グラフ統計分析 + ヒステリシス可視化 + 統計ダッシュボード + 被膜モデル + シースモデル + シース挙動設計（解析的リングコンプライアンス） + FIELD ANIMATION出力 + GIFアニメーション + KINEMATIC変換 完了）
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討** + **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触, 20テスト）** + **適応的ペナルティ増大（Adaptive Penalty Augmentation, 貫入1%目標, 共有節点フィルタ）** + **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, 15テスト）** + **長距離スライドテスト（8セグメント梁, 境界付近, 摩擦, 6テスト）** + **接触バリデーションドキュメント（テストカタログ~240テスト + 検証図15枚 + validation.mdセクション10）** + **大規模マルチセグメント性能評価テスト（16+seg DOFスケーリング/broadphase効率/収束/接触検出, 11テスト）** + **撚線メッシュファクトリ（理想ヘリカル配置, 3/7/19/37/61/91本対応, 32テスト）** + **多点接触撚線テスト（3本撚り5荷重タイプ + Timo3D/CR比較 + データ収集, 16テスト）** + **接触グラフ表現（ContactGraph/ContactGraphHistory, トポロジー変遷追跡, 24テスト）** + **k_pen自動推定（auto_beam_penalty_stiffness, EI/L³ベース, 13テスト）** + **段階的接触アクティベーション（層別導入, 13テスト）** + **ヘリカル摩擦安定化（rotate_friction_history, 摩擦履歴平行輸送, 摩擦xfail→pass, 5テスト）** + **接触グラフ可視化（matplotlib描画+GIF, 15テスト）** + **接触グラフ時系列収集（ContactSolveResult.graph_history, 9テスト）** + **7本撚り収束改善（Modified Newton法 + contact damping + sqrt k_penスケーリング, 3テスト xfail）** + **撚線ヒステリシス観測（run_contact_cyclic, CyclicContactResult, 3本撚り往復荷重, 8テスト）** + **接触グラフ統計分析（stick/slip比率, 法線力統計, 連結成分数, 接触持続マップ, 累積散逸, サマリー, 17テスト）** + **ヒステリシス可視化（plot_hysteresis_curve + compute_hysteresis_area, 11テスト）** + **統計ダッシュボード（plot_statistics_dashboard 6パネル, 6テスト）** + **被膜モデル（CoatingModel, 環状断面特性, 複合断面剛性, 被膜込み接触半径, 19テスト）** + **シースモデル（SheathModel, エンベロープ半径, 円筒管断面特性, 等価梁剛性, 最外層素線特定, 径方向ギャップ, 41テスト）**完了（1311テスト）。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + **CR梁定式化（Timoshenko 3D幾何学的非線形）** + **CR梁ファイバー弾塑性（FiberIntegrator + B行列 + 解析的接線剛性）** + **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性, 16テスト）** + **接触付き弧長法設計検討** + **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触, 20テスト）** + **適応的ペナルティ増大（Adaptive Penalty Augmentation, 貫入1%目標, 共有節点フィルタ）** + **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, 15テスト）** + **長距離スライドテスト（8セグメント梁, 境界付近, 摩擦, 6テスト）** + **接触バリデーションドキュメント（テストカタログ~240テスト + 検証図15枚 + validation.mdセクション10）** + **大規模マルチセグメント性能評価テスト（16+seg DOFスケーリング/broadphase効率/収束/接触検出, 11テスト）** + **撚線メッシュファクトリ（理想ヘリカル配置, 3/7/19/37/61/91本対応, 32テスト）** + **多点接触撚線テスト（3本撚り5荷重タイプ + Timo3D/CR比較 + データ収集, 16テスト）** + **接触グラフ表現（ContactGraph/ContactGraphHistory, トポロジー変遷追跡, 24テスト）** + **k_pen自動推定（auto_beam_penalty_stiffness, EI/L³ベース, 13テスト）** + **段階的接触アクティベーション（層別導入, 13テスト）** + **ヘリカル摩擦安定化（rotate_friction_history, 摩擦履歴平行輸送, 摩擦xfail→pass, 5テスト）** + **接触グラフ可視化（matplotlib描画+GIF, 15テスト）** + **接触グラフ時系列収集（ContactSolveResult.graph_history, 9テスト）** + **7本撚り収束改善（Modified Newton法 + contact damping + sqrt k_penスケーリング, 3テスト xfail）** + **撚線ヒステリシス観測（run_contact_cyclic, CyclicContactResult, 3本撚り往復荷重, 8テスト）** + **接触グラフ統計分析（stick/slip比率, 法線力統計, 連結成分数, 接触持続マップ, 累積散逸, サマリー, 17テスト）** + **ヒステリシス可視化（plot_hysteresis_curve + compute_hysteresis_area, 11テスト）** + **統計ダッシュボード（plot_statistics_dashboard 6パネル, 6テスト）** + **被膜モデル（CoatingModel, 環状断面特性, 複合断面剛性, 被膜込み接触半径, 19テスト）** + **シースモデル（SheathModel, エンベロープ半径, 円筒管断面特性, 等価梁剛性, 最外層素線特定, 径方向ギャップ, 41テスト）** + **シース挙動設計確定（解析的リングコンプライアンス+ペナルティ接触、DOF追加ゼロ、Fourier近似内面、有限滑り対応、Stage S1〜S4ロードマップ策定）**完了（1311テスト）。
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 27テスト + **Updated Lagrangian 10テスト**）。
 Phase 5.1: 陽解法（Central Difference、9テスト）追加。
 Phase 5.3: モーダル減衰（build_modal_damping_matrix、10テスト）追加。
@@ -61,7 +61,7 @@ Phase 4.3（von Mises 3D弾塑性）の実装コード完了、テスト・検�
 | **材料（非線形）** | 1D弾塑性（return mapping, consistent tangent, 等方/移動硬化, Armstrong-Frederick）, **テーブル補間型硬化則（TabularIsotropicHardening, 区分線形, *PLASTIC テーブル変換）**, **KINEMATIC テーブル→AF変換（kinematic_table_to_armstrong_frederick, 線形/非線形フィッティング）**, ファイバーモデル断面（曲げの塑性化） |
 | **断面（非線形）** | ファイバーモデル断面（FiberSection: 矩形/円形/パイプ, ファイバー積分による断面力・接線剛性）, **FiberIntegrator（FiberSection+Plasticity1D統合, consistent tangent C_sec, 状態管理）** |
 | **接触（C0〜C5）** | ContactPair/ContactState データ構造, segment-to-segment 最近接点計算, ギャップ計算, 接触フレーム構築, ContactManager, Broadphase（AABB格子）, 幾何更新（detect_candidates/update_geometry）, Active-setヒステリシス, **法線AL接触力（evaluate_normal_force, update_al_multiplier）**, **接触接線剛性（K_c = k_eff·g·g^T + K_geo, 主項+幾何剛性）**, **接触付きNRソルバー（newton_raphson_with_contact, Outer/Inner分離）**, **Coulomb摩擦（friction_return_mapping, stick/slip, 散逸監視）**, **μランプ（compute_mu_effective, 段階的摩擦導入）**, **摩擦接線剛性（friction_tangent_2x2, slip consistent tangent v0.2）**, **merit line search（backtracking, merit-based Outer終了）**, **幾何剛性（K_geo = -p_n/dist·G^T·(I-n⊗n)·G）**, **PDAS（実験的Inner loop active-set更新）**, **平行輸送フレーム更新（Rodrigues formula）**, **適応的ペナルティ増大（Adaptive Penalty Augmentation, k_pen自動成長, 貫入1%目標）**, **共有節点フィルタ（マルチセグメント梁の自己接触除外）**, **接触グラフ表現（ContactGraph/ContactGraphHistory, snapshot_contact_graph, 連結成分分析, 隣接行列出力, トポロジー変遷追跡）**, **k_pen自動推定（auto_beam_penalty_stiffness, EI/L³ベース, 接触ペア数スケーリング）**, **段階的接触アクティベーション（build_elem_layer_map, filter_pairs_by_layer, 層別段階的導入）**, **摩擦履歴平行輸送（rotate_friction_history, ヘリカル接触幾何での摩擦安定化）**, **接触グラフ可視化（plot_contact_graph, plot_contact_graph_history, save_contact_graph_gif）**, **接触グラフ時系列収集（ContactSolveResult.graph_history, 各ステップ自動記録）**, **7本撚り収束改善（Modified Newton法 + contact damping + sqrt k_penスケーリング）**, **撚線ヒステリシス観測（run_contact_cyclic, CyclicContactResult, 3本撚り往復荷重）**, **接触グラフ統計分析（stick/slip比率, 法線力統計, 連結成分数, 接触持続マップ, 累積散逸, サマリー）**, **ヒステリシス可視化（plot_hysteresis_curve, compute_hysteresis_area）**, **統計ダッシュボード（plot_statistics_dashboard, 6パネル）** |
-| **メッシュ生成** | **撚線メッシュファクトリ（TwistedWireMesh, make_twisted_wire_mesh, make_strand_layout, 理想ヘリカル配置, 3/7/19/37/61/91本対応, 交互撚り方向, ヘリックス角/弧長ユーティリティ）**, **被膜モデル（CoatingModel, coating_section_properties, coated_beam_section, coated_contact_radius, coated_radii）**, **シースモデル（SheathModel, compute_envelope_radius, sheath_inner_radius, sheath_section_properties, sheath_equivalent_stiffness, outermost_layer/strand_ids/node_indices, sheath_radial_gap）** |
+| **メッシュ生成** | **撚線メッシュファクトリ（TwistedWireMesh, make_twisted_wire_mesh, make_strand_layout, 理想ヘリカル配置, 3/7/19/37/61/91本対応, 交互撚り方向, ヘリックス角/弧長ユーティリティ）**, **被膜モデル（CoatingModel, coating_section_properties, coated_beam_section, coated_contact_radius, coated_radii）**, **シースモデル（SheathModel, compute_envelope_radius, sheath_inner_radius, sheath_section_properties, sheath_equivalent_stiffness, outermost_layer/strand_ids/node_indices, sheath_radial_gap）**, **シース挙動設計（解析的リングコンプライアンス行列+ペナルティ接触、Fourier近似内面、有限滑り、Stage S1〜S4ロードマップ策定済み）** |
 | **検証** | 製造解テスト, Abaqusベンチマーク, 解析解比較, ロッキングテスト, 周波数応答解析解比較, Euler elastica, 弧長法, 弾塑性棒, ファイバーモデル曲げ, 過渡応答（SDOF/梁/集中質量）, 連続体非線形（TL/UL）, 非線形動解析, 動的三点曲げ, 陽解法, モーダル減衰, 接触幾何+broadphase+Active-set, **法線AL+接触接線+接触付きNR（交差ビーム統合テスト）**, **摩擦return mapping+μランプ+散逸非負性+統合テスト（27テスト）**, **幾何剛性（対称性+負半定値+法線方向ゼロ+有限差分検証, 10テスト）**, **slip consistent tangent（公式検証+ランク不足+正半定値, 8テスト）**, **平行輸送フレーム（連続性+直交保存, 7テスト）**, **PDAS+統合テスト（6テスト）**, **摩擦接触バリデーション（Coulomb条件/力バランス/stick-slip/散逸/対称性/μ依存, 16テスト）**, **梁梁接触貫入テスト（交差梁押し下げ/貫入量制限/ペナルティ依存/摩擦影響/マルチセグメント/スライド接触/適応的ペナルティ増大, 20テスト）**, **実梁要素接触テスト（Timo3D/CR梁, EI/L³ k_pen推定, マルチセグメント, 摩擦, 15テスト）**, **長距離スライドテスト（8セグメント梁, セグメント境界付近, 摩擦スライド, CR梁, 6テスト）**, 過渡応答出力+拡張, FIELD ANIMATION出力, GIFアニメーション出力, .inpパーサー材料キーワード, テーブル補間型硬化則+コンバータ, KINEMATIC→AF変換+ラウンドトリップ, **Abaqus三点曲げバリデーション（剛性差異1.09%）**, .inp→BeamModel変換+解析実行スクリプト, **CR梁定式化（小変位線形一致+接線剛性+剛体+大変形+NR統合, 24テスト）**, **Abaqus弾塑性三点曲げバリデーション（idx2, CR梁ファイバーモデル, 5テスト）**, **撚線メッシュファクトリ（ヘリカル配置+幾何整合性+素線交差無し, 32テスト）**, **多点接触撚線テスト（3本撚り5荷重+Timo3D/CR比較+データ収集, 16テスト）**, **接触グラフ表現（スナップショット+分析メソッド+時系列, 24テスト）**, **k_pen自動推定（auto_beam_penalty_stiffness, 13テスト）**, **段階的接触アクティベーション（層別導入, 13テスト）**, **ヘリカル摩擦安定化（rotate_friction_history, 5テスト）**, **接触グラフ可視化（matplotlib+GIF, 15テスト）**, **接触グラフ時系列収集（graph_history, 9テスト）**, **7本撚り収束改善（Modified Newton + contact damping + sqrt k_pen, 3テスト xfail）**, **撚線ヒステリシス観測（run_contact_cyclic, 3本撚り往復荷重, 8テスト）**, **接触グラフ統計分析（stick/slip比率+法線力統計+連結成分+持続マップ+散逸+サマリー, 17テスト）**, **ヒステリシス可視化（plot_hysteresis_curve+compute_hysteresis_area, 11テスト）**, **統計ダッシュボード（plot_statistics_dashboard, 6テスト）**, **被膜モデル（CoatingModel+断面特性+等価剛性+接触半径, 19テスト）**, **シースモデル（SheathModel+エンベロープ半径+断面特性+等価剛性+最外層特定+径方向ギャップ, 41テスト）**（**1311テスト**）, [バリデーション文書](verification/validation.md) |
 | **ドキュメント** | [Abaqus差異](abaqus-differences.md), [Cosserat設計](cosserat-design.md), [接触仕様](contact/beam_beam_contact_spec_v0.1.md), [過渡応答出力設計](transient-output-design.md) |
 
@@ -624,8 +624,34 @@ Newton-Raphson + Newmark-β による非線形過渡応答解析。
 - [x] 被膜モデル（CoatingModel, 環状断面特性, 複合断面剛性, 被膜込み接触半径, 19テスト）
 - [ ] 撚線線（7本撚線＋被膜の7撚線）: 被膜込み接触半径・摩擦・断面剛性を用いた統合解析テスト
 - [x] シース（外被）モデル（SheathModel, エンベロープ半径, 円筒管断面特性, 等価梁剛性, 最外層素線特定, 径方向ギャップ, 41テスト）
-- [ ] シース-素線接触ペア生成 + シース面圧拘束（径方向ペナルティ拘束）
+- [ ] シース挙動モデル — 解析的リングコンプライアンス + ペナルティ接触（下記 Stage S1〜S4）
 - [ ] 7本撚りブロック分解ソルバー（Schur補完法 or Uzawa法、36+ペア同時NR収束の根本解決）
+
+**Level 0.5: シース挙動モデル（Stage S1〜S4）**
+
+シースをFE離散化せず、解析的リング理論で剛性を表現する設計。
+ロッキング回避・DOF追加ゼロ・せん断含む・接触点間カップリング表現。
+
+> **設計原理**:
+> - **内面**: 素線配置（z軸方向ヘリカル配置）から Fourier 近似で滑らかに表現
+>   `r_inner(θ) = R₀ + Σ aₙ cos(nθ) + bₙ sin(nθ)`
+>   （7本撚り → a₆ 支配、19本 → a₁₂ 支配。凹包不連続は Fourier 打切りで自然平滑化）
+> - **外面**: 円形。膜厚分布 `t(θ) = r_outer - r_inner(θ)` が周方向に変化
+> - **リングコンプライアンス行列**: z=const 断面で厚肉弾性リングとして N 本の最外層素線からの径方向集中荷重を Fourier 展開で解析的に解く
+>   `δr = C · F_contact` （N×N コンプライアンス行列、対角=個別コンプライアンス、非対角=周方向カップリング）
+> - **有限滑り**: シース-素線/被膜（面-線）＋ シース-シース（円-円、既存梁-梁流用可）
+
+| Stage | 内容 | 利点 |
+|-------|------|------|
+| **S1** | 均一厚リングの解析的コンプライアンス行列（モード 0 + n の閉形式、FEMリング解との検証） | 素線食い込みの主物理（径方向コンプライアンス+素線間カップリング）を低コストで再現 |
+| **S2** | 膜厚分布 t(θ) の Fourier 導入 + 修正コンプライアンス | 非円形内面の物理的精度向上 |
+| **S3** | 有限滑り（θ 再配置 + 摩擦、既存 `friction_return_mapping` 流用、径方向=法線/周方向+軸方向=接線） | シース-素線間の軸方向・周方向滑り |
+| **S4** | シース-シース接触（外面が円形 → 円-円ペナルティ接触、既存 ContactPair 流用） | 撚撚線のサブケーブル間接触 |
+
+- [ ] **S1**: 均一厚リングコンプライアンス行列 — 厚肉リング理論 Fourier 展開閉形式（モード 0: 膜変形 c₀, モード n≥2: 曲げ cₙ）、N×N C 行列構築、FEM リング解との比較テスト
+- [ ] **S2**: 膜厚分布 t(θ) の Fourier 近似 — 素線配置からの内面形状計算、Fourier 係数 aₙ/bₙ 抽出、修正コンプライアンス行列
+- [ ] **S3**: シース-素線/被膜 有限滑り — 接触位置 θ_contact の変形追従、C 行列の接触点列再配置、既存 friction_return_mapping 統合（径方向=法線、周方向+軸方向=接線）
+- [ ] **S4**: シース-シース接触 — 円形外面同士のペナルティ接触（既存 ContactPair/梁-梁接触フレームワーク流用）、撚撚線サブケーブル間接触
 
 **Level 1: 撚り解き**
 - [ ] `θ_i(s)` を未知量化（ヘリックス拘束を解く）
