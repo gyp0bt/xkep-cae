@@ -287,6 +287,7 @@ class Quad4EASPlaneStrain:
     Q4 要素の推奨デフォルト。
     """
 
+    element_type: str = "CPE4E"
     ndof_per_node: int = 2
     nnodes: int = 4
     ndof: int = 8
@@ -315,6 +316,7 @@ class Quad4EASBBarPlaneStrain:
     一般用途には Quad4EASPlaneStrain（EAS 単体）を推奨。
     """
 
+    element_type: str = "CPE4I"
     ndof_per_node: int = 2
     nnodes: int = 4
     ndof: int = 8

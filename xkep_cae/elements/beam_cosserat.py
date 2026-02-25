@@ -1279,6 +1279,7 @@ class CosseratRod:
         要素: 2 nodes → 12 DOF/element
     """
 
+    element_type: str = "B31C"
     ndof_per_node: int = 6
     nnodes: int = 2
     ndof: int = 12

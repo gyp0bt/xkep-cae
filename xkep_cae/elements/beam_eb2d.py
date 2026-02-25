@@ -304,6 +304,7 @@ class EulerBernoulliBeam2D:
         section: 梁断面特性（A, I）
     """
 
+    element_type: str = "B21E"
     ndof_per_node: int = 3
     nnodes: int = 2
     ndof: int = 6

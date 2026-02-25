@@ -1,7 +1,7 @@
 """シースモデル曲げモードバリデーションテスト.
 
-HEX8 B-bar 要素で円筒管をメッシュ化し、解析解（梁理論）と比較して
-シースの長手方向挙動を検証する。
+C3D8R（非適合モード）HEX8 要素で円筒管をメッシュ化し、
+解析解（梁理論）と比較してシースの長手方向挙動を検証する。
 
 テスト構成:
   1. チューブメッシュ基本テスト
@@ -18,7 +18,7 @@ import math
 import numpy as np
 import pytest
 
-from xkep_cae.elements.hex8 import hex8_ke_bbar
+from xkep_cae.elements.hex8 import hex8_ke_incompatible
 from xkep_cae.materials.elastic import constitutive_3d
 from xkep_cae.mesh.tube_mesh import make_tube_mesh, tube_face_nodes
 
@@ -50,7 +50,7 @@ def _assemble_tube_fem(
 
     for elem in elements:
         coords_e = nodes[elem]
-        ke = hex8_ke_bbar(coords_e, D)
+        ke = hex8_ke_incompatible(coords_e, D)
         dofs = np.empty(24, dtype=int)
         for i, nid in enumerate(elem):
             dofs[3 * i] = 3 * nid
@@ -161,8 +161,8 @@ class TestTubeMesh:
         D = constitutive_3d(E_STEEL, NU_STEEL)
         for elem in elements:
             coords = nodes[elem]
-            # hex8_ke_bbar が例外を投げなければ detJ > 0
-            ke = hex8_ke_bbar(coords, D)
+            # hex8_ke_incompatible が例外を投げなければ detJ > 0
+            ke = hex8_ke_incompatible(coords, D)
             assert ke.shape == (24, 24)
 
     def test_invalid_geometry(self):
@@ -495,7 +495,7 @@ class TestTransverseShear:
         assert shear_ratio > 0.1, f"せん断比率 {shear_ratio:.3f} が低すぎる"
 
     def test_shear_locking_free(self):
-        """B-bar 法によりせん断ロッキングが緩和されている.
+        """非適合モード法によりせん断ロッキングが緩和されている.
 
         粗いメッシュでも、フル積分 HEX8 に比べて
         大幅にロッキングの少ない結果を得られることを確認。
@@ -527,7 +527,7 @@ class TestTransverseShear:
         # 解析解
         delta_EB = P * L**3 / (3.0 * E_STEEL * props["I"])
 
-        # B-bar 法により粗いメッシュでも解析解の 50% 以上の変位が出る
+        # 非適合モード法により粗いメッシュでも解析解の 50% 以上の変位が出る
         # （純フル積分だとロッキングで 10-30% に留まることがある）
         ratio = abs(uy_tip / delta_EB)
         assert ratio > 0.5, f"ロッキング疑い: FEM/解析 = {ratio:.3f}"

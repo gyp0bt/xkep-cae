@@ -118,6 +118,7 @@ def quad4_ke_plane_strain_bbar(
 class Quad4BBarPlaneStrain:
     """Q4 B-bar法付き四角形要素（平面ひずみ）（ElementProtocol適合）."""
 
+    element_type: str = "CPE4B"
     ndof_per_node: int = 2
     nnodes: int = 4
     ndof: int = 8

@@ -210,6 +210,7 @@ class TimoshenkoBeam2D:
         設定して無効化する必要がある（abaqus-differences.md 参照）。
     """
 
+    element_type: str = "B21"
     ndof_per_node: int = 3
     nnodes: int = 2
     ndof: int = 6

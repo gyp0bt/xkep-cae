@@ -63,6 +63,7 @@ def quad4_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) ->
 class Quad4PlaneStrain:
     """Q4双線形四角形要素（平面ひずみ）（ElementProtocol適合）."""
 
+    element_type: str = "CPE4"
     ndof_per_node: int = 2
     nnodes: int = 4
     ndof: int = 8
