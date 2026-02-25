@@ -6,8 +6,12 @@ import numpy as np
 
 from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.bc import apply_dirichlet
-from xkep_cae.core.constitutive import ConstitutiveProtocol
-from xkep_cae.core.element import ElementProtocol
+from xkep_cae.core.constitutive import ConstitutiveProtocol, PlasticConstitutiveProtocol
+from xkep_cae.core.element import (
+    DynamicElementProtocol,
+    ElementProtocol,
+    NonlinearElementProtocol,
+)
 from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
 from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
 from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
@@ -18,6 +22,7 @@ from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.elements.tri6 import Tri6PlaneStrain
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.materials.elastic import PlaneStrainElastic
+from xkep_cae.materials.plasticity_1d import Plasticity1D
 from xkep_cae.sections.beam import BeamSection, BeamSection2D
 from xkep_cae.solver import solve_displacement
 
@@ -37,6 +42,45 @@ def test_protocol_isinstance():
     ]:
         obj = cls()
         assert isinstance(obj, ElementProtocol), f"{cls.__name__} is not ElementProtocol"
+
+
+def test_nonlinear_element_protocol():
+    """NonlinearElementProtocol 適合テスト — CosseratRod."""
+    from xkep_cae.elements.beam_cosserat import CosseratRod
+    from xkep_cae.sections.beam import BeamSection
+
+    sec = BeamSection.circle(d=10.0)
+    rod = CosseratRod(section=sec)
+    assert isinstance(rod, ElementProtocol)
+    assert isinstance(rod, NonlinearElementProtocol)
+
+
+def test_dynamic_element_protocol():
+    """DynamicElementProtocol 適合テスト — 梁要素が mass_matrix を持つこと."""
+    sec2d = BeamSection2D(A=100.0, I=833.333)
+    sec3d = BeamSection.circle(d=10.0)
+
+    eb = EulerBernoulliBeam2D(section=sec2d)
+    timo2d = TimoshenkoBeam2D(section=sec2d)
+    timo3d = TimoshenkoBeam3D(section=sec3d)
+
+    for elem in [eb, timo2d, timo3d]:
+        assert isinstance(elem, ElementProtocol)
+        assert isinstance(elem, DynamicElementProtocol), (
+            f"{type(elem).__name__} is not DynamicElementProtocol"
+        )
+
+
+def test_plastic_constitutive_protocol():
+    """PlasticConstitutiveProtocol 適合テスト — Plasticity1D."""
+    from xkep_cae.materials.plasticity_1d import IsotropicHardening
+
+    iso = IsotropicHardening(sigma_y0=250.0, H_iso=1000.0)
+    mat = Plasticity1D(E=200e3, iso=iso)
+    # Plasticity1D は return_mapping() を持つので PlasticConstitutiveProtocol に適合
+    assert isinstance(mat, PlasticConstitutiveProtocol)
+    # Plasticity1D は tangent() を持たないので ConstitutiveProtocol には適合しない
+    assert not isinstance(mat, ConstitutiveProtocol)
 
 
 def test_assembly_quad4():
