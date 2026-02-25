@@ -391,3 +391,162 @@ def compute_strand_length_per_pitch(lay_radius: float, pitch: float) -> float:
     """
     circumference = 2.0 * math.pi * lay_radius
     return math.sqrt(circumference**2 + pitch**2)
+
+
+# ====================================================================
+# 被膜モデル（CoatingModel）
+# ====================================================================
+
+
+@dataclass
+class CoatingModel:
+    """被膜（絶縁被覆・シース）モデル.
+
+    撚線の各素線を包む被膜層の材料特性を定義する。
+    被膜は以下の2つの役割を持つ:
+
+    1. **剛性寄与**: 被膜層の環状断面が梁の曲げ/ねじり/引張剛性に寄与
+    2. **摩擦制御**: 被膜表面の摩擦係数が素線間の接触摩擦を決定
+
+    被膜は理想化弾性体として扱い、温度・損傷は対象外。
+
+    Attributes:
+        thickness: 被膜厚さ [m]
+        E: 被膜のヤング率 [Pa]
+        nu: 被膜のポアソン比
+        mu: 被膜表面の摩擦係数
+    """
+
+    thickness: float
+    E: float
+    nu: float
+    mu: float = 0.3
+
+    def __post_init__(self) -> None:
+        """入力値の検証."""
+        if self.thickness <= 0:
+            raise ValueError(f"被膜厚さは正でなければなりません: {self.thickness}")
+        if self.E <= 0:
+            raise ValueError(f"ヤング率は正でなければなりません: {self.E}")
+        if not (-1.0 < self.nu < 0.5):
+            raise ValueError(f"ポアソン比は (-1, 0.5) の範囲: {self.nu}")
+        if self.mu < 0:
+            raise ValueError(f"摩擦係数は非負でなければなりません: {self.mu}")
+
+    @property
+    def G(self) -> float:
+        """せん断弾性係数 [Pa]."""
+        return self.E / (2.0 * (1.0 + self.nu))
+
+
+def coating_section_properties(
+    wire_radius: float,
+    coating: CoatingModel,
+) -> dict[str, float]:
+    """被膜層の断面特性（環状断面）を計算する.
+
+    被膜を素線周囲の薄肉環状断面としてモデル化し、
+    断面積・断面二次モーメント・ねじり定数を返す。
+
+    Args:
+        wire_radius: 素線断面半径 [m]
+        coating: 被膜モデル
+
+    Returns:
+        断面特性の辞書 {"A", "Iy", "Iz", "J"}
+    """
+    r_in = wire_radius
+    r_out = wire_radius + coating.thickness
+
+    A = math.pi * (r_out**2 - r_in**2)
+    Iy = math.pi / 4.0 * (r_out**4 - r_in**4)  # Iy = Iz（円環対称）
+    J = math.pi / 2.0 * (r_out**4 - r_in**4)
+
+    return {"A": A, "Iy": Iy, "Iz": Iy, "J": J}
+
+
+def coated_beam_section(
+    wire_radius: float,
+    wire_E: float,
+    wire_nu: float,
+    coating: CoatingModel,
+) -> dict[str, float]:
+    """被膜込みの等価断面剛性を計算する.
+
+    素線（芯線）と被膜（環状層）の複合断面として、
+    軸・曲げ・ねじりの各剛性を足し合わせる。
+
+    EA_total = E_wire * A_wire + E_coat * A_coat
+    EI_total = E_wire * I_wire + E_coat * I_coat
+    GJ_total = G_wire * J_wire + G_coat * J_coat
+
+    Args:
+        wire_radius: 素線断面半径 [m]
+        wire_E: 素線のヤング率 [Pa]
+        wire_nu: 素線のポアソン比
+        coating: 被膜モデル
+
+    Returns:
+        等価断面剛性の辞書:
+            - EA: 軸剛性 [N]
+            - EIy, EIz: 曲げ剛性 [N·m²]
+            - GJ: ねじり剛性 [N·m²]
+            - A_wire, A_coat: 断面積 [m²]
+            - n_axial: 軸剛性ヤング率比 E_coat/E_wire
+            - n_torsion: ねじり剛性せん断弾性係数比 G_coat/G_wire
+    """
+    cp = coating_section_properties(wire_radius, coating)
+
+    # 素線の断面特性（円形断面）
+    A_wire = math.pi * wire_radius**2
+    I_wire = math.pi / 4.0 * wire_radius**4
+    J_wire = math.pi / 2.0 * wire_radius**4
+
+    # せん断弾性係数
+    G_wire = wire_E / (2.0 * (1.0 + wire_nu))
+    G_coat = coating.G
+
+    # 複合断面剛性
+    EA = wire_E * A_wire + coating.E * cp["A"]
+    EIy = wire_E * I_wire + coating.E * cp["Iy"]
+    EIz = wire_E * I_wire + coating.E * cp["Iz"]
+    GJ = G_wire * J_wire + G_coat * cp["J"]
+
+    return {
+        "EA": EA,
+        "EIy": EIy,
+        "EIz": EIz,
+        "GJ": GJ,
+        "A_wire": A_wire,
+        "A_coat": cp["A"],
+        "n_axial": coating.E / wire_E,
+        "n_torsion": G_coat / G_wire,
+    }
+
+
+def coated_contact_radius(wire_radius: float, coating: CoatingModel) -> float:
+    """被膜込みの接触半径を返す.
+
+    接触検出時に使う有効半径。被膜厚さ分だけ大きくなる。
+
+    Args:
+        wire_radius: 素線断面半径 [m]
+        coating: 被膜モデル
+
+    Returns:
+        被膜込み半径 [m]
+    """
+    return wire_radius + coating.thickness
+
+
+def coated_radii(mesh: TwistedWireMesh, coating: CoatingModel) -> np.ndarray:
+    """被膜込みの要素ごと接触半径ベクトルを返す.
+
+    Args:
+        mesh: 撚線メッシュ
+        coating: 被膜モデル
+
+    Returns:
+        (n_elems,) の接触半径配列
+    """
+    return np.full(mesh.n_elems, mesh.wire_radius + coating.thickness)
