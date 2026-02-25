@@ -640,6 +640,221 @@ def save_contact_graph_gif(
         )
 
 
+def plot_hysteresis_curve(
+    load_factors: list[float] | np.ndarray,
+    displacements: list[np.ndarray] | list[float],
+    *,
+    dof_index: int | None = None,
+    ax: object | None = None,
+    xlabel: str = "変位",
+    ylabel: str = "荷重係数",
+    title: str = "ヒステリシス曲線",
+    marker: str = "o-",
+    markersize: float = 3,
+    figsize: tuple[float, float] = (8, 6),
+) -> object:
+    """荷重-変位ヒステリシス曲線を描画する.
+
+    CyclicContactResult の load_factors と displacements から
+    荷重-変位曲線をプロットする。ヒステリシスループが観測可能。
+
+    Args:
+        load_factors: 各ステップの荷重係数（絶対振幅）
+        displacements: 各ステップの変位ベクトル or スカラーリスト
+        dof_index: 抽出する DOF インデックス（displacements が ndarray の場合）。
+                   None の場合はノルムを使用。
+        ax: matplotlib Axes（None なら新規作成）
+        xlabel: x軸ラベル
+        ylabel: y軸ラベル
+        title: タイトル
+        marker: マーカースタイル
+        markersize: マーカーサイズ
+        figsize: 図サイズ
+
+    Returns:
+        matplotlib Axes
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as err:
+        raise ImportError("matplotlib が必要です: pip install matplotlib") from err
+
+    if ax is None:
+        _, ax = plt.subplots(1, 1, figsize=figsize)
+
+    # 変位値を抽出
+    disp_vals: list[float] = []
+    for d in displacements:
+        if isinstance(d, np.ndarray):
+            if dof_index is not None:
+                disp_vals.append(float(d[dof_index]))
+            else:
+                disp_vals.append(float(np.linalg.norm(d)))
+        else:
+            disp_vals.append(float(d))
+
+    lf = np.asarray(load_factors, dtype=float)
+    dv = np.asarray(disp_vals, dtype=float)
+
+    ax.plot(dv, lf, marker, markersize=markersize)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(True, alpha=0.3)
+
+    return ax
+
+
+def compute_hysteresis_area(
+    load_factors: list[float] | np.ndarray,
+    displacements: list[np.ndarray] | list[float],
+    *,
+    dof_index: int | None = None,
+) -> float:
+    """ヒステリシスループの面積（散逸エネルギーに相当）を計算する.
+
+    Shoelace formula で閉曲線の符号付き面積を計算し、
+    絶対値を返す。曲線が閉じていない場合は始点と終点を
+    直線で結んで閉じる。
+
+    Args:
+        load_factors: 各ステップの荷重係数
+        displacements: 各ステップの変位ベクトル or スカラーリスト
+        dof_index: 抽出する DOF インデックス
+
+    Returns:
+        ヒステリシスループ面積（非負）
+    """
+    disp_vals: list[float] = []
+    for d in displacements:
+        if isinstance(d, np.ndarray):
+            if dof_index is not None:
+                disp_vals.append(float(d[dof_index]))
+            else:
+                disp_vals.append(float(np.linalg.norm(d)))
+        else:
+            disp_vals.append(float(d))
+
+    x = np.asarray(disp_vals, dtype=float)
+    y = np.asarray(load_factors, dtype=float)
+
+    n = len(x)
+    if n < 3:
+        return 0.0
+
+    # Shoelace formula
+    area = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        area += x[i] * y[j] - x[j] * y[i]
+
+    return abs(area) / 2.0
+
+
+def plot_statistics_dashboard(
+    history: ContactGraphHistory,
+    *,
+    figsize: tuple[float, float] = (14, 10),
+) -> object:
+    """接触グラフ統計のダッシュボードを描画する.
+
+    6パネル構成:
+    - stick/slip 比率の推移
+    - 平均・最大法線反力の推移
+    - 連結成分数の推移
+    - 累積散逸エネルギーの推移
+    - 接触持続マップ（ヒートマップ）
+    - エッジ数・ノード数の推移
+
+    Args:
+        history: 接触グラフ時系列
+        figsize: 図サイズ
+
+    Returns:
+        matplotlib Figure
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as err:
+        raise ImportError("matplotlib が必要です: pip install matplotlib") from err
+
+    fig, axes = plt.subplots(2, 3, figsize=figsize)
+
+    steps = np.arange(history.n_steps)
+
+    # (0,0) stick/slip 比率
+    ax = axes[0, 0]
+    stick_ratio = history.stick_slip_ratio_series()
+    ax.plot(steps, stick_ratio, "o-", markersize=2, color="tab:blue")
+    ax.set_ylabel("stick 比率")
+    ax.set_xlabel("ステップ")
+    ax.set_title("stick/slip 比率")
+    ax.set_ylim(-0.05, 1.05)
+    ax.grid(True, alpha=0.3)
+
+    # (0,1) 法線反力（平均・最大）
+    ax = axes[0, 1]
+    mean_fn = history.mean_normal_force_series()
+    max_fn = history.max_normal_force_series()
+    ax.plot(steps, mean_fn, "o-", markersize=2, color="tab:green", label="平均")
+    ax.plot(steps, max_fn, "s-", markersize=2, color="tab:red", label="最大")
+    ax.set_ylabel("法線反力 [N]")
+    ax.set_xlabel("ステップ")
+    ax.set_title("法線反力の推移")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    # (0,2) 連結成分数
+    ax = axes[0, 2]
+    cc = history.connected_component_count_series()
+    ax.plot(steps, cc, "D-", markersize=2, color="tab:orange")
+    ax.set_ylabel("連結成分数")
+    ax.set_xlabel("ステップ")
+    ax.set_title("接触ネットワーク連結性")
+    ax.grid(True, alpha=0.3)
+
+    # (1,0) 累積散逸
+    ax = axes[1, 0]
+    cum_diss = history.cumulative_dissipation_series()
+    ax.plot(steps, cum_diss, "^-", markersize=2, color="tab:purple")
+    ax.set_ylabel("累積散逸 [J]")
+    ax.set_xlabel("ステップ")
+    ax.set_title("累積散逸エネルギー")
+    ax.grid(True, alpha=0.3)
+
+    # (1,1) 接触持続マップ
+    ax = axes[1, 1]
+    duration_map = history.contact_duration_map()
+    if duration_map:
+        pairs = sorted(duration_map.keys())
+        labels = [f"{a}-{b}" for a, b in pairs]
+        durations = [duration_map[p] for p in pairs]
+        ax.barh(range(len(pairs)), durations, color="tab:cyan")
+        ax.set_yticks(range(len(pairs)))
+        ax.set_yticklabels(labels, fontsize=6)
+        ax.set_xlabel("接触ステップ数")
+        ax.set_title("接触持続マップ")
+    else:
+        ax.text(0.5, 0.5, "接触なし", ha="center", va="center", transform=ax.transAxes)
+        ax.set_title("接触持続マップ")
+
+    # (1,2) エッジ数・ノード数
+    ax = axes[1, 2]
+    edges = history.edge_count_series()
+    nodes = history.node_count_series()
+    ax.plot(steps, edges, "o-", markersize=2, color="tab:blue", label="エッジ数")
+    ax.plot(steps, nodes, "s-", markersize=2, color="tab:orange", label="ノード数")
+    ax.set_ylabel("個数")
+    ax.set_xlabel("ステップ")
+    ax.set_title("エッジ数・ノード数の推移")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
+    fig.suptitle(f"接触グラフ統計ダッシュボード（{history.n_steps}ステップ）", fontsize=14)
+    fig.tight_layout()
+    return fig
+
+
 def _circular_layout(nodes: set[int]) -> dict[int, tuple[float, float]]:
     """ノードを円形に配置する.
 
