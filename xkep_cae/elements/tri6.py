@@ -259,6 +259,7 @@ else:
 class Tri6PlaneStrain:
     """TRI6二次三角形要素（平面ひずみ）（ElementProtocol適合）."""
 
+    element_type: str = "CPE6"
     ndof_per_node: int = 2
     nnodes: int = 6
     ndof: int = 12

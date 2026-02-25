@@ -59,6 +59,7 @@ def tri3_ke_plane_strain(node_xy: np.ndarray, D: np.ndarray, t: float = 1.0) -> 
 class Tri3PlaneStrain:
     """TRI3一次三角形要素（平面ひずみ）（ElementProtocol適合）."""
 
+    element_type: str = "CPE3"
     ndof_per_node: int = 2
     nnodes: int = 3
     ndof: int = 6
