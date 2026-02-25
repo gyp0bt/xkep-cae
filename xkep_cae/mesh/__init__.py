@@ -1,5 +1,11 @@
 """メッシュ生成ユーティリティ."""
 
+from xkep_cae.mesh.ring_compliance import (
+    build_ring_compliance_matrix,
+    ring_compliance_summary,
+    ring_mode0_compliance,
+    ring_mode_n_compliance,
+)
 from xkep_cae.mesh.twisted_wire import (
     CoatingModel,
     SheathModel,
@@ -24,6 +30,10 @@ from xkep_cae.mesh.twisted_wire import (
 )
 
 __all__ = [
+    "build_ring_compliance_matrix",
+    "ring_compliance_summary",
+    "ring_mode0_compliance",
+    "ring_mode_n_compliance",
     "CoatingModel",
     "SheathModel",
     "StrandInfo",
