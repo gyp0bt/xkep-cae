@@ -47,7 +47,9 @@ from xkep_cae.contact.pair import (
 )
 from xkep_cae.contact.solver_hooks import (
     ContactSolveResult,
+    CyclicContactResult,
     newton_raphson_with_contact,
+    run_contact_cyclic,
 )
 
 __all__ = [
@@ -58,6 +60,7 @@ __all__ = [
     "ContactManager",
     "ContactPair",
     "ContactSolveResult",
+    "CyclicContactResult",
     "ContactState",
     "ContactStatus",
     "auto_beam_penalty_stiffness",
@@ -75,6 +78,7 @@ __all__ = [
     "initialize_penalty_stiffness",
     "merit_function",
     "newton_raphson_with_contact",
+    "run_contact_cyclic",
     "normal_force_linearization",
     "rotate_friction_history",
     "snapshot_contact_graph",

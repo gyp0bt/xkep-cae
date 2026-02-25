@@ -164,6 +164,10 @@ def _make_contact_manager(
     mu_ramp_steps=None,
     staged_activation_steps=0,
     elem_layer_map=None,
+    use_modified_newton=False,
+    modified_newton_refresh=5,
+    contact_damping=1.0,
+    k_pen_scaling="linear",
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -192,6 +196,10 @@ def _make_contact_manager(
             k_pen_max=1e12,
             staged_activation_steps=staged_activation_steps,
             elem_layer_map=elem_layer_map,
+            use_modified_newton=use_modified_newton,
+            modified_newton_refresh=modified_newton_refresh,
+            contact_damping=contact_damping,
+            k_pen_scaling=k_pen_scaling,
         ),
     )
 
@@ -251,6 +259,10 @@ def _solve_twisted_wire(
     auto_kpen: bool = False,
     staged_activation: bool = False,
     n_outer_max: int = 8,
+    use_modified_newton: bool = False,
+    modified_newton_refresh: int = 5,
+    contact_damping: float = 1.0,
+    k_pen_scaling: str = "linear",
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -356,6 +368,10 @@ def _solve_twisted_wire(
         beam_I=beam_I,
         staged_activation_steps=staged_steps,
         elem_layer_map=elem_layer_map,
+        use_modified_newton=use_modified_newton,
+        modified_newton_refresh=modified_newton_refresh,
+        contact_damping=contact_damping,
+        k_pen_scaling=k_pen_scaling,
     )
 
     result = newton_raphson_with_contact(
@@ -518,6 +534,82 @@ class TestSevenStrandMultiContact:
             n_outer_max=10,
         )
         assert result.converged, "7本撚りTimo3D曲げが収束しなかった"
+
+
+# ====================================================================
+# テスト: 7本撚り収束改善（Modified Newton + contact damping + sqrt scaling）
+# ====================================================================
+
+
+class TestSevenStrandConvergenceImprovement:
+    """7本撚りの収束改善テスト（xfail: 接触特化ソルバーが必要）.
+
+    Modified Newton法 + contact damping + sqrtスケーリングの組み合わせ。
+    線形アセンブラ（K_T定数）では Modified Newton の効果は限定的。
+    36+ペア同時アクティブの根本的解決には接触特化ソルバー
+    （Schur complement, Uzawa法等）が必要。
+    """
+
+    _GAP = 0.0005
+    _N_ELEM = 4
+    _COMMON_KWARGS: dict = {
+        "n_pitches": 1.0,
+        "n_load_steps": 20,
+        "n_elems_per_strand": 4,
+        "assembler_type": "timo3d",
+        "auto_kpen": True,
+        "staged_activation": True,
+        "n_outer_max": 10,
+        "use_modified_newton": True,
+        "modified_newton_refresh": 3,
+        "contact_damping": 0.7,
+        "k_pen_scaling": "sqrt",
+    }
+
+    @pytest.mark.xfail(
+        reason="7本撚り: Modified Newton + damping + sqrt でも36+ペア同時収束は困難",
+        strict=False,
+    )
+    def test_tension_modified_newton(self):
+        """7本撚り引張: Modified Newton + damping + sqrt scaling で収束."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "tension",
+            1.0,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り引張が収束しなかった（Modified Newton）"
+
+    @pytest.mark.xfail(
+        reason="7本撚り: Modified Newton + damping + sqrt でも36+ペア同時収束は困難",
+        strict=False,
+    )
+    def test_torsion_modified_newton(self):
+        """7本撚りねじり: Modified Newton + damping + sqrt scaling で収束."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "torsion",
+            0.0001,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚りねじりが収束しなかった（Modified Newton）"
+
+    @pytest.mark.xfail(
+        reason="7本撚り: Modified Newton + damping + sqrt でも36+ペア同時収束は困難",
+        strict=False,
+    )
+    def test_bending_modified_newton(self):
+        """7本撚り曲げ: Modified Newton + damping + sqrt scaling で収束."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "bending",
+            0.001,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り曲げが収束しなかった（Modified Newton）"
 
 
 # ====================================================================
