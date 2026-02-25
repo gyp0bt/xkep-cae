@@ -550,3 +550,246 @@ def coated_radii(mesh: TwistedWireMesh, coating: CoatingModel) -> np.ndarray:
         (n_elems,) の接触半径配列
     """
     return np.full(mesh.n_elems, mesh.wire_radius + coating.thickness)
+
+
+# ====================================================================
+# シース（外被）モデル（SheathModel）
+# ====================================================================
+
+
+@dataclass
+class SheathModel:
+    """撚線全体を覆う円筒シース（外被）モデル.
+
+    撚線束の外周を包む円筒シースの材料特性を定義する。
+    CoatingModel（素線個別被膜）とは異なり、束全体への拘束として作用する。
+
+    シースの役割:
+    1. **径方向拘束**: 最外層素線がシース内面に押し付けられる外圧効果
+    2. **剛性寄与**: 円筒シェルとしての等価梁剛性（EA/EI/GJ）
+    3. **摩擦制御**: シース内面と最外層素線間の摩擦
+
+    Attributes:
+        thickness: シース肉厚 [m]
+        E: シースのヤング率 [Pa]
+        nu: シースのポアソン比
+        mu: シース内面の摩擦係数
+        clearance: シース内面と最外層素線外表面の初期クリアランス [m]（0=密着）
+    """
+
+    thickness: float
+    E: float
+    nu: float
+    mu: float = 0.3
+    clearance: float = 0.0
+
+    def __post_init__(self) -> None:
+        """入力値の検証."""
+        if self.thickness <= 0:
+            raise ValueError(f"シース肉厚は正でなければなりません: {self.thickness}")
+        if self.E <= 0:
+            raise ValueError(f"ヤング率は正でなければなりません: {self.E}")
+        if not (-1.0 < self.nu < 0.5):
+            raise ValueError(f"ポアソン比は (-1, 0.5) の範囲: {self.nu}")
+        if self.mu < 0:
+            raise ValueError(f"摩擦係数は非負でなければなりません: {self.mu}")
+        if self.clearance < 0:
+            raise ValueError(f"クリアランスは非負でなければなりません: {self.clearance}")
+
+    @property
+    def G(self) -> float:
+        """せん断弾性係数 [Pa]."""
+        return self.E / (2.0 * (1.0 + self.nu))
+
+
+def compute_envelope_radius(
+    mesh: TwistedWireMesh,
+    *,
+    coating: CoatingModel | None = None,
+) -> float:
+    """撚線束の外接円半径（エンベロープ半径）を計算する.
+
+    最外層素線の配置半径 + 素線半径（+ 被膜厚さ）で決定。
+
+    Args:
+        mesh: 撚線メッシュ
+        coating: 被膜モデル（素線被膜がある場合）
+
+    Returns:
+        外接円半径 [m]
+    """
+    max_lay_radius = max(info.lay_radius for info in mesh.strand_infos)
+    effective_wire_radius = mesh.wire_radius
+    if coating is not None:
+        effective_wire_radius += coating.thickness
+    return max_lay_radius + effective_wire_radius
+
+
+def sheath_inner_radius(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+) -> float:
+    """シース内径を計算する.
+
+    シース内径 = エンベロープ半径 + クリアランス
+
+    Args:
+        mesh: 撚線メッシュ
+        sheath: シースモデル
+        coating: 被膜モデル（素線被膜がある場合）
+
+    Returns:
+        シース内径 [m]
+    """
+    return compute_envelope_radius(mesh, coating=coating) + sheath.clearance
+
+
+def sheath_section_properties(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+) -> dict[str, float]:
+    """シースの断面特性（円筒管断面）を計算する.
+
+    シースを薄肉〜厚肉円筒管としてモデル化し、
+    断面積・断面二次モーメント・ねじり定数を返す。
+
+    Args:
+        mesh: 撚線メッシュ
+        sheath: シースモデル
+        coating: 被膜モデル（素線被膜がある場合）
+
+    Returns:
+        断面特性の辞書 {"A", "Iy", "Iz", "J", "r_inner", "r_outer"}
+    """
+    r_in = sheath_inner_radius(mesh, sheath, coating=coating)
+    r_out = r_in + sheath.thickness
+
+    A = math.pi * (r_out**2 - r_in**2)
+    Iy = math.pi / 4.0 * (r_out**4 - r_in**4)
+    J = math.pi / 2.0 * (r_out**4 - r_in**4)
+
+    return {
+        "A": A,
+        "Iy": Iy,
+        "Iz": Iy,
+        "J": J,
+        "r_inner": r_in,
+        "r_outer": r_out,
+    }
+
+
+def sheath_equivalent_stiffness(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+) -> dict[str, float]:
+    """シースの等価梁剛性を計算する.
+
+    シースを等価梁としてモデル化した場合の EA/EI/GJ を返す。
+
+    Args:
+        mesh: 撚線メッシュ
+        sheath: シースモデル
+        coating: 被膜モデル（素線被膜がある場合）
+
+    Returns:
+        等価梁剛性の辞書:
+            - EA: 軸剛性 [N]
+            - EIy, EIz: 曲げ剛性 [N·m²]
+            - GJ: ねじり剛性 [N·m²]
+            - r_inner, r_outer: 内外径 [m]
+    """
+    sp = sheath_section_properties(mesh, sheath, coating=coating)
+    G = sheath.G
+    return {
+        "EA": sheath.E * sp["A"],
+        "EIy": sheath.E * sp["Iy"],
+        "EIz": sheath.E * sp["Iz"],
+        "GJ": G * sp["J"],
+        "r_inner": sp["r_inner"],
+        "r_outer": sp["r_outer"],
+    }
+
+
+def outermost_layer(mesh: TwistedWireMesh) -> int:
+    """最外層の層番号を返す.
+
+    Args:
+        mesh: 撚線メッシュ
+
+    Returns:
+        最外層の層番号
+    """
+    return max(info.layer for info in mesh.strand_infos)
+
+
+def outermost_strand_ids(mesh: TwistedWireMesh) -> list[int]:
+    """最外層に属する素線IDのリストを返す.
+
+    Args:
+        mesh: 撚線メッシュ
+
+    Returns:
+        最外層素線のIDリスト
+    """
+    outer = outermost_layer(mesh)
+    return [info.strand_id for info in mesh.strand_infos if info.layer == outer]
+
+
+def outermost_strand_node_indices(mesh: TwistedWireMesh) -> np.ndarray:
+    """最外層素線の全節点インデックスを返す.
+
+    シース-素線接触ペア生成時に最外層節点を特定するのに使用。
+
+    Args:
+        mesh: 撚線メッシュ
+
+    Returns:
+        最外層素線の節点インデックス配列
+    """
+    ids = outermost_strand_ids(mesh)
+    nodes = []
+    for sid in ids:
+        nodes.append(mesh.strand_nodes(sid))
+    return np.concatenate(nodes)
+
+
+def sheath_radial_gap(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+) -> np.ndarray:
+    """最外層素線節点とシース内面の径方向ギャップを計算する.
+
+    ギャップ = シース内径 - (節点の径方向位置 + 素線有効半径)
+    正値 = 非接触（ギャップ開）、負値 = 貫入（接触）
+
+    初期配置では clearance > 0 なら全て正（非接触）、
+    clearance = 0 なら最外層中央で 0（密着）となる。
+
+    Args:
+        mesh: 撚線メッシュ
+        sheath: シースモデル
+        coating: 被膜モデル（素線被膜がある場合）
+
+    Returns:
+        (n_outer_nodes,) の径方向ギャップ配列 [m]
+    """
+    r_inner = sheath_inner_radius(mesh, sheath, coating=coating)
+    effective_wire_radius = mesh.wire_radius
+    if coating is not None:
+        effective_wire_radius += coating.thickness
+
+    outer_nodes = outermost_strand_node_indices(mesh)
+    coords = mesh.node_coords[outer_nodes]
+
+    # 径方向位置 = √(x² + y²)
+    r_nodal = np.sqrt(coords[:, 0] ** 2 + coords[:, 1] ** 2)
+
+    return r_inner - (r_nodal + effective_wire_radius)
