@@ -20,6 +20,9 @@ from xkep_cae.contact.graph import (
     ContactEdge,
     ContactGraph,
     ContactGraphHistory,
+    compute_hysteresis_area,
+    plot_hysteresis_curve,
+    plot_statistics_dashboard,
     snapshot_contact_graph,
 )
 from xkep_cae.contact.law_friction import (
@@ -69,6 +72,7 @@ __all__ = [
     "broadphase_aabb",
     "compute_contact_force",
     "compute_contact_stiffness",
+    "compute_hysteresis_area",
     "compute_mu_effective",
     "compute_segment_aabb",
     "compute_tangential_displacement",
@@ -80,6 +84,8 @@ __all__ = [
     "newton_raphson_with_contact",
     "run_contact_cyclic",
     "normal_force_linearization",
+    "plot_hysteresis_curve",
+    "plot_statistics_dashboard",
     "rotate_friction_history",
     "snapshot_contact_graph",
     "update_al_multiplier",
