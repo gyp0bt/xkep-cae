@@ -793,3 +793,163 @@ def sheath_radial_gap(
     r_nodal = np.sqrt(coords[:, 0] ** 2 + coords[:, 1] ** 2)
 
     return r_inner - (r_nodal + effective_wire_radius)
+
+
+# ====================================================================
+# Stage S2: シース内面プロファイル + コンプライアンス行列
+# ====================================================================
+
+
+def compute_inner_surface_profile(
+    mesh: TwistedWireMesh,
+    *,
+    n_theta: int = 360,
+    coating: CoatingModel | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """素線配置からシース内面形状プロファイルを計算する（Stage S2）.
+
+    z=0 切断面で、最外層素線の断面外縁を包絡するシース内面の
+    半径方向プロファイル r_inner(θ) を計算する。
+
+    各角度 θ において中心から放射方向に引いた線分が最外層素線の
+    断面外縁と交差する最遠点を r_inner(θ) とする:
+
+      r_inner(θ) = max_i { R_i cos(θ−φ_i) + √(r_w² − R_i² sin²(θ−φ_i)) }
+
+    素線と交差しない角度では隣接値から線形補間する。
+
+    Parameters
+    ----------
+    mesh : TwistedWireMesh
+        撚線メッシュ
+    n_theta : int
+        角度の離散点数（デフォルト 360）
+    coating : CoatingModel | None
+        被膜モデル（被膜がある場合、有効素線半径が増大）
+
+    Returns
+    -------
+    theta : (n_theta,) ndarray
+        角度配列 [0, 2π)  [rad]
+    r_inner : (n_theta,) ndarray
+        シース内面半径 [m]
+    """
+    if n_theta < 3:
+        raise ValueError(f"n_theta={n_theta} は 3 以上が必要")
+
+    outer = outermost_layer(mesh)
+    outer_infos = [info for info in mesh.strand_infos if info.layer == outer]
+
+    r_w = mesh.wire_radius
+    if coating is not None:
+        r_w += coating.thickness
+
+    theta = np.linspace(0.0, 2.0 * math.pi, n_theta, endpoint=False)
+    r_profile = np.zeros(n_theta)
+
+    tol = r_w * 1e-10  # 浮動小数点境界処理用トレランス
+    for k in range(n_theta):
+        th = theta[k]
+        max_r = 0.0
+        for info in outer_infos:
+            R_lay = info.lay_radius
+            phi = info.angle_offset
+            d_perp = R_lay * math.sin(th - phi)
+            if abs(d_perp) <= r_w + tol:
+                d_perp_clamped = min(abs(d_perp), r_w)
+                d_radial = R_lay * math.cos(th - phi) + math.sqrt(r_w**2 - d_perp_clamped**2)
+                if d_radial > max_r:
+                    max_r = d_radial
+        r_profile[k] = max_r
+
+    # 素線と交差しない角度（gap）がある場合は線形補間
+    zero_mask = r_profile == 0.0
+    if np.any(zero_mask):
+        nonzero_idx = np.where(~zero_mask)[0]
+        if len(nonzero_idx) > 0:
+            # 周期的な補間のため前後に延長
+            angles_good = theta[nonzero_idx]
+            values_good = r_profile[nonzero_idx]
+            angles_ext = np.concatenate(
+                [angles_good - 2.0 * math.pi, angles_good, angles_good + 2.0 * math.pi]
+            )
+            values_ext = np.concatenate([values_good, values_good, values_good])
+            r_profile = np.interp(theta, angles_ext, values_ext)
+
+    return theta, r_profile
+
+
+def sheath_compliance_matrix(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+    n_theta: int = 360,
+    n_modes: int | None = None,
+    plane: str = "strain",
+) -> np.ndarray:
+    """撚線+シースモデルから膜厚分布考慮のコンプライアンス行列を構築する（Stage S2）.
+
+    最外層素線の配置からシース内面プロファイルを計算し、
+    各接触点での局所膜厚を反映した修正コンプライアンス行列を返す。
+
+    均一厚みの場合は Stage S1 の ``build_ring_compliance_matrix`` と
+    実質的に一致する。
+
+    Parameters
+    ----------
+    mesh : TwistedWireMesh
+        撚線メッシュ
+    sheath : SheathModel
+        シースモデル
+    coating : CoatingModel | None
+        被膜モデル
+    n_theta : int
+        内面プロファイルの角度サンプル数
+    n_modes : int | None
+        Fourier 級数の打ち切りモード数
+    plane : str
+        "strain"（平面ひずみ）or "stress"（平面応力）
+
+    Returns
+    -------
+    C : (N, N) ndarray
+        修正コンプライアンス行列 [m/N]。N = 最外層素線本数。
+    """
+    from xkep_cae.mesh.ring_compliance import build_variable_thickness_compliance_matrix
+
+    # 内面プロファイル計算
+    theta_profile, r_inner_profile = compute_inner_surface_profile(
+        mesh, n_theta=n_theta, coating=coating
+    )
+
+    # 接触点の角度と内面半径を抽出
+    outer = outermost_layer(mesh)
+    outer_infos = [info for info in mesh.strand_infos if info.layer == outer]
+    N = len(outer_infos)
+    contact_angles = np.array([info.angle_offset for info in outer_infos])
+
+    # 各接触点での内面半径（プロファイルから補間）
+    # 周期的補間のため前後に拡張
+    theta_ext = np.concatenate(
+        [theta_profile - 2.0 * math.pi, theta_profile, theta_profile + 2.0 * math.pi]
+    )
+    r_ext = np.concatenate([r_inner_profile, r_inner_profile, r_inner_profile])
+    r_inner_at_contacts = np.interp(contact_angles, theta_ext, r_ext)
+
+    # クリアランスを加算してシース内面半径とする
+    r_inner_at_contacts = r_inner_at_contacts + sheath.clearance
+
+    # シース外径
+    r_outer = np.max(r_inner_at_contacts) + sheath.thickness
+
+    return build_variable_thickness_compliance_matrix(
+        N,
+        contact_angles,
+        r_inner_at_contacts,
+        r_outer,
+        sheath.E,
+        sheath.nu,
+        n_modes=n_modes,
+        plane=plane,
+    )

@@ -329,3 +329,188 @@ def ring_compliance_summary(
         "c0": c0,
         "mode_compliances": cn,
     }
+
+
+# ====================================================================
+# Stage S2: Fourier 分解 + 膜厚分布コンプライアンス
+# ====================================================================
+
+
+def fourier_decompose_profile(
+    theta: np.ndarray,
+    r_profile: np.ndarray,
+    n_modes: int,
+) -> dict:
+    """円周プロファイルの Fourier 分解（Stage S2）.
+
+    r(θ) ≈ R₀ + Σ_{n=1}^{N} [aₙ cos(nθ) + bₙ sin(nθ)]
+
+    等間隔サンプルに対する DFT ベースの係数抽出。
+
+    Parameters
+    ----------
+    theta : (M,) ndarray
+        角度サンプル [rad]（等間隔推奨）
+    r_profile : (M,) ndarray
+        各角度での半径値
+    n_modes : int
+        抽出する最大 Fourier モード番号 (≥ 1)
+
+    Returns
+    -------
+    dict with keys:
+        R0 : float — 平均半径（DC 成分）
+        a : (n_modes+1,) ndarray — cos 係数 [a₀=R₀, a₁, ..., aₙ]
+        b : (n_modes+1,) ndarray — sin 係数 [b₀=0, b₁, ..., bₙ]
+        n_modes : int — モード数
+    """
+    if n_modes < 1:
+        raise ValueError(f"n_modes={n_modes} は 1 以上が必要")
+    if len(theta) != len(r_profile):
+        raise ValueError("theta と r_profile の長さが一致しません")
+
+    M = len(theta)
+    R0 = float(np.mean(r_profile))
+
+    a = np.zeros(n_modes + 1)
+    b = np.zeros(n_modes + 1)
+    a[0] = R0
+
+    for n in range(1, n_modes + 1):
+        a[n] = 2.0 / M * np.sum(r_profile * np.cos(n * theta))
+        b[n] = 2.0 / M * np.sum(r_profile * np.sin(n * theta))
+
+    return {
+        "R0": R0,
+        "a": a,
+        "b": b,
+        "n_modes": n_modes,
+    }
+
+
+def evaluate_fourier_profile(
+    fourier_coeffs: dict,
+    theta: np.ndarray,
+) -> np.ndarray:
+    """Fourier 係数からプロファイルを再構築する.
+
+    Parameters
+    ----------
+    fourier_coeffs : dict
+        ``fourier_decompose_profile`` の返り値
+    theta : (M,) ndarray
+        評価する角度
+
+    Returns
+    -------
+    r : (M,) ndarray
+        再構築されたプロファイル
+    """
+    a = fourier_coeffs["a"]
+    b = fourier_coeffs["b"]
+    n_modes = fourier_coeffs["n_modes"]
+
+    r = np.full_like(theta, float(a[0]))
+    for n in range(1, n_modes + 1):
+        r = r + a[n] * np.cos(n * theta) + b[n] * np.sin(n * theta)
+    return r
+
+
+def build_variable_thickness_compliance_matrix(
+    N: int,
+    contact_angles: np.ndarray,
+    r_inner_at_contacts: np.ndarray,
+    r_outer: float,
+    E: float,
+    nu: float,
+    *,
+    n_modes: int | None = None,
+    plane: str = "strain",
+) -> np.ndarray:
+    """膜厚分布を考慮したコンプライアンス行列（Stage S2）.
+
+    各接触点での局所内径（シース内面プロファイルから決定）を
+    考慮し、非均一厚みリングとしてのコンプライアンス行列を構築する。
+
+    接触点 i, j 間のコンプライアンスは有効内径
+    a_eff = (a_i + a_j) / 2 を用いた Green 関数で評価する:
+
+      C[i,j] = G(θ_i − θ_j; a_eff, b, E, ν)
+
+    有効内径が全接触点で同一の場合、Stage S1 の
+    ``build_ring_compliance_matrix`` と一致する。
+
+    Parameters
+    ----------
+    N : int
+        接触点数（最外層素線本数）
+    contact_angles : (N,) ndarray
+        接触点の角度 [rad]
+    r_inner_at_contacts : (N,) ndarray
+        各接触点でのシース内面半径 [m]
+    r_outer : float
+        シース外径 [m]
+    E : float
+        ヤング率 [Pa]
+    nu : float
+        ポアソン比
+    n_modes : int | None
+        Fourier 級数の打ち切りモード数（None → max(4*N, 24)）
+    plane : str
+        "strain"（平面ひずみ）or "stress"（平面応力）
+
+    Returns
+    -------
+    C : (N, N) ndarray
+        修正コンプライアンス行列 [m/N]。対称正定値。
+    """
+    if N < 2:
+        raise ValueError(f"N={N} は 2 以上が必要")
+    if len(contact_angles) != N:
+        raise ValueError(f"contact_angles の長さ ({len(contact_angles)}) と N={N} が不一致")
+    if len(r_inner_at_contacts) != N:
+        raise ValueError(
+            f"r_inner_at_contacts の長さ ({len(r_inner_at_contacts)}) と N={N} が不一致"
+        )
+
+    for i in range(N):
+        a_i = r_inner_at_contacts[i]
+        if a_i <= 0 or a_i >= r_outer:
+            raise ValueError(f"内径 r_inner[{i}]={a_i} は正かつ外径 {r_outer} 未満が必要")
+
+    if n_modes is None:
+        n_modes = max(4 * N, 24)
+
+    # 有効内径ごとのモードコンプライアンスをキャッシュ
+    # （同一有効内径の重複計算を回避）
+    _cache: dict[float, tuple[float, dict[int, float]]] = {}
+
+    def _get_mode_compliances(
+        a_eff: float,
+    ) -> tuple[float, dict[int, float]]:
+        key = round(a_eff, 15)
+        if key not in _cache:
+            c0 = ring_mode0_compliance(a_eff, r_outer, E, nu, plane)
+            cn = {}
+            for mode in range(2, n_modes + 1):
+                cn[mode] = ring_mode_n_compliance(a_eff, r_outer, E, nu, mode, plane)
+            _cache[key] = (c0, cn)
+        return _cache[key]
+
+    C = np.zeros((N, N))
+
+    for i in range(N):
+        for j in range(i, N):
+            a_eff = (r_inner_at_contacts[i] + r_inner_at_contacts[j]) / 2.0
+            dtheta = contact_angles[i] - contact_angles[j]
+
+            c0, cn = _get_mode_compliances(a_eff)
+
+            val = c0 / (2.0 * np.pi * a_eff)
+            for mode in range(2, n_modes + 1):
+                val += cn[mode] / (np.pi * a_eff) * np.cos(mode * dtheta)
+
+            C[i, j] = val
+            C[j, i] = val
+
+    return C
