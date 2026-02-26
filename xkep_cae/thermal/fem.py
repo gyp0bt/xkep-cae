@@ -253,6 +253,45 @@ def make_rect_mesh(
     return nodes, conn, boundary_edges
 
 
+def make_irregular_rect_mesh(
+    Lx: float,
+    Ly: float,
+    nx: int,
+    ny: int,
+    perturbation: float = 0.3,
+    seed: int = 42,
+) -> tuple[np.ndarray, np.ndarray, dict[str, np.ndarray]]:
+    """不規則メッシュの生成（内部ノード摂動）.
+
+    均一メッシュの内部ノードをランダムに摂動させて不規則メッシュを作成。
+    境界ノードは固定。要素接続は均一メッシュと同一。
+
+    Args:
+        Lx, Ly: x方向/y方向の長さ [m]
+        nx, ny: x方向/y方向の要素数
+        perturbation: 摂動量（要素サイズに対する比率、0〜0.45推奨）
+        seed: 乱数シード
+
+    Returns:
+        nodes, conn, boundary_edges（make_rect_mesh と同形式）
+    """
+    nodes, conn, boundary_edges = make_rect_mesh(Lx, Ly, nx, ny)
+    rng = np.random.default_rng(seed)
+
+    dx = Lx / nx
+    dy = Ly / ny
+    tol = 1e-10
+
+    for i in range(len(nodes)):
+        x, y = nodes[i]
+        # 境界ノードは固定
+        if x > tol and x < Lx - tol and y > tol and y < Ly - tol:
+            nodes[i, 0] += rng.uniform(-perturbation * dx, perturbation * dx)
+            nodes[i, 1] += rng.uniform(-perturbation * dy, perturbation * dy)
+
+    return nodes, conn, boundary_edges
+
+
 # ---------------------------------------------------------------------------
 # 全体アセンブリ
 # ---------------------------------------------------------------------------
