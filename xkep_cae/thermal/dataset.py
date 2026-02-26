@@ -20,6 +20,7 @@ import numpy as np
 from xkep_cae.thermal.fem import (
     assemble_thermal_system,
     compute_heat_flux,
+    make_irregular_rect_mesh,
     make_rect_mesh,
     solve_steady_thermal,
 )
@@ -253,6 +254,45 @@ def generate_dataset(
     """
     rng = np.random.default_rng(seed)
     nodes, conn, edges = make_rect_mesh(config.Lx, config.Ly, config.nx, config.ny)
+
+    dataset = []
+    for _ in range(n_samples):
+        sample = generate_single_sample(nodes, conn, edges, config, rng)
+        graph = sample_to_graph_data(sample)
+        dataset.append(graph)
+
+    return dataset
+
+
+def generate_dataset_irregular(
+    config: ThermalProblemConfig,
+    n_samples: int,
+    perturbation: float = 0.3,
+    seed: int = 42,
+) -> list[dict]:
+    """不規則メッシュ上のデータセット生成.
+
+    均一メッシュの内部ノードを摂動させた不規則メッシュ上で
+    ランダム発熱体のFEM計算を行いデータセットを生成する。
+
+    Args:
+        config: 問題設定
+        n_samples: サンプル数
+        perturbation: ノード摂動量（要素サイズ比、0〜0.45推奨）
+        seed: 乱数シード
+
+    Returns:
+        list of graph data dicts
+    """
+    rng = np.random.default_rng(seed)
+    nodes, conn, edges = make_irregular_rect_mesh(
+        config.Lx,
+        config.Ly,
+        config.nx,
+        config.ny,
+        perturbation=perturbation,
+        seed=seed + 1000,
+    )
 
     dataset = []
     for _ in range(n_samples):
