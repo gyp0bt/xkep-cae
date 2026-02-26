@@ -168,6 +168,7 @@ def _make_contact_manager(
     modified_newton_refresh=5,
     contact_damping=1.0,
     k_pen_scaling="linear",
+    contact_tangent_mode="full",
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -200,6 +201,7 @@ def _make_contact_manager(
             modified_newton_refresh=modified_newton_refresh,
             contact_damping=contact_damping,
             k_pen_scaling=k_pen_scaling,
+            contact_tangent_mode=contact_tangent_mode,
         ),
     )
 
@@ -263,6 +265,7 @@ def _solve_twisted_wire(
     modified_newton_refresh: int = 5,
     contact_damping: float = 1.0,
     k_pen_scaling: str = "linear",
+    contact_tangent_mode: str = "full",
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -372,6 +375,7 @@ def _solve_twisted_wire(
         modified_newton_refresh=modified_newton_refresh,
         contact_damping=contact_damping,
         k_pen_scaling=k_pen_scaling,
+        contact_tangent_mode=contact_tangent_mode,
     )
 
     result = newton_raphson_with_contact(
@@ -920,3 +924,80 @@ class TestContactGraphCollection:
             for edge in snap.edges:
                 assert edge.p_n >= -1e-10
                 assert edge.status in ("ACTIVE", "SLIDING")
+
+
+# ====================================================================
+# テスト: 7本撚り Uzawa型ソルバー（contact_tangent_mode）
+# ====================================================================
+
+
+class TestContactTangentModeBasic:
+    """contact_tangent_mode の基本動作テスト.
+
+    各モードがパラメータとして正しく伝播し、ソルバーが起動することを検証。
+    structural_only / diagonal は K_T + K_c のペナルティ接触では収束困難のため、
+    収束テストではなく「発散せずに実行完了する」ことのみ確認する。
+
+    diagnostic findings (status-064):
+    - structural_only: K_T が接触安定化なしで特異化 → spsolve MatrixRankWarning
+    - diagonal: diag(K_c) 近似が不十分 → NR 線形収束が遅く max_iter 超過
+    - scaled (α<1): full tangent と同様だが条件数を多少改善
+    - 根本解決にはデュアル法 / mortar discretization が必要
+    """
+
+    def test_full_mode_3strand_converges(self):
+        """3本撚り引張が full モードで収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            contact_tangent_mode="full",
+        )
+        assert r.converged, "3本撚り引張が mode=full で収束しなかった"
+
+    def test_scaled_mode_3strand_converges(self):
+        """3本撚り引張が scaled (α=1.0) モードで収束する（full と同等）."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            contact_tangent_mode="scaled",
+        )
+        assert r.converged, "3本撚り引張が mode=scaled で収束しなかった"
+
+    @pytest.mark.xfail(
+        reason="diagonal 近似の収束速度が不十分（ペナルティ接触の本質的制約）",
+        strict=False,
+    )
+    def test_diagonal_mode_3strand_converges(self):
+        """3本撚り引張が diagonal モードで収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            contact_tangent_mode="diagonal",
+        )
+        assert r.converged, "3本撚り引張が mode=diagonal で収束しなかった"
+
+    @pytest.mark.xfail(
+        reason="structural_only: K_T単独では接触安定化が不足し特異行列化",
+        strict=False,
+    )
+    def test_structural_only_mode_3strand_converges(self):
+        """3本撚り引張が structural_only モードで収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=30,
+            max_iter=50,
+            contact_tangent_mode="structural_only",
+        )
+        assert r.converged, "3本撚り引張が mode=structural_only で収束しなかった"

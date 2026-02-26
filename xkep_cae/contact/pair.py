@@ -147,6 +147,12 @@ class ContactConfig:
             ペナルティ剛性を自動増大する。0 で無効。
         penalty_growth_factor: 貫入超過時のペナルティ成長係数（> 1）
         k_pen_max: ペナルティ剛性の上限（条件数悪化防止）
+        contact_tangent_mode: 接触接線剛性のシステム行列への組込み方式。
+            - "full": K_total = K_T + K_c（標準。二次収束）
+            - "structural_only": K_total = K_T（Uzawa型。接触力は残差にのみ反映）
+            - "diagonal": K_total = K_T + diag(K_c)（対角近似。条件数改善）
+            - "scaled": K_total = K_T + α·K_c（α = contact_tangent_scale）
+        contact_tangent_scale: "scaled" モード時の K_c スケール係数 α ∈ (0,1]。
     """
 
     k_pen_scale: float = 1.0
@@ -176,6 +182,10 @@ class ContactConfig:
     modified_newton_refresh: int = 5  # K_T再計算間隔（反復数）
     contact_damping: float = 1.0  # 接触力under-relaxation係数（1.0=無緩和）
     k_pen_scaling: str = "linear"  # k_penのn_pairsスケーリング: "linear" | "sqrt"
+    contact_tangent_mode: str = (
+        "full"  # 接触接線モード: "full" | "structural_only" | "diagonal" | "scaled"
+    )
+    contact_tangent_scale: float = 1.0  # "scaled" モード時のK_cスケール係数（0 < α ≤ 1）
 
 
 @dataclass
