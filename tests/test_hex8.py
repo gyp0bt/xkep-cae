@@ -32,6 +32,7 @@ from xkep_cae.elements.hex8 import (
     hex8_ke_incompatible,
     hex8_ke_reduced,
     hex8_ke_sri,
+    hex8_ke_sri_bbar,
 )
 from xkep_cae.materials.elastic import IsotropicElastic3D, constitutive_3d
 
@@ -1038,21 +1039,28 @@ class TestHex8BBarMean:
 class TestSRIHourglassControl:
     """C3D8 (SRI) のアワーグラス制御テスト."""
 
-    def test_alpha_hg_default_zero(self):
-        """Hex8SRI のデフォルト alpha_hg=0.0."""
+    def test_alpha_hg_default(self):
+        """Hex8SRI のデフォルト alpha_hg=0.03 (SRI+B-bar モード)."""
         elem = Hex8SRI()
-        assert elem.alpha_hg == 0.0
+        assert elem.alpha_hg == 0.03
+        assert elem.mode == "sri_bbar"
 
-    def test_rank_without_hg(self):
-        """アワーグラス制御なし: ランク 12."""
+    def test_alpha_hg_sri_only_zero(self):
+        """mode='sri_only' で alpha_hg=0.0 を指定可能."""
+        elem = Hex8SRI(alpha_hg=0.0, mode="sri_only")
+        assert elem.alpha_hg == 0.0
+        assert elem.mode == "sri_only"
+
+    def test_rank_without_hg_sri_only(self):
+        """SRI アワーグラス制御なし: ランク 12."""
         D = constitutive_3d(E_STEEL, NU_STEEL)
         Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.0)
         eigvals = np.linalg.eigvalsh(Ke)
         rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
         assert rank == 12
 
-    def test_rank_with_hg(self):
-        """アワーグラス制御あり: ランク増加."""
+    def test_rank_with_hg_sri_only(self):
+        """SRI アワーグラス制御あり: ランク増加."""
         D = constitutive_3d(E_STEEL, NU_STEEL)
         Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.03)
         eigvals = np.linalg.eigvalsh(Ke)
@@ -1072,9 +1080,9 @@ class TestSRIHourglassControl:
         eigvals = np.linalg.eigvalsh(Ke)
         assert np.all(eigvals > -1e-6 * np.max(np.abs(eigvals)))
 
-    def test_class_alpha_hg(self):
-        """Hex8SRI クラス経由でアワーグラス制御."""
-        elem = Hex8SRI(alpha_hg=0.02)
+    def test_class_alpha_hg_sri_only(self):
+        """Hex8SRI クラス経由で SRI + アワーグラス制御."""
+        elem = Hex8SRI(alpha_hg=0.02, mode="sri_only")
         mat = IsotropicElastic3D(E_STEEL, NU_STEEL)
         Ke = elem.local_stiffness(_unit_cube(), mat)
         eigvals = np.linalg.eigvalsh(Ke)
@@ -1104,3 +1112,157 @@ class TestSRIHourglassControl:
         assert err_hg < err_no_hg + 0.05, (
             f"SRI+HG ({err_hg:.4f}) should not be much worse than SRI ({err_no_hg:.4f})"
         )
+
+
+# ============================================================
+# 13. C3D8 SRI + B-bar 併用テスト
+# ============================================================
+
+
+class TestSRIBBar:
+    """C3D8 SRI + B-bar 併用カーネルのテスト."""
+
+    def test_symmetry(self):
+        """SRI+B-bar 剛性行列は対称."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D)
+        np.testing.assert_allclose(Ke, Ke.T, atol=1e-10)
+
+    def test_psd(self):
+        """正半定値性."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D)
+        eigvals = np.linalg.eigvalsh(Ke)
+        assert np.all(eigvals > -1e-6 * np.max(np.abs(eigvals)))
+
+    def test_rank_without_hg(self):
+        """alpha_hg=0: ランク 7（偏差5+体積1+クロス項1）."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D, alpha_hg=0.0)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        # SRI+B-bar: 偏差1pt + B-bar vol で低ランク
+        assert 6 <= rank <= 12
+
+    def test_rank_with_default_hg(self):
+        """デフォルト alpha_hg=0.03: ランク > 12（HG 安定化）."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D, alpha_hg=0.03)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        assert rank > 12, f"expected rank > 12 with HG, got {rank}"
+
+    def test_rbm(self):
+        """剛体モードがゼロエネルギー（最低6個）."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D)
+        eigvals = np.sort(np.linalg.eigvalsh(Ke))
+        threshold = 1e-6 * eigvals[-1]
+        n_zero = np.sum(np.abs(eigvals) < threshold)
+        assert n_zero >= 6
+
+    def test_volume_locking_resistance(self):
+        """SRI+B-bar は非圧縮限界（ν→0.5）でもランク安定."""
+        D_nearly_inc = constitutive_3d(E_STEEL, 0.499)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D_nearly_inc, alpha_hg=0.03)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        # 非圧縮限界でも安定（体積ロッキングなし）
+        assert rank > 12, f"SRI+B-bar rank at nu=0.499: {rank}"
+
+    def test_patch_test(self):
+        """SRI+B-bar パッチテスト: 一様引張."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri_bbar(_unit_cube(), D)
+        eps0 = 1e-3
+        nodes = _unit_cube()
+        u = np.zeros(24)
+        for i in range(8):
+            u[3 * i] = eps0 * nodes[i, 0]
+        f = Ke @ u
+        sigma_xx = D[0, 0] * eps0
+        fx_pos = sum(f[3 * i] for i in [1, 2, 5, 6])
+        np.testing.assert_allclose(fx_pos, sigma_xx, rtol=1e-10)
+
+    def test_cantilever_bending(self):
+        """SRI+B-bar 片持ち梁: 解析解と比較（4×4×8, < 15%）."""
+        L, h, w = 10.0, 1.0, 1.0
+        P = 1000.0
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Iy = w * h**3 / 12.0
+        G = E_STEEL / (2 * (1 + NU_STEEL))
+        kappa = 5.0 / 6.0
+        A = w * h
+        delta_Timo = P * L**3 / (3 * E_STEEL * Iy) + P * L / (kappa * G * A)
+
+        uy = _solve_cantilever(
+            L,
+            h,
+            w,
+            4,
+            4,
+            8,
+            lambda xyz, D_: hex8_ke_sri_bbar(xyz, D_, alpha_hg=0.03),
+            D,
+            P,
+        )
+        rel_err = abs(uy - delta_Timo) / abs(delta_Timo)
+        assert rel_err < 0.15, f"SRI+B-bar cantilever error {rel_err:.4f} > 15%"
+
+    def test_better_than_bbar_for_bending(self):
+        """SRI+B-bar は B-bar（完全積分偏差）より曲げ精度が良い."""
+        L, h, w = 10.0, 1.0, 1.0
+        P = 1000.0
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Iy = w * h**3 / 12.0
+        G = E_STEEL / (2 * (1 + NU_STEEL))
+        kappa = 5.0 / 6.0
+        A = w * h
+        delta_Timo = P * L**3 / (3 * E_STEEL * Iy) + P * L / (kappa * G * A)
+
+        uy_bbar = _solve_cantilever(L, h, w, 4, 4, 8, hex8_ke_bbar_mean, D, P)
+        uy_sri_bbar = _solve_cantilever(
+            L,
+            h,
+            w,
+            4,
+            4,
+            8,
+            lambda xyz, D_: hex8_ke_sri_bbar(xyz, D_, alpha_hg=0.03),
+            D,
+            P,
+        )
+        err_bbar = abs(uy_bbar - delta_Timo) / abs(delta_Timo)
+        err_sri_bbar = abs(uy_sri_bbar - delta_Timo) / abs(delta_Timo)
+        # SRI+B-bar は偏差1pt積分でせん断ロッキングを回避するため、
+        # B-bar（完全積分偏差）より曲げ精度が良い
+        assert err_sri_bbar < err_bbar, (
+            f"SRI+B-bar ({err_sri_bbar:.4f}) should be better "
+            f"than B-bar ({err_bbar:.4f}) for bending"
+        )
+
+    def test_class_default_uses_sri_bbar(self):
+        """Hex8SRI() デフォルトは SRI+B-bar."""
+        elem = Hex8SRI()
+        assert elem.mode == "sri_bbar"
+        assert elem.alpha_hg == 0.03
+        mat = IsotropicElastic3D(E_STEEL, NU_STEEL)
+        Ke = elem.local_stiffness(_unit_cube(), mat)
+        # SRI+B-bar カーネルと一致
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke_direct = hex8_ke_sri_bbar(_unit_cube(), D, alpha_hg=0.03)
+        np.testing.assert_allclose(Ke, Ke_direct, atol=1e-15)
+
+    def test_class_sri_only_mode(self):
+        """Hex8SRI(mode='sri_only') は従来 SRI 動作."""
+        elem = Hex8SRI(alpha_hg=0.0, mode="sri_only")
+        mat = IsotropicElastic3D(E_STEEL, NU_STEEL)
+        Ke = elem.local_stiffness(_unit_cube(), mat)
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke_direct = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.0)
+        np.testing.assert_allclose(Ke, Ke_direct, atol=1e-15)
+
+    def test_invalid_mode(self):
+        """不正な mode で ValueError."""
+        with pytest.raises(ValueError, match="mode"):
+            Hex8SRI(mode="invalid")

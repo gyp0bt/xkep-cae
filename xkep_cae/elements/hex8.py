@@ -3,9 +3,10 @@
 5 つのバリエーションを提供:
 
   C3D8 (Hex8SRI):
-    選択低減積分 (SRI)。偏差成分は 1 点低減積分、体積成分は 2×2×2 完全積分。
-    せん断ロッキングを回避しつつ体積拘束を維持。
-    alpha_hg > 0 でアワーグラス制御を適用可能（偏差 1 点積分の 6 個のゼロエネルギーモード安定化）。
+    SRI + B-bar 併用（デフォルト）。偏差成分は 1 点低減積分（せん断ロッキング回避）、
+    体積成分は B-bar 平均膨張法（体積ロッキング回避）。
+    alpha_hg=0.03 のアワーグラス制御をデフォルトで適用。
+    後方互換のため mode="sri_only" で従来SRI動作も選択可能。
 
   C3D8B (Hex8BBarMean):
     B-bar 法 (平均膨張法, Hughes 1980)。2×2×2 完全積分だが体積部の
@@ -305,6 +306,86 @@ def hex8_ke_sri(
 
 
 # ============================================================
+# C3D8: SRI + B-bar 併用 要素剛性行列（デフォルト）
+# ============================================================
+
+
+def hex8_ke_sri_bbar(
+    node_xyz: np.ndarray,
+    D: np.ndarray,
+    *,
+    alpha_hg: float = 0.03,
+) -> np.ndarray:
+    """SRI + B-bar 併用 HEX8 要素剛性行列 (C3D8 デフォルト).
+
+    偏差成分と体積成分をそれぞれ最適な積分方式で処理:
+      - 偏差成分 (D_dev): 1 点低減積分（要素中心）→ せん断ロッキング回避
+      - 体積成分 (D_vol): B-bar 平均膨張法 → 体積ロッキング回避
+
+    偏差 1 点積分に起因する 6 個のゼロエネルギーモードを
+    Flanagan-Belytschko 型アワーグラス制御で安定化（デフォルト alpha_hg=0.03）。
+
+    参考文献:
+      - Hughes, T.J.R. (1980) "Generalization of selective integration" — B-bar
+      - Flanagan, Belytschko (1981) "Hourglass control"
+
+    Args:
+        node_xyz: (8, 3) 要素節点座標
+        D: (6, 6) 弾性テンソル
+        alpha_hg: アワーグラス制御係数。推奨 0.01〜0.05。デフォルト 0.03。
+
+    Returns:
+        Ke: (24, 24) 要素剛性行列
+    """
+    node_xyz, D = _validate_inputs(node_xyz, D)
+    D_vol, D_dev = _split_D_vol_dev(D)
+
+    Ke = np.zeros((24, 24), dtype=float)
+
+    # ==== 体積成分: B-bar 平均膨張法 ====
+    # Phase 1: B̄_vol を体積平均で計算
+    B_bar_vol = np.zeros((6, 24), dtype=float)
+    V_total = 0.0
+
+    for xi, eta, zeta in _GAUSS_2x2x2:
+        B, detJ, _, _ = _compute_B_detJ(node_xyz, xi, eta, zeta)
+        B_vol = _extract_B_vol(B)
+        B_bar_vol += B_vol * detJ  # w = 1
+        V_total += detJ
+
+    B_bar_vol /= V_total
+
+    # Phase 2: 体積剛性 = B̄_vol^T D_vol B̄_vol * V
+    Ke += B_bar_vol.T @ D_vol @ B_bar_vol * V_total
+
+    # ==== 偏差成分: 1 点低減積分（要素中心 ξ=η=ζ=0） ====
+    B0, detJ0, _, _ = _compute_B_detJ(node_xyz, 0.0, 0.0, 0.0)
+    B0_vol = _extract_B_vol(B0)
+    B0_dev = B0 - B0_vol
+    Ke += B0_dev.T @ D_dev @ B0_dev * detJ0 * 8.0  # w = 8 (=2×2×2)
+
+    # ==== アワーグラス制御 ====
+    if alpha_hg > 0.0:
+        V_elem = detJ0 * 8.0
+        L_char = V_elem ** (1.0 / 3.0)
+        # 偏差成分の代表剛性を使用
+        D_dev_max = np.max(np.abs(np.diag(D_dev)))
+        if D_dev_max < 1e-30:
+            D_dev_max = np.max(np.diag(D))
+        k_hg = alpha_hg * D_dev_max * V_elem / (L_char**2)
+
+        for alpha_idx in range(4):
+            h = _HG_VECTORS[alpha_idx]
+            hh = h @ h  # = 8
+            for d in range(3):
+                q = np.zeros(24, dtype=float)
+                q[d::3] = h
+                Ke += (k_hg / hh) * np.outer(q, q)
+
+    return Ke
+
+
+# ============================================================
 # B-bar 法 (平均膨張法, Hughes 1980) 要素剛性行列
 # ============================================================
 
@@ -545,14 +626,20 @@ def _dof_indices_3d(node_indices: np.ndarray, ndof: int) -> np.ndarray:
 
 
 class Hex8SRI:
-    """C3D8: SRI 法 HEX8 要素（ElementProtocol 適合）.
+    """C3D8: SRI + B-bar 併用 HEX8 要素（ElementProtocol 適合）.
 
-    選択低減積分:
+    デフォルト (mode="sri_bbar"):
       偏差成分 → 1 点低減積分（せん断ロッキング回避）
-      体積成分 → 2×2×2 完全積分（体積拘束維持）
+      体積成分 → B-bar 平均膨張法（体積ロッキング回避）
+      alpha_hg=0.03 でアワーグラス制御
+
+    後方互換モード (mode="sri_only"):
+      偏差成分 → 1 点低減積分
+      体積成分 → 2×2×2 完全積分（従来の SRI 動作）
 
     Args:
-        alpha_hg: アワーグラス制御係数。0.0=無効、推奨 0.01〜0.03。
+        alpha_hg: アワーグラス制御係数。デフォルト 0.03（SRI+B-bar 推奨値）。
+        mode: "sri_bbar"（デフォルト: SRI+B-bar 併用）or "sri_only"（従来SRI）。
     """
 
     element_type: str = "C3D8"
@@ -560,8 +647,11 @@ class Hex8SRI:
     nnodes: int = 8
     ndof: int = 24
 
-    def __init__(self, alpha_hg: float = 0.0) -> None:
+    def __init__(self, alpha_hg: float = 0.03, *, mode: str = "sri_bbar") -> None:
+        if mode not in ("sri_bbar", "sri_only"):
+            raise ValueError(f"mode は 'sri_bbar' or 'sri_only' が必要: {mode}")
         self.alpha_hg = alpha_hg
+        self.mode = mode
 
     def local_stiffness(
         self,
@@ -570,6 +660,8 @@ class Hex8SRI:
         thickness: float | None = None,
     ) -> np.ndarray:
         D = material.tangent()
+        if self.mode == "sri_bbar":
+            return hex8_ke_sri_bbar(coords, D, alpha_hg=self.alpha_hg)
         return hex8_ke_sri(coords, D, alpha_hg=self.alpha_hg)
 
     def dof_indices(self, node_indices: np.ndarray) -> np.ndarray:
