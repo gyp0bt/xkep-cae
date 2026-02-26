@@ -158,17 +158,20 @@ def mesh_to_edge_index(conn: np.ndarray) -> np.ndarray:
 def sample_to_graph_data(sample: dict) -> dict:
     """FEMサンプルをGNN入力形式に変換.
 
-    ノード特徴量:
+    ノード特徴量 (6次元):
         - x座標 (正規化)
         - y座標 (正規化)
-        - 発熱密度 (正規化)
+        - 発熱密度 (バイナリ: 0/1)
+        - 最近接境界までの距離 (正規化)
+        - 境界フラグ (0/1)
+        - 発熱ポテンシャル (Σ 1/(r² + ε), 正規化)
 
     ターゲット:
         - 温度上昇 ΔT = T - T_inf
 
     Returns:
         dict with keys:
-            "x": (N, 3) ノード特徴量
+            "x": (N, 6) ノード特徴量
             "edge_index": (2, E) エッジインデックス
             "y": (N, 1) ターゲット（温度上昇）
     """
@@ -180,12 +183,43 @@ def sample_to_graph_data(sample: dict) -> dict:
     Ly = nodes[:, 1].max()
     q_max = q.max() if q.max() > 0 else 1.0
 
-    # ノード特徴量: 正規化座標 + 正規化発熱密度
+    # 境界距離: min(x, Lx-x, y, Ly-y)
+    dist_to_boundary = np.minimum(
+        np.minimum(nodes[:, 0], Lx - nodes[:, 0]),
+        np.minimum(nodes[:, 1], Ly - nodes[:, 1]),
+    )
+    max_dist = min(Lx, Ly) / 2.0
+
+    # 境界フラグ
+    tol = 1e-10
+    on_boundary = (
+        (nodes[:, 0] < tol)
+        | (nodes[:, 0] > Lx - tol)
+        | (nodes[:, 1] < tol)
+        | (nodes[:, 1] > Ly - tol)
+    ).astype(float)
+
+    # 発熱ポテンシャル: 各ノードから全発熱ノードへの 1/(r²+ε) の総和
+    heat_potential = np.zeros(len(nodes))
+    heat_nodes = np.where(q > 0)[0]
+    if len(heat_nodes) > 0:
+        eps = (min(Lx, Ly) * 0.05) ** 2
+        for hi in heat_nodes:
+            r2 = np.sum((nodes - nodes[hi]) ** 2, axis=1)
+            heat_potential += 1.0 / (r2 + eps)
+        hp_max = heat_potential.max()
+        if hp_max > 0:
+            heat_potential /= hp_max
+
+    # ノード特徴量: 正規化座標 + 発熱密度 + 境界距離 + 境界フラグ + ポテンシャル
     x_feat = np.column_stack(
         [
             nodes[:, 0] / Lx,
             nodes[:, 1] / Ly,
             q / q_max,
+            dist_to_boundary / max_dist,
+            on_boundary,
+            heat_potential,
         ]
     )
 

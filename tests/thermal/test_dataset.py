@@ -72,7 +72,7 @@ class TestGraphConversion:
         graph = sample_to_graph_data(sample)
         assert graph["x"].shape[0] == len(nodes)
         assert graph["y"].shape[0] == len(nodes)
-        assert graph["x"].shape[1] == 3
+        assert graph["x"].shape[1] == 6
         assert graph["y"].shape[1] == 1
 
 
