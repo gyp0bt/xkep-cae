@@ -571,9 +571,9 @@ def test_assembly_hex8_sri_single():
     # 半正定値
     eigvals = np.linalg.eigvalsh(Kd)
     assert np.all(eigvals > -1e-4)
-    # SRI: rank=12 → 12 ゼロ固有値
+    # SRI+B-bar (default): alpha_hg=0.03 によりランク > 12
     rank = np.sum(eigvals > 1e-4 * np.max(eigvals))
-    assert rank == 12, f"expected rank 12 for SRI, got {rank}"
+    assert rank > 12, f"expected rank > 12 for SRI+B-bar+HG, got {rank}"
 
 
 def test_assembly_hex8_incompatible_single():
