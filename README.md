@@ -6,7 +6,7 @@
 
 ## 現在の状態
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的接触アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り収束改善 + 撚線ヒステリシス観測 + 接触グラフ統計分析 + ヒステリシス可視化 + 統計ダッシュボード + 被膜モデル + シースモデル + シース挙動設計（解析的リングコンプライアンス+ペナルティ接触, Stage S1〜S4）+ Stage S1 解析的リングコンプライアンス行列 + HEX8 要素ファミリ拡充（C3D8/C3D8B/C3D8R/C3D8I + B-bar平均膨張法 + SRI+B-bar併用デフォルト + アセンブリ統合 + Abaqus命名準拠） + シース曲げモードバリデーション + Protocol 定義の 3D 解析対応拡張 + 撚撚線（被膜付き撚線）統合解析テスト + Stage S2 シース内面Fourier近似 + 接触接線モード（contact_tangent_mode） 完了。1516テスト。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + GIFアニメーション出力 + CR梁定式化 + CR梁ファイバー弾塑性 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライドテスト + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的接触アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り接触NR収束達成 + 撚線ヒステリシス観測 + 接触グラフ統計分析 + ヒステリシス可視化 + 統計ダッシュボード + 被膜モデル + シースモデル + シース挙動設計（解析的リングコンプライアンス+ペナルティ接触, Stage S1〜S4）+ Stage S1 解析的リングコンプライアンス行列 + HEX8 要素ファミリ拡充（C3D8/C3D8B/C3D8R/C3D8I + B-bar平均膨張法 + SRI+B-bar併用デフォルト + アセンブリ統合 + Abaqus命名準拠） + シース曲げモードバリデーション + Protocol 定義の 3D 解析対応拡張 + 撚撚線（被膜付き撚線）統合解析テスト + Stage S2 シース内面Fourier近似 + 接触接線モード（contact_tangent_mode） 完了。1525テスト。**
 Phase 3.4: Q4要素の幾何学的非線形（TL定式化 + Updated Lagrangian）実装完了。
 Phase 5: 陽解法（Central Difference）、モーダル減衰、非線形動解析ソルバー実装完了。
 Phase C0: 梁–梁接触モジュール骨格（ContactPair/ContactState/geometry）実装完了。
@@ -34,7 +34,7 @@ CR梁ファイバー弾塑性: FiberIntegrator + B行列定式化 + 解析的接
 k_pen自動推定: EI/L³ベースのペナルティ剛性自動推定（接触ペア数スケーリング）。段階的接触アクティベーション。
 ヘリカル摩擦安定化: 摩擦履歴の平行輸送（rotate_friction_history）でヘリカル接触幾何の収束を実現。
 接触グラフ可視化: matplotlib描画（plot_contact_graph/history）+ GIFアニメーション（save_contact_graph_gif）。時系列自動収集。
-7本撚り収束改善: Modified Newton法 + contact damping + sqrt k_penスケーリング（線形アセンブラでは効果限定的、7本撚りxfail維持）。
+7本撚り接触NR収束達成: AL乗数緩和(omega) + 反復ソルバー(GMRES+ILU) + Active Set Freeze + Pure Penalty方式で全3荷重ケース（引張・ねじり・曲げ）収束。
 撚線ヒステリシス観測: サイクリック荷重ランナー（run_contact_cyclic）+ CyclicContactResult + 3本撚り引張/曲げ/ねじり往復荷重テスト。
 接触グラフ統計分析: stick/slip比率、法線力統計、連結成分数、接触持続マップ、累積散逸エネルギー、サマリーメソッド。
 ヒステリシス可視化: plot_hysteresis_curve（荷重-変位曲線） + compute_hysteresis_area（ループ面積）。
@@ -62,7 +62,7 @@ Protocol 定義の 3D 解析対応拡張: NonlinearElementProtocol（内力・�
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
 - [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
-- [実装状況](docs/status/status-063.md) — 最新のステータス（C3D8 SRI+B-bar 併用デフォルト化 + 撚撚線統合解析テスト）
+- [実装状況](docs/status/status-065.md) — 最新のステータス（7本撚り接触NR収束達成 — AL乗数緩和 + 反復ソルバー + Active Set Freeze）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール

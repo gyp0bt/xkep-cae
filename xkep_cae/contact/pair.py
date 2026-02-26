@@ -186,6 +186,17 @@ class ContactConfig:
         "full"  # 接触接線モード: "full" | "structural_only" | "diagonal" | "scaled"
     )
     contact_tangent_scale: float = 1.0  # "scaled" モード時のK_cスケール係数（0 < α ≤ 1）
+    al_relaxation: float = 1.0  # AL乗数更新の緩和係数 ω ∈ (0,1]。1.0で従来動作
+    preserve_inactive_lambda: bool = False  # INACTIVEペアのlambda_n保持（sticky contact）
+    linear_solver: str = "direct"  # 線形ソルバー: "direct" | "iterative" | "auto"
+    iterative_tol: float = 1e-10  # GMRES収束判定（iterativeモード用）
+    ilu_drop_tol: float = 1e-4  # ILU前処理のdrop tolerance
+    no_deactivation_within_step: bool = (
+        False  # ステップ内でのペア非活性化を禁止（活性セットチャタリング防止）
+    )
+    monolithic_geometry: bool = (
+        False  # Inner NR内で幾何(s,t,normal)を毎反復更新（Outer/Inner分離を廃止）
+    )
 
 
 @dataclass
@@ -332,6 +343,9 @@ class ContactManager:
     def update_geometry(
         self,
         node_coords: np.ndarray,
+        *,
+        allow_deactivation: bool = True,
+        freeze_active_set: bool = False,
     ) -> None:
         """全ペアの幾何情報を更新する（Narrowphase）.
 
@@ -340,6 +354,10 @@ class ContactManager:
 
         Args:
             node_coords: 節点座標 (n_nodes, 3)
+            allow_deactivation: False でペアの非活性化を禁止（活性化のみ許可）。
+                ステップ内でのチャタリング防止に使用。
+            freeze_active_set: True で Active-set 更新を完全にスキップ。
+                Inner NR 内のモノリシック幾何更新用。
         """
         coords = np.asarray(node_coords, dtype=float)
 
@@ -376,9 +394,15 @@ class ContactManager:
             pair.state.tangent2 = t2
 
             # Active-set ヒステリシス更新
-            self._update_active_set(pair)
+            if not freeze_active_set:
+                self._update_active_set(pair, allow_deactivation=allow_deactivation)
 
-    def _update_active_set(self, pair: ContactPair) -> None:
+    def _update_active_set(
+        self,
+        pair: ContactPair,
+        *,
+        allow_deactivation: bool = True,
+    ) -> None:
         """Active-set をヒステリシス付きで更新する.
 
         g_on / g_off のヒステリシスバンドにより、
@@ -386,6 +410,9 @@ class ContactManager:
 
         - 非活性 → 活性: gap <= g_on
         - 活性 → 非活性: gap >= g_off  (g_off > g_on)
+
+        allow_deactivation=False の場合、ACTIVE→INACTIVE 遷移を禁止し、
+        ステップ内でのチャタリングを防止する。活性化のみ許可。
         """
         gap = pair.state.gap
         g_on = self.config.g_on
@@ -397,7 +424,7 @@ class ContactManager:
                 pair.state.status = ContactStatus.ACTIVE
         else:
             # 活性 → 非活性化判定
-            if gap >= g_off:
+            if allow_deactivation and gap >= g_off:
                 pair.state.status = ContactStatus.INACTIVE
 
     # -- Phase C2: 法線AL接触力 + 乗数更新 + ペナルティ初期化 ----

@@ -169,6 +169,13 @@ def _make_contact_manager(
     contact_damping=1.0,
     k_pen_scaling="linear",
     contact_tangent_mode="full",
+    al_relaxation=1.0,
+    linear_solver="direct",
+    penalty_growth_factor=2.0,
+    preserve_inactive_lambda=False,
+    g_off=1e-5,
+    no_deactivation_within_step=False,
+    monolithic_geometry=False,
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -185,7 +192,7 @@ def _make_contact_manager(
             k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=0.0,
-            g_off=1e-5,
+            g_off=g_off,
             n_outer_max=n_outer_max,
             use_friction=use_friction,
             mu_ramp_steps=mu_ramp_steps,
@@ -193,7 +200,7 @@ def _make_contact_manager(
             line_search_max_steps=5,
             use_geometric_stiffness=True,
             tol_penetration_ratio=0.02,
-            penalty_growth_factor=2.0,
+            penalty_growth_factor=penalty_growth_factor,
             k_pen_max=1e12,
             staged_activation_steps=staged_activation_steps,
             elem_layer_map=elem_layer_map,
@@ -202,6 +209,11 @@ def _make_contact_manager(
             contact_damping=contact_damping,
             k_pen_scaling=k_pen_scaling,
             contact_tangent_mode=contact_tangent_mode,
+            al_relaxation=al_relaxation,
+            linear_solver=linear_solver,
+            preserve_inactive_lambda=preserve_inactive_lambda,
+            no_deactivation_within_step=no_deactivation_within_step,
+            monolithic_geometry=monolithic_geometry,
         ),
     )
 
@@ -266,6 +278,13 @@ def _solve_twisted_wire(
     contact_damping: float = 1.0,
     k_pen_scaling: str = "linear",
     contact_tangent_mode: str = "full",
+    al_relaxation: float = 1.0,
+    linear_solver: str = "direct",
+    penalty_growth_factor: float = 2.0,
+    preserve_inactive_lambda: bool = False,
+    g_off: float = 1e-5,
+    no_deactivation_within_step: bool = False,
+    monolithic_geometry: bool = False,
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -376,6 +395,13 @@ def _solve_twisted_wire(
         contact_damping=contact_damping,
         k_pen_scaling=k_pen_scaling,
         contact_tangent_mode=contact_tangent_mode,
+        al_relaxation=al_relaxation,
+        linear_solver=linear_solver,
+        penalty_growth_factor=penalty_growth_factor,
+        preserve_inactive_lambda=preserve_inactive_lambda,
+        g_off=g_off,
+        no_deactivation_within_step=no_deactivation_within_step,
+        monolithic_geometry=monolithic_geometry,
     )
 
     result = newton_raphson_with_contact(
@@ -1001,3 +1027,167 @@ class TestContactTangentModeBasic:
             contact_tangent_mode="structural_only",
         )
         assert r.converged, "3本撚り引張が mode=structural_only で収束しなかった"
+
+
+# ====================================================================
+# テスト: AL乗数緩和 + 反復ソルバー（収束改善）
+# ====================================================================
+
+
+class TestALRelaxation:
+    """AL乗数緩和の単体テスト + 後方互換テスト."""
+
+    def test_al_relaxation_omega1_backward_compatible(self):
+        """omega=1.0（デフォルト）で従来と同一の結果."""
+        r1, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            al_relaxation=1.0,
+        )
+        assert r1.converged
+
+    def test_al_relaxation_omega05_converges(self):
+        """omega=0.5 で3本撚り引張が収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            al_relaxation=0.5,
+            n_outer_max=15,
+        )
+        assert r.converged
+
+    def test_al_relaxation_with_friction(self):
+        """AL緩和 + 摩擦で3本撚り引張が収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=15,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            al_relaxation=0.7,
+            n_outer_max=15,
+        )
+        assert r.converged
+
+
+class TestIterativeSolver:
+    """反復線形ソルバー（GMRES + ILU前処理）のテスト."""
+
+    def test_iterative_3strand_tension(self):
+        """反復ソルバーで3本撚り引張が収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            linear_solver="iterative",
+        )
+        assert r.converged
+
+    def test_auto_solver_3strand_tension(self):
+        """autoモードで3本撚り引張が収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=10,
+            linear_solver="auto",
+        )
+        assert r.converged
+
+    def test_iterative_with_friction(self):
+        """反復ソルバー + 摩擦で3本撚り引張が収束する."""
+        r, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            n_load_steps=15,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            linear_solver="iterative",
+            n_outer_max=12,
+        )
+        assert r.converged
+
+
+class TestSevenStrandImprovedSolver:
+    """7本撚り改善ソルバーテスト.
+
+    活性セットチャタリング防止 + 純ペナルティ法（低AL蓄積）+ sqrt scaling の組み合わせ。
+    商用ソルバー（Abaqus contact stabilization、LS-DYNA IGAP）の知見に基づく。
+
+    収束の鍵:
+    1. no_deactivation_within_step=True: ステップ内の非活性化を禁止
+       → 活性セット（48ペア）が安定し、トポロジーチャタリングを防止
+    2. n_outer_max=1, al_relaxation=0.01: 純ペナルティ法に近い動作
+       → lambda_n 蓄積による内部NR収束率劣化を回避
+    3. use_line_search=False: ライン探索による過度なステップ縮小を回避
+    4. accept-on-inner-stall: 後半Outerの内部NR停滞時にステップを受容
+    """
+
+    _GAP = 0.0005
+    _N_ELEM = 4
+    _COMMON_KWARGS: dict = {
+        "n_pitches": 1.0,
+        "n_load_steps": 50,
+        "n_elems_per_strand": 4,
+        "assembler_type": "timo3d",
+        "auto_kpen": True,
+        "staged_activation": True,
+        "n_outer_max": 1,
+        "max_iter": 30,
+        "contact_damping": 1.0,
+        "k_pen_scaling": "sqrt",
+        "al_relaxation": 0.01,
+        "linear_solver": "auto",
+        "penalty_growth_factor": 1.0,
+        "preserve_inactive_lambda": True,
+        "g_off": 0.001,
+        "no_deactivation_within_step": True,
+    }
+
+    def test_tension_improved(self):
+        """7本撚り引張: 活性セット安定化 + 純ペナルティ法."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "tension",
+            1.0,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り引張が収束しなかった（改善ソルバー）"
+
+    def test_torsion_improved(self):
+        """7本撚りねじり: 活性セット安定化 + 純ペナルティ法."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "torsion",
+            0.0001,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚りねじりが収束しなかった（改善ソルバー）"
+
+    def test_bending_improved(self):
+        """7本撚り曲げ: 活性セット安定化 + 純ペナルティ法."""
+        result, mgr, mesh = _solve_twisted_wire(
+            7,
+            "bending",
+            0.001,
+            gap=self._GAP,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り曲げが収束しなかった（改善ソルバー）"
