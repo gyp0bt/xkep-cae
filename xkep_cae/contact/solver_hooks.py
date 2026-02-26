@@ -226,6 +226,12 @@ def newton_raphson_with_contact(
     contact_damping = manager.config.contact_damping
     k_pen_scaling_mode = manager.config.k_pen_scaling
 
+    # 接触接線モード（Uzawa型分解）
+    contact_tangent_mode = manager.config.contact_tangent_mode
+    # structural_only モードでは merit line search が不整合（Newton方向に接触寄与なし）
+    if contact_tangent_mode == "structural_only":
+        use_line_search = False
+
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
     contact_force_history: list[float] = []
@@ -485,14 +491,29 @@ def newton_raphson_with_contact(
                     K_T = K_T_frozen
                 else:
                     K_T = assemble_tangent(u)
-                K_c = compute_contact_stiffness(
-                    manager,
-                    ndof,
-                    ndof_per_node=ndof_per_node,
-                    friction_tangents=friction_tangents if friction_tangents else None,
-                    use_geometric_stiffness=use_geometric_stiffness,
-                )
-                K_total = K_T + K_c
+                # 接触接線モードに応じた K_c の組込み
+                if contact_tangent_mode == "structural_only":
+                    # Uzawa型: 接触剛性をシステム行列に含めない
+                    # 接触力は残差 f_c にのみ反映される
+                    K_total = K_T
+                else:
+                    K_c = compute_contact_stiffness(
+                        manager,
+                        ndof,
+                        ndof_per_node=ndof_per_node,
+                        friction_tangents=friction_tangents if friction_tangents else None,
+                        use_geometric_stiffness=use_geometric_stiffness,
+                    )
+                    if contact_tangent_mode == "diagonal":
+                        # 対角近似: K_c の対角成分のみを使用
+                        K_total = K_T + sp.diags(K_c.diagonal())
+                    elif contact_tangent_mode == "scaled":
+                        # スケール接触接線: K_c を α 倍に縮小
+                        alpha = manager.config.contact_tangent_scale
+                        K_total = K_T + alpha * K_c
+                    else:
+                        # "full": 標準の完全接触接線剛性
+                        K_total = K_T + K_c
 
                 # BC 適用
                 K_bc = K_total.tolil()
