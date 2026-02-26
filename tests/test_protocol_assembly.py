@@ -15,13 +15,14 @@ from xkep_cae.core.element import (
 from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
 from xkep_cae.elements.beam_timo2d import TimoshenkoBeam2D
 from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+from xkep_cae.elements.hex8 import Hex8BBarMean, Hex8Incompatible, Hex8Reduced, Hex8SRI
 from xkep_cae.elements.quad4 import Quad4PlaneStrain
 from xkep_cae.elements.quad4_bbar import Quad4BBarPlaneStrain
 from xkep_cae.elements.quad4_eas_bbar import Quad4EASBBarPlaneStrain, Quad4EASPlaneStrain
 from xkep_cae.elements.tri3 import Tri3PlaneStrain
 from xkep_cae.elements.tri6 import Tri6PlaneStrain
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.materials.elastic import PlaneStrainElastic
+from xkep_cae.materials.elastic import IsotropicElastic3D, PlaneStrainElastic
 from xkep_cae.materials.plasticity_1d import Plasticity1D
 from xkep_cae.sections.beam import BeamSection, BeamSection2D
 from xkep_cae.solver import solve_displacement
@@ -39,9 +40,18 @@ def test_protocol_isinstance():
         Quad4BBarPlaneStrain,
         Quad4EASPlaneStrain,
         Quad4EASBBarPlaneStrain,
+        Hex8SRI,
+        Hex8Incompatible,
+        Hex8BBarMean,
     ]:
         obj = cls()
         assert isinstance(obj, ElementProtocol), f"{cls.__name__} is not ElementProtocol"
+
+    # コンストラクタ引数ありのクラス
+    obj = Hex8Reduced(alpha_hg=0.0)
+    assert isinstance(obj, ElementProtocol), "Hex8Reduced is not ElementProtocol"
+    obj = Hex8SRI(alpha_hg=0.0)
+    assert isinstance(obj, ElementProtocol), "Hex8SRI(alpha_hg) is not ElementProtocol"
 
 
 def test_nonlinear_element_protocol():
@@ -515,3 +525,261 @@ def test_assembly_beam_timo3d_inclined():
     delta_analytical = P * L_total**3 / (3.0 * E * sec.Iz) + P * L_total / (kappa * G * sec.A)
     delta_fem = u[6 * n_elems + 1]
     assert abs(delta_fem - delta_analytical) / abs(delta_analytical) < 1e-8
+
+
+# =====================================================================
+# HEX8 要素のアセンブリテスト（3D固体）
+# =====================================================================
+
+
+def _make_unit_cube_nodes():
+    """単位立方体の 8 節点座標を返す."""
+    return np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ]
+    )
+
+
+def test_assembly_hex8_sri_single():
+    """C3D8 (SRI) 単一要素のアセンブリテスト（対称性・半正定値性）.
+
+    SRI は偏差成分1点積分のため rank=12（6 RBM + 6 低減積分ゼロエネルギーモード）。
+    """
+    nodes = _make_unit_cube_nodes()
+    mat = IsotropicElastic3D(200e9, 0.3)
+    conn = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(Hex8SRI(), conn)],
+        mat,
+        show_progress=False,
+    )
+
+    assert K.shape == (24, 24)
+    Kd = K.toarray()
+    # 対称性
+    assert np.allclose(Kd, Kd.T, atol=1e-6)
+    # 半正定値
+    eigvals = np.linalg.eigvalsh(Kd)
+    assert np.all(eigvals > -1e-4)
+    # SRI: rank=12 → 12 ゼロ固有値
+    rank = np.sum(eigvals > 1e-4 * np.max(eigvals))
+    assert rank == 12, f"expected rank 12 for SRI, got {rank}"
+
+
+def test_assembly_hex8_incompatible_single():
+    """C3D8I (非適合モード) 単一要素のアセンブリテスト."""
+    nodes = _make_unit_cube_nodes()
+    mat = IsotropicElastic3D(200e9, 0.3)
+    conn = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(Hex8Incompatible(), conn)],
+        mat,
+        show_progress=False,
+    )
+
+    assert K.shape == (24, 24)
+    Kd = K.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-6)
+    eigvals = np.linalg.eigvalsh(Kd)
+    assert np.all(eigvals > -1e-4)
+    n_zero = np.sum(np.abs(eigvals) < 1e-4 * np.max(eigvals))
+    assert n_zero == 6, f"expected 6 RBM, got {n_zero}"
+
+
+def test_assembly_hex8_reduced_single():
+    """C3D8R (低減積分) 単一要素のアセンブリテスト."""
+    nodes = _make_unit_cube_nodes()
+    mat = IsotropicElastic3D(200e9, 0.3)
+    conn = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
+
+    # アワーグラス制御なし: ランク 6
+    K_no_hg = assemble_global_stiffness(
+        nodes,
+        [(Hex8Reduced(alpha_hg=0.0), conn)],
+        mat,
+        show_progress=False,
+    )
+    assert K_no_hg.shape == (24, 24)
+    Kd = K_no_hg.toarray()
+    assert np.allclose(Kd, Kd.T, atol=1e-6)
+    eigvals = np.linalg.eigvalsh(Kd)
+    assert np.all(eigvals > -1e-4)
+    rank = np.sum(eigvals > 1e-4 * np.max(eigvals))
+    assert rank == 6, f"expected rank 6 without HG control, got {rank}"
+
+    # アワーグラス制御あり: ランク上昇
+    K_hg = assemble_global_stiffness(
+        nodes,
+        [(Hex8Reduced(alpha_hg=0.05), conn)],
+        mat,
+        show_progress=False,
+    )
+    eigvals_hg = np.linalg.eigvalsh(K_hg.toarray())
+    rank_hg = np.sum(eigvals_hg > 1e-4 * np.max(eigvals_hg))
+    assert rank_hg > rank, "HG control should increase rank"
+
+
+def _make_beam_hex8_mesh(nx, ny, nz, Lx, Ly, Lz):
+    """nx×ny×nz の HEX8 構造格子メッシュを生成.
+
+    Args:
+        nx, ny, nz: x, y, z 方向の要素分割数
+        Lx, Ly, Lz: x, y, z 方向の長さ
+
+    Returns:
+        nodes: ((nx+1)*(ny+1)*(nz+1), 3)
+        conn: (nx*ny*nz, 8)
+    """
+    xs = np.linspace(0, Lx, nx + 1)
+    ys = np.linspace(0, Ly, ny + 1)
+    zs = np.linspace(0, Lz, nz + 1)
+
+    node_list = []
+    for iz in range(nz + 1):
+        for iy in range(ny + 1):
+            for ix in range(nx + 1):
+                node_list.append([xs[ix], ys[iy], zs[iz]])
+    nodes = np.array(node_list)
+
+    def node_id(ix, iy, iz):
+        return iz * (ny + 1) * (nx + 1) + iy * (nx + 1) + ix
+
+    conn_list = []
+    for iz in range(nz):
+        for iy in range(ny):
+            for ix in range(nx):
+                n0 = node_id(ix, iy, iz)
+                n1 = node_id(ix + 1, iy, iz)
+                n2 = node_id(ix + 1, iy + 1, iz)
+                n3 = node_id(ix, iy + 1, iz)
+                n4 = node_id(ix, iy, iz + 1)
+                n5 = node_id(ix + 1, iy, iz + 1)
+                n6 = node_id(ix + 1, iy + 1, iz + 1)
+                n7 = node_id(ix, iy + 1, iz + 1)
+                conn_list.append([n0, n1, n2, n3, n4, n5, n6, n7])
+    conn = np.array(conn_list, dtype=int)
+    return nodes, conn
+
+
+def test_assembly_hex8_multi_element():
+    """HEX8 複数要素アセンブリ（2×1×1 メッシュ、C3D8I）.
+
+    C3D8I は完全積分ベースなのでランク不足が最小限。
+    """
+    nodes, conn = _make_beam_hex8_mesh(2, 1, 1, 2.0, 1.0, 1.0)
+    mat = IsotropicElastic3D(200e9, 0.3)
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(Hex8Incompatible(), conn)],
+        mat,
+        show_progress=False,
+    )
+
+    n_nodes = len(nodes)
+    assert K.shape == (3 * n_nodes, 3 * n_nodes)
+    Kd = K.toarray()
+    # 対称性
+    assert np.allclose(Kd, Kd.T, atol=1e-4)
+    # 半正定値
+    eigvals = np.linalg.eigvalsh(Kd)
+    assert np.all(eigvals > -1e-4)
+    # 6 RBM（剛体モード）
+    n_zero = np.sum(np.abs(eigvals) < 1e-4 * np.max(eigvals))
+    assert n_zero == 6, f"expected 6 RBM, got {n_zero}"
+
+
+def test_assembly_hex8_manufactured_solution():
+    """HEX8 製造解テスト（C3D8I, 2×1×1 メッシュ）.
+
+    ランダム変位ベクトルに対して f = K·u を計算し、
+    境界条件付きでソルブして一致を確認する。
+    """
+    nodes, conn = _make_beam_hex8_mesh(2, 1, 1, 2.0, 1.0, 1.0)
+    mat = IsotropicElastic3D(200e9, 0.3)
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(Hex8Incompatible(), conn)],
+        mat,
+        show_progress=False,
+    )
+
+    ndof = K.shape[0]
+    # x=0 面の節点を固定（全 DOF）
+    fixed_nodes = np.where(np.abs(nodes[:, 0]) < 1e-12)[0]
+    fixed_dofs = np.concatenate([3 * fixed_nodes + i for i in range(3)])
+
+    rng = np.random.default_rng(12345)
+    u_true = rng.standard_normal(ndof)
+    u_true[fixed_dofs] = 0.0
+    f = K @ u_true
+
+    Kbc, fbc = apply_dirichlet(K, f, fixed_dofs, 0.0)
+    u_sol, info = solve_displacement(Kbc, fbc, size_threshold=4000)
+
+    free = np.setdiff1d(np.arange(ndof), fixed_dofs)
+    assert np.allclose(u_sol[free], u_true[free], rtol=1e-10, atol=1e-10)
+
+
+def test_assembly_hex8_cantilever():
+    """HEX8 片持ち梁テスト（C3D8I, Timoshenko理論との比較）.
+
+    L=10, h=w=1, E=200GPa, nu=0.3, P=1000N.
+    C3D8I は断面 1×1 でも曲げ精度 < 5%.
+    """
+    E = 200e9
+    nu = 0.3
+    L, h, w = 10.0, 1.0, 1.0
+    P = 1000.0
+    nx, ny, nz = 8, 1, 1  # 8 要素 (長手方向)
+
+    nodes, conn = _make_beam_hex8_mesh(nx, ny, nz, L, h, w)
+    mat = IsotropicElastic3D(E, nu)
+
+    K = assemble_global_stiffness(
+        nodes,
+        [(Hex8Incompatible(), conn)],
+        mat,
+        show_progress=False,
+    )
+
+    ndof = K.shape[0]
+    # 固定端: x=0 の全節点
+    fixed_nodes = np.where(np.abs(nodes[:, 0]) < 1e-12)[0]
+    fixed_dofs = np.concatenate([3 * fixed_nodes + i for i in range(3)])
+
+    # 荷重: x=L の全節点に均等分配 (y 方向)
+    tip_nodes = np.where(np.abs(nodes[:, 0] - L) < 1e-12)[0]
+    f = np.zeros(ndof)
+    p_per_node = P / len(tip_nodes)
+    for n in tip_nodes:
+        f[3 * n + 1] = p_per_node  # uy
+
+    Kbc, fbc = apply_dirichlet(K, f, fixed_dofs, 0.0)
+    u_sol, info = solve_displacement(Kbc, fbc, size_threshold=4000)
+
+    # 先端 y 方向変位の平均
+    tip_uy = np.mean([u_sol[3 * n + 1] for n in tip_nodes])
+
+    # Timoshenko 解析解
+    Iy = w * h**3 / 12.0
+    G = E / (2.0 * (1.0 + nu))
+    kappa = 5.0 / 6.0
+    A = h * w
+    delta_timo = P * L**3 / (3.0 * E * Iy) + P * L / (kappa * G * A)
+
+    rel_err = abs(tip_uy - delta_timo) / abs(delta_timo)
+    assert rel_err < 0.05, f"cantilever error {rel_err:.4f} > 5%"

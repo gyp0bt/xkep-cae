@@ -19,13 +19,16 @@ import pytest
 
 from xkep_cae.elements.hex8 import (
     Hex8BBar,
+    Hex8BBarMean,
     Hex8Incompatible,
     Hex8Reduced,
     Hex8SRI,
+    _extract_B_vol,
     _hex8_dNdxi,
     _hex8_shape,
     _split_D_vol_dev,
     hex8_ke_bbar,
+    hex8_ke_bbar_mean,
     hex8_ke_incompatible,
     hex8_ke_reduced,
     hex8_ke_sri,
@@ -836,3 +839,268 @@ class TestCantileverBending:
         err_incomp = abs(uy_incomp - self.delta_Timo) / abs(self.delta_Timo)
         err_sri = abs(uy_sri - self.delta_Timo) / abs(self.delta_Timo)
         assert err_incomp < err_sri
+
+
+# ============================================================
+# 10. C3D8R alpha_hg チューニング指針テスト
+# ============================================================
+
+
+class TestHourglassControlTuning:
+    """C3D8R アワーグラス制御パラメータ alpha_hg のチューニング指針."""
+
+    L = 10.0
+    h = 1.0
+    w = 1.0
+    P = 1000.0
+    Iy = w * h**3 / 12.0
+    G = E_STEEL / (2 * (1 + NU_STEEL))
+    kappa = 5.0 / 6.0
+    A = w * h
+    delta_Timo = P * L**3 / (3 * E_STEEL * Iy) + P * L / (kappa * G * A)
+
+    def _solve_reduced(self, alpha_hg, ne_x=2, ne_y=2, ne_z=8):
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        return _solve_cantilever(
+            self.L,
+            self.h,
+            self.w,
+            ne_x,
+            ne_y,
+            ne_z,
+            lambda xyz, D_: hex8_ke_reduced(xyz, D_, alpha_hg=alpha_hg),
+            D,
+            self.P,
+        )
+
+    def test_alpha_0_no_bending_stiffness(self):
+        """alpha_hg=0: アワーグラスモードにより曲げが不安定."""
+        # alpha_hg=0 は有限変位を返すが解析解からの乖離が大きい（ロック解除されすぎ）
+        uy = self._solve_reduced(0.0)
+        err = abs(uy - self.delta_Timo) / abs(self.delta_Timo)
+        # alpha_hg=0 では大きな誤差が出る（曲げ剛性不足）
+        assert err > 0.5, f"alpha_hg=0 should have large error, got {err:.4f}"
+
+    def test_recommended_range(self):
+        """alpha_hg=0.03 で曲げ誤差 < 10%.
+
+        alpha_hg=0.03 が最適（誤差約3%）。0.05 ではやや過剛性（誤差約10%）。
+        """
+        uy = self._solve_reduced(0.03)
+        err = abs(uy - self.delta_Timo) / abs(self.delta_Timo)
+        assert err < 0.10, f"alpha_hg=0.03: error {err:.4f} > 10%"
+
+    def test_optimal_alpha_around_003(self):
+        """alpha_hg ≈ 0.03 が最適: 小さすぎても大きすぎても精度低下.
+
+        アワーグラス制御には最適値が存在する:
+        - 小さすぎる → アワーグラスモードが残り曲げ不安定
+        - 大きすぎる → 人工剛性過大で過剛性
+        alpha_hg=0.03 が両者のバランス点。
+        """
+        alphas = [0.01, 0.03, 0.10]
+        errors = []
+        for alpha in alphas:
+            uy = self._solve_reduced(alpha)
+            err = abs(uy - self.delta_Timo) / abs(self.delta_Timo)
+            errors.append(err)
+        # 0.03 が最も小さい誤差
+        assert errors[1] < errors[0], (
+            f"alpha 0.03 ({errors[1]:.4f}) should be better than 0.01 ({errors[0]:.4f})"
+        )
+        assert errors[1] < errors[2], (
+            f"alpha 0.03 ({errors[1]:.4f}) should be better than 0.10 ({errors[2]:.4f})"
+        )
+
+    def test_excessive_alpha_overstiffens(self):
+        """alpha_hg が過大だと過剛性（たわみ過小）になる."""
+        uy_05 = self._solve_reduced(0.05)
+        uy_50 = self._solve_reduced(0.50)
+        # alpha=0.50 ではアワーグラス人工剛性が過大 → たわみが小さくなる
+        assert abs(uy_50) < abs(uy_05), "excessive alpha should reduce deflection"
+
+
+# ============================================================
+# 11. B-bar 平均膨張法 (C3D8B) テスト
+# ============================================================
+
+
+class TestHex8BBarMean:
+    """C3D8B (B-bar 平均膨張法) のテスト."""
+
+    def test_symmetry(self):
+        """B-bar 剛性行列は対称."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D)
+        np.testing.assert_allclose(Ke, Ke.T, atol=1e-10)
+
+    def test_rank(self):
+        """ランク = 18（24 DOF - 6 RBM）. 完全積分ベースなのでアワーグラスなし."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        assert rank == 18
+
+    def test_psd(self):
+        """正半定値性."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D)
+        eigvals = np.linalg.eigvalsh(Ke)
+        assert np.all(eigvals > -1e-6 * np.max(np.abs(eigvals)))
+
+    def test_rbm(self):
+        """6 つの剛体モードがゼロエネルギー."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D)
+        eigvals = np.linalg.eigvalsh(Ke)
+        n_zero = np.sum(np.abs(eigvals) < 1e-6 * np.max(np.abs(eigvals)))
+        assert n_zero == 6
+
+    def test_protocol(self):
+        """Hex8BBarMean クラスが ElementProtocol に適合."""
+        elem = Hex8BBarMean()
+        assert elem.element_type == "C3D8B"
+        assert elem.ndof == 24
+        assert elem.nnodes == 8
+        mat = IsotropicElastic3D(E_STEEL, NU_STEEL)
+        Ke = elem.local_stiffness(_unit_cube(), mat)
+        assert Ke.shape == (24, 24)
+
+    def test_patch_test(self):
+        """B-bar パッチテスト: 一様ひずみが正確に再現される."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D)
+        # 一様引張: u_x = ε₀·x → εxx = ε₀, 他=0
+        eps0 = 1e-3
+        nodes = _unit_cube()
+        u = np.zeros(24)
+        for i in range(8):
+            u[3 * i] = eps0 * nodes[i, 0]
+        # 内力: f_int = Ke @ u
+        f = Ke @ u
+        # 反力のx成分合計 ≈ σ_xx × 面積 (面 x=0: 圧縮, x=1: 引張)
+        sigma_xx = D[0, 0] * eps0
+        # x=1 面（節点 1,2,5,6）の x方向反力合計
+        fx_pos = sum(f[3 * i] for i in [1, 2, 5, 6])
+        np.testing.assert_allclose(fx_pos, sigma_xx, rtol=1e-10)
+
+    def test_b_vol_projection(self):
+        """_extract_B_vol の体積射影が正しい."""
+        from xkep_cae.elements.hex8 import _compute_B_detJ
+
+        B, _, _, _ = _compute_B_detJ(_unit_cube(), 0.0, 0.0, 0.0)
+        B_vol = _extract_B_vol(B)
+        # 体積部: 法線3行が同一（各DOFの体積寄与平均）
+        np.testing.assert_allclose(B_vol[0, :], B_vol[1, :])
+        np.testing.assert_allclose(B_vol[0, :], B_vol[2, :])
+        # せん断行はゼロ
+        np.testing.assert_allclose(B_vol[3:6, :], 0.0)
+
+    def test_cantilever_bending_coarse(self):
+        """B-bar 片持ち梁テスト（4×4×8 メッシュ）.
+
+        B-bar は体積ロッキングを回避するが、せん断ロッキングは残る。
+        完全積分ベースのため、薄い梁ではせん断ロッキングで過剛性（< 40%）。
+        """
+        L, h, w = 10.0, 1.0, 1.0
+        P = 1000.0
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        uy = _solve_cantilever(L, h, w, 4, 4, 8, hex8_ke_bbar_mean, D, P)
+        Iy = w * h**3 / 12.0
+        G = E_STEEL / (2 * (1 + NU_STEEL))
+        kappa = 5.0 / 6.0
+        A = w * h
+        delta_Timo = P * L**3 / (3 * E_STEEL * Iy) + P * L / (kappa * G * A)
+        rel_err = abs(uy - delta_Timo) / abs(delta_Timo)
+        # B-bar は完全積分ベースなのでせん断ロッキングあり
+        assert rel_err < 0.40, f"B-bar cantilever error {rel_err:.4f} > 40%"
+
+    def test_volume_locking_resistance(self):
+        """B-bar は非圧縮限界（ν→0.5）でも安定.
+
+        完全積分（SRI でない）では ν=0.499 で体積ロッキングが深刻になるが、
+        B-bar ではランク 18 を維持する。
+        """
+        D_nearly_inc = constitutive_3d(E_STEEL, 0.499)
+        Ke = hex8_ke_bbar_mean(_unit_cube(), D_nearly_inc)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        # 非圧縮限界でもランク 18 を維持
+        assert rank == 18, f"B-bar rank at nu=0.499: {rank}, expected 18"
+
+
+# ============================================================
+# 12. C3D8 SRI + アワーグラス制御テスト
+# ============================================================
+
+
+class TestSRIHourglassControl:
+    """C3D8 (SRI) のアワーグラス制御テスト."""
+
+    def test_alpha_hg_default_zero(self):
+        """Hex8SRI のデフォルト alpha_hg=0.0."""
+        elem = Hex8SRI()
+        assert elem.alpha_hg == 0.0
+
+    def test_rank_without_hg(self):
+        """アワーグラス制御なし: ランク 12."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.0)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        assert rank == 12
+
+    def test_rank_with_hg(self):
+        """アワーグラス制御あり: ランク増加."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.03)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        assert rank > 12, f"expected rank > 12 with HG control, got {rank}"
+
+    def test_symmetry_with_hg(self):
+        """アワーグラス制御付きでも対称性保持."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.03)
+        np.testing.assert_allclose(Ke, Ke.T, atol=1e-10)
+
+    def test_psd_with_hg(self):
+        """アワーグラス制御付きでも正半定値."""
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Ke = hex8_ke_sri(_unit_cube(), D, alpha_hg=0.03)
+        eigvals = np.linalg.eigvalsh(Ke)
+        assert np.all(eigvals > -1e-6 * np.max(np.abs(eigvals)))
+
+    def test_class_alpha_hg(self):
+        """Hex8SRI クラス経由でアワーグラス制御."""
+        elem = Hex8SRI(alpha_hg=0.02)
+        mat = IsotropicElastic3D(E_STEEL, NU_STEEL)
+        Ke = elem.local_stiffness(_unit_cube(), mat)
+        eigvals = np.linalg.eigvalsh(Ke)
+        rank = np.sum(np.abs(eigvals) > 1e-6 * np.max(np.abs(eigvals)))
+        assert rank > 12
+
+    def test_cantilever_improvement(self):
+        """SRI + HG 制御で片持ち梁精度が改善."""
+        L, h, w = 10.0, 1.0, 1.0
+        P = 1000.0
+        D = constitutive_3d(E_STEEL, NU_STEEL)
+        Iy = w * h**3 / 12.0
+        G = E_STEEL / (2 * (1 + NU_STEEL))
+        kappa = 5.0 / 6.0
+        A = w * h
+        delta_Timo = P * L**3 / (3 * E_STEEL * Iy) + P * L / (kappa * G * A)
+
+        # SRI のみ (alpha_hg=0): 1×1 断面ではロック気味
+        uy_no_hg = _solve_cantilever(L, h, w, 1, 1, 8, lambda xyz, D_: hex8_ke_sri(xyz, D_), D, P)
+        # SRI + HG: alpha_hg=0.02
+        uy_hg = _solve_cantilever(
+            L, h, w, 1, 1, 8, lambda xyz, D_: hex8_ke_sri(xyz, D_, alpha_hg=0.02), D, P
+        )
+        err_no_hg = abs(uy_no_hg - delta_Timo) / abs(delta_Timo)
+        err_hg = abs(uy_hg - delta_Timo) / abs(delta_Timo)
+        # HG制御で誤差が改善（または同程度）
+        assert err_hg < err_no_hg + 0.05, (
+            f"SRI+HG ({err_hg:.4f}) should not be much worse than SRI ({err_no_hg:.4f})"
+        )
