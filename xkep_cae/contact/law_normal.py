@@ -44,20 +44,37 @@ def evaluate_normal_force(pair: ContactPair) -> float:
     return p_n
 
 
-def update_al_multiplier(pair: ContactPair) -> None:
+def update_al_multiplier(
+    pair: ContactPair,
+    *,
+    omega: float = 1.0,
+    preserve_inactive: bool = False,
+) -> None:
     """AL 乗数 lambda_n を更新する（Outer loop 終了時に呼ぶ）.
 
-    lambda_n <- p_n  （現在の反力を乗数に反映）
+    緩和付き更新:
+        lambda_n <- lambda_n + omega * (p_n - lambda_n)
 
-    INACTIVE ペアは lambda_n = 0 にリセット。
+    omega = 1.0 の場合は従来動作（lambda_n <- p_n）と等価。
+    omega < 1.0 で under-relaxation：低い k_pen でも乗数が徐々に蓄積し、
+    条件数悪化なく正確な接触力に近づく。商用ソルバー（Abaqus Augmented
+    Lagrange、ANSYS FKN制御）のペナルティ+乗数増大法に相当。
+
+    preserve_inactive=False の場合、INACTIVE ペアの lambda_n をゼロリセット。
+    preserve_inactive=True の場合、INACTIVE ペアの lambda_n を保持する
+    （LS-DYNA IGAP sticky contact に相当。再活性化時の乗数不整合を防止）。
 
     Args:
         pair: 接触ペア
+        omega: 緩和係数 ω ∈ (0, 1]。1.0で従来動作（デフォルト）
+        preserve_inactive: True で INACTIVE ペアの lambda_n 保持
     """
     if pair.state.status == ContactStatus.INACTIVE:
-        pair.state.lambda_n = 0.0
+        if not preserve_inactive:
+            pair.state.lambda_n = 0.0
+        # preserve_inactive=True: lambda_n を維持（再活性化時に使用）
     else:
-        pair.state.lambda_n = pair.state.p_n
+        pair.state.lambda_n = pair.state.lambda_n + omega * (pair.state.p_n - pair.state.lambda_n)
 
 
 def normal_force_linearization(pair: ContactPair) -> float:

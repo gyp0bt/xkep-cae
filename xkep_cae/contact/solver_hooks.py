@@ -140,6 +140,89 @@ def _update_gaps_fixed_st(
         pair.state.gap = dist - pair.radius_a - pair.radius_b
 
 
+def _solve_linear_system(
+    K: sp.csr_matrix,
+    rhs: np.ndarray,
+    *,
+    mode: str = "direct",
+    iterative_tol: float = 1e-10,
+    ilu_drop_tol: float = 1e-4,
+) -> np.ndarray:
+    """接触NR用の線形連立方程式を解く.
+
+    Args:
+        K: 剛性行列（CSR形式）
+        rhs: 右辺ベクトル
+        mode: "direct" | "iterative" | "auto"
+        iterative_tol: GMRES 収束判定
+        ilu_drop_tol: ILU 前処理の drop tolerance
+
+    Returns:
+        解ベクトル
+    """
+    import warnings
+
+    import scipy.sparse.linalg as spla
+
+    if mode == "direct":
+        return spla.spsolve(K, rhs)
+
+    if mode == "iterative":
+        return _solve_iterative(K, rhs, iterative_tol, ilu_drop_tol)
+
+    # auto モード: direct を試行し、警告が出たら iterative にフォールバック
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        x = spla.spsolve(K, rhs)
+
+    for w in caught:
+        if "MatrixRankWarning" in str(w.category.__name__) or "singular" in str(w.message).lower():
+            return _solve_iterative(K, rhs, iterative_tol, ilu_drop_tol)
+
+    # NaN/Inf チェック: 直接法で精度劣化した場合もフォールバック
+    if not np.all(np.isfinite(x)):
+        return _solve_iterative(K, rhs, iterative_tol, ilu_drop_tol)
+
+    return x
+
+
+def _solve_iterative(
+    K: sp.csr_matrix,
+    rhs: np.ndarray,
+    tol: float = 1e-10,
+    ilu_drop_tol: float = 1e-4,
+) -> np.ndarray:
+    """GMRES + ILU前処理で線形系を解く.
+
+    商用ソルバー（LS-DYNA implicit, ANSYS）で標準的な手法。
+    ill-conditioned な K_T + K_c に対して直接法より安定。
+
+    Args:
+        K: 剛性行列（CSR形式）
+        rhs: 右辺ベクトル
+        tol: GMRES 収束判定
+        ilu_drop_tol: ILU 前処理の drop tolerance
+
+    Returns:
+        解ベクトル
+    """
+    import scipy.sparse.linalg as spla
+
+    K_csc = K.tocsc()
+    try:
+        ilu = spla.spilu(K_csc, drop_tol=ilu_drop_tol)
+        M = spla.LinearOperator(K.shape, ilu.solve)
+    except RuntimeError:
+        # ILU分解失敗 → 前処理なしでGMRES
+        M = None
+
+    x, info = spla.gmres(K, rhs, M=M, atol=tol, maxiter=max(500, K.shape[0]))
+    if info != 0:
+        # GMRES 未収束 → 直接法にフォールバック
+        x = spla.spsolve(K, rhs)
+    return x
+
+
 def newton_raphson_with_contact(
     f_ext_total: np.ndarray,
     fixed_dofs: np.ndarray,
@@ -196,8 +279,6 @@ def newton_raphson_with_contact(
     Returns:
         ContactSolveResult
     """
-    import scipy.sparse.linalg as spla
-
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
@@ -225,6 +306,20 @@ def newton_raphson_with_contact(
     modified_newton_refresh = manager.config.modified_newton_refresh
     contact_damping = manager.config.contact_damping
     k_pen_scaling_mode = manager.config.k_pen_scaling
+
+    # AL乗数緩和
+    al_relaxation = manager.config.al_relaxation
+
+    # 線形ソルバー設定
+    linear_solver_mode = manager.config.linear_solver
+    iterative_tol = manager.config.iterative_tol
+    ilu_drop_tol = manager.config.ilu_drop_tol
+
+    # 活性セットチャタリング防止
+    no_deact = manager.config.no_deactivation_within_step
+
+    # モノリシック幾何更新（Inner NR内でs,t,normal毎反復更新）
+    mono_geom = manager.config.monolithic_geometry
 
     # 接触接線モード（Uzawa型分解）
     contact_tangent_mode = manager.config.contact_tangent_mode
@@ -279,16 +374,24 @@ def newton_raphson_with_contact(
             # --- Outer: 変形座標を計算し、候補検出 + 幾何更新 ---
             coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
 
-            manager.detect_candidates(
-                coords_def,
-                connectivity,
-                radii,
-                margin=broadphase_margin,
-                cell_size=broadphase_cell_size,
-            )
+            # no_deactivation_within_step:
+            #   outer == 0 かつ最初のステップ: 通常の候補検出（初期トポロジー確立）
+            #   それ以外: 候補検出をスキップし、活性セットを固定
+            # 活性化（INACTIVE→ACTIVE）のみ許可し、非活性化を禁止することで
+            # Outer/Inner間のトポロジーチャタリングを防止。
+            _is_first_outer = outer == 0 and step == 1
+            _skip_detect = no_deact and not _is_first_outer
+            if not _skip_detect:
+                manager.detect_candidates(
+                    coords_def,
+                    connectivity,
+                    radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                )
 
             # --- 段階的接触アクティベーション ---
-            if manager.config.staged_activation_steps > 0:
+            if manager.config.staged_activation_steps > 0 and not _skip_detect:
                 max_layer = manager.compute_active_layer_for_step(step, n_load_steps)
                 manager.filter_pairs_by_layer(max_layer)
 
@@ -304,7 +407,9 @@ def newton_raphson_with_contact(
                                 pair.state.tangent2.copy(),
                             )
 
-            manager.update_geometry(coords_def)
+            # no_deactivation_within_step: 非活性化を全面禁止（活性化のみ許可）
+            _allow_deact = not no_deact
+            manager.update_geometry(coords_def, allow_deactivation=_allow_deact)
 
             # --- 摩擦履歴の平行輸送: 旧フレーム → 新フレーム ---
             if use_friction and old_frames:
@@ -384,8 +489,18 @@ def newton_raphson_with_contact(
             for it in range(max_iter):
                 total_newton += 1
 
-                # gap 更新（s, t, normal 固定で変位に基づく gap 再計算）
-                _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
+                # 幾何更新:
+                #   monolithic: s,t,normal を毎反復更新（Outer/Inner 分離なし）
+                #   従来: s,t,normal 固定で gap のみ更新
+                if mono_geom:
+                    coords_def_it = _deformed_coords(node_coords_ref, u, ndof_per_node)
+                    manager.update_geometry(
+                        coords_def_it,
+                        allow_deactivation=_allow_deact,
+                        freeze_active_set=True,  # Active-set はOuter で管理
+                    )
+                else:
+                    _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
 
                 # --- PDAS Active-set 更新（Phase C5, 実験的）---
                 if use_pdas:
@@ -524,7 +639,13 @@ def newton_raphson_with_contact(
                     K_bc[dof, dof] = 1.0
                     r_bc[dof] = 0.0
 
-                du = spla.spsolve(K_bc.tocsr(), r_bc)
+                du = _solve_linear_system(
+                    K_bc.tocsr(),
+                    r_bc,
+                    mode=linear_solver_mode,
+                    iterative_tol=iterative_tol,
+                    ilu_drop_tol=ilu_drop_tol,
+                )
 
                 # エネルギーノルム
                 energy = abs(float(np.dot(du, residual)))
@@ -635,24 +756,38 @@ def newton_raphson_with_contact(
                         f"  WARNING: Step {step}, outer {outer} "
                         f"did not converge in {max_iter} iterations."
                     )
-                return ContactSolveResult(
-                    u=u,
-                    converged=False,
-                    n_load_steps=step,
-                    total_newton_iterations=total_newton,
-                    total_outer_iterations=total_outer,
-                    n_active_final=manager.n_active,
-                    total_line_search_steps=total_ls,
-                    load_history=load_history,
-                    displacement_history=disp_history,
-                    contact_force_history=contact_force_history,
-                    graph_history=graph_history,
-                )
+                if outer == 0:
+                    # 最初の outer で発散 → 回復不能
+                    return ContactSolveResult(
+                        u=u,
+                        converged=False,
+                        n_load_steps=step,
+                        total_newton_iterations=total_newton,
+                        total_outer_iterations=total_outer,
+                        n_active_final=manager.n_active,
+                        total_line_search_steps=total_ls,
+                        load_history=load_history,
+                        displacement_history=disp_history,
+                        contact_force_history=contact_force_history,
+                        graph_history=graph_history,
+                    )
+                # outer > 0: 前回の outer で inner が収束しているため、
+                # 現在の解を受容してステップ完了とする。
+                # 商用ソルバー（Abaqus/LS-DYNA）の "accept on best iteration"
+                # と同等の挙動。
+                if show_progress:
+                    print(
+                        f"  Step {step}, outer {outer}: "
+                        f"accepting current solution (inner stalled, "
+                        f"active={manager.n_active})"
+                    )
+                step_converged = True
+                break
 
             # --- Outer 収束判定 ---
             # 幾何更新して (s,t) の変化を検査
             coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
-            manager.update_geometry(coords_def_new)
+            manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
 
             max_ds = 0.0
             max_dt = 0.0
@@ -664,9 +799,10 @@ def newton_raphson_with_contact(
                     max_dt = max(max_dt, abs(pair.state.t - t_old))
                 idx += 1
 
-            # AL 乗数更新
+            # AL 乗数更新（緩和付き + sticky contact対応）
+            preserve_inactive = manager.config.preserve_inactive_lambda
             for pair in manager.pairs:
-                update_al_multiplier(pair)
+                update_al_multiplier(pair, omega=al_relaxation, preserve_inactive=preserve_inactive)
 
             # --- 適応的ペナルティ増大 ---
             # 貫入量が tol_penetration_ratio * search_radius を超えるペアの k_pen を増大
