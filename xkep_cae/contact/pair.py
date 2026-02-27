@@ -205,6 +205,9 @@ class ContactConfig:
     n_gauss: int = 3  # Line contact の Gauss 積分点数（2-5）
     n_gauss_auto: bool = False  # セグメント角度に基づく Gauss 点数自動選択
     consistent_st_tangent: bool = False  # ∂(s,t)/∂u 一貫接線の有効化（Phase C6-L2）
+    use_ncp: bool = False  # NCP Semi-smooth Newton の有効化（Phase C6-L3）
+    ncp_type: str = "fb"  # NCP 関数の種類: "fb" (Fischer-Burmeister) | "min"
+    ncp_reg: float = 1e-12  # FB 関数の正則化パラメータ
 
 
 @dataclass

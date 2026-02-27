@@ -86,6 +86,7 @@
 | [076](status-076.md) | 2026-02-27 | TODO消化: PINNスパース + adaptive omega定量評価 + ML基盤 | 1732 |
 | [077](status-077.md) | 2026-02-27 | Phase C6-L1: Line-to-line Gauss 積分 | 1760 |
 | [078](status-078.md) | 2026-02-27 | Phase C6-L2: 一貫接線の完全化（∂(s,t)/∂u Jacobian） | 1775 |
+| [079](status-079.md) | 2026-02-27 | Phase C6-L3: Semi-smooth Newton + NCP 関数 | 1810 |
 
 ## テスト数推移
 

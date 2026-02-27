@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1775テスト（fast: 1381 / slow: 336 / external: 2 / skip: 56）**
+**1810テスト（fast: 1437 / slow: 283）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -21,6 +21,7 @@
 | Phase C0-C5: 梁–梁接触（AL, 摩擦, merit LS, PDAS） | ✓ |
 | Phase C6-L1: Line-to-line Gauss 積分 | ✓ |
 | Phase C6-L2: 一貫接線の完全化（∂(s,t)/∂u Jacobian） | ✓ |
+| Phase C6-L3: Semi-smooth Newton + NCP 関数 | ✓ |
 | Phase 4.7 L0: 撚線基礎（7本撚り収束, ヒステリシス） | ✓ |
 | Phase 4.7 L0.5 S1-S4: シース挙動（コンプライアンス, 有限滑り, シース間接触） | ✓ |
 | 7本撚りブロック前処理ソルバー + adaptive omega | ✓ |

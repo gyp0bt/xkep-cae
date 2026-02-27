@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L2 + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 完了。1775テスト（fast: 1381 / slow: 336 / external: 2 / skip: 56）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L3 + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 完了。1810テスト（fast: 1437 / slow: 283）。**
 
 ### 完了済みフェーズ一覧
 
@@ -280,7 +280,7 @@ Phase 8 (応用展開)
 - [ ] **Phase C6: 接触アルゴリズム根本整理**（ML に先立つ理論基盤整備、[設計仕様](contact/contact-algorithm-overhaul-c6.md)）
   - [x] C6-L1: Segment-to-segment Gauss 積分（Line-to-line 接触, 28テスト, status-077）
   - [x] C6-L2: 一貫接線の完全化（∂s/∂u, ∂t/∂u Jacobian, 15テスト, status-078）
-  - [ ] C6-L3: Semi-smooth Newton + NCP 関数（Outer loop 廃止）
+  - [x] C6-L3: Semi-smooth Newton + NCP 関数（Outer loop 廃止, 35テスト, status-079）
   - [ ] C6-L4: ブロック前処理強化（接触 Schur 補集合）
   - [ ] C6-L5: Mortar 離散化（必要に応じて）
 - [ ] 接触プリスクリーニングGNN Step 2-5（グラフ構築 → モデル実装 → 推論統合 → 性能評価）

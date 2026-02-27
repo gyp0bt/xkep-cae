@@ -10,6 +10,8 @@
 - law_friction: Coulomb 摩擦（return mapping）
 - line_search: merit function + backtracking line search
 - line_contact: line-to-line Gauss 積分（Phase C6-L1）
+- ncp: NCP 関数（Fischer-Burmeister, min）（Phase C6-L3）
+- solver_ncp: Semi-smooth Newton ソルバー（Phase C6-L3）
 - assembly: 接触内力・接線の組み込み
 - solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
 - graph: 接触グラフ表現・可視化
@@ -52,6 +54,14 @@ from xkep_cae.contact.line_contact import (
     project_point_to_segment,
 )
 from xkep_cae.contact.line_search import backtracking_line_search, merit_function
+from xkep_cae.contact.ncp import (
+    build_augmented_residual,
+    compute_gap_jacobian_wrt_u,
+    evaluate_ncp_jacobian,
+    evaluate_ncp_residual,
+    ncp_fischer_burmeister,
+    ncp_min,
+)
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,
@@ -72,6 +82,10 @@ from xkep_cae.contact.solver_hooks import (
     newton_raphson_block_contact,
     newton_raphson_with_contact,
     run_contact_cyclic,
+)
+from xkep_cae.contact.solver_ncp import (
+    NCPSolveResult,
+    newton_raphson_contact_ncp,
 )
 
 __all__ = [
@@ -122,4 +136,12 @@ __all__ = [
     "rotate_friction_history",
     "snapshot_contact_graph",
     "update_al_multiplier",
+    "NCPSolveResult",
+    "build_augmented_residual",
+    "compute_gap_jacobian_wrt_u",
+    "evaluate_ncp_jacobian",
+    "evaluate_ncp_residual",
+    "ncp_fischer_burmeister",
+    "ncp_min",
+    "newton_raphson_contact_ncp",
 ]
