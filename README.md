@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1684テスト（fast: 1307 / slow: 319 / external: 2 / skip: 56）**
+**1695テスト（fast: 1308 / slow: 329 / external: 2 / skip: 56）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -21,7 +21,7 @@
 | Phase C0-C5: 梁–梁接触（AL, 摩擦, merit LS, PDAS） | ✓ |
 | Phase 4.7 L0: 撚線基礎（7本撚り収束, ヒステリシス） | ✓ |
 | Phase 4.7 L0.5 S1-S4: シース挙動（コンプライアンス, 有限滑り, シース間接触） | ✓ |
-| 7本撚りブロック前処理ソルバー（素線ブロック + GMRES） | ✓ |
+| 7本撚りブロック前処理ソルバー + adaptive omega | ✓ |
 | HEX8要素ファミリ（C3D8/C3D8B/C3D8R/C3D8I） | ✓ |
 | 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
@@ -117,7 +117,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（74個）
+├── status/         # ステータスファイル群（75個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
