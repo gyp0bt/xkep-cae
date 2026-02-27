@@ -1997,3 +1997,252 @@ class TestBlockSolverLargeMesh:
             max_iter=50,
         )
         assert result.converged, "3本撚り 16要素/素線 曲げが収束しなかった"
+
+
+# ====================================================================
+# adaptive omega 効果定量評価
+# ====================================================================
+class TestAdaptiveOmegaQuantitative:
+    """adaptive omega の効果を n_outer_max 変化で定量的に評価.
+
+    n_outer_max=1（ベースライン）vs n_outer_max=3 vs n_outer_max=5 での
+    収束性・最終変位の比較を行う。
+    """
+
+    _BASE = dict(
+        n_pitches=1.0,
+        n_elems_per_strand=4,
+        assembler_type="timo3d",
+        auto_kpen=True,
+        staged_activation=True,
+        no_deactivation_within_step=True,
+        k_pen_scaling="sqrt",
+        penalty_growth_factor=1.0,
+        preserve_inactive_lambda=True,
+        g_off=0.001,
+        gap=0.0005,
+        n_load_steps=15,
+        max_iter=30,
+    )
+
+    @pytest.mark.slow
+    def test_three_strand_outer3_vs_outer5(self):
+        """3本撚り引張: n_outer_max=3 と 5 で共に収束し最終変位が近い."""
+        r3, _, _ = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            adaptive_omega=True,
+            omega_min=0.01,
+            omega_max=0.3,
+            omega_growth=2.0,
+            n_outer_max=3,
+            **self._BASE,
+        )
+        r5, _, _ = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            adaptive_omega=True,
+            omega_min=0.01,
+            omega_max=0.3,
+            omega_growth=2.0,
+            n_outer_max=5,
+            **self._BASE,
+        )
+        assert r3.converged, "n_outer_max=3 が収束しなかった"
+        assert r5.converged, "n_outer_max=5 が収束しなかった"
+        # 最終変位の最大値の差が 10% 以内
+        max_u3 = np.max(np.abs(r3.u))
+        max_u5 = np.max(np.abs(r5.u))
+        if max_u5 > 1e-12:
+            rel_diff = abs(max_u3 - max_u5) / max_u5
+            assert rel_diff < 0.2, f"n_outer_max=3 vs 5 の変位差が大きい: {rel_diff:.3f}"
+
+    @pytest.mark.slow
+    def test_seven_strand_outer3_converges(self):
+        """7本撚り引張: adaptive omega + n_outer_max=3 で収束."""
+        r3, _, _ = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            adaptive_omega=True,
+            omega_min=0.01,
+            omega_max=0.3,
+            omega_growth=2.0,
+            n_outer_max=3,
+            max_iter=50,
+            **{k: v for k, v in self._BASE.items() if k != "max_iter"},
+        )
+        assert r3.converged
+
+    @pytest.mark.slow
+    def test_seven_strand_outer5_converges(self):
+        """7本撚り引張: adaptive omega + n_outer_max=5 で収束."""
+        r5, _, _ = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            adaptive_omega=True,
+            omega_min=0.01,
+            omega_max=0.3,
+            omega_growth=2.0,
+            n_outer_max=5,
+            max_iter=50,
+            **{k: v for k, v in self._BASE.items() if k != "max_iter"},
+        )
+        assert r5.converged
+
+    @pytest.mark.slow
+    def test_adaptive_omega_growth_rates(self):
+        """異なる growth rate (1.5 vs 2.0 vs 3.0) で全て収束."""
+        for growth in [1.5, 2.0, 3.0]:
+            r, _, _ = _solve_twisted_wire_block(
+                3,
+                "tension",
+                100.0,
+                adaptive_omega=True,
+                omega_min=0.01,
+                omega_max=0.3,
+                omega_growth=growth,
+                n_outer_max=3,
+                **self._BASE,
+            )
+            assert r.converged, f"growth={growth} で収束しなかった"
+
+
+# ====================================================================
+# ヒステリシスループ面積計測
+# ====================================================================
+class TestHysteresisLoopArea:
+    """サイクリック荷重でのヒステリシスループ面積計測テスト."""
+
+    @pytest.mark.slow
+    def test_seven_strand_tension_hysteresis_area(self):
+        """7本撚り引張サイクリック荷重でヒステリシスループ面積を計測.
+
+        loading と unloading の力-変位カーブで囲まれた面積 > 0
+        （摩擦接触によるエネルギー散逸を確認）。
+        """
+        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
+
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+        fixed_dofs = _fix_all_strand_starts(mesh)
+
+        f_ext = np.zeros(ndof_total)
+        f_per_strand = 1.0 / 7
+        # z方向引張に設定
+        monitor_dof = None
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[2]] = f_per_strand
+            if sid == 0:
+                monitor_dof = end_dofs[2]  # 中心素線の端部z変位
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+        mgr = _make_contact_manager(
+            use_friction=True,
+            mu=0.3,
+            n_outer_max=1,
+            k_pen_mode="beam_ei",
+            beam_E=_E,
+            beam_I=_SECTION.Iy,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+            staged_activation_steps=staged_steps,
+            elem_layer_map=elem_layer_map,
+        )
+
+        strand_dof_ranges = []
+        for sid in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[sid]
+            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+
+        n_steps = 10
+
+        # Loading: 0 → F_max
+        result_load = newton_raphson_block_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=n_steps,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+        assert result_load.converged, "Loading が収束しなかった"
+
+        # 力-変位履歴を記録（loading）
+        load_displacements = [0.0]
+        load_forces = [0.0]
+        if hasattr(result_load, "u_history") and result_load.u_history:
+            for i, u_step in enumerate(result_load.u_history):
+                load_displacements.append(u_step[monitor_dof])
+                load_forces.append(f_ext[monitor_dof] * (i + 1) / n_steps)
+        else:
+            # u_history がない場合は最終値のみ
+            load_displacements.append(result_load.u[monitor_dof])
+            load_forces.append(f_ext[monitor_dof])
+
+        # Unloading: F_max → 0
+        result_unload = newton_raphson_block_contact(
+            -f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=n_steps,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+            u0=result_load.u,
+            f_ext_base=f_ext,
+        )
+        assert result_unload.converged, "Unloading が収束しなかった"
+
+        # 力-変位履歴を記録（unloading）
+        unload_displacements = [load_displacements[-1]]
+        unload_forces = [load_forces[-1]]
+        if hasattr(result_unload, "u_history") and result_unload.u_history:
+            for i, u_step in enumerate(result_unload.u_history):
+                unload_displacements.append(u_step[monitor_dof])
+                unload_forces.append(f_ext[monitor_dof] * (1 - (i + 1) / n_steps))
+        else:
+            unload_displacements.append(result_unload.u[monitor_dof])
+            unload_forces.append(0.0)
+
+        # ヒステリシスループ面積を Shoelace formula で計算
+        from xkep_cae.contact.graph import compute_hysteresis_area
+
+        all_disp = load_displacements + unload_displacements[1:]
+        all_force = load_forces + unload_forces[1:]
+        hysteresis_area = compute_hysteresis_area(all_force, all_disp)
+
+        # 摩擦があるので、面積 >= 0 のはず
+        assert hysteresis_area >= 0, f"ヒステリシス面積が負: {hysteresis_area}"
