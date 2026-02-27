@@ -187,6 +187,10 @@ class ContactConfig:
     )
     contact_tangent_scale: float = 1.0  # "scaled" モード時のK_cスケール係数（0 < α ≤ 1）
     al_relaxation: float = 1.0  # AL乗数更新の緩和係数 ω ∈ (0,1]。1.0で従来動作
+    adaptive_omega: bool = False  # 適応的ωスケジュール（Outer loop内でωを段階的に増大）
+    omega_min: float = 0.01  # adaptive_omega時の初期ω
+    omega_max: float = 0.3  # adaptive_omega時の上限ω
+    omega_growth: float = 2.0  # adaptive_omega時のOuter反復ごとの成長係数
     preserve_inactive_lambda: bool = False  # INACTIVEペアのlambda_n保持（sticky contact）
     linear_solver: str = "direct"  # 線形ソルバー: "direct" | "iterative" | "auto"
     iterative_tol: float = 1e-10  # GMRES収束判定（iterativeモード用）

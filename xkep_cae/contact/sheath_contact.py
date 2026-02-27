@@ -834,9 +834,7 @@ def build_sheath_sheath_contact_manager(
 
     # 同一ケーブルのペアをリストから除去
     manager.pairs = [
-        p
-        for p in manager.pairs
-        if _cable_of_elem(p.elem_a) != _cable_of_elem(p.elem_b)
+        p for p in manager.pairs if _cable_of_elem(p.elem_a) != _cable_of_elem(p.elem_b)
     ]
 
     return manager

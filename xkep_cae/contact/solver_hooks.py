@@ -309,6 +309,10 @@ def newton_raphson_with_contact(
 
     # AL乗数緩和
     al_relaxation = manager.config.al_relaxation
+    adaptive_omega = manager.config.adaptive_omega
+    omega_min = manager.config.omega_min
+    omega_max = manager.config.omega_max
+    omega_growth = manager.config.omega_growth
 
     # 線形ソルバー設定
     linear_solver_mode = manager.config.linear_solver
@@ -799,10 +803,17 @@ def newton_raphson_with_contact(
                     max_dt = max(max_dt, abs(pair.state.t - t_old))
                 idx += 1
 
-            # AL 乗数更新（緩和付き + sticky contact対応）
+            # AL 乗数更新（適応的ω + 緩和付き + sticky contact対応）
+            if adaptive_omega:
+                omega_current = min(
+                    omega_min * omega_growth**outer,
+                    omega_max,
+                )
+            else:
+                omega_current = al_relaxation
             preserve_inactive = manager.config.preserve_inactive_lambda
             for pair in manager.pairs:
-                update_al_multiplier(pair, omega=al_relaxation, preserve_inactive=preserve_inactive)
+                update_al_multiplier(pair, omega=omega_current, preserve_inactive=preserve_inactive)
 
             # --- 適応的ペナルティ増大 ---
             # 貫入量が tol_penetration_ratio * search_radius を超えるペアの k_pen を増大
@@ -1141,6 +1152,10 @@ def newton_raphson_block_contact(
 
     # AL乗数緩和
     al_relaxation = manager.config.al_relaxation
+    adaptive_omega = manager.config.adaptive_omega
+    omega_min = manager.config.omega_min
+    omega_max = manager.config.omega_max
+    omega_growth = manager.config.omega_growth
 
     # 活性セットチャタリング防止
     no_deact = manager.config.no_deactivation_within_step
@@ -1479,12 +1494,19 @@ def newton_raphson_block_contact(
                     max_ds = max(max_ds, abs(pair.state.s - s_old))
                     max_dt = max(max_dt, abs(pair.state.t - t_old))
 
-            # AL 乗数更新
+            # AL 乗数更新（adaptive omega: Outer反復ごとにωを段階的に増大）
+            if adaptive_omega:
+                omega_current = min(
+                    omega_min * omega_growth**outer,
+                    omega_max,
+                )
+            else:
+                omega_current = al_relaxation
             preserve_inactive = manager.config.preserve_inactive_lambda
             for pair in manager.pairs:
                 update_al_multiplier(
                     pair,
-                    omega=al_relaxation,
+                    omega=omega_current,
                     preserve_inactive=preserve_inactive,
                 )
 
@@ -1517,11 +1539,14 @@ def newton_raphson_block_contact(
                 pen_info = ""
                 if tol_pen_ratio > 0.0 and max_pen_ratio > 0.0:
                     pen_info = f", pen_ratio={max_pen_ratio:.4f}"
+                omega_info = ""
+                if adaptive_omega:
+                    omega_info = f", ω={omega_current:.4f}"
                 print(
                     f"  Step {step}, outer {outer}: "
                     f"max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}, "
                     f"active={manager.n_active}"
-                    f"{friction_info}{pen_info}"
+                    f"{friction_info}{pen_info}{omega_info}"
                 )
 
             if max_ds < tol_geometry and max_dt < tol_geometry and not pen_exceeded:

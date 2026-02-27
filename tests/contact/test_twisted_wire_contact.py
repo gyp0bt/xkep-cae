@@ -178,6 +178,10 @@ def _make_contact_manager(
     g_off=1e-5,
     no_deactivation_within_step=False,
     monolithic_geometry=False,
+    adaptive_omega=False,
+    omega_min=0.01,
+    omega_max=0.3,
+    omega_growth=2.0,
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -216,6 +220,10 @@ def _make_contact_manager(
             preserve_inactive_lambda=preserve_inactive_lambda,
             no_deactivation_within_step=no_deactivation_within_step,
             monolithic_geometry=monolithic_geometry,
+            adaptive_omega=adaptive_omega,
+            omega_min=omega_min,
+            omega_max=omega_max,
+            omega_growth=omega_growth,
         ),
     )
 
@@ -1223,6 +1231,10 @@ def _solve_twisted_wire_block(
     preserve_inactive_lambda: bool = False,
     g_off: float = 1e-5,
     no_deactivation_within_step: bool = False,
+    adaptive_omega: bool = False,
+    omega_min: float = 0.01,
+    omega_max: float = 0.3,
+    omega_growth: float = 2.0,
 ):
     """ブロック分解ソルバーで撚線接触問題を解く.
 
@@ -1302,6 +1314,10 @@ def _solve_twisted_wire_block(
         preserve_inactive_lambda=preserve_inactive_lambda,
         g_off=g_off,
         no_deactivation_within_step=no_deactivation_within_step,
+        adaptive_omega=adaptive_omega,
+        omega_min=omega_min,
+        omega_max=omega_max,
+        omega_growth=omega_growth,
     )
 
     # 素線ごとのDOF範囲
@@ -1525,3 +1541,459 @@ class TestSevenStrandBlockSolver:
             no_deactivation_within_step=True,
         )
         assert result.converged, "7本撚り引張が AL omega=0.1 で収束しなかった"
+
+
+# ====================================================================
+# Adaptive omega テスト
+# ====================================================================
+class TestAdaptiveOmega:
+    """適応的ωスケジュール（Outer loop内でωを段階的に増大）のテスト."""
+
+    _COMMON = dict(
+        n_pitches=1.0,
+        n_elems_per_strand=4,
+        assembler_type="timo3d",
+        auto_kpen=True,
+        staged_activation=True,
+        n_outer_max=3,
+        no_deactivation_within_step=True,
+        k_pen_scaling="sqrt",
+        penalty_growth_factor=1.0,
+        preserve_inactive_lambda=True,
+        g_off=0.001,
+        gap=0.0005,
+        adaptive_omega=True,
+        omega_min=0.01,
+        omega_max=0.3,
+        omega_growth=2.0,
+    )
+
+    @pytest.mark.slow
+    def test_three_strand_tension_adaptive(self):
+        """3本撚り引張 — adaptive omega で n_outer_max=3 が収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert result.converged
+
+    @pytest.mark.slow
+    def test_three_strand_bending_adaptive(self):
+        """3本撚り曲げ — adaptive omega."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "bending",
+            0.01,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert result.converged
+
+    @pytest.mark.slow
+    def test_seven_strand_tension_adaptive(self):
+        """7本撚り引張 — adaptive omega で n_outer_max=3 が収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            n_load_steps=15,
+            max_iter=50,
+            **self._COMMON,
+        )
+        assert result.converged
+
+    def test_omega_schedule_values(self):
+        """adaptive omega のスケジュール値が正しいか検証."""
+        omega_min = 0.01
+        omega_max = 0.3
+        omega_growth = 2.0
+        # outer=0: 0.01, outer=1: 0.02, outer=2: 0.04, outer=3: 0.08, ...
+        for outer in range(10):
+            omega = min(omega_min * omega_growth**outer, omega_max)
+            assert omega >= omega_min
+            assert omega <= omega_max
+        # outer=0: exact value
+        assert min(omega_min * omega_growth**0, omega_max) == pytest.approx(0.01)
+        # outer=1: 0.02
+        assert min(omega_min * omega_growth**1, omega_max) == pytest.approx(0.02)
+        # outer=4: 0.16
+        assert min(omega_min * omega_growth**4, omega_max) == pytest.approx(0.16)
+        # outer=5: min(0.32, 0.3) = 0.3 (capped)
+        assert min(omega_min * omega_growth**5, omega_max) == pytest.approx(0.3)
+
+    @pytest.mark.slow
+    def test_adaptive_vs_fixed_omega(self):
+        """adaptive omega は固定 omega=0.01 と同等以上の収束を達成."""
+        # 固定 omega=0.01 (baseline)
+        result_fixed, _, _ = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_pitches=1.0,
+            n_elems_per_strand=4,
+            assembler_type="timo3d",
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=1,
+            no_deactivation_within_step=True,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            gap=0.0005,
+        )
+        # adaptive omega
+        result_adaptive, _, _ = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert result_fixed.converged
+        assert result_adaptive.converged
+
+
+# ====================================================================
+# 7本撚りサイクリック荷重テスト
+# ====================================================================
+class TestSevenStrandCyclic:
+    """7本撚りブロックソルバーでのサイクリック荷重テスト."""
+
+    @pytest.mark.slow
+    def test_seven_strand_tension_cyclic(self):
+        """7本撚り引張の往復荷重（0→1→0）で収束."""
+        from xkep_cae.contact.solver_hooks import (
+            newton_raphson_block_contact,
+        )
+
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+        fixed_dofs = _fix_all_strand_starts(mesh)
+
+        f_ext = np.zeros(ndof_total)
+        f_per_strand = 1.0 / 7
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[2]] = f_per_strand
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+        mgr = _make_contact_manager(
+            use_friction=True,
+            mu=0.3,
+            n_outer_max=1,
+            k_pen_mode="beam_ei",
+            beam_E=_E,
+            beam_I=_SECTION.Iy,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+            staged_activation_steps=staged_steps,
+            elem_layer_map=elem_layer_map,
+        )
+
+        strand_dof_ranges = []
+        for sid in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[sid]
+            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+
+        # Phase 1: 0 → 1 (loading)
+        result1 = newton_raphson_block_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+        assert result1.converged, "Phase1(loading) が収束しなかった"
+
+        # Phase 2: 1 → 0 (unloading) using f_ext_base
+        result2 = newton_raphson_block_contact(
+            -f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+            u0=result1.u,
+            f_ext_base=f_ext,
+        )
+        assert result2.converged, "Phase2(unloading) が収束しなかった"
+
+    @pytest.mark.slow
+    def test_seven_strand_bending_cyclic(self):
+        """7本撚り曲げの往復荷重で収束."""
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+        fixed_dofs = _fix_all_strand_starts(mesh)
+
+        f_ext = np.zeros(ndof_total)
+        m_per_strand = 0.001 / 7
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[4]] = m_per_strand
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+        mgr = _make_contact_manager(
+            use_friction=True,
+            mu=0.3,
+            n_outer_max=1,
+            k_pen_mode="beam_ei",
+            beam_E=_E,
+            beam_I=_SECTION.Iy,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+            staged_activation_steps=staged_steps,
+            elem_layer_map=elem_layer_map,
+        )
+
+        strand_dof_ranges = []
+        for sid in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[sid]
+            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+
+        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
+
+        # Loading
+        result1 = newton_raphson_block_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+        assert result1.converged, "曲げ loading が収束しなかった"
+
+        # Unloading
+        result2 = newton_raphson_block_contact(
+            -f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+            u0=result1.u,
+            f_ext_base=f_ext,
+        )
+        assert result2.converged, "曲げ unloading が収束しなかった"
+
+    @pytest.mark.slow
+    def test_seven_strand_cyclic_has_contact_forces(self):
+        """7本撚りサイクリック荷重で接触力が記録されている."""
+        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
+
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+        fixed_dofs = _fix_all_strand_starts(mesh)
+
+        f_ext = np.zeros(ndof_total)
+        f_per_strand = 1.0 / 7
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[2]] = f_per_strand
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+        mgr = _make_contact_manager(
+            use_friction=True,
+            mu=0.3,
+            n_outer_max=1,
+            k_pen_mode="beam_ei",
+            beam_E=_E,
+            beam_I=_SECTION.Iy,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+            staged_activation_steps=staged_steps,
+            elem_layer_map=elem_layer_map,
+        )
+
+        strand_dof_ranges = []
+        for sid in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[sid]
+            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+
+        result = newton_raphson_block_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=10,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+        assert result.converged
+        assert len(result.contact_force_history) > 0
+        # 少なくとも一部のステップで接触力が非ゼロ
+        assert any(fc > 0 for fc in result.contact_force_history)
+
+
+# ====================================================================
+# ブロックソルバー大規模メッシュ性能検証
+# ====================================================================
+class TestBlockSolverLargeMesh:
+    """ブロックソルバーの大規模メッシュ（16+要素/素線）での性能検証."""
+
+    @pytest.mark.slow
+    def test_three_strand_16_elems(self):
+        """3本撚り 16要素/素線 で収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_pitches=1.0,
+            n_elems_per_strand=16,
+            assembler_type="timo3d",
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=1,
+            no_deactivation_within_step=True,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            gap=0.0,
+            n_load_steps=15,
+            max_iter=50,
+        )
+        assert result.converged, "3本撚り 16要素/素線 引張が収束しなかった"
+        assert result.n_active_final > 0
+
+    @pytest.mark.slow
+    def test_seven_strand_16_elems(self):
+        """7本撚り 16要素/素線 で収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            n_pitches=1.0,
+            n_elems_per_strand=16,
+            assembler_type="timo3d",
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=1,
+            no_deactivation_within_step=True,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            gap=0.0005,
+            n_load_steps=15,
+            max_iter=50,
+        )
+        assert result.converged, "7本撚り 16要素/素線 引張が収束しなかった"
+        assert result.n_active_final > 0
+
+    @pytest.mark.slow
+    def test_three_strand_16_elems_bending(self):
+        """3本撚り 16要素/素線 曲げで収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "bending",
+            0.01,
+            n_pitches=1.0,
+            n_elems_per_strand=16,
+            assembler_type="timo3d",
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=1,
+            no_deactivation_within_step=True,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            gap=0.0,
+            n_load_steps=15,
+            max_iter=50,
+        )
+        assert result.converged, "3本撚り 16要素/素線 曲げが収束しなかった"
