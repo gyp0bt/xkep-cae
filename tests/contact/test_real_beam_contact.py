@@ -22,6 +22,7 @@ Timoshenko 3D梁（線形）とCR梁（幾何学的非線形）の両方で接�
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import (
@@ -37,6 +38,8 @@ from xkep_cae.elements.beam_timo3d import (
     timo_beam3d_ke_global,
 )
 from xkep_cae.sections.beam import BeamSection
+
+pytestmark = pytest.mark.slow
 
 # ====================================================================
 # 共通パラメータ

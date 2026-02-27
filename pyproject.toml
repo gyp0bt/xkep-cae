@@ -18,8 +18,13 @@ dependencies = [
 amg = ["pyamg>=5.0"]
 fast = ["numba>=0.57"]
 plot = ["matplotlib>=3.5"]
+ml = [
+    "torch>=2.0",
+    "torch-geometric>=2.4",
+]
 dev = [
     "pytest>=7.0",
+    "pytest-timeout>=2.0",
     "ruff>=0.4",
 ]
 
@@ -35,6 +40,7 @@ markers = [
     "cosserat: Cosserat rod 要素テスト",
     "sri: SRI（選択的低減積分）テスト",
     "nonlinear: 非線形解析テスト",
+    "slow: PINN学習・大規模メッシュ・複数モデル訓練など時間がかかるテスト",
 ]
 
 [tool.ruff]

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 import torch
 from torch_geometric.data import Data
 
@@ -53,6 +54,7 @@ def _make_trained_model(
 class TestGeneralization:
     """汎化性の検証."""
 
+    @pytest.mark.slow
     def test_unseen_seed_data(self):
         """訓練時と異なるシードで生成したデータに対して R²>0 を確認."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -66,6 +68,7 @@ class TestGeneralization:
         # 完全に見ていないデータでも相関が残ること
         assert metrics["r2"] > 0.0, f"R²={metrics['r2']:.3f} は汎化失敗"
 
+    @pytest.mark.slow
     def test_train_val_gap(self):
         """train loss と val loss の比が大きすぎないことで過学習を検出."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -81,6 +84,7 @@ class TestGeneralization:
 class TestRobustness:
     """ロバスト性テスト — 極端な入力条件."""
 
+    @pytest.mark.slow
     def test_single_source_prediction(self):
         """発熱体1個のケースでモデル出力が有限値を返すこと."""
         config = ThermalProblemConfig(nx=5, ny=5, n_sources_min=1, n_sources_max=1)
@@ -183,6 +187,7 @@ class TestFeatureAblation:
         metrics = evaluate_model(model, test_data, history["y_mean"], history["y_std"])
         return metrics
 
+    @pytest.mark.slow
     def test_heat_potential_improves_r2(self):
         """ポテンシャル特徴量ありの R² が なしの R² を上回る."""
         config = ThermalProblemConfig(nx=5, ny=5)

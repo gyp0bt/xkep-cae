@@ -1,12 +1,12 @@
-"""不規則メッシュでの全結合GNN vs メッシュGNN比較テスト.
+"""不規則メッシュでのハイブリッドGNN vs メッシュGNN比較テスト.
 
-正則メッシュでは帰納バイアスにより mesh GNN が FC GNN を上回るが、
-不規則メッシュでは FC GNN の優位性が出るか検証する。
+正則メッシュでは帰納バイアスにより mesh GNN が hybrid GNN を上回るが、
+不規則メッシュでは hybrid GNN の長距離ショートカットが有利になりうるか検証する。
 
 テスト項目:
   1. 不規則メッシュ生成の品質（ノード摂動、要素品質）
   2. 不規則メッシュ上のFEM計算の妥当性
-  3. FC GNN vs mesh GNN の性能比較（不規則メッシュ）
+  3. Hybrid GNN vs mesh GNN の性能比較（不規則メッシュ）
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from xkep_cae.thermal.gnn import (
 )
 from xkep_cae.thermal.gnn_fc import (
     FullyConnectedThermalGNN,
-    graph_dict_to_pyg_fc,
+    graph_dict_to_pyg_hybrid,
 )
 
 
@@ -135,7 +135,7 @@ class TestIrregularMeshFEM:
 
 
 class TestIrregularMeshComparison:
-    """不規則メッシュでの全結合GNN vs メッシュGNN比較."""
+    """不規則メッシュでのハイブリッドGNN vs メッシュGNN比較."""
 
     @pytest.fixture
     def irregular_data(self):
@@ -149,18 +149,19 @@ class TestIrregularMeshComparison:
         )
 
         mesh_pyg = [graph_dict_to_pyg(g, config) for g in raw]
-        fc_pyg = [graph_dict_to_pyg_fc(g, config) for g in raw]
+        hybrid_pyg = [graph_dict_to_pyg_hybrid(g, config) for g in raw]
 
         return {
             "config": config,
             "mesh_train": mesh_pyg[:70],
             "mesh_val": mesh_pyg[70:85],
             "mesh_test": mesh_pyg[85:],
-            "fc_train": fc_pyg[:70],
-            "fc_val": fc_pyg[70:85],
-            "fc_test": fc_pyg[85:],
+            "hybrid_train": hybrid_pyg[:70],
+            "hybrid_val": hybrid_pyg[70:85],
+            "hybrid_test": hybrid_pyg[85:],
         }
 
+    @pytest.mark.slow
     def test_both_models_learn(self, irregular_data):
         """両モデルが不規則メッシュ上で学習できること."""
         d = irregular_data
@@ -177,23 +178,27 @@ class TestIrregularMeshComparison:
         )
         assert h_mesh["train_loss"][-1] < h_mesh["train_loss"][0]
 
-        # FC GNN
-        model_fc = FullyConnectedThermalGNN(node_in_dim=6, hidden_dim=48, n_layers=4, dropout=0.05)
-        h_fc = train_model(
-            model_fc,
-            d["fc_train"],
-            d["fc_val"],
+        # ハイブリッドGNN（メッシュ + 発熱ノードショートカット）
+        model_hybrid = FullyConnectedThermalGNN(
+            node_in_dim=6, hidden_dim=48, n_layers=4, dropout=0.05
+        )
+        h_hybrid = train_model(
+            model_hybrid,
+            d["hybrid_train"],
+            d["hybrid_val"],
             epochs=120,
             lr=1e-3,
             verbose=False,
         )
-        assert h_fc["train_loss"][-1] < h_fc["train_loss"][0]
+        assert h_hybrid["train_loss"][-1] < h_hybrid["train_loss"][0]
 
+    @pytest.mark.slow
     def test_comparison_irregular_vs_regular(self):
         """正則 vs 不規則メッシュでの性能差をレポート.
 
         正則メッシュでは mesh GNN の帰納バイアスが有利だが、
-        不規則メッシュではその優位性が減少し、FC GNN が相対的に改善する可能性を検証。
+        不規則メッシュではその優位性が減少し、hybrid GNN が
+        相対的に改善する可能性を検証。
         """
         config = ThermalProblemConfig(nx=5, ny=5)
         n_samples = 100
@@ -212,11 +217,11 @@ class TestIrregularMeshComparison:
                 )
 
             mesh_pyg = [graph_dict_to_pyg(g, config) for g in raw]
-            fc_pyg = [graph_dict_to_pyg_fc(g, config) for g in raw]
+            hybrid_pyg = [graph_dict_to_pyg_hybrid(g, config) for g in raw]
 
             for model_type, data_list, hidden, epochs in [
                 ("mesh", mesh_pyg, 32, 120),
-                ("fc", fc_pyg, 48, 150),
+                ("hybrid", hybrid_pyg, 48, 120),
             ]:
                 train_d = data_list[:split_train]
                 val_d = data_list[split_train:split_val]
@@ -235,19 +240,17 @@ class TestIrregularMeshComparison:
                 results[key] = m
 
         # レポート
-        print("\n=== 正則 vs 不規則メッシュ: mesh GNN vs FC GNN ===")
-        for key in ["regular_mesh", "regular_fc", "irregular_mesh", "irregular_fc"]:
+        print("\n=== 正則 vs 不規則メッシュ: mesh GNN vs hybrid GNN ===")
+        for key in ["regular_mesh", "regular_hybrid", "irregular_mesh", "irregular_hybrid"]:
             r = results[key]
             print(f"  {key:20s}: R²={r['r2']:.3f}, MAE={r['mae']:.3f}°C")
 
-        # FC GNN の不規則メッシュでの相対改善を確認
-        # 正則メッシュでの差（mesh - fc）
-        regular_gap = results["regular_mesh"]["r2"] - results["regular_fc"]["r2"]
-        # 不規則メッシュでの差（mesh - fc）
-        irregular_gap = results["irregular_mesh"]["r2"] - results["irregular_fc"]["r2"]
+        # ハイブリッド GNN の不規則メッシュでの相対改善を確認
+        regular_gap = results["regular_mesh"]["r2"] - results["regular_hybrid"]["r2"]
+        irregular_gap = results["irregular_mesh"]["r2"] - results["irregular_hybrid"]["r2"]
 
-        print(f"\n  正則メッシュ mesh-fc R²差: {regular_gap:+.3f}")
-        print(f"  不規則メッシュ mesh-fc R²差: {irregular_gap:+.3f}")
+        print(f"\n  正則メッシュ mesh-hybrid R²差: {regular_gap:+.3f}")
+        print(f"  不規則メッシュ mesh-hybrid R²差: {irregular_gap:+.3f}")
 
         # 両方のモデルが学習できていること（R² > -1）
         for key, m in results.items():

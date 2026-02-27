@@ -45,6 +45,8 @@ from xkep_cae.mesh.twisted_wire import (
 )
 from xkep_cae.sections.beam import BeamSection
 
+pytestmark = pytest.mark.slow
+
 # ====================================================================
 # 共通パラメータ
 # ====================================================================

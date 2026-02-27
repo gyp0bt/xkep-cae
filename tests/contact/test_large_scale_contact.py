@@ -14,6 +14,7 @@ status-050 TODO: 大規模マルチセグメント（16+セグメント）での
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import (
@@ -23,6 +24,8 @@ from xkep_cae.contact.pair import (
 from xkep_cae.contact.solver_hooks import (
     newton_raphson_with_contact,
 )
+
+pytestmark = pytest.mark.slow
 
 _NDOF_PER_NODE = 6
 _K_SPRING_BASE = 1e4

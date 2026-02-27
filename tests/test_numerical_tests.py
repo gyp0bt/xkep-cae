@@ -34,6 +34,8 @@ from xkep_cae.numerical_tests.frequency import run_frequency_response
 from xkep_cae.numerical_tests.inp_input import parse_test_input
 from xkep_cae.numerical_tests.runner import run_all_tests, run_test, run_tests
 
+pytestmark = pytest.mark.slow
+
 # ===========================================================================
 # パラメータ定義
 # ===========================================================================

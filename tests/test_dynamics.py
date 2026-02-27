@@ -16,6 +16,8 @@ import pytest
 
 from xkep_cae.dynamics import TransientConfig, TransientResult, solve_transient
 
+pytestmark = pytest.mark.slow
+
 # ====================================================================
 # ヘルパー
 # ====================================================================

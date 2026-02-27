@@ -201,6 +201,7 @@ class TestFCVsMeshComparison:
             "fc_test": fc_pyg[85:],
         }
 
+    @pytest.mark.slow
     def test_fc_achieves_positive_r2(self, comparison_data):
         """全結合GNNが R²>0 を達成できることを確認."""
         d = comparison_data
@@ -221,6 +222,7 @@ class TestFCVsMeshComparison:
         metrics = evaluate_model(model_fc, d["fc_test"], history["y_mean"], history["y_std"])
         assert metrics["r2"] > 0.5, f"FC-GNN R²={metrics['r2']:.3f}"
 
+    @pytest.mark.slow
     def test_comparison_both_converge(self, comparison_data):
         """メッシュGNNと全結合GNNの両方が学習収束し、FC-GNNが R²>0.8 を達成."""
         d = comparison_data
@@ -260,6 +262,7 @@ class TestFCVsMeshComparison:
         assert m_mesh["r2"] > 0.5, f"メッシュGNN 収束失敗: R²={m_mesh['r2']:.3f}"
         assert m_fc["r2"] > 0.5, f"全結合GNN 収束失敗: R²={m_fc['r2']:.3f}"
 
+    @pytest.mark.slow
     def test_fc_fewer_layers_sufficient(self, comparison_data):
         """全結合GNNは少ない層数で情報伝搬できることを確認.
 
@@ -338,6 +341,7 @@ class TestHybridGraph:
         )
         assert history["train_loss"][-1] < history["train_loss"][0]
 
+    @pytest.mark.slow
     def test_three_way_comparison(self):
         """メッシュGNN vs 全結合GNN vs ハイブリッドGNN の3方比較."""
         config = ThermalProblemConfig(nx=5, ny=5)
