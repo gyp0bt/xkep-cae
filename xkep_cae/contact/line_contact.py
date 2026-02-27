@@ -168,6 +168,81 @@ def _geometric_stiffness_at_gp(
     return -(p_n_gp / dist) * (G.T @ PG)
 
 
+def compute_t_jacobian_at_gp(
+    s_gp: float,
+    t_closest: float,
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    *,
+    tol_boundary: float = 1e-10,
+    tol_singular: float = 1e-20,
+) -> np.ndarray | None:
+    """Line contact Gauss 点での ∂t/∂u を計算する.
+
+    Gauss 点 s_gp は固定（積分点パラメータ）なので ds/du = 0。
+    t_closest のみが u に依存する。
+
+    射影条件:
+      G(t, u) = (pA(s_gp) - pB(t)) · dB = 0
+
+    暗関数の定理:
+      ∂G/∂t · dt/du = -∂G/∂u|_{t fixed}
+
+    ∂G/∂t = -|dB|²
+
+    Phase C6-L2: Line contact での一貫接線。
+
+    Args:
+        s_gp: Gauss 点パラメータ（固定）
+        t_closest: 最近接パラメータ ∈ [0,1]
+        xA0, xA1: セグメント A の変形後端点 (3,)
+        xB0, xB1: セグメント B の変形後端点 (3,)
+        tol_boundary: 境界判定の閾値
+        tol_singular: 特異判定の閾値
+
+    Returns:
+        dt_du: (12,) ∂t/∂u ベクトル。t がクランプまたは特異の場合は None。
+    """
+    t = t_closest
+
+    # t がクランプされている場合は dt/du = 0
+    if t < tol_boundary or t > 1.0 - tol_boundary:
+        return np.zeros(12)
+
+    dB = xB1 - xB0
+    c = float(dB @ dB)  # |dB|²
+    if abs(c) < tol_singular:
+        return None  # 縮退セグメント
+
+    # delta_gp = pA(s_gp) - pB(t)
+    pA = (1.0 - s_gp) * xA0 + s_gp * xA1
+    pB = (1.0 - t) * xB0 + t * xB1
+    delta_gp = pA - pB
+
+    # ∂G/∂u|_{t fixed}  (12,)
+    # G = delta_gp · dB
+    # ∂G/∂u_k = ∂delta_gp/∂u_k · dB + delta_gp · ∂dB/∂u_k
+    dG_du = np.zeros(12)
+    # ∂delta/∂uA0 = (1-s_gp)*I₃ → ·dB = (1-s_gp)*dB
+    dG_du[0:3] = (1.0 - s_gp) * dB
+    # ∂delta/∂uA1 = s_gp*I₃ → ·dB = s_gp*dB
+    dG_du[3:6] = s_gp * dB
+    # ∂delta/∂uB0 = -(1-t)*I₃, ∂dB/∂uB0 = -I₃
+    dG_du[6:9] = -(1.0 - t) * dB - delta_gp
+    # ∂delta/∂uB1 = -t*I₃, ∂dB/∂uB1 = I₃
+    dG_du[9:12] = -t * dB + delta_gp
+
+    # ∂G/∂t = -|dB|² (∂delta/∂t · dB = -dB · dB)
+    dG_dt = -c
+
+    # dt/du = -(1/∂G/∂t) * ∂G/∂u = (1/|dB|²) * ∂G/∂u
+    dt_du = -dG_du / dG_dt  # = dG_du / c
+
+    return dt_du
+
+
 def compute_line_contact_force_local(
     pair: ContactPair,
     xA0: np.ndarray,

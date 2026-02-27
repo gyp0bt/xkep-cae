@@ -17,6 +17,7 @@
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
 from xkep_cae.contact.broadphase import broadphase_aabb, compute_segment_aabb
+from xkep_cae.contact.geometry import compute_st_jacobian
 from xkep_cae.contact.graph import (
     ContactEdge,
     ContactGraph,
@@ -46,6 +47,7 @@ from xkep_cae.contact.line_contact import (
     compute_line_contact_force_local,
     compute_line_contact_gap_at_gp,
     compute_line_contact_stiffness_local,
+    compute_t_jacobian_at_gp,
     gauss_legendre_01,
     project_point_to_segment,
 )
@@ -101,6 +103,8 @@ __all__ = [
     "compute_hysteresis_area",
     "compute_mu_effective",
     "compute_segment_aabb",
+    "compute_st_jacobian",
+    "compute_t_jacobian_at_gp",
     "compute_tangential_displacement",
     "evaluate_normal_force",
     "friction_return_mapping",

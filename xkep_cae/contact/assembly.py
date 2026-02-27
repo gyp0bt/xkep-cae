@@ -168,6 +168,153 @@ def _contact_geometric_stiffness_local(pair: ContactPair) -> np.ndarray:
     return K_geo
 
 
+def _consistent_st_stiffness_local(
+    pair: ContactPair,
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    ds_du: np.ndarray,
+    dt_du: np.ndarray,
+) -> np.ndarray:
+    """接触点移動に伴う一貫接線剛性を計算する（Phase C6-L2）.
+
+    PtP 接触の完全一貫接線：∂(s,t)/∂u による追加の剛性項。
+
+    K_st = outer(g_n, ∂p_n/∂s·ds_du + ∂p_n/∂t·dt_du)
+         + p_n * outer(∂g_n/∂s, ds_du)
+         + p_n * outer(∂g_n/∂t, dt_du)
+
+    ∂p_n/∂s = -k_pen * (n · dA)
+    ∂p_n/∂t = k_pen * (n · dB)
+    ∂g_n/∂s, ∂g_n/∂t は形状関数の s,t 微分と法線回転を含む。
+
+    Args:
+        pair: 接触ペア
+        xA0, xA1, xB0, xB1: 変形後端点座標 (3,)
+        ds_du: ∂s/∂u (12,)
+        dt_du: ∂t/∂u (12,)
+
+    Returns:
+        K_st: (12, 12) 一貫接線剛性行列
+    """
+    p_n = pair.state.p_n
+    if p_n <= 0.0:
+        return np.zeros((12, 12))
+
+    s = pair.state.s
+    t = pair.state.t
+    n = pair.state.normal
+    k_pen = pair.state.k_pen
+
+    dA = xA1 - xA0
+    dB = xB1 - xB0
+    delta = (1.0 - s) * xA0 + s * xA1 - ((1.0 - t) * xB0 + t * xB1)
+    dist = float(np.linalg.norm(delta))
+
+    if dist < 1e-30:
+        return np.zeros((12, 12))
+
+    # g_n: 形状ベクトル (12,)
+    g_n = _contact_shape_vector(pair)
+
+    # --- Term 1: ∂p_n|_{via s,t} ⊗ g_n ---
+    dpn_ds = -k_pen * float(n @ dA)
+    dpn_dt = k_pen * float(n @ dB)
+    dpn_via_st = dpn_ds * ds_du + dpn_dt * dt_du  # (12,)
+    K_st = np.outer(g_n, dpn_via_st)  # (12, 12)
+
+    # --- Term 2: p_n * ∂g_n|_{via s,t} ---
+    # ∂n/∂s, ∂n/∂t （法線回転）
+    P_perp = np.eye(3) - np.outer(n, n)
+    dn_ds = P_perp @ dA / dist
+    dn_dt = -P_perp @ dB / dist
+
+    # ∂g_n/∂s (12,)
+    dg_ds = np.zeros(12)
+    dg_ds[0:3] = n - (1.0 - s) * dn_ds
+    dg_ds[3:6] = -n - s * dn_ds
+    dg_ds[6:9] = (1.0 - t) * dn_ds
+    dg_ds[9:12] = t * dn_ds
+
+    # ∂g_n/∂t (12,)
+    dg_dt = np.zeros(12)
+    dg_dt[0:3] = -(1.0 - s) * dn_dt
+    dg_dt[3:6] = -s * dn_dt
+    dg_dt[6:9] = -n + (1.0 - t) * dn_dt
+    dg_dt[9:12] = n + t * dn_dt
+
+    K_st += p_n * np.outer(dg_ds, ds_du)
+    K_st += p_n * np.outer(dg_dt, dt_du)
+
+    return K_st
+
+
+def _consistent_st_stiffness_at_gp(
+    s_gp: float,
+    t_closest: float,
+    normal: np.ndarray,
+    p_n_gp: float,
+    k_pen: float,
+    dist: float,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    dt_du: np.ndarray,
+) -> np.ndarray:
+    """Line contact Gauss 点での一貫接線剛性（Phase C6-L2）.
+
+    Line contact では s_gp は固定なので ds/du = 0。
+    dt/du のみが寄与する。
+
+    K_st_gp = outer(g_n, ∂p_n/∂t·dt_du)
+            + p_n * outer(∂g_n/∂t, dt_du)
+
+    Args:
+        s_gp: Gauss 点パラメータ（固定）
+        t_closest: 最近接パラメータ
+        normal: 法線ベクトル (3,)
+        p_n_gp: Gauss 点での法線力
+        k_pen: ペナルティ剛性
+        dist: 中心線間距離
+        xB0, xB1: セグメント B の端点 (3,)
+        dt_du: ∂t/∂u (12,)
+
+    Returns:
+        K_st_gp: (12, 12) Gauss 点での一貫接線剛性
+    """
+    if p_n_gp <= 0.0 or dist < 1e-30:
+        return np.zeros((12, 12))
+
+    n = normal
+    dB = xB1 - xB0
+    s = s_gp
+    t = t_closest
+
+    # g_n at Gauss point
+    from xkep_cae.contact.line_contact import _build_shape_vector_at_gp
+
+    g_n = _build_shape_vector_at_gp(s, t, n)
+
+    # ∂p_n/∂t = k_pen * (n · dB)  (s_gp 固定、ds_du = 0)
+    dpn_dt = k_pen * float(n @ dB)
+    K_st_gp = np.outer(g_n, dpn_dt * dt_du)
+
+    # ∂n/∂t = -(I - n⊗n) · dB / dist
+    P_perp = np.eye(3) - np.outer(n, n)
+    dn_dt = -P_perp @ dB / dist
+
+    # ∂g_n/∂t
+    dg_dt = np.zeros(12)
+    dg_dt[0:3] = -(1.0 - s) * dn_dt
+    dg_dt[3:6] = -s * dn_dt
+    dg_dt[6:9] = -n + (1.0 - t) * dn_dt
+    dg_dt[9:12] = n + t * dn_dt
+
+    K_st_gp += p_n_gp * np.outer(dg_dt, dt_du)
+
+    return K_st_gp
+
+
 def compute_contact_force(
     manager: ContactManager,
     ndof_total: int,
@@ -256,6 +403,96 @@ def compute_contact_force(
     return f_contact
 
 
+def _add_local_to_coo(
+    K_local: np.ndarray,
+    gdofs: np.ndarray,
+    rows: list[int],
+    cols: list[int],
+    data: list[float],
+    tol: float = 1e-30,
+) -> None:
+    """局所行列を COO リストに追加する."""
+    for i in range(12):
+        for j in range(12):
+            val = K_local[i, j]
+            if abs(val) > tol:
+                rows.append(gdofs[i])
+                cols.append(gdofs[j])
+                data.append(val)
+
+
+def _compute_line_contact_st_stiffness_local(
+    pair: ContactPair,
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    n_gauss: int,
+) -> np.ndarray:
+    """Line contact の Gauss 積分で ∂t/∂u 一貫接線を計算する（Phase C6-L2）.
+
+    各 Gauss 点で ∂t/∂u を計算し、K_st 寄与を積分する。
+    s_gp は固定（積分点パラメータ）なので ds_du = 0。
+
+    Args:
+        pair: 接触ペア
+        xA0, xA1, xB0, xB1: 変形後端点座標 (3,)
+        n_gauss: Gauss 積分点数
+
+    Returns:
+        K_st_local: (12, 12) 一貫接線剛性の Gauss 積分
+    """
+    from xkep_cae.contact.line_contact import (
+        compute_t_jacobian_at_gp,
+        gauss_legendre_01,
+        project_point_to_segment,
+    )
+
+    gp, gw = gauss_legendre_01(n_gauss)
+    K_st_local = np.zeros((12, 12))
+
+    lambda_n = pair.state.lambda_n
+    k_pen = pair.state.k_pen
+    r_sum = pair.radius_a + pair.radius_b
+
+    for s_gp, w in zip(gp, gw, strict=True):
+        pA = (1.0 - s_gp) * xA0 + s_gp * xA1
+        t_closest = project_point_to_segment(pA, xB0, xB1)
+        pB = (1.0 - t_closest) * xB0 + t_closest * xB1
+
+        diff = pA - pB
+        dist = float(np.linalg.norm(diff))
+        gap = dist - r_sum
+
+        if dist > 1e-30:
+            normal = diff / dist
+        else:
+            normal = pair.state.normal.copy()
+
+        p_n_gp = max(0.0, lambda_n + k_pen * (-gap))
+        if p_n_gp <= 0.0:
+            continue
+
+        dt_du = compute_t_jacobian_at_gp(s_gp, t_closest, xA0, xA1, xB0, xB1)
+        if dt_du is None:
+            continue
+
+        K_st_gp = _consistent_st_stiffness_at_gp(
+            s_gp,
+            t_closest,
+            normal,
+            p_n_gp,
+            k_pen,
+            dist,
+            xB0,
+            xB1,
+            dt_du,
+        )
+        K_st_local += w * K_st_gp
+
+    return K_st_local
+
+
 def compute_contact_stiffness(
     manager: ContactManager,
     ndof_total: int,
@@ -273,6 +510,9 @@ def compute_contact_stiffness(
     幾何剛性（Phase C5, use_geometric_stiffness=True）:
         K_geo = -p_n / dist * G^T * (I₃ - n⊗n) * G
 
+    ∂(s,t)/∂u 一貫接線（Phase C6-L2, consistent_st_tangent=True）:
+        K_st = ∂p_n/∂(s,t)·d(s,t)/du ⊗ g_n + p_n · ∂g_n/∂(s,t)·d(s,t)/du
+
     摩擦接線剛性（friction_tangents が指定されている場合）:
         K_f = Σ_axis Σ_axis2 D_t[a1,a2] * g_t1 g_t2^T
 
@@ -286,12 +526,13 @@ def compute_contact_stiffness(
         friction_tangents: {pair_index: D_t (2,2)} 摩擦接線剛性マップ。
             None なら法線剛性のみ（後方互換）。
         use_geometric_stiffness: 幾何微分込み一貫接線の有効化（Phase C5）。
-        node_coords: (n_nodes, 3) 変形後節点座標（line_contact 用）。
+        node_coords: (n_nodes, 3) 変形後節点座標（line_contact / consistent_st_tangent 用）。
 
     Returns:
         K_contact: (ndof_total, ndof_total) CSR 形式接触剛性行列
     """
     use_line_contact = manager.config.line_contact and node_coords is not None
+    use_st_tangent = manager.config.consistent_st_tangent and node_coords is not None
 
     # COO 形式で組み立て
     rows: list[int] = []
@@ -335,13 +576,19 @@ def compute_contact_stiffness(
                 use_geometric_stiffness=use_geometric_stiffness,
             )
 
-            for i in range(12):
-                for j in range(12):
-                    val = K_line_local[i, j]
-                    if abs(val) > 1e-30:
-                        rows.append(gdofs[i])
-                        cols.append(gdofs[j])
-                        data.append(val)
+            # --- ∂t/∂u 一貫接線（Phase C6-L2, line contact）---
+            if use_st_tangent and pair.state.p_n > 0.0:
+                K_st_line = _compute_line_contact_st_stiffness_local(
+                    pair,
+                    xA0,
+                    xA1,
+                    xB0,
+                    xB1,
+                    n_gp,
+                )
+                K_line_local = K_line_local + K_st_line
+
+            _add_local_to_coo(K_line_local, gdofs, rows, cols, data)
         else:
             # --- 従来の PtP 法線接線剛性（主項）---
             k_eff = normal_force_linearization(pair)
@@ -358,13 +605,37 @@ def compute_contact_stiffness(
             # --- 幾何剛性（Phase C5）---
             if use_geometric_stiffness and pair.state.p_n > 0.0:
                 K_geo_local = _contact_geometric_stiffness_local(pair)
-                for i in range(12):
-                    for j in range(12):
-                        val = K_geo_local[i, j]
-                        if abs(val) > 1e-30:
-                            rows.append(gdofs[i])
-                            cols.append(gdofs[j])
-                            data.append(val)
+                _add_local_to_coo(K_geo_local, gdofs, rows, cols, data)
+
+            # --- ∂(s,t)/∂u 一貫接線（Phase C6-L2, PtP）---
+            if use_st_tangent and pair.state.p_n > 0.0:
+                from xkep_cae.contact.geometry import compute_st_jacobian
+
+                xA0 = node_coords[pair.nodes_a[0]]
+                xA1 = node_coords[pair.nodes_a[1]]
+                xB0 = node_coords[pair.nodes_b[0]]
+                xB1 = node_coords[pair.nodes_b[1]]
+
+                result = compute_st_jacobian(
+                    pair.state.s,
+                    pair.state.t,
+                    xA0,
+                    xA1,
+                    xB0,
+                    xB1,
+                )
+                if result is not None:
+                    ds_du, dt_du = result
+                    K_st_local = _consistent_st_stiffness_local(
+                        pair,
+                        xA0,
+                        xA1,
+                        xB0,
+                        xB1,
+                        ds_du,
+                        dt_du,
+                    )
+                    _add_local_to_coo(K_st_local, gdofs, rows, cols, data)
 
         # --- 摩擦接線剛性（PtP 代表点で評価、line contact でも同様）---
         if friction_tangents is not None and pair_idx in friction_tangents:

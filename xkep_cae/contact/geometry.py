@@ -191,6 +191,103 @@ def _parallel_transport(
     return R @ t1_old
 
 
+def compute_st_jacobian(
+    s: float,
+    t: float,
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    *,
+    tol_boundary: float = 1e-10,
+    tol_parallel: float = 1e-20,
+) -> tuple[np.ndarray, np.ndarray] | None:
+    """∂(s,t)/∂u を陰関数の定理で計算する.
+
+    最近接点条件:
+      F₁ = δ · dA = 0
+      F₂ = -δ · dB = 0
+    ただし δ = pA(s) - pB(t), dA = xA1 - xA0, dB = xB1 - xB0
+
+    暗関数の定理:
+      J · d(s,t)/du = -∂F/∂u
+
+    J = [[dA·dA, -(dA·dB)],
+         [-(dA·dB), dB·dB]]
+
+    ∂F/∂u は δ の ∂dA/∂u, ∂dB/∂u 項も含む完全版。
+
+    境界処理:
+    - s がクランプ（0 or 1）→ ds/du = 0, dt のみ 1×1 系で計算
+    - t がクランプ → dt/du = 0, ds のみ 1×1 系で計算
+    - 両方クランプ → ds/du = dt/du = 0
+
+    Phase C6-L2: 一貫接線の完全化のコア関数。
+
+    Args:
+        s, t: 現在の最近接パラメータ
+        xA0, xA1: セグメント A の変形後端点座標 (3,)
+        xB0, xB1: セグメント B の変形後端点座標 (3,)
+        tol_boundary: 境界判定の閾値
+        tol_parallel: 平行特異判定の閾値
+
+    Returns:
+        (ds_du, dt_du): 各 (12,) ベクトル。平行特異の場合は None。
+    """
+    dA = xA1 - xA0
+    dB = xB1 - xB0
+    delta = (1.0 - s) * xA0 + s * xA1 - ((1.0 - t) * xB0 + t * xB1)
+
+    a = float(dA @ dA)  # |dA|²
+    b = float(dA @ dB)  # dA·dB
+    c = float(dB @ dB)  # |dB|²
+
+    s_clamped = (s < tol_boundary) or (s > 1.0 - tol_boundary)
+    t_clamped = (t < tol_boundary) or (t > 1.0 - tol_boundary)
+
+    if s_clamped and t_clamped:
+        return np.zeros(12), np.zeros(12)
+
+    # ∂F/∂u (2×12) — δ·∂dA/∂u, δ·∂dB/∂u 項を含む完全版
+    # F₁ = δ · dA,  F₂ = -δ · dB
+    dF_du = np.zeros((2, 12))
+    # ∂F₁/∂u = ∂δ/∂u · dA + δ · ∂dA/∂u
+    dF_du[0, 0:3] = (1.0 - s) * dA - delta
+    dF_du[0, 3:6] = s * dA + delta
+    dF_du[0, 6:9] = -(1.0 - t) * dA
+    dF_du[0, 9:12] = -t * dA
+    # ∂F₂/∂u = -∂δ/∂u · dB - δ · ∂dB/∂u
+    dF_du[1, 0:3] = -(1.0 - s) * dB
+    dF_du[1, 3:6] = -s * dB
+    dF_du[1, 6:9] = (1.0 - t) * dB + delta
+    dF_du[1, 9:12] = t * dB - delta
+
+    ds_du = np.zeros(12)
+    dt_du = np.zeros(12)
+
+    if s_clamped:
+        # s 固定, t のみ自由: c * dt/du = -dF_du[1]
+        if abs(c) < tol_parallel:
+            return None
+        dt_du = -dF_du[1, :] / c
+    elif t_clamped:
+        # t 固定, s のみ自由: a * ds/du = -dF_du[0]
+        if abs(a) < tol_parallel:
+            return None
+        ds_du = -dF_du[0, :] / a
+    else:
+        # 両方自由: 2×2 系
+        det_J = a * c - b * b
+        if abs(det_J) < tol_parallel * max(a * c, 1e-30):
+            return None  # 平行特異 → フォールバック
+        J_inv = np.array([[c, b], [b, a]]) / det_J
+        dst_du = -J_inv @ dF_du  # (2, 12)
+        ds_du = dst_du[0]
+        dt_du = dst_du[1]
+
+    return ds_du, dt_du
+
+
 def build_contact_frame(
     normal: np.ndarray,
     prev_tangent1: np.ndarray | None = None,
