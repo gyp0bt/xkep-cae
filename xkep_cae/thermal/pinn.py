@@ -5,9 +5,13 @@ Physics-Informed ロスの導入:
   L_phys  = ||K @ ΔT_pred − f_shifted||² / ||f_shifted||²
 
 ここで:
-  K:         FEM全体剛性行列（伝導 + 対流）
+  K:         FEM全体剛性行列（伝導 + 対流）— スパース/密行列対応
   f_shifted: 右辺ベクトル（ΔT基準に変換済み: f − T_min · K @ 1）
   ΔT_pred:   GNN予測の温度上昇
+
+スパース行列対応:
+  大規模メッシュ（N > 100ノード）ではK行列をCOOスパーステンソルとして
+  保持し、メモリ効率と行列ベクトル積の性能を改善する。
 """
 
 from __future__ import annotations
@@ -90,6 +94,12 @@ def generate_pinn_sample(
     graph["K_dense"] = K.toarray().astype(np.float32)
     graph["f_shifted"] = f_shifted.astype(np.float32)
 
+    # スパース表現も格納（大規模メッシュ向け）
+    K_coo = K.tocoo()
+    graph["K_sparse_indices"] = np.vstack([K_coo.row, K_coo.col]).astype(np.int64)
+    graph["K_sparse_values"] = K_coo.data.astype(np.float32)
+    graph["K_sparse_size"] = K.shape[0]
+
     return graph
 
 
@@ -154,40 +164,61 @@ def generate_pinn_dataset_irregular(
     return dataset
 
 
-def graph_dict_to_pyg_pinn(graph_dict: dict, config: ThermalProblemConfig) -> Data:
+def graph_dict_to_pyg_pinn(
+    graph_dict: dict,
+    config: ThermalProblemConfig,
+    *,
+    use_sparse: bool = False,
+) -> Data:
     """PINN用の PyG Data 変換（K, f 付き）.
 
     Args:
         graph_dict: generate_pinn_sample() の出力
         config: 問題設定
+        use_sparse: True の場合 K をスパース COO テンソルで保持
+            （大規模メッシュでメモリ効率改善）
 
     Returns:
-        PyG Data with K_dense, f_shifted tensors
+        PyG Data with K_dense or K_sparse, f_shifted tensors
     """
     data = graph_dict_to_pyg(graph_dict, config)
-    data.K_dense = torch.from_numpy(graph_dict["K_dense"])
     data.f_shifted = torch.from_numpy(graph_dict["f_shifted"])
+
+    if use_sparse and "K_sparse_indices" in graph_dict:
+        indices = torch.from_numpy(graph_dict["K_sparse_indices"])
+        values = torch.from_numpy(graph_dict["K_sparse_values"])
+        size = int(graph_dict["K_sparse_size"])
+        data.K_sparse = torch.sparse_coo_tensor(indices, values, (size, size)).coalesce()
+    else:
+        data.K_dense = torch.from_numpy(graph_dict["K_dense"])
     return data
 
 
 def compute_physics_loss(
     pred_dt: torch.Tensor,
-    K_dense: torch.Tensor,
+    K: torch.Tensor,
     f_shifted: torch.Tensor,
 ) -> torch.Tensor:
     """Physics-informed 残差ロスを計算.
 
     L_phys = ||K @ ΔT_pred − f_shifted||² / ||f_shifted||²
 
+    K は密行列またはスパース COO テンソルのいずれかを受け付ける。
+
     Args:
         pred_dt: (N,) 非正規化ΔT予測値
-        K_dense: (N, N) FEM全体行列
+        K: (N, N) FEM全体行列（密またはスパース）
         f_shifted: (N,) ΔT基準右辺ベクトル
 
     Returns:
         正規化残差 MSE（スカラー）
     """
-    residual = torch.mv(K_dense, pred_dt) - f_shifted
+    if K.is_sparse:
+        # スパース行列ベクトル積: sparse (N, N) @ dense (N, 1) → (N, 1)
+        Kv = torch.sparse.mm(K, pred_dt.unsqueeze(1)).squeeze(1)
+    else:
+        Kv = torch.mv(K, pred_dt)
+    residual = Kv - f_shifted
     f_norm_sq = (f_shifted**2).mean() + 1e-8
     return (residual**2).mean() / f_norm_sq
 
@@ -271,7 +302,8 @@ def train_model_pinn(
 
             # Physics loss (on denormalized ΔT)
             dt_pred = pred.squeeze(-1) * y_std + y_mean
-            l_phys = compute_physics_loss(dt_pred, data.K_dense, data.f_shifted)
+            K_mat = getattr(data, "K_sparse", None) or data.K_dense
+            l_phys = compute_physics_loss(dt_pred, K_mat, data.f_shifted)
 
             loss = l_data + lambda_phys * l_phys
             loss.backward()

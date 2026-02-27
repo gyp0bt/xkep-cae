@@ -146,6 +146,109 @@ class TestPhysicsLoss:
             assert losses[i] >= losses[i + 1] - 1e-8
 
 
+class TestSparsePINN:
+    """スパース行列対応の検証."""
+
+    def test_sparse_data_generated(self):
+        """generate_pinn_sample がスパース表現を出力すること."""
+        config = ThermalProblemConfig(nx=3, ny=3)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        sample = raw[0]
+        assert "K_sparse_indices" in sample
+        assert "K_sparse_values" in sample
+        assert "K_sparse_size" in sample
+        n_nodes = (config.nx + 1) * (config.ny + 1)
+        assert sample["K_sparse_size"] == n_nodes
+
+    def test_sparse_indices_values_consistent(self):
+        """スパース表現とdense表現が一致すること."""
+        config = ThermalProblemConfig(nx=5, ny=5)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        sample = raw[0]
+        K_dense = sample["K_dense"]
+        # スパースから復元
+        idx = sample["K_sparse_indices"]
+        vals = sample["K_sparse_values"]
+        n = sample["K_sparse_size"]
+        from scipy.sparse import coo_matrix
+
+        K_reconstructed = coo_matrix((vals, (idx[0], idx[1])), shape=(n, n)).toarray()
+        np.testing.assert_allclose(K_dense, K_reconstructed, atol=1e-6)
+
+    def test_pyg_sparse_conversion(self):
+        """use_sparse=True でスパーステンソルが生成されること."""
+        config = ThermalProblemConfig(nx=3, ny=3)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        data = graph_dict_to_pyg_pinn(raw[0], config, use_sparse=True)
+        assert hasattr(data, "K_sparse")
+        assert data.K_sparse is not None
+        assert data.K_sparse.is_sparse
+        # use_sparse=True の場合、K_dense は設定されない
+        assert not hasattr(data, "K_dense")
+
+    def test_pyg_dense_conversion_default(self):
+        """デフォルト（use_sparse=False）でdenseテンソルが生成されること."""
+        config = ThermalProblemConfig(nx=3, ny=3)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        data = graph_dict_to_pyg_pinn(raw[0], config)
+        assert hasattr(data, "K_dense")
+        assert data.K_dense is not None
+        assert not data.K_dense.is_sparse
+
+    def test_sparse_physics_loss_matches_dense(self):
+        """スパース行列での物理ロスがdenseと一致すること."""
+        config = ThermalProblemConfig(nx=5, ny=5)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+
+        data_dense = graph_dict_to_pyg_pinn(raw[0], config, use_sparse=False)
+        data_sparse = graph_dict_to_pyg_pinn(raw[0], config, use_sparse=True)
+
+        dt_pred = torch.randn(data_dense.x.shape[0])
+        loss_dense = compute_physics_loss(dt_pred, data_dense.K_dense, data_dense.f_shifted)
+        loss_sparse = compute_physics_loss(dt_pred, data_sparse.K_sparse, data_sparse.f_shifted)
+        torch.testing.assert_close(loss_dense, loss_sparse, rtol=1e-5, atol=1e-6)
+
+    def test_sparse_exact_solution_zero_loss(self):
+        """スパース行列で正解ΔTの物理ロスがゼロ."""
+        config = ThermalProblemConfig(nx=5, ny=5)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        data = graph_dict_to_pyg_pinn(raw[0], config, use_sparse=True)
+        dt_exact = data.y.squeeze(-1)
+        loss = compute_physics_loss(dt_exact, data.K_sparse, data.f_shifted)
+        assert loss.item() < 1e-6
+
+    def test_sparse_gradient_flows(self):
+        """スパース行列の物理ロスから勾配が伝搬すること."""
+        config = ThermalProblemConfig(nx=5, ny=5)
+        raw = generate_pinn_dataset(config, n_samples=1, seed=42)
+        data = graph_dict_to_pyg_pinn(raw[0], config, use_sparse=True)
+        dt_pred = torch.randn(data.x.shape[0], requires_grad=True)
+        loss = compute_physics_loss(dt_pred, data.K_sparse, data.f_shifted)
+        loss.backward()
+        assert dt_pred.grad is not None
+        assert torch.any(dt_pred.grad != 0)
+
+    @pytest.mark.slow
+    def test_sparse_pinn_training_converges(self):
+        """スパース行列でPINN学習が収束すること."""
+        config = ThermalProblemConfig(nx=5, ny=5)
+        raw = generate_pinn_dataset(config, n_samples=50, seed=42)
+        pyg = [graph_dict_to_pyg_pinn(g, config, use_sparse=True) for g in raw]
+        train_d, val_d = pyg[:35], pyg[35:43]
+
+        model = ThermalGNN(node_in_dim=6, hidden_dim=32, n_layers=3)
+        history = train_model_pinn(
+            model,
+            train_d,
+            val_d,
+            lambda_phys=0.1,
+            epochs=60,
+            lr=1e-3,
+            verbose=False,
+        )
+        assert history["train_loss"][-1] < history["train_loss"][0]
+
+
 class TestPINNTraining:
     """PINN学習の検証."""
 
