@@ -80,6 +80,7 @@
 | [070](status-070.md) | 2026-02-27 | GitHub Actions CI構成 + slowテストマーカー導入 | 1629 |
 | [071](status-071.md) | 2026-02-27 | 初期コミット統合（git履歴クリーンアップ） | 1629 |
 | [072](status-072.md) | 2026-02-27 | ドキュメント整理・TODO棚卸し（roadmap圧縮, README簡潔化, archive分割） | — |
+| [073](status-073.md) | 2026-02-27 | CI改善（キャッシュ・バッジ・torch importorskip） | 1629 |
 
 ## テスト数推移
 

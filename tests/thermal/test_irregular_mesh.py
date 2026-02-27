@@ -14,6 +14,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+pytest.importorskip("torch")
+
 from xkep_cae.thermal.dataset import (
     ThermalProblemConfig,
     generate_dataset,
