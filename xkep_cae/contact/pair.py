@@ -201,6 +201,9 @@ class ContactConfig:
     monolithic_geometry: bool = (
         False  # Inner NR内で幾何(s,t,normal)を毎反復更新（Outer/Inner分離を廃止）
     )
+    line_contact: bool = False  # Line-to-line Gauss 積分の有効化（Phase C6-L1）
+    n_gauss: int = 3  # Line contact の Gauss 積分点数（2-5）
+    n_gauss_auto: bool = False  # セグメント角度に基づく Gauss 点数自動選択
 
 
 @dataclass

@@ -565,12 +565,18 @@ def newton_raphson_with_contact(
                 # 構造内力
                 f_int = assemble_internal_force(u)
 
+                # Line contact 用の変形座標（line_contact=True の場合）
+                _line_coords = None
+                if manager.config.line_contact:
+                    _line_coords = _deformed_coords(node_coords_ref, u, ndof_per_node)
+
                 # 接触内力（法線 + 摩擦）
                 f_c_raw = compute_contact_force(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
                     friction_forces=friction_forces if friction_forces else None,
+                    node_coords=_line_coords,
                 )
 
                 # Contact damping: under-relaxation で接触力の急変を抑制
@@ -622,6 +628,7 @@ def newton_raphson_with_contact(
                         ndof_per_node=ndof_per_node,
                         friction_tangents=friction_tangents if friction_tangents else None,
                         use_geometric_stiffness=use_geometric_stiffness,
+                        node_coords=_line_coords,
                     )
                     if contact_tangent_mode == "diagonal":
                         # 対角近似: K_c の対角成分のみを使用
@@ -694,11 +701,15 @@ def newton_raphson_with_contact(
                             ndof_per_node,
                         )
                         f_int_t = assemble_internal_force(u_trial)
+                        _lc_t = None
+                        if manager.config.line_contact:
+                            _lc_t = _deformed_coords(node_coords_ref, u_trial, ndof_per_node)
                         f_c_t = compute_contact_force(
                             manager,
                             ndof,
                             ndof_per_node=ndof_per_node,
                             friction_forces=_ff,
+                            node_coords=_lc_t,
                         )
                         res_t = _fe - f_int_t - f_c_t
                         res_t[fixed_dofs] = 0.0
@@ -843,10 +854,14 @@ def newton_raphson_with_contact(
             if use_line_search:
                 _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
                 f_int_post = assemble_internal_force(u)
+                _lc_post = None
+                if manager.config.line_contact:
+                    _lc_post = _deformed_coords(node_coords_ref, u, ndof_per_node)
                 f_c_post = compute_contact_force(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
+                    node_coords=_lc_post,
                 )
                 res_post = f_ext - f_int_post - f_c_post
                 res_post[fixed_dofs] = 0.0
@@ -918,10 +933,14 @@ def newton_raphson_with_contact(
             step_converged = True
 
         # 接触力ノルム記録
+        _lc_final = None
+        if manager.config.line_contact:
+            _lc_final = _deformed_coords(node_coords_ref, u, ndof_per_node)
         f_c_final = compute_contact_force(
             manager,
             ndof,
             ndof_per_node=ndof_per_node,
+            node_coords=_lc_final,
         )
         fc_norm = float(np.linalg.norm(f_c_final))
 
@@ -1346,12 +1365,18 @@ def newton_raphson_block_contact(
                 # 構造内力
                 f_int = assemble_internal_force(u)
 
+                # Line contact 用の変形座標
+                _lc_blk = None
+                if manager.config.line_contact:
+                    _lc_blk = _deformed_coords(node_coords_ref, u, ndof_per_node)
+
                 # 接触内力
                 f_c = compute_contact_force(
                     manager,
                     ndof,
                     ndof_per_node=ndof_per_node,
                     friction_forces=friction_forces if friction_forces else None,
+                    node_coords=_lc_blk,
                 )
 
                 # 残差
@@ -1385,6 +1410,7 @@ def newton_raphson_block_contact(
                         ndof_per_node=ndof_per_node,
                         friction_tangents=None,
                         use_geometric_stiffness=manager.config.use_geometric_stiffness,
+                        node_coords=_lc_blk,
                     )
 
                 # ブロック前処理の構築
@@ -1571,10 +1597,14 @@ def newton_raphson_block_contact(
             step_converged = True
 
         # 記録
+        _lc_blk_final = None
+        if manager.config.line_contact:
+            _lc_blk_final = _deformed_coords(node_coords_ref, u, ndof_per_node)
         f_c_final = compute_contact_force(
             manager,
             ndof,
             ndof_per_node=ndof_per_node,
+            node_coords=_lc_blk_final,
         )
         fc_norm = float(np.linalg.norm(f_c_final))
 
