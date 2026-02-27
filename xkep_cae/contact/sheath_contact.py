@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
     from xkep_cae.mesh.twisted_wire import CoatingModel, SheathModel, TwistedWireMesh
 
 
@@ -686,3 +687,211 @@ def rebuild_compliance_matrix(
 
     manager.compliance_matrix = C
     return C
+
+
+# ====================================================================
+# Stage S4: シース-シース接触
+# ====================================================================
+
+
+def sheath_outer_radius(
+    mesh: TwistedWireMesh,
+    sheath: SheathModel,
+    *,
+    coating: CoatingModel | None = None,
+) -> float:
+    """シース外径を返す.
+
+    r_outer = sheath_inner_radius + sheath.thickness
+
+    Args:
+        mesh: 撚線メッシュ
+        sheath: シースモデル
+        coating: 被膜モデル
+
+    Returns:
+        シース外径 [m]
+    """
+    from xkep_cae.mesh.twisted_wire import sheath_inner_radius
+
+    return sheath_inner_radius(mesh, sheath, coating=coating) + sheath.thickness
+
+
+def build_sheath_sheath_contact_manager(
+    meshes: list[TwistedWireMesh],
+    sheaths: list[SheathModel],
+    *,
+    coatings: list[CoatingModel | None] | None = None,
+    config: ContactConfig | None = None,
+) -> ContactManager:
+    """複数のシース付き撚線間の ContactManager を構築する (Stage S4).
+
+    各撚線のシース外面を円形梁として扱い、既存の beam-beam 接触フレームワーク
+    （ContactPair / ContactManager）を流用してシース間接触を設定する。
+
+    各撚線は 1 本の「等価梁」として表現される:
+    - 節点座標: 中心素線（layer=0）の節点座標
+    - 接触半径: シース外径
+
+    Args:
+        meshes: 撚線メッシュのリスト（2本以上）
+        sheaths: 各撚線に対応するシースモデルのリスト
+        coatings: 各撚線に対応する被膜モデルのリスト（None なら被膜なし）
+        config: ContactConfig（None でデフォルト）
+
+    Returns:
+        ContactManager（シース-シース接触ペアが設定済み）
+    """
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
+
+    n_cables = len(meshes)
+    if n_cables < 2:
+        raise ValueError(f"シース-シース接触には2本以上の撚線が必要: {n_cables}")
+    if len(sheaths) != n_cables:
+        raise ValueError(f"meshes ({n_cables}) と sheaths ({len(sheaths)}) の長さが不一致")
+
+    if coatings is None:
+        coatings = [None] * n_cables
+
+    if config is None:
+        config = ContactConfig()
+
+    # 各ケーブルのシース外径を計算
+    radii = []
+    for i in range(n_cables):
+        r = sheath_outer_radius(meshes[i], sheaths[i], coating=coatings[i])
+        radii.append(r)
+
+    # 統合座標系を構築
+    # 各ケーブルの中心素線（layer=0）を代表節点として使用
+    all_coords = []
+    all_conn = []
+    cable_node_offsets = []
+    cable_elem_offsets = []
+    cable_radii = []
+
+    node_offset = 0
+    elem_offset = 0
+
+    for i in range(n_cables):
+        mesh = meshes[i]
+        # 中心素線（strand_id=0 for 7本以上、全素線 for 3本）を探す
+        center_infos = [info for info in mesh.strand_infos if info.layer == 0]
+        if center_infos:
+            center_id = center_infos[0].strand_id
+        else:
+            # 中心なし（3本撚りなど）→ 全素線の平均座標を使うか、最初の素線を代表に
+            center_id = 0
+
+        ns, ne = mesh.strand_node_ranges[center_id]
+        n_strand_nodes = ne - ns
+        n_strand_elems = n_strand_nodes - 1
+
+        cable_node_offsets.append(node_offset)
+        cable_elem_offsets.append(elem_offset)
+
+        # 座標
+        all_coords.append(mesh.node_coords[ns:ne].copy())
+
+        # 接続（オフセット付き）
+        conn = np.zeros((n_strand_elems, 2), dtype=int)
+        for j in range(n_strand_elems):
+            conn[j, 0] = node_offset + j
+            conn[j, 1] = node_offset + j + 1
+        all_conn.append(conn)
+
+        # 半径
+        cable_radii.extend([radii[i]] * n_strand_elems)
+
+        node_offset += n_strand_nodes
+        elem_offset += n_strand_elems
+
+    merged_coords = np.vstack(all_coords)
+    merged_conn = np.vstack(all_conn) if all_conn else np.zeros((0, 2), dtype=int)
+    merged_radii = np.array(cable_radii)
+
+    # ContactManager を構築して候補を検出
+    manager = ContactManager(config=config)
+    manager.detect_candidates(
+        merged_coords,
+        merged_conn,
+        merged_radii,
+        margin=max(radii) * 0.5,
+    )
+
+    # 同一ケーブル内のペアを除外（インターケーブルペアのみ残す）
+    def _cable_of_elem(e: int) -> int:
+        for c in range(n_cables - 1, -1, -1):
+            if e >= cable_elem_offsets[c]:
+                return c
+        return 0
+
+    from xkep_cae.contact.pair import ContactStatus
+
+    for pair in manager.pairs:
+        if _cable_of_elem(pair.elem_a) == _cable_of_elem(pair.elem_b):
+            pair.state.status = ContactStatus.INACTIVE
+
+    # 同一ケーブルのペアをリストから除去
+    manager.pairs = [
+        p
+        for p in manager.pairs
+        if _cable_of_elem(p.elem_a) != _cable_of_elem(p.elem_b)
+    ]
+
+    return manager
+
+
+def sheath_sheath_merged_coords(
+    meshes: list[TwistedWireMesh],
+) -> tuple[np.ndarray, np.ndarray, list[int], list[int]]:
+    """シース-シース接触用の統合座標・接続を構築する.
+
+    各ケーブルの中心素線座標を統合し、節点・要素オフセットを返す。
+
+    Args:
+        meshes: 撚線メッシュのリスト
+
+    Returns:
+        merged_coords: (N, 3) 統合節点座標
+        merged_conn: (M, 2) 統合要素接続
+        node_offsets: 各ケーブルの節点オフセット
+        elem_offsets: 各ケーブルの要素オフセット
+    """
+    all_coords = []
+    all_conn = []
+    node_offsets = []
+    elem_offsets = []
+
+    node_offset = 0
+    elem_offset = 0
+
+    for mesh in meshes:
+        center_infos = [info for info in mesh.strand_infos if info.layer == 0]
+        if center_infos:
+            center_id = center_infos[0].strand_id
+        else:
+            center_id = 0
+
+        ns, ne = mesh.strand_node_ranges[center_id]
+        n_nodes = ne - ns
+        n_elems = n_nodes - 1
+
+        node_offsets.append(node_offset)
+        elem_offsets.append(elem_offset)
+
+        all_coords.append(mesh.node_coords[ns:ne].copy())
+
+        conn = np.zeros((n_elems, 2), dtype=int)
+        for j in range(n_elems):
+            conn[j, 0] = node_offset + j
+            conn[j, 1] = node_offset + j + 1
+        all_conn.append(conn)
+
+        node_offset += n_nodes
+        elem_offset += n_elems
+
+    merged_coords = np.vstack(all_coords)
+    merged_conn = np.vstack(all_conn) if all_conn else np.zeros((0, 2), dtype=int)
+
+    return merged_coords, merged_conn, node_offsets, elem_offsets

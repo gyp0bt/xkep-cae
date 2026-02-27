@@ -22,6 +22,7 @@ from xkep_cae.contact.sheath_contact import (
     assemble_sheath_forces,
     build_contact_frame_sheath,
     build_sheath_contact_manager,
+    build_sheath_sheath_contact_manager,
     check_theta_rebuild_needed,
     compute_sheath_gaps,
     compute_strand_theta,
@@ -30,6 +31,8 @@ from xkep_cae.contact.sheath_contact import (
     evaluate_sheath_inner_radius,
     rebuild_compliance_matrix,
     sheath_friction_return_mapping,
+    sheath_outer_radius,
+    sheath_sheath_merged_coords,
     update_contact_angles,
 )
 from xkep_cae.mesh.twisted_wire import (
@@ -551,3 +554,135 @@ class TestInnerRadius:
         """プロファイル未設定 → 基本内径を返す."""
         mgr = SheathContactManager(sheath_r_inner_base=5.0)
         assert evaluate_sheath_inner_radius(mgr, 0.0) == 5.0
+
+
+# ============================================================
+# Stage S4: シース-シース接触テスト
+# ============================================================
+
+
+class TestSheathOuterRadius:
+    """シース外径計算テスト."""
+
+    def test_outer_radius_positive(self, mesh_7, sheath):
+        r = sheath_outer_radius(mesh_7, sheath)
+        assert r > 0.0
+
+    def test_outer_radius_includes_thickness(self, mesh_7, sheath):
+        from xkep_cae.mesh.twisted_wire import sheath_inner_radius
+
+        r_in = sheath_inner_radius(mesh_7, sheath)
+        r_out = sheath_outer_radius(mesh_7, sheath)
+        assert r_out == pytest.approx(r_in + sheath.thickness)
+
+    def test_coating_increases_radius(self, mesh_7, sheath, coating):
+        r_no_coat = sheath_outer_radius(mesh_7, sheath)
+        r_with_coat = sheath_outer_radius(mesh_7, sheath, coating=coating)
+        assert r_with_coat > r_no_coat
+
+
+class TestSheathSheathMergedCoords:
+    """統合座標テスト."""
+
+    def test_two_meshes(self, mesh_7):
+        coords, conn, noff, eoff = sheath_sheath_merged_coords([mesh_7, mesh_7])
+        # 中心素線は11ノード（10要素+1）× 2本
+        assert coords.shape[0] == 22
+        assert conn.shape[0] == 20
+        assert noff == [0, 11]
+        assert eoff == [0, 10]
+
+    def test_three_meshes(self, mesh_3):
+        """3本撚り（中心なし）の場合."""
+        coords, conn, noff, eoff = sheath_sheath_merged_coords([mesh_3, mesh_3, mesh_3])
+        # 3本撚り: center_id=0, 11ノード × 3本
+        assert coords.shape[0] == 33
+        assert len(noff) == 3
+
+
+class TestSheathSheathContactManager:
+    """シース-シース ContactManager 構築テスト."""
+
+    def test_builds_with_two_cables(self, sheath):
+        """2本の撚線でシース-シース接触マネージャが構築できる."""
+        mesh1 = make_twisted_wire_mesh(
+            n_strands=7,
+            wire_diameter=1e-3,
+            pitch=20e-3,
+            length=20e-3,
+            n_elems_per_strand=10,
+        )
+        # 2本目は横に1cm ずらす
+        mesh2 = make_twisted_wire_mesh(
+            n_strands=7,
+            wire_diameter=1e-3,
+            pitch=20e-3,
+            length=20e-3,
+            n_elems_per_strand=10,
+        )
+        # mesh2 の座標をx方向にオフセット
+        offset = 3e-3  # シース外径より小さくして接触させる
+        mesh2.node_coords[:, 0] += offset
+
+        mgr = build_sheath_sheath_contact_manager(
+            [mesh1, mesh2],
+            [sheath, sheath],
+        )
+        # ContactManager が返される
+        assert mgr is not None
+        assert mgr.n_pairs > 0
+
+    def test_far_apart_no_contact(self, sheath):
+        """十分離れていれば接触候補なし."""
+        mesh1 = make_twisted_wire_mesh(
+            n_strands=7,
+            wire_diameter=1e-3,
+            pitch=20e-3,
+            length=20e-3,
+            n_elems_per_strand=5,
+        )
+        mesh2 = make_twisted_wire_mesh(
+            n_strands=7,
+            wire_diameter=1e-3,
+            pitch=20e-3,
+            length=20e-3,
+            n_elems_per_strand=5,
+        )
+        # 100mm 離す（接触しない距離）
+        mesh2.node_coords[:, 0] += 100e-3
+
+        mgr = build_sheath_sheath_contact_manager(
+            [mesh1, mesh2],
+            [sheath, sheath],
+        )
+        # 候補が見つからない
+        assert mgr.n_pairs == 0
+
+    def test_raises_for_single_cable(self, mesh_7, sheath):
+        """1本だけではエラー."""
+        with pytest.raises(ValueError, match="2本以上"):
+            build_sheath_sheath_contact_manager([mesh_7], [sheath])
+
+    def test_three_cables(self, sheath):
+        """3本のシース間接触."""
+        meshes = []
+        for i in range(3):
+            m = make_twisted_wire_mesh(
+                n_strands=7,
+                wire_diameter=1e-3,
+                pitch=20e-3,
+                length=20e-3,
+                n_elems_per_strand=5,
+            )
+            # 三角形配置
+            angle = 2.0 * math.pi * i / 3
+            offset = 3e-3
+            m.node_coords[:, 0] += offset * math.cos(angle)
+            m.node_coords[:, 1] += offset * math.sin(angle)
+            meshes.append(m)
+
+        mgr = build_sheath_sheath_contact_manager(
+            meshes,
+            [sheath, sheath, sheath],
+        )
+        assert mgr.n_pairs > 0
