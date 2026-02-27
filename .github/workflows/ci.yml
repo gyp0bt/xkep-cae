@@ -49,10 +49,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install dependencies (FEM only, no torch)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,ml]"
+          pip install -e ".[dev]"
 
       - name: Run fast tests (excluding slow)
         run: |
@@ -76,10 +76,12 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies (dev + ml)
+      - name: Install dependencies (dev + ml with CPU torch)
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev,ml]"
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install torch-geometric
+          pip install -e ".[dev]"
 
       - name: Run slow tests
         run: |

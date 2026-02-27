@@ -48,9 +48,17 @@ from xkep_cae.contact.pair import (
     ContactState,
     ContactStatus,
 )
+from xkep_cae.contact.sheath_contact import (
+    SheathContactConfig,
+    SheathContactManager,
+    SheathContactPoint,
+    build_sheath_contact_manager,
+    evaluate_sheath_contact,
+)
 from xkep_cae.contact.solver_hooks import (
     ContactSolveResult,
     CyclicContactResult,
+    newton_raphson_block_contact,
     newton_raphson_with_contact,
     run_contact_cyclic,
 )
@@ -66,6 +74,11 @@ __all__ = [
     "CyclicContactResult",
     "ContactState",
     "ContactStatus",
+    "SheathContactConfig",
+    "SheathContactManager",
+    "SheathContactPoint",
+    "build_sheath_contact_manager",
+    "evaluate_sheath_contact",
     "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
     "backtracking_line_search",
@@ -81,6 +94,7 @@ __all__ = [
     "friction_tangent_2x2",
     "initialize_penalty_stiffness",
     "merit_function",
+    "newton_raphson_block_contact",
     "newton_raphson_with_contact",
     "run_contact_cyclic",
     "normal_force_linearization",

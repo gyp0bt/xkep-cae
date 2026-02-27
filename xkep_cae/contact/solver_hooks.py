@@ -936,6 +936,642 @@ def newton_raphson_with_contact(
     )
 
 
+def _extract_strand_blocks(
+    K_global: sp.spmatrix,
+    strand_dof_ranges: list[tuple[int, int]],
+) -> list[np.ndarray]:
+    """疎行列から素線ごとの対角ブロックを密行列として抽出する.
+
+    K_T が素線ごとにブロック対角である性質を利用。
+    各素線のブロックは小規模（例: 30×30）なので密行列で効率的に扱える。
+
+    Args:
+        K_global: グローバル剛性行列（CSR/CSC）
+        strand_dof_ranges: 各素線の (dof_start, dof_end) リスト
+
+    Returns:
+        各素線の対角ブロック行列のリスト
+    """
+    blocks = []
+    for dof_start, dof_end in strand_dof_ranges:
+        block = K_global[dof_start:dof_end, dof_start:dof_end].toarray()
+        blocks.append(block)
+    return blocks
+
+
+def _build_block_preconditioner(
+    K_T_blocks: list[np.ndarray],
+    K_c: sp.spmatrix | None,
+    fixed_dofs: np.ndarray,
+    strand_dof_ranges: list[tuple[int, int]],
+) -> list[np.ndarray]:
+    """ブロック前処理行列の逆行列を構築する.
+
+    M = block_diag(K_T_i + K_c_ii) の各ブロックを LU 分解し、
+    逆行列として保持する。各ブロックは小規模なので密行列逆行列で効率的。
+
+    Args:
+        K_T_blocks: 各素線の構造剛性行列
+        K_c: 接触剛性行列（None の場合は K_T のみ）
+        fixed_dofs: 拘束DOFインデックス
+        strand_dof_ranges: 各素線の (dof_start, dof_end) リスト
+
+    Returns:
+        各素線ブロックの逆行列リスト
+    """
+    fixed_set = set(int(d) for d in fixed_dofs)
+    block_invs = []
+
+    for bi, (dof_start, dof_end) in enumerate(strand_dof_ranges):
+        K_local = K_T_blocks[bi].copy()
+        if K_c is not None:
+            K_local += K_c[dof_start:dof_end, dof_start:dof_end].toarray()
+
+        # 拘束DOFの適用
+        for d in range(dof_start, dof_end):
+            if d in fixed_set:
+                ld = d - dof_start
+                K_local[ld, :] = 0.0
+                K_local[:, ld] = 0.0
+                K_local[ld, ld] = 1.0
+
+        block_invs.append(np.linalg.inv(K_local))
+
+    return block_invs
+
+
+def _solve_block_preconditioned(
+    K_total: sp.spmatrix,
+    residual: np.ndarray,
+    fixed_dofs: np.ndarray,
+    block_invs: list[np.ndarray],
+    strand_dof_ranges: list[tuple[int, int]],
+) -> np.ndarray:
+    """ブロック前処理付き GMRES で接触込みシステムを解く.
+
+    モノリシック K_T + K_c の完全な結合を GMRES で解きつつ、
+    素線ブロック逆行列を前処理として使用する。
+
+    利点:
+    - 前処理が各素線ブロック（良条件）から構築されるため安定
+    - ILU 前処理と異なり、高 k_pen でも破綻しない
+    - GMRES が off-diagonal K_c 結合を正しく反映
+    - NR 法の二次収束性を維持
+
+    Args:
+        K_total: BC 適用済みの全体剛性行列 (K_T + K_c)
+        residual: BC 適用済みの残差ベクトル
+        fixed_dofs: 拘束DOFインデックス
+        block_invs: 各素線ブロック逆行列
+        strand_dof_ranges: 各素線の (dof_start, dof_end) リスト
+
+    Returns:
+        変位増分ベクトル du
+    """
+    import scipy.sparse.linalg as spla
+
+    ndof = residual.shape[0]
+
+    def _precond(x: np.ndarray) -> np.ndarray:
+        y = np.zeros_like(x)
+        for bi, (ds, de) in enumerate(strand_dof_ranges):
+            y[ds:de] = block_invs[bi] @ x[ds:de]
+        return y
+
+    M = spla.LinearOperator((ndof, ndof), matvec=_precond)
+
+    du, info = spla.gmres(
+        K_total,
+        residual,
+        M=M,
+        atol=1e-12,
+        maxiter=min(300, ndof),
+    )
+
+    if info != 0:
+        # GMRES 未収束 → ブロック Jacobi にフォールバック
+        du = _precond(residual)
+
+    return du
+
+
+def newton_raphson_block_contact(
+    f_ext_total: np.ndarray,
+    fixed_dofs: np.ndarray,
+    assemble_tangent: Callable[[np.ndarray], sp.csr_matrix],
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray],
+    manager: ContactManager,
+    node_coords_ref: np.ndarray,
+    connectivity: np.ndarray,
+    radii: np.ndarray | float,
+    *,
+    strand_dof_ranges: list[tuple[int, int]],
+    n_load_steps: int = 10,
+    max_iter: int = 30,
+    tol_force: float = 1e-8,
+    tol_disp: float = 1e-8,
+    tol_energy: float = 1e-10,
+    show_progress: bool = True,
+    u0: np.ndarray | None = None,
+    ndof_per_node: int = 6,
+    broadphase_margin: float = 0.0,
+    broadphase_cell_size: float | None = None,
+    f_ext_base: np.ndarray | None = None,
+) -> ContactSolveResult:
+    """ブロック前処理付きNRソルバー（素線ブロック前処理 + GMRES）.
+
+    多本撚り（7本撚り等）の接触問題に特化したソルバー。
+    構造剛性 K_T が素線ごとにブロック対角であることを利用し、
+    素線ブロック逆行列を GMRES の前処理として使用する。
+
+    モノリシック直接解法との違い:
+    - 直接法 (spsolve): (K_T + K_c) を直接 LU 分解
+      → 高 k_pen 時に条件数悪化で精度劣化
+    - ブロック前処理GMRES: 素線ブロック M_i = (K_T_i + K_c_ii)^{-1} で前処理
+      → 各ブロックは良条件で安定に逆行列計算可能
+      → GMRES がオフダイアゴナル K_c 結合を正確に反映
+      → NR 法の二次収束性を維持
+
+    アルゴリズム:
+    1. 各荷重ステップで Outer/Inner 二重ループ
+    2. Outer: 接触候補検出 + 幾何更新 + AL乗数更新
+    3. Inner: ブロック前処理付きNR反復
+       a. 残差計算: r = f_ext - f_int(u) - f_c(u)
+       b. 構造剛性ブロック抽出 + 接触対角ブロック追加
+       c. ブロック逆行列を前処理として GMRES で (K_T + K_c) du = r を解く
+       d. 変位更新: u += du
+
+    Args:
+        f_ext_total: (ndof,) 最終外荷重
+        fixed_dofs: 拘束DOF
+        assemble_tangent: u → K_T(u) コールバック
+        assemble_internal_force: u → f_int(u) コールバック
+        manager: 接触マネージャ
+        node_coords_ref: (n_nodes, 3) 参照節点座標
+        connectivity: (n_elems, 2) 要素接続
+        radii: 断面半径
+        strand_dof_ranges: 各素線の (dof_start, dof_end) リスト
+        n_load_steps: 荷重増分数
+        max_iter: Inner Newton の最大反復数
+        tol_force: 力ノルム収束判定
+        tol_disp: 変位ノルム収束判定
+        tol_energy: エネルギーノルム収束判定
+        show_progress: 進捗表示
+        u0: 初期変位
+        ndof_per_node: 1節点あたりの DOF 数
+        broadphase_margin: broadphase 探索マージン
+        broadphase_cell_size: broadphase セルサイズ
+        f_ext_base: (ndof,) ベース外荷重（サイクリック荷重用）
+
+    Returns:
+        ContactSolveResult
+    """
+    ndof = f_ext_total.shape[0]
+    fixed_dofs = np.asarray(fixed_dofs, dtype=int)
+    u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+
+    n_outer_max = manager.config.n_outer_max
+    tol_geometry = manager.config.tol_geometry
+
+    # 適応的ペナルティ設定
+    tol_pen_ratio = manager.config.tol_penetration_ratio
+    pen_growth = manager.config.penalty_growth_factor
+    k_pen_max = manager.config.k_pen_max
+    k_pen_scaling_mode = manager.config.k_pen_scaling
+
+    # AL乗数緩和
+    al_relaxation = manager.config.al_relaxation
+
+    # 活性セットチャタリング防止
+    no_deact = manager.config.no_deactivation_within_step
+
+    # 摩擦設定
+    use_friction = manager.config.use_friction
+    mu_target = manager.config.mu
+    mu_ramp_steps = manager.config.mu_ramp_steps
+
+    load_history: list[float] = []
+    disp_history: list[np.ndarray] = []
+    contact_force_history: list[float] = []
+    graph_history = ContactGraphHistory()
+    total_newton = 0
+    total_outer = 0
+    global_ramp_counter = 0
+
+    f_ext_ref_norm = float(np.linalg.norm(f_ext_total))
+    if f_ext_ref_norm < 1e-30:
+        f_ext_ref_norm = 1.0
+
+    _f_ext_base = f_ext_base if f_ext_base is not None else np.zeros(ndof)
+
+    for step in range(1, n_load_steps + 1):
+        lam = step / n_load_steps
+        f_ext = _f_ext_base + lam * f_ext_total
+
+        # ステップ開始時の変位を参照状態として保存（摩擦用）
+        u_step_ref = u.copy()
+
+        # ステップ開始時の z_t を保存
+        z_t_conv: dict[int, np.ndarray] = {}
+        if use_friction:
+            for pair_idx, pair in enumerate(manager.pairs):
+                z_t_conv[pair_idx] = pair.state.z_t.copy()
+
+        step_converged = False
+
+        for outer in range(n_outer_max):
+            total_outer += 1
+            global_ramp_counter += 1
+
+            # --- μランプ ---
+            mu_eff = 0.0
+            if use_friction:
+                mu_eff = compute_mu_effective(mu_target, global_ramp_counter, mu_ramp_steps)
+
+            # --- Outer: 幾何更新 ---
+            coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
+
+            _is_first_outer = outer == 0 and step == 1
+            _skip_detect = no_deact and not _is_first_outer
+            if not _skip_detect:
+                manager.detect_candidates(
+                    coords_def,
+                    connectivity,
+                    radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                )
+
+            # --- 段階的接触アクティベーション ---
+            if manager.config.staged_activation_steps > 0 and not _skip_detect:
+                max_layer = manager.compute_active_layer_for_step(step, n_load_steps)
+                manager.filter_pairs_by_layer(max_layer)
+
+            # --- 摩擦フレーム回転用の旧フレーム保存 ---
+            old_frames: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+            if use_friction:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair.state.status != ContactStatus.INACTIVE:
+                        t1_norm = float(np.linalg.norm(pair.state.tangent1))
+                        if t1_norm > 1e-10:
+                            old_frames[pair_idx] = (
+                                pair.state.tangent1.copy(),
+                                pair.state.tangent2.copy(),
+                            )
+
+            _allow_deact = not no_deact
+            manager.update_geometry(coords_def, allow_deactivation=_allow_deact)
+
+            # --- 摩擦履歴の平行輸送 ---
+            if use_friction and old_frames:
+                for pair_idx, pair in enumerate(manager.pairs):
+                    if pair_idx not in old_frames:
+                        continue
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    t1_old, t2_old = old_frames[pair_idx]
+                    t1_new = pair.state.tangent1
+                    t2_new = pair.state.tangent2
+                    if pair_idx in z_t_conv:
+                        z_t_conv[pair_idx] = rotate_friction_history(
+                            z_t_conv[pair_idx],
+                            t1_old,
+                            t2_old,
+                            t1_new,
+                            t2_new,
+                        )
+
+            # k_pen 未設定のペアを初期化
+            for pair_idx, pair in enumerate(manager.pairs):
+                if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
+                    if manager.config.k_pen_mode == "beam_ei":
+                        from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                        xA0 = coords_def[pair.nodes_a[0]]
+                        xA1 = coords_def[pair.nodes_a[1]]
+                        xB0 = coords_def[pair.nodes_b[0]]
+                        xB1 = coords_def[pair.nodes_b[1]]
+                        L_a = float(np.linalg.norm(xA1 - xA0))
+                        L_b = float(np.linalg.norm(xB1 - xB0))
+                        L_avg = 0.5 * (L_a + L_b)
+                        if L_avg < 1e-30:
+                            L_avg = 1.0
+
+                        k_auto = auto_beam_penalty_stiffness(
+                            manager.config.beam_E,
+                            manager.config.beam_I,
+                            L_avg,
+                            n_contact_pairs=max(1, manager.n_active),
+                            scale=manager.config.k_pen_scale,
+                            scaling=k_pen_scaling_mode,
+                        )
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=k_auto,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
+                    else:
+                        initialize_penalty_stiffness(
+                            pair,
+                            k_pen=manager.config.k_pen_scale,
+                            k_t_ratio=manager.config.k_t_ratio,
+                        )
+                if use_friction and pair_idx not in z_t_conv:
+                    z_t_conv[pair_idx] = np.zeros(2)
+
+            # 前回の (s, t) を保存
+            prev_st = []
+            for pair in manager.pairs:
+                if pair.state.status != ContactStatus.INACTIVE:
+                    prev_st.append((pair.state.s, pair.state.t))
+                else:
+                    prev_st.append(None)
+
+            # --- 構造剛性のブロック抽出 ---
+            K_T = assemble_tangent(u)
+            K_T_blocks = _extract_strand_blocks(K_T, strand_dof_ranges)
+
+            # --- Inner: ブロック分解NR反復 ---
+            inner_converged = False
+            energy_ref = None
+
+            for it in range(max_iter):
+                total_newton += 1
+
+                # gap 更新（s,t 固定）
+                _update_gaps_fixed_st(manager, node_coords_ref, u, ndof_per_node)
+
+                # --- 摩擦 return mapping ---
+                friction_forces: dict[int, np.ndarray] = {}
+
+                if use_friction and mu_eff > 0.0:
+                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
+
+                    for pair_idx, pair in enumerate(manager.pairs):
+                        if pair.state.status == ContactStatus.INACTIVE:
+                            continue
+                        _eval_pn(pair)
+                        if pair.state.p_n <= 0.0:
+                            continue
+                        if pair_idx in z_t_conv:
+                            pair.state.z_t = z_t_conv[pair_idx].copy()
+                        else:
+                            pair.state.z_t = np.zeros(2)
+                        delta_ut = compute_tangential_displacement(
+                            pair,
+                            u,
+                            u_step_ref,
+                            node_coords_ref,
+                            ndof_per_node,
+                        )
+                        q_t = friction_return_mapping(pair, delta_ut, mu_eff)
+                        if float(np.linalg.norm(q_t)) > 1e-30:
+                            friction_forces[pair_idx] = q_t
+
+                # 構造内力
+                f_int = assemble_internal_force(u)
+
+                # 接触内力
+                f_c = compute_contact_force(
+                    manager,
+                    ndof,
+                    ndof_per_node=ndof_per_node,
+                    friction_forces=friction_forces if friction_forces else None,
+                )
+
+                # 残差
+                residual = f_ext - f_int - f_c
+                residual[fixed_dofs] = 0.0
+                res_norm = float(np.linalg.norm(residual))
+
+                # 力ノルム収束判定
+                if res_norm / f_ext_ref_norm < tol_force:
+                    inner_converged = True
+                    if show_progress:
+                        friction_info = ""
+                        if use_friction:
+                            n_slip = sum(
+                                1 for p in manager.pairs if p.state.status == ContactStatus.SLIDING
+                            )
+                            friction_info = f", μ={mu_eff:.3f}, slip={n_slip}"
+                        print(
+                            f"  Step {step}/{n_load_steps}, outer {outer}, "
+                            f"iter {it}, ||R||/||f|| = {res_norm / f_ext_ref_norm:.3e} "
+                            f"(block converged, {manager.n_active} active{friction_info})"
+                        )
+                    break
+
+                # 接触剛性の計算
+                K_c = None
+                if manager.n_active > 0:
+                    K_c = compute_contact_stiffness(
+                        manager,
+                        ndof,
+                        ndof_per_node=ndof_per_node,
+                        friction_tangents=None,
+                        use_geometric_stiffness=manager.config.use_geometric_stiffness,
+                    )
+
+                # ブロック前処理の構築
+                block_invs = _build_block_preconditioner(
+                    K_T_blocks,
+                    K_c,
+                    fixed_dofs,
+                    strand_dof_ranges,
+                )
+
+                # 全体剛性行列 + BC 適用
+                K_total = K_T + K_c if K_c is not None else K_T
+                K_bc = K_total.tolil()
+                r_bc = residual.copy()
+                for dof in fixed_dofs:
+                    K_bc[dof, :] = 0.0
+                    K_bc[:, dof] = 0.0
+                    K_bc[dof, dof] = 1.0
+                    r_bc[dof] = 0.0
+
+                # ブロック前処理付き GMRES
+                du = _solve_block_preconditioned(
+                    K_bc.tocsr(),
+                    r_bc,
+                    fixed_dofs,
+                    block_invs,
+                    strand_dof_ranges,
+                )
+
+                # 変位更新
+                u += du
+
+                du_norm = float(np.linalg.norm(du))
+                u_norm = float(np.linalg.norm(u))
+
+                if show_progress and it % 5 == 0:
+                    print(
+                        f"  Step {step}/{n_load_steps}, outer {outer}, iter {it}, "
+                        f"||R||/||f|| = {res_norm / f_ext_ref_norm:.3e}, "
+                        f"||du||/||u|| = {du_norm / max(u_norm, 1e-30):.3e}, "
+                        f"active={manager.n_active}"
+                    )
+
+                # 変位ノルム収束判定
+                if u_norm > 1e-30 and du_norm / u_norm < tol_disp:
+                    inner_converged = True
+                    if show_progress:
+                        print(
+                            f"  Step {step}/{n_load_steps}, outer {outer}, "
+                            f"iter {it}, ||du||/||u|| = {du_norm / u_norm:.3e} "
+                            f"(disp converged)"
+                        )
+                    break
+
+                # エネルギーノルム収束判定
+                energy = abs(float(np.dot(du, residual)))
+                if energy_ref is None:
+                    energy_ref = energy if energy > 1e-30 else 1.0
+                if energy / energy_ref < tol_energy:
+                    inner_converged = True
+                    if show_progress:
+                        print(
+                            f"  Step {step}/{n_load_steps}, outer {outer}, "
+                            f"iter {it}, energy = {energy / energy_ref:.3e} "
+                            f"(energy converged)"
+                        )
+                    break
+
+            if not inner_converged:
+                if show_progress:
+                    print(
+                        f"  WARNING: Step {step}, outer {outer} "
+                        f"did not converge in {max_iter} iterations."
+                    )
+                if outer == 0:
+                    return ContactSolveResult(
+                        u=u,
+                        converged=False,
+                        n_load_steps=step,
+                        total_newton_iterations=total_newton,
+                        total_outer_iterations=total_outer,
+                        n_active_final=manager.n_active,
+                        load_history=load_history,
+                        displacement_history=disp_history,
+                        contact_force_history=contact_force_history,
+                        graph_history=graph_history,
+                    )
+                if show_progress:
+                    print(
+                        f"  Step {step}, outer {outer}: "
+                        f"accepting current solution (inner stalled, "
+                        f"active={manager.n_active})"
+                    )
+                step_converged = True
+                break
+
+            # --- Outer 収束判定 ---
+            coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
+            manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
+
+            max_ds = 0.0
+            max_dt = 0.0
+            for idx in range(len(manager.pairs)):
+                pair = manager.pairs[idx]
+                if pair.state.status != ContactStatus.INACTIVE and prev_st[idx] is not None:
+                    s_old, t_old = prev_st[idx]
+                    max_ds = max(max_ds, abs(pair.state.s - s_old))
+                    max_dt = max(max_dt, abs(pair.state.t - t_old))
+
+            # AL 乗数更新
+            preserve_inactive = manager.config.preserve_inactive_lambda
+            for pair in manager.pairs:
+                update_al_multiplier(
+                    pair,
+                    omega=al_relaxation,
+                    preserve_inactive=preserve_inactive,
+                )
+
+            # --- 適応的ペナルティ増大 ---
+            pen_exceeded = False
+            max_pen_ratio = 0.0
+            if tol_pen_ratio > 0.0:
+                for pair in manager.pairs:
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    if pair.state.gap >= 0.0:
+                        continue
+                    penetration = abs(pair.state.gap)
+                    sr = pair.search_radius
+                    if sr < 1e-30:
+                        continue
+                    pen_ratio = penetration / sr
+                    max_pen_ratio = max(max_pen_ratio, pen_ratio)
+                    if pen_ratio > tol_pen_ratio:
+                        pen_exceeded = True
+                        if pair.state.k_pen < k_pen_max:
+                            new_k = min(pair.state.k_pen * pen_growth, k_pen_max)
+                            pair.state.k_pen = new_k
+                            pair.state.k_t = new_k * manager.config.k_t_ratio
+
+            if show_progress:
+                friction_info = ""
+                if use_friction:
+                    friction_info = f", μ_eff={mu_eff:.3f}"
+                pen_info = ""
+                if tol_pen_ratio > 0.0 and max_pen_ratio > 0.0:
+                    pen_info = f", pen_ratio={max_pen_ratio:.4f}"
+                print(
+                    f"  Step {step}, outer {outer}: "
+                    f"max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}, "
+                    f"active={manager.n_active}"
+                    f"{friction_info}{pen_info}"
+                )
+
+            if max_ds < tol_geometry and max_dt < tol_geometry and not pen_exceeded:
+                step_converged = True
+                break
+
+            if max_ds < tol_geometry and max_dt < tol_geometry and pen_exceeded:
+                if show_progress:
+                    print(
+                        f"  Step {step}, outer {outer}: "
+                        f"(s,t) converged but pen_ratio={max_pen_ratio:.4f} > "
+                        f"tol={tol_pen_ratio:.4f}. Increasing k_pen."
+                    )
+                continue
+
+        if not step_converged:
+            if show_progress:
+                print(
+                    f"  Step {step}: outer loop reached {n_outer_max} "
+                    f"(max|Δs|={max_ds:.3e}, max|Δt|={max_dt:.3e}). Accepting."
+                )
+            step_converged = True
+
+        # 記録
+        f_c_final = compute_contact_force(
+            manager,
+            ndof,
+            ndof_per_node=ndof_per_node,
+        )
+        fc_norm = float(np.linalg.norm(f_c_final))
+
+        load_history.append(lam)
+        disp_history.append(u.copy())
+        contact_force_history.append(fc_norm)
+        graph_history.add(snapshot_contact_graph(manager, step=step, load_factor=lam))
+
+    return ContactSolveResult(
+        u=u,
+        converged=True,
+        n_load_steps=n_load_steps,
+        total_newton_iterations=total_newton,
+        total_outer_iterations=total_outer,
+        n_active_final=manager.n_active,
+        load_history=load_history,
+        displacement_history=disp_history,
+        contact_force_history=contact_force_history,
+        graph_history=graph_history,
+    )
+
+
 @dataclass
 class CyclicContactResult:
     """サイクリック荷重解析の結果.
