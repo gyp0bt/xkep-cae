@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1732テスト（fast: 1338 / slow: 336 / external: 2 / skip: 56）**
+**1760テスト（fast: 1366 / slow: 336 / external: 2 / skip: 56）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -19,6 +19,7 @@
 | Phase 4.3: von Mises 3D | 凍結 |
 | Phase 5: 動的解析（Newmark-β, 陽解法, モーダル減衰） | ✓ |
 | Phase C0-C5: 梁–梁接触（AL, 摩擦, merit LS, PDAS） | ✓ |
+| Phase C6-L1: Line-to-line Gauss 積分 | ✓ |
 | Phase 4.7 L0: 撚線基礎（7本撚り収束, ヒステリシス） | ✓ |
 | Phase 4.7 L0.5 S1-S4: シース挙動（コンプライアンス, 有限滑り, シース間接触） | ✓ |
 | 7本撚りブロック前処理ソルバー + adaptive omega | ✓ |
@@ -117,7 +118,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（75個）
+├── status/         # ステータスファイル群（77個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
