@@ -1,5 +1,7 @@
 # xkep-cae
 
+[![CI](https://github.com/gyp0bt/xkep-cae/actions/workflows/ci.yml/badge.svg)](https://github.com/gyp0bt/xkep-cae/actions/workflows/ci.yml)
+
 ニッチドメイン問題を解くための自作有限要素ソルバー基盤。
 支配方程式・構成則・要素・更新則・積分スキーマをモジュール化し、
 組み合わせて問題特化ソルバーを構成する。
@@ -114,7 +116,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（71個）
+├── status/         # ステータスファイル群（73個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```

@@ -261,7 +261,7 @@ Phase 8 (応用展開)
 
 ### 高優先
 
-- [ ] CI実行結果確認 + CIキャッシュ導入（actions/cache）+ CIバッジ
+- [x] CI実行結果確認 + CIキャッシュ導入（actions/cache）+ CIバッジ（status-073）
 - [ ] Stage S3: シース-素線/被膜 有限滑り
 - [ ] Stage S4: シース-シース接触
 - [ ] 7本撚りブロック分解ソルバー（Schur補完法 or Uzawa法）

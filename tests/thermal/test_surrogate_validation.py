@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
-from torch_geometric.data import Data
+
+torch = pytest.importorskip("torch")
+Data = pytest.importorskip("torch_geometric.data").Data
 
 from xkep_cae.thermal.dataset import (
     ThermalProblemConfig,

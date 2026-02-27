@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import torch
+
+torch = pytest.importorskip("torch")
 
 from xkep_cae.thermal.dataset import ThermalProblemConfig
 from xkep_cae.thermal.gnn import ThermalGNN, evaluate_model
