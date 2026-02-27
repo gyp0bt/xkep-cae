@@ -62,7 +62,7 @@ Protocol 定義の 3D 解析対応拡張: NonlinearElementProtocol（内力・�
 - [過渡応答出力設計仕様](docs/transient-output-design.md) — Step/Increment/Frame + 出力インターフェースの設計
 - [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集（片持ち梁、3点曲げ、門型フレーム等）
 - [接触付き弧長法設計検討](docs/contact/arc_length_contact_design.md) — 接触問題でのリミットポイント追跡の設計方針
-- [実装状況](docs/status/status-069.md) — 最新のステータス（PINN大規模メッシュ検証 + 不規則メッシュPINN効果検証 + ハイブリッドGNN統一）
+- [実装状況](docs/status/status-071.md) — 最新のステータス（初期コミット統合 + git履歴クリーンアップ）
 - [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルの一覧とテスト数推移
 
 ## インストール
