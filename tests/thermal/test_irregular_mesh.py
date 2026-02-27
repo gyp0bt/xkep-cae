@@ -161,6 +161,7 @@ class TestIrregularMeshComparison:
             "hybrid_test": hybrid_pyg[85:],
         }
 
+    @pytest.mark.slow
     def test_both_models_learn(self, irregular_data):
         """両モデルが不規則メッシュ上で学習できること."""
         d = irregular_data
@@ -191,6 +192,7 @@ class TestIrregularMeshComparison:
         )
         assert h_hybrid["train_loss"][-1] < h_hybrid["train_loss"][0]
 
+    @pytest.mark.slow
     def test_comparison_irregular_vs_regular(self):
         """正則 vs 不規則メッシュでの性能差をレポート.
 

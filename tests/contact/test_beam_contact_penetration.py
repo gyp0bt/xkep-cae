@@ -25,6 +25,7 @@
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import (
@@ -35,6 +36,8 @@ from xkep_cae.contact.pair import (
 from xkep_cae.contact.solver_hooks import (
     newton_raphson_with_contact,
 )
+
+pytestmark = pytest.mark.slow
 
 # ====================================================================
 # ヘルパー: 交差梁モデル（貫入テスト用）

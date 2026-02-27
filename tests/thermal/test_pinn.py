@@ -161,6 +161,7 @@ class TestPINNTraining:
             "test": pyg[43:],
         }
 
+    @pytest.mark.slow
     def test_training_converges(self, pinn_data):
         """PINN学習で損失が減少すること."""
         d = pinn_data
@@ -176,6 +177,7 @@ class TestPINNTraining:
         )
         assert history["train_loss"][-1] < history["train_loss"][0]
 
+    @pytest.mark.slow
     def test_physics_loss_decreases(self, pinn_data):
         """物理ロスが学習中に減少すること."""
         d = pinn_data
@@ -196,6 +198,7 @@ class TestPINNTraining:
             f"物理ロス減少なし: early={early_phys:.4f}, late={late_phys:.4f}"
         )
 
+    @pytest.mark.slow
     def test_data_loss_decreases(self, pinn_data):
         """データロスが学習中に減少すること."""
         d = pinn_data
@@ -211,6 +214,7 @@ class TestPINNTraining:
         )
         assert history["data_loss"][-1] < history["data_loss"][0]
 
+    @pytest.mark.slow
     def test_pinn_achieves_positive_r2(self, pinn_data):
         """PINN学習で R² > 0 を達成すること."""
         d = pinn_data
@@ -227,6 +231,7 @@ class TestPINNTraining:
         metrics = evaluate_model(model, d["test"], history["y_mean"], history["y_std"])
         assert metrics["r2"] > -0.5, f"PINN R²={metrics['r2']:.3f} (学習不足の可能性)"
 
+    @pytest.mark.slow
     def test_lambda_zero_equals_data_only(self, pinn_data):
         """λ=0 のPINN学習がデータのみ学習と等価であること."""
         d = pinn_data
@@ -251,6 +256,7 @@ class TestPINNTraining:
         ):
             np.testing.assert_allclose(tl, dl, rtol=1e-5)
 
+    @pytest.mark.slow
     def test_high_lambda_physics_dominant(self, pinn_data):
         """高い λ_phys で物理ロスが支配的になること."""
         d = pinn_data

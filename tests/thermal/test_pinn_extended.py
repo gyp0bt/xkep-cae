@@ -62,6 +62,7 @@ class TestPINNLargeMesh:
             residual = K @ dt_exact - f_shifted
             np.testing.assert_allclose(residual, 0, atol=1e-3)
 
+    @pytest.mark.slow
     def test_large_mesh_pinn_training_converges(self, large_config):
         """20×20メッシュでPINN学習の損失が減少すること."""
         raw = generate_pinn_dataset(large_config, n_samples=80, seed=42)
@@ -80,6 +81,7 @@ class TestPINNLargeMesh:
         )
         assert history["train_loss"][-1] < history["train_loss"][0]
 
+    @pytest.mark.slow
     def test_large_mesh_physics_loss_decreases(self, large_config):
         """20×20メッシュで物理ロスが学習中に減少すること."""
         raw = generate_pinn_dataset(large_config, n_samples=80, seed=42)
@@ -102,6 +104,7 @@ class TestPINNLargeMesh:
             f"物理ロス減少なし: early={early_phys:.4f}, late={late_phys:.4f}"
         )
 
+    @pytest.mark.slow
     def test_large_mesh_pinn_r2_positive(self, large_config):
         """20×20メッシュでPINN学習後にR²>0を達成."""
         raw = generate_pinn_dataset(large_config, n_samples=100, seed=42)
@@ -172,6 +175,7 @@ class TestPINNIrregularMesh:
         loss = compute_physics_loss(dt_exact, data.K_dense, data.f_shifted)
         assert loss.item() < 1e-6, f"正解の残差: {loss.item()}"
 
+    @pytest.mark.slow
     def test_irregular_pinn_training_converges(self):
         """不規則メッシュ上でPINN学習の損失が減少すること."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -191,6 +195,7 @@ class TestPINNIrregularMesh:
         )
         assert history["train_loss"][-1] < history["train_loss"][0]
 
+    @pytest.mark.slow
     def test_irregular_physics_loss_decreases(self):
         """不規則メッシュでPINN物理ロスが減少すること."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -290,6 +295,7 @@ class TestPINNvsDataOnly:
             "data_only_history": h_data,
         }
 
+    @pytest.mark.slow
     def test_pinn_learns_on_regular_mesh(self):
         """正則メッシュでPINNが学習できること（R² > -1）."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -297,6 +303,7 @@ class TestPINNvsDataOnly:
         result = self._run_comparison(config, raw, n_train=55, n_val=10, epochs=80)
         assert result["pinn_r2"] > -1.0, f"PINN R²={result['pinn_r2']:.3f}"
 
+    @pytest.mark.slow
     def test_pinn_learns_on_irregular_mesh(self):
         """不規則メッシュでPINNが学習できること（R² > -1）."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -304,6 +311,7 @@ class TestPINNvsDataOnly:
         result = self._run_comparison(config, raw, n_train=55, n_val=10, epochs=80)
         assert result["pinn_r2"] > -1.0, f"PINN R²={result['pinn_r2']:.3f}"
 
+    @pytest.mark.slow
     def test_comparison_regular_mesh_report(self):
         """正則メッシュでのPINN vs data-only比較レポート."""
         config = ThermalProblemConfig(nx=5, ny=5)
@@ -322,6 +330,7 @@ class TestPINNvsDataOnly:
         assert result["pinn_r2"] > -1.0
         assert result["data_only_r2"] > -1.0
 
+    @pytest.mark.slow
     def test_comparison_irregular_mesh_report(self):
         """不規則メッシュでのPINN vs data-only比較レポート."""
         config = ThermalProblemConfig(nx=5, ny=5)

@@ -30,6 +30,8 @@ from xkep_cae.materials.plasticity_1d import Plasticity1D, TabularIsotropicHarde
 from xkep_cae.sections.fiber import FiberSection
 from xkep_cae.sections.fiber_integrator import FiberIntegrator
 
+pytestmark = pytest.mark.slow
+
 ASSET_DIR = (
     Path(__file__).resolve().parent.parent / "assets" / "test_assets" / "Abaqus" / "1-bend3p"
 )
