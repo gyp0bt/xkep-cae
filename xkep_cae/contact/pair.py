@@ -204,6 +204,7 @@ class ContactConfig:
     line_contact: bool = False  # Line-to-line Gauss 積分の有効化（Phase C6-L1）
     n_gauss: int = 3  # Line contact の Gauss 積分点数（2-5）
     n_gauss_auto: bool = False  # セグメント角度に基づく Gauss 点数自動選択
+    consistent_st_tangent: bool = False  # ∂(s,t)/∂u 一貫接線の有効化（Phase C6-L2）
 
 
 @dataclass
