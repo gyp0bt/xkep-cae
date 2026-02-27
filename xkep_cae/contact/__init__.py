@@ -9,6 +9,7 @@
 - law_normal: 法線接触（Augmented Lagrangian）
 - law_friction: Coulomb 摩擦（return mapping）
 - line_search: merit function + backtracking line search
+- line_contact: line-to-line Gauss 積分（Phase C6-L1）
 - assembly: 接触内力・接線の組み込み
 - solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
 - graph: 接触グラフ表現・可視化
@@ -39,6 +40,14 @@ from xkep_cae.contact.law_normal import (
     initialize_penalty_stiffness,
     normal_force_linearization,
     update_al_multiplier,
+)
+from xkep_cae.contact.line_contact import (
+    auto_select_n_gauss,
+    compute_line_contact_force_local,
+    compute_line_contact_gap_at_gp,
+    compute_line_contact_stiffness_local,
+    gauss_legendre_01,
+    project_point_to_segment,
 )
 from xkep_cae.contact.line_search import backtracking_line_search, merit_function
 from xkep_cae.contact.pair import (
@@ -81,16 +90,21 @@ __all__ = [
     "evaluate_sheath_contact",
     "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
+    "auto_select_n_gauss",
     "backtracking_line_search",
     "broadphase_aabb",
     "compute_contact_force",
     "compute_contact_stiffness",
+    "compute_line_contact_force_local",
+    "compute_line_contact_gap_at_gp",
+    "compute_line_contact_stiffness_local",
     "compute_hysteresis_area",
     "compute_mu_effective",
     "compute_segment_aabb",
     "compute_tangential_displacement",
     "evaluate_normal_force",
     "friction_return_mapping",
+    "gauss_legendre_01",
     "friction_tangent_2x2",
     "initialize_penalty_stiffness",
     "merit_function",
@@ -99,6 +113,7 @@ __all__ = [
     "run_contact_cyclic",
     "normal_force_linearization",
     "plot_hysteresis_curve",
+    "project_point_to_segment",
     "plot_statistics_dashboard",
     "rotate_friction_history",
     "snapshot_contact_graph",
