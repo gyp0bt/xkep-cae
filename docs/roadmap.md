@@ -277,7 +277,7 @@ Phase 8 (応用展開)
 - [x] k_pen推定MLモデル Step 1（特徴量抽出ユーティリティ, status-076, 7テスト）
 - [x] PINN学習スパース行列対応（status-076, 8テスト）
 - [ ] 接触プリスクリーニングGNN Step 2-5（グラフ構築 → モデル実装 → 推論統合 → 性能評価）
-- [ ] k_pen推定MLモデル Step 2-5（グリッドサーチ実行 → MLP実装 → ContactConfig統合 → ベンチマーク）
+- [ ] k_pen推定ML v2 Step 2-7（グラフ構築 → 残差ベースデータ生成 → 共有GNN実装 → 学習 → ContactConfig統合 → ベンチマーク）
 - [ ] ハイブリッドGNN+PINN組み合わせ検証
 
 ### 低優先
