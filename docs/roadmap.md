@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC 完了。1695テスト（fast: 1308 / slow: 329 / external: 2 / skip: 56）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 完了。1732テスト（fast: 1338 / slow: 336 / external: 2 / skip: 56）。**
 
 ### 完了済みフェーズ一覧
 
@@ -271,11 +271,14 @@ Phase 8 (応用展開)
 - [x] pen_ratio改善（adaptive omega で AL乗数段階的蓄積, status-075, 5テスト）
 - [x] 7本撚りサイクリック荷重テスト（status-075, 3テスト）
 - [x] ブロックソルバー大規模メッシュ検証（16要素/素線, status-075, 3テスト）
-- [ ] adaptive omega 効果定量評価（n_outer_max=3〜5 での収束性比較）
-- [ ] 7本撚りサイクリック荷重でのヒステリシスループ面積計測
-- [ ] 接触プリスクリーニングGNN Step 1（データ生成, ペンディング）
-- [ ] k_pen推定MLモデル Step 1（グリッドサーチデータ, ペンディング）
-- [ ] PINN学習スパース行列対応 + ハイブリッドGNN+PINN組み合わせ検証
+- [x] adaptive omega 効果定量評価（n_outer_max=3〜5 での収束性比較, status-076, 4テスト）
+- [x] 7本撚りサイクリック荷重でのヒステリシスループ面積計測（status-076, 1テスト）
+- [x] 接触プリスクリーニングGNN Step 1（データ生成パイプライン, status-076, 17テスト）
+- [x] k_pen推定MLモデル Step 1（特徴量抽出ユーティリティ, status-076, 7テスト）
+- [x] PINN学習スパース行列対応（status-076, 8テスト）
+- [ ] 接触プリスクリーニングGNN Step 2-5（グラフ構築 → モデル実装 → 推論統合 → 性能評価）
+- [ ] k_pen推定MLモデル Step 2-5（グリッドサーチ実行 → MLP実装 → ContactConfig統合 → ベンチマーク）
+- [ ] ハイブリッドGNN+PINN組み合わせ検証
 
 ### 低優先
 

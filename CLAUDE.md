@@ -66,12 +66,12 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ + TODO
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（75個）
+├── status/         # ステータスファイル群（76個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI 完了（1695テスト: fast 1308 / slow 329 / skip 56）。Phase 4.3（von Mises 3D）は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI 完了（1732テスト: fast 1338 / slow 336 / skip 56）。Phase 4.3（von Mises 3D）は凍結。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
