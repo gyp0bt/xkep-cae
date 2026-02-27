@@ -85,6 +85,7 @@
 | [075](status-075.md) | 2026-02-27 | CI修正 + adaptive omega + 7本撚りサイクリック + 大規模メッシュ検証 | 1695 |
 | [076](status-076.md) | 2026-02-27 | TODO消化: PINNスパース + adaptive omega定量評価 + ML基盤 | 1732 |
 | [077](status-077.md) | 2026-02-27 | Phase C6-L1: Line-to-line Gauss 積分 | 1760 |
+| [078](status-078.md) | 2026-02-27 | Phase C6-L2: 一貫接線の完全化（∂(s,t)/∂u Jacobian） | 1775 |
 
 ## テスト数推移
 
@@ -149,6 +150,7 @@
 075:     1695     (CI修正 + adaptive omega + 7本撚りサイクリック + 大規模メッシュ検証)
 076:     1732     (TODO消化: PINNスパース + adaptive omega定量評価 + ML基盤)
 077:     1760     (Phase C6-L1: Line-to-line Gauss 積分)
+078:     1775     (Phase C6-L2: 一貫接線の完全化 ∂(s,t)/∂u Jacobian)
 ```
 
 ## 備考
