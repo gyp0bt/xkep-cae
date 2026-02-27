@@ -47,24 +47,31 @@
 
 ```
 xkep_cae/
-├── core/           # Protocol 定義
-├── elements/       # 要素（Q4, TRI3, Beam, Cosserat rod）
-├── materials/      # 構成則
-├── sections/       # 断面モデル
-├── math/           # 数学ユーティリティ（四元数、SO(3)）
+├── core/           # Protocol 定義（Element, Constitutive, State）
+├── elements/       # 要素（Q4, TRI3/6, Beam, Cosserat, HEX8）
+├── materials/      # 構成則（弾性, 1D/3D弾塑性）
+├── sections/       # 断面モデル（BeamSection, FiberSection）
+├── math/           # 数学ユーティリティ（四元数, SO(3)）
+├── contact/        # 梁–梁接触（Broadphase, AL, 摩擦, グラフ）
+├── mesh/           # メッシュ生成（撚線, シース, チューブ）
+├── thermal/        # 熱伝導FEM + GNN/PINNサロゲート
 ├── numerical_tests/ # 数値試験フレームワーク
+├── output/         # 過渡応答出力（CSV/JSON/VTK/GIF）
+├── io/             # Abaqus .inp パーサー
 ├── solver.py       # 線形/非線形ソルバー（NR, 弧長法）
 ├── assembly.py     # アセンブリ
+├── dynamics.py     # 動的解析（Newmark-β, HHT-α, 陽解法）
 ├── bc.py           # 境界条件
 └── api.py          # 高レベル API
 docs/
-├── roadmap.md      # 全体ロードマップ（正の計画文書）
-├── status/         # ステータスファイル群
-├── cosserat-design.md  # Cosserat rod 設計仕様
-└── contact/        # 接触モジュール仕様
+├── roadmap.md      # 全体ロードマップ + TODO
+├── archive/        # 完了済みPhase詳細設計
+├── status/         # ステータスファイル群（71個）
+├── contact/        # 接触モジュール仕様群
+└── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + 過渡応答出力 + FIELD ANIMATION出力 + KINEMATIC→AF変換 + 摩擦接触バリデーション + 梁梁接触貫入テスト + 適応的ペナルティ増大 + 実梁要素接触テスト + 長距離スライド + 接触バリデーションドキュメント + 大規模マルチセグメント性能評価 + 撚線メッシュファクトリ + 多点接触撚線テスト + 接触グラフ表現 + k_pen自動推定 + 段階的アクティベーション + ヘリカル摩擦安定化 + 接触グラフ可視化・時系列収集 + 7本撚り接触NR収束達成 + 撚線ヒステリシス観測 + 接触グラフ統計分析 + ヒステリシス可視化 + 統計ダッシュボード + 被膜モデル + シースモデル + シース挙動設計（解析的リングコンプライアンス+ペナルティ接触, Stage S1〜S4）+ Stage S1 解析的リングコンプライアンス行列 + HEX8 要素ファミリ拡充（C3D8/C3D8B/C3D8R/C3D8I + B-bar平均膨張法 + SRI+B-bar併用デフォルト + アセンブリ統合 + Abaqus命名準拠） + シース曲げモードバリデーション + Protocol 定義 3D 解析対応拡張 + 撚撚線（被膜付き撚線）統合解析テスト + Stage S2 シース内面Fourier近似 + 接触接線モード（contact_tangent_mode） + 2D定常熱伝導FEM + GNNサロゲートモデル + サロゲートモデル追加検証 + 簡略化全結合GNN性能テスト + 梁スポット導入レビュー + PINN導入検証 + 不規則メッシュGNN比較 + 接触ML設計仕様 + PINN大規模メッシュ検証 + 不規則メッシュPINN効果検証 + ハイブリッドGNN統一 + GitHub Actions CI構成 + slowテストマーカー 完了（1629テスト: fast 1344 / slow 283）。Phase 4.3（von Mises 3D）は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S2 + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI 完了（1629テスト: fast 1344 / slow 283）。Phase 4.3（von Mises 3D）は凍結。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
