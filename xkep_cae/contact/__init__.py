@@ -58,6 +58,7 @@ from xkep_cae.contact.sheath_contact import (
 from xkep_cae.contact.solver_hooks import (
     ContactSolveResult,
     CyclicContactResult,
+    newton_raphson_block_contact,
     newton_raphson_with_contact,
     run_contact_cyclic,
 )
@@ -93,6 +94,7 @@ __all__ = [
     "friction_tangent_2x2",
     "initialize_penalty_stiffness",
     "merit_function",
+    "newton_raphson_block_contact",
     "newton_raphson_with_contact",
     "run_contact_cyclic",
     "normal_force_linearization",

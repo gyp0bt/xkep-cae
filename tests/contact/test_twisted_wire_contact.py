@@ -1193,3 +1193,335 @@ class TestSevenStrandImprovedSolver:
             **self._COMMON_KWARGS,
         )
         assert result.converged, "7本撚り曲げが収束しなかった（改善ソルバー）"
+
+
+# ====================================================================
+# ヘルパー: ブロック分解ソルバー用の撚線解法
+# ====================================================================
+
+
+def _solve_twisted_wire_block(
+    n_strands: int,
+    load_type: str,
+    load_value: float,
+    *,
+    n_pitches: float = 1.0,
+    assembler_type: str = "timo3d",
+    use_friction: bool = False,
+    mu: float = 0.3,
+    k_pen_scale: float = _DEFAULT_K_PEN,
+    n_load_steps: int = _DEFAULT_N_STEPS,
+    max_iter: int = _DEFAULT_MAX_ITER,
+    gap: float = 0.0,
+    n_elems_per_strand: int = _N_ELEM_PER_STRAND,
+    auto_kpen: bool = False,
+    staged_activation: bool = False,
+    n_outer_max: int = 8,
+    al_relaxation: float = 1.0,
+    k_pen_scaling: str = "linear",
+    penalty_growth_factor: float = 2.0,
+    preserve_inactive_lambda: bool = False,
+    g_off: float = 1e-5,
+    no_deactivation_within_step: bool = False,
+):
+    """ブロック分解ソルバーで撚線接触問題を解く.
+
+    _solve_twisted_wire と同じ設定でメッシュ・荷重を構築し、
+    newton_raphson_block_contact を使用する。
+    """
+    from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
+
+    mesh = make_twisted_wire_mesh(
+        n_strands,
+        _WIRE_D,
+        _PITCH,
+        length=0.0,
+        n_elems_per_strand=n_elems_per_strand,
+        n_pitches=n_pitches,
+        gap=gap,
+    )
+
+    if assembler_type == "cr":
+        assemble_tangent, assemble_internal_force, ndof_total = _make_cr_assemblers(mesh)
+    else:
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+
+    fixed_dofs = _fix_all_strand_starts(mesh)
+
+    f_ext = np.zeros(ndof_total)
+    if load_type == "tension":
+        f_per_strand = load_value / n_strands
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[2]] = f_per_strand
+    elif load_type == "torsion":
+        m_per_strand = load_value / n_strands
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[5]] = m_per_strand
+    elif load_type == "bending":
+        m_per_strand = load_value / n_strands
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[4]] = m_per_strand
+    else:
+        raise ValueError(f"未知の荷重タイプ: {load_type}")
+
+    # k_pen 設定
+    kpen_mode = "manual"
+    beam_E = 0.0
+    beam_I = 0.0
+    kpen_scale = k_pen_scale
+    if auto_kpen:
+        kpen_mode = "beam_ei"
+        beam_E = _E
+        beam_I = _SECTION.Iy
+        kpen_scale = 0.1
+
+    # 段階的アクティベーション
+    elem_layer_map = None
+    staged_steps = 0
+    if staged_activation:
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+    mgr = _make_contact_manager(
+        k_pen_scale=kpen_scale,
+        use_friction=use_friction,
+        mu=mu,
+        n_outer_max=n_outer_max,
+        k_pen_mode=kpen_mode,
+        beam_E=beam_E,
+        beam_I=beam_I,
+        staged_activation_steps=staged_steps,
+        elem_layer_map=elem_layer_map,
+        k_pen_scaling=k_pen_scaling,
+        al_relaxation=al_relaxation,
+        penalty_growth_factor=penalty_growth_factor,
+        preserve_inactive_lambda=preserve_inactive_lambda,
+        g_off=g_off,
+        no_deactivation_within_step=no_deactivation_within_step,
+    )
+
+    # 素線ごとのDOF範囲
+    strand_dof_ranges = []
+    for sid in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[sid]
+        strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+
+    result = newton_raphson_block_contact(
+        f_ext,
+        fixed_dofs,
+        assemble_tangent,
+        assemble_internal_force,
+        mgr,
+        mesh.node_coords,
+        mesh.connectivity,
+        mesh.radii,
+        strand_dof_ranges=strand_dof_ranges,
+        n_load_steps=n_load_steps,
+        max_iter=max_iter,
+        show_progress=False,
+        broadphase_margin=0.01,
+    )
+
+    return result, mgr, mesh
+
+
+# ====================================================================
+# テスト: ブロック分解ソルバー（3本撚り基本検証）
+# ====================================================================
+
+
+class TestBlockDecompositionBasic:
+    """ブロック分解ソルバーの基本検証（3本撚り）.
+
+    モノリシック解法と同等の結果が得られることを確認。
+    3本撚りは従来のソルバーでも収束するため、比較対象として適切。
+    """
+
+    _COMMON: dict = {
+        "n_pitches": 1.0,
+        "n_elems_per_strand": 4,
+        "assembler_type": "timo3d",
+        "auto_kpen": True,
+        "staged_activation": True,
+        "n_outer_max": 1,
+        "no_deactivation_within_step": True,
+        "al_relaxation": 0.01,
+        "k_pen_scaling": "sqrt",
+        "penalty_growth_factor": 1.0,
+        "preserve_inactive_lambda": True,
+        "g_off": 0.001,
+        "gap": 0.0005,
+    }
+
+    def test_three_strand_tension_converges(self):
+        """3本撚り引張がブロック分解で収束する."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert result.converged, "3本撚り引張がブロック分解で収束しなかった"
+        assert mgr.n_active > 0, "接触が検出されるべき"
+
+    def test_three_strand_bending_converges(self):
+        """3本撚り曲げがブロック分解で収束する."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "bending",
+            0.01,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert result.converged, "3本撚り曲げがブロック分解で収束しなかった"
+
+    def test_three_strand_with_friction(self):
+        """3本撚り摩擦接触がブロック分解で収束する."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            use_friction=True,
+            mu=0.3,
+            **self._COMMON,
+        )
+        assert result.converged, "3本撚り摩擦接触がブロック分解で収束しなかった"
+
+    def test_result_has_contact_forces(self):
+        """ブロック分解で接触力が記録される."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            3,
+            "tension",
+            100.0,
+            n_load_steps=15,
+            max_iter=30,
+            **self._COMMON,
+        )
+        assert len(result.contact_force_history) == 15
+        assert any(f > 0 for f in result.contact_force_history)
+
+
+# ====================================================================
+# テスト: 7本撚りブロック分解ソルバー
+# ====================================================================
+
+
+class TestSevenStrandBlockSolver:
+    """7本撚りブロック前処理ソルバーテスト.
+
+    ブロック前処理付き GMRES により、モノリシック直接解法で問題となる
+    K_T + K_c の条件数悪化を回避。
+
+    特徴:
+    - 各素線の構造剛性行列（30×30）を前処理に使用
+    - GMRES がオフダイアゴナル K_c 結合を正確に反映
+    - 15ステップで収束（モノリシック改善ソルバーの50ステップから大幅削減）
+    """
+
+    _GAP = 0.0005
+    _COMMON_KWARGS: dict = {
+        "n_pitches": 1.0,
+        "n_elems_per_strand": 4,
+        "assembler_type": "timo3d",
+        "auto_kpen": True,
+        "staged_activation": True,
+        "n_outer_max": 1,
+        "max_iter": 50,
+        "k_pen_scaling": "sqrt",
+        "al_relaxation": 0.01,
+        "penalty_growth_factor": 1.0,
+        "preserve_inactive_lambda": True,
+        "g_off": 0.001,
+        "no_deactivation_within_step": True,
+    }
+
+    def test_tension_block(self):
+        """7本撚り引張: ブロック前処理ソルバーで収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            gap=self._GAP,
+            n_load_steps=15,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り引張がブロック前処理で収束しなかった"
+        assert mgr.n_active > 0, "接触ペアが活性化されるべき"
+
+    def test_torsion_block(self):
+        """7本撚りねじり: ブロック前処理ソルバーで収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "torsion",
+            0.0001,
+            gap=self._GAP,
+            n_load_steps=15,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚りねじりがブロック前処理で収束しなかった"
+
+    def test_bending_block(self):
+        """7本撚り曲げ: ブロック前処理ソルバーで収束."""
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "bending",
+            0.001,
+            gap=self._GAP,
+            n_load_steps=15,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged, "7本撚り曲げがブロック前処理で収束しなかった"
+
+    def test_fewer_steps_than_original(self):
+        """ブロック前処理は15ステップで収束する.
+
+        モノリシック改善ソルバー（TestSevenStrandImprovedSolver）は
+        50ステップ必要だったが、ブロック前処理は15ステップで動作。
+        """
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            gap=self._GAP,
+            n_load_steps=15,
+            **self._COMMON_KWARGS,
+        )
+        assert result.converged
+        assert result.n_load_steps == 15
+
+    def test_with_al_relaxation_0_1(self):
+        """ブロック前処理は AL 緩和 omega=0.1 で動作する.
+
+        改善ソルバーは omega=0.01（ほぼ純ペナルティ）が必要だったが、
+        ブロック前処理では omega=0.1 でも安定動作。
+        """
+        result, mgr, mesh = _solve_twisted_wire_block(
+            7,
+            "tension",
+            1.0,
+            gap=self._GAP,
+            n_load_steps=20,
+            n_pitches=1.0,
+            n_elems_per_strand=4,
+            assembler_type="timo3d",
+            auto_kpen=True,
+            staged_activation=True,
+            n_outer_max=1,
+            max_iter=50,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.1,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+        )
+        assert result.converged, "7本撚り引張が AL omega=0.1 で収束しなかった"
