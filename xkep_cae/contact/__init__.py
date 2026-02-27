@@ -48,6 +48,13 @@ from xkep_cae.contact.pair import (
     ContactState,
     ContactStatus,
 )
+from xkep_cae.contact.sheath_contact import (
+    SheathContactConfig,
+    SheathContactManager,
+    SheathContactPoint,
+    build_sheath_contact_manager,
+    evaluate_sheath_contact,
+)
 from xkep_cae.contact.solver_hooks import (
     ContactSolveResult,
     CyclicContactResult,
@@ -66,6 +73,11 @@ __all__ = [
     "CyclicContactResult",
     "ContactState",
     "ContactStatus",
+    "SheathContactConfig",
+    "SheathContactManager",
+    "SheathContactPoint",
+    "build_sheath_contact_manager",
+    "evaluate_sheath_contact",
     "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
     "backtracking_line_search",
