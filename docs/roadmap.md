@@ -205,7 +205,8 @@
 
 **設計仕様（実装ペンディング）**:
 - [接触プリスクリーニングGNN設計](contact/contact-prescreening-gnn-design.md)
-- [k_pen推定MLモデル設計](contact/kpen-estimation-ml-design.md)
+- [k_pen推定MLモデル設計 v2](contact/kpen-estimation-ml-design.md)
+- [**接触アルゴリズム根本整理 Phase C6**](contact/contact-algorithm-overhaul-c6.md)
 
 ### 6.1-6.3: NN構成則・PI制約・ハイブリッド（未実装）
 
@@ -276,6 +277,12 @@ Phase 8 (応用展開)
 - [x] 接触プリスクリーニングGNN Step 1（データ生成パイプライン, status-076, 17テスト）
 - [x] k_pen推定MLモデル Step 1（特徴量抽出ユーティリティ, status-076, 7テスト）
 - [x] PINN学習スパース行列対応（status-076, 8テスト）
+- [ ] **Phase C6: 接触アルゴリズム根本整理**（ML に先立つ理論基盤整備、[設計仕様](contact/contact-algorithm-overhaul-c6.md)）
+  - [ ] C6-L1: Segment-to-segment Gauss 積分（Line-to-line 接触）
+  - [ ] C6-L2: 一貫接線の完全化（∂s/∂u, ∂t/∂u Jacobian）
+  - [ ] C6-L3: Semi-smooth Newton + NCP 関数（Outer loop 廃止）
+  - [ ] C6-L4: ブロック前処理強化（接触 Schur 補集合）
+  - [ ] C6-L5: Mortar 離散化（必要に応じて）
 - [ ] 接触プリスクリーニングGNN Step 2-5（グラフ構築 → モデル実装 → 推論統合 → 性能評価）
 - [ ] k_pen推定ML v2 Step 2-7（グラフ構築 → 残差ベースデータ生成 → 共有GNN実装 → 学習 → ContactConfig統合 → ベンチマーク）
 - [ ] ハイブリッドGNN+PINN組み合わせ検証
@@ -286,7 +293,6 @@ Phase 8 (応用展開)
 - [ ] Phase 4.3: von Mises 3D テスト解凍
 - [ ] Phase 4.4-4.6: ヒステリシス減衰, 粘弾性, 異方性
 - [ ] Phase 6.1-6.3: NN構成則, PI制約, ハイブリッド
-- [ ] Mortar離散化
 
 ---
 

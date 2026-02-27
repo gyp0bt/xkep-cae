@@ -109,9 +109,14 @@ n_outer_max=3 と n_outer_max=5 での収束性比較、成長率バリエーシ
 - [x] k_pen推定MLモデル Step 1（特徴量抽出ユーティリティ）
 
 ### 未解決（引き継ぎ）
-- [ ] Outer loop 発散の完全解決（Mortar離散化等の根本的対策は未実装）
-- [ ] 接触プリスクリーニング GNN Step 2-5（グラフ構築、モデル実装、推論統合、性能評価）
-- [ ] k_pen推定ML v2 Step 2-7（設計仕様をGNNベース+残差目的関数に改訂済み。グラフ構築 → 残差ベースデータ生成 → 共有GNN実装 → 学習 → ContactConfig統合 → ベンチマーク）
+- [ ] **Phase C6: 接触アルゴリズム根本整理**（[設計仕様](../contact/contact-algorithm-overhaul-c6.md)、ML に先立つ最優先）
+  - [ ] C6-L1: Segment-to-segment Gauss 積分
+  - [ ] C6-L2: ∂s/∂u Jacobian + 完全一貫接線
+  - [ ] C6-L3: Semi-smooth Newton + NCP（Outer loop 廃止）
+  - [ ] C6-L4: 接触 Schur 前処理
+  - [ ] C6-L5: Mortar 離散化
+- [ ] 接触プリスクリーニング GNN Step 2-5（C6 後に実施）
+- [ ] k_pen推定ML v2 Step 2-7（C6 後に実施）
 - [ ] PINN + ハイブリッドGNN 組み合わせ検証
 - [ ] 19本撚り/37本撚りでの大規模接触テスト
 
