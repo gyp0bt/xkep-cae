@@ -93,6 +93,7 @@
 | [083](status-083.md) | 2026-02-28 | Phase S1 同層除外フィルタ + NCP摩擦拡張 + line contact統合 | 1875 |
 | [084](status-084.md) | 2026-02-28 | Alart-Curnier 摩擦拡大鞍点系の完全実装 | 1878 |
 | [085](status-085.md) | 2026-02-28 | Phase C6-L5 Mortar 離散化の実装 | 1797 |
+| [086](status-086.md) | 2026-02-28 | TODO消化 + MIT License + 3重統合テスト + 7本撚りMortar評価 | 1809 |
 
 ## テスト数推移
 
@@ -164,6 +165,7 @@
 083:     1875     (Phase S1: 同層除外フィルタ + NCP摩擦拡張 + line contact統合)
 084:     1878     (Alart-Curnier 摩擦拡大鞍点系)
 085:     1797     (Phase C6-L5: Mortar 離散化)
+086:     1809     (TODO消化: MIT License + 3重統合テスト + 7本撚りMortar評価)
 ```
 
 ## 備考
