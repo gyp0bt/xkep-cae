@@ -359,9 +359,12 @@ def newton_raphson_with_contact(
 
         # ステップ開始時の z_t を保存（NR iteration ごとにリセットするため）
         z_t_conv: dict[int, np.ndarray] = {}
+        gp_z_t_conv: dict[int, list[np.ndarray]] = {}  # GP摩擦履歴（Phase C6-L1b）
         if use_friction:
             for pair_idx, pair in enumerate(manager.pairs):
                 z_t_conv[pair_idx] = pair.state.z_t.copy()
+                if pair.state.gp_z_t is not None:
+                    gp_z_t_conv[pair_idx] = [z.copy() for z in pair.state.gp_z_t]
 
         step_converged = False
         merit_prev_outer = float("inf")  # Outer loop merit 追跡
@@ -472,9 +475,11 @@ def newton_raphson_with_contact(
                             k_pen=manager.config.k_pen_scale,
                             k_t_ratio=manager.config.k_t_ratio,
                         )
-                # 新規ペアの z_t_conv エントリ追加
+                # 新規ペアの z_t_conv / gp_z_t_conv エントリ追加
                 if use_friction and pair_idx not in z_t_conv:
                     z_t_conv[pair_idx] = np.zeros(2)
+                if use_friction and pair_idx not in gp_z_t_conv:
+                    gp_z_t_conv[pair_idx] = []
 
             # 前回の (s, t) を保存（Outer 収束判定用）
             prev_st = []
@@ -525,50 +530,112 @@ def newton_raphson_with_contact(
                 # --- 摩擦 return mapping ---
                 friction_forces: dict[int, np.ndarray] = {}
                 friction_tangents: dict[int, np.ndarray] = {}
-
-                if use_friction and mu_eff > 0.0:
-                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
-
-                    for pair_idx, pair in enumerate(manager.pairs):
-                        if pair.state.status == ContactStatus.INACTIVE:
-                            continue
-
-                        # 現在の gap から p_n を更新（摩擦計算に必要）
-                        _eval_pn(pair)
-                        if pair.state.p_n <= 0.0:
-                            continue
-
-                        # z_t をステップ開始時の収束値にリセット
-                        # （delta_ut は全量で計算するため、z_t も全量ベースにする）
-                        if pair_idx in z_t_conv:
-                            pair.state.z_t = z_t_conv[pair_idx].copy()
-                        else:
-                            pair.state.z_t = np.zeros(2)
-
-                        # 接線相対変位増分（ステップ開始からの全量）
-                        delta_ut = compute_tangential_displacement(
-                            pair,
-                            u,
-                            u_step_ref,
-                            node_coords_ref,
-                            ndof_per_node,
-                        )
-
-                        # return mapping（全量ベース）
-                        q_t = friction_return_mapping(pair, delta_ut, mu_eff)
-
-                        if float(np.linalg.norm(q_t)) > 1e-30:
-                            friction_forces[pair_idx] = q_t
-                            D_t = friction_tangent_2x2(pair, mu_eff)
-                            friction_tangents[pair_idx] = D_t
-
-                # 構造内力
-                f_int = assemble_internal_force(u)
+                # Line contact 摩擦（Phase C6-L1b）
+                _line_fric_forces: dict[int, np.ndarray] = {}
+                _line_fric_stiffs: dict[int, np.ndarray] = {}
 
                 # Line contact 用の変形座標（line_contact=True の場合）
                 _line_coords = None
                 if manager.config.line_contact:
                     _line_coords = _deformed_coords(node_coords_ref, u, ndof_per_node)
+
+                _use_line_friction = (
+                    use_friction and manager.config.line_contact and _line_coords is not None
+                )
+
+                if use_friction and mu_eff > 0.0:
+                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
+
+                    if _use_line_friction:
+                        # Line contact: GP 摩擦（Phase C6-L1b）
+                        from xkep_cae.contact.line_contact import (
+                            auto_select_n_gauss as _auto_ng,
+                        )
+                        from xkep_cae.contact.line_contact import (
+                            compute_line_friction_force_local as _line_fric,
+                        )
+                        from xkep_cae.contact.line_contact import (
+                            compute_line_friction_stiffness_local as _line_fric_K,
+                        )
+
+                        n_gp_cfg = manager.config.n_gauss
+                        for pair_idx, pair in enumerate(manager.pairs):
+                            if pair.state.status == ContactStatus.INACTIVE:
+                                continue
+                            _eval_pn(pair)
+                            if pair.state.p_n <= 0.0:
+                                continue
+
+                            xA0 = _line_coords[pair.nodes_a[0]]
+                            xA1 = _line_coords[pair.nodes_a[1]]
+                            xB0 = _line_coords[pair.nodes_b[0]]
+                            xB1 = _line_coords[pair.nodes_b[1]]
+
+                            n_gp = n_gp_cfg
+                            if manager.config.n_gauss_auto:
+                                n_gp = _auto_ng(xA0, xA1, xB0, xB1, default=n_gp)
+
+                            # GP z_t をステップ開始時にリセット
+                            if pair_idx in gp_z_t_conv:
+                                pair.state.gp_z_t = [z.copy() for z in gp_z_t_conv[pair_idx]]
+
+                            f_fric, _ = _line_fric(
+                                pair,
+                                xA0,
+                                xA1,
+                                xB0,
+                                xB1,
+                                u,
+                                u_step_ref,
+                                ndof_per_node,
+                                mu_eff,
+                                n_gp,
+                            )
+                            if float(np.linalg.norm(f_fric)) > 1e-30:
+                                _line_fric_forces[pair_idx] = f_fric
+                                K_fric = _line_fric_K(
+                                    pair,
+                                    xA0,
+                                    xA1,
+                                    xB0,
+                                    xB1,
+                                    mu_eff,
+                                    n_gp,
+                                )
+                                _line_fric_stiffs[pair_idx] = K_fric
+                    else:
+                        # PtP 摩擦（従来方式）
+                        for pair_idx, pair in enumerate(manager.pairs):
+                            if pair.state.status == ContactStatus.INACTIVE:
+                                continue
+
+                            _eval_pn(pair)
+                            if pair.state.p_n <= 0.0:
+                                continue
+
+                            # z_t をステップ開始時の収束値にリセット
+                            if pair_idx in z_t_conv:
+                                pair.state.z_t = z_t_conv[pair_idx].copy()
+                            else:
+                                pair.state.z_t = np.zeros(2)
+
+                            delta_ut = compute_tangential_displacement(
+                                pair,
+                                u,
+                                u_step_ref,
+                                node_coords_ref,
+                                ndof_per_node,
+                            )
+
+                            q_t = friction_return_mapping(pair, delta_ut, mu_eff)
+
+                            if float(np.linalg.norm(q_t)) > 1e-30:
+                                friction_forces[pair_idx] = q_t
+                                D_t = friction_tangent_2x2(pair, mu_eff)
+                                friction_tangents[pair_idx] = D_t
+
+                # 構造内力
+                f_int = assemble_internal_force(u)
 
                 # 接触内力（法線 + 摩擦）
                 f_c_raw = compute_contact_force(
@@ -577,6 +644,7 @@ def newton_raphson_with_contact(
                     ndof_per_node=ndof_per_node,
                     friction_forces=friction_forces if friction_forces else None,
                     node_coords=_line_coords,
+                    line_friction_forces=_line_fric_forces if _line_fric_forces else None,
                 )
 
                 # Contact damping: under-relaxation で接触力の急変を抑制
@@ -629,6 +697,9 @@ def newton_raphson_with_contact(
                         friction_tangents=friction_tangents if friction_tangents else None,
                         use_geometric_stiffness=use_geometric_stiffness,
                         node_coords=_line_coords,
+                        line_friction_stiffnesses=(
+                            _line_fric_stiffs if _line_fric_stiffs else None
+                        ),
                     )
                     if contact_tangent_mode == "diagonal":
                         # 対角近似: K_c の対角成分のみを使用
@@ -685,14 +756,17 @@ def newton_raphson_with_contact(
 
                     # 摩擦力を固定して merit 評価する closure
                     ff_snapshot = dict(friction_forces) if friction_forces else None
+                    _lff_snapshot = dict(_line_fric_forces) if _line_fric_forces else None
                     # f_ext をローカルにキャプチャ（B023 回避）
                     _f_ext_ls = f_ext
                     _ff_ls = ff_snapshot
+                    _lff_ls = _lff_snapshot
 
                     def _eval_merit(
                         u_trial: np.ndarray,
                         _fe: np.ndarray = _f_ext_ls,
                         _ff: dict | None = _ff_ls,
+                        _lff: dict | None = _lff_ls,
                     ) -> float:
                         _update_gaps_fixed_st(
                             manager,
@@ -710,6 +784,7 @@ def newton_raphson_with_contact(
                             ndof_per_node=ndof_per_node,
                             friction_forces=_ff,
                             node_coords=_lc_t,
+                            line_friction_forces=_lff,
                         )
                         res_t = _fe - f_int_t - f_c_t
                         res_t[fixed_dofs] = 0.0
@@ -1207,9 +1282,12 @@ def newton_raphson_block_contact(
 
         # ステップ開始時の z_t を保存
         z_t_conv: dict[int, np.ndarray] = {}
+        gp_z_t_conv: dict[int, list[np.ndarray]] = {}  # GP摩擦履歴（Phase C6-L1b）
         if use_friction:
             for pair_idx, pair in enumerate(manager.pairs):
                 z_t_conv[pair_idx] = pair.state.z_t.copy()
+                if pair.state.gp_z_t is not None:
+                    gp_z_t_conv[pair_idx] = [z.copy() for z in pair.state.gp_z_t]
 
         step_converged = False
 
@@ -1312,6 +1390,8 @@ def newton_raphson_block_contact(
                         )
                 if use_friction and pair_idx not in z_t_conv:
                     z_t_conv[pair_idx] = np.zeros(2)
+                if use_friction and pair_idx not in gp_z_t_conv:
+                    gp_z_t_conv[pair_idx] = []
 
             # 前回の (s, t) を保存
             prev_st = []
@@ -1337,38 +1417,100 @@ def newton_raphson_block_contact(
 
                 # --- 摩擦 return mapping ---
                 friction_forces: dict[int, np.ndarray] = {}
-
-                if use_friction and mu_eff > 0.0:
-                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
-
-                    for pair_idx, pair in enumerate(manager.pairs):
-                        if pair.state.status == ContactStatus.INACTIVE:
-                            continue
-                        _eval_pn(pair)
-                        if pair.state.p_n <= 0.0:
-                            continue
-                        if pair_idx in z_t_conv:
-                            pair.state.z_t = z_t_conv[pair_idx].copy()
-                        else:
-                            pair.state.z_t = np.zeros(2)
-                        delta_ut = compute_tangential_displacement(
-                            pair,
-                            u,
-                            u_step_ref,
-                            node_coords_ref,
-                            ndof_per_node,
-                        )
-                        q_t = friction_return_mapping(pair, delta_ut, mu_eff)
-                        if float(np.linalg.norm(q_t)) > 1e-30:
-                            friction_forces[pair_idx] = q_t
-
-                # 構造内力
-                f_int = assemble_internal_force(u)
+                _line_fric_forces_blk: dict[int, np.ndarray] = {}
+                _line_fric_stiffs_blk: dict[int, np.ndarray] = {}
 
                 # Line contact 用の変形座標
                 _lc_blk = None
                 if manager.config.line_contact:
                     _lc_blk = _deformed_coords(node_coords_ref, u, ndof_per_node)
+
+                _use_line_friction_blk = (
+                    use_friction and manager.config.line_contact and _lc_blk is not None
+                )
+
+                if use_friction and mu_eff > 0.0:
+                    from xkep_cae.contact.law_normal import evaluate_normal_force as _eval_pn
+
+                    if _use_line_friction_blk:
+                        from xkep_cae.contact.line_contact import (
+                            auto_select_n_gauss as _auto_ng_blk,
+                        )
+                        from xkep_cae.contact.line_contact import (
+                            compute_line_friction_force_local as _line_fric_blk,
+                        )
+                        from xkep_cae.contact.line_contact import (
+                            compute_line_friction_stiffness_local as _line_fric_K_blk,
+                        )
+
+                        n_gp_cfg_blk = manager.config.n_gauss
+                        for pair_idx, pair in enumerate(manager.pairs):
+                            if pair.state.status == ContactStatus.INACTIVE:
+                                continue
+                            _eval_pn(pair)
+                            if pair.state.p_n <= 0.0:
+                                continue
+
+                            xA0 = _lc_blk[pair.nodes_a[0]]
+                            xA1 = _lc_blk[pair.nodes_a[1]]
+                            xB0 = _lc_blk[pair.nodes_b[0]]
+                            xB1 = _lc_blk[pair.nodes_b[1]]
+
+                            n_gp_blk = n_gp_cfg_blk
+                            if manager.config.n_gauss_auto:
+                                n_gp_blk = _auto_ng_blk(xA0, xA1, xB0, xB1, default=n_gp_blk)
+
+                            if pair_idx in gp_z_t_conv:
+                                pair.state.gp_z_t = [z.copy() for z in gp_z_t_conv[pair_idx]]
+
+                            f_fric, _ = _line_fric_blk(
+                                pair,
+                                xA0,
+                                xA1,
+                                xB0,
+                                xB1,
+                                u,
+                                u_step_ref,
+                                ndof_per_node,
+                                mu_eff,
+                                n_gp_blk,
+                            )
+                            if float(np.linalg.norm(f_fric)) > 1e-30:
+                                _line_fric_forces_blk[pair_idx] = f_fric
+                                K_fric = _line_fric_K_blk(
+                                    pair,
+                                    xA0,
+                                    xA1,
+                                    xB0,
+                                    xB1,
+                                    mu_eff,
+                                    n_gp_blk,
+                                )
+                                _line_fric_stiffs_blk[pair_idx] = K_fric
+                    else:
+                        for pair_idx, pair in enumerate(manager.pairs):
+                            if pair.state.status == ContactStatus.INACTIVE:
+                                continue
+                            _eval_pn(pair)
+                            if pair.state.p_n <= 0.0:
+                                continue
+                            if pair_idx in z_t_conv:
+                                pair.state.z_t = z_t_conv[pair_idx].copy()
+                            else:
+                                pair.state.z_t = np.zeros(2)
+                            delta_ut = compute_tangential_displacement(
+                                pair,
+                                u,
+                                u_step_ref,
+                                node_coords_ref,
+                                ndof_per_node,
+                            )
+                            q_t = friction_return_mapping(pair, delta_ut, mu_eff)
+                            if float(np.linalg.norm(q_t)) > 1e-30:
+                                friction_forces[pair_idx] = q_t
+
+                # 構造内力
+                f_int = assemble_internal_force(u)
 
                 # 接触内力
                 f_c = compute_contact_force(
@@ -1377,6 +1519,7 @@ def newton_raphson_block_contact(
                     ndof_per_node=ndof_per_node,
                     friction_forces=friction_forces if friction_forces else None,
                     node_coords=_lc_blk,
+                    line_friction_forces=(_line_fric_forces_blk if _line_fric_forces_blk else None),
                 )
 
                 # 残差
@@ -1411,6 +1554,9 @@ def newton_raphson_block_contact(
                         friction_tangents=None,
                         use_geometric_stiffness=manager.config.use_geometric_stiffness,
                         node_coords=_lc_blk,
+                        line_friction_stiffnesses=(
+                            _line_fric_stiffs_blk if _line_fric_stiffs_blk else None
+                        ),
                     )
 
                 # ブロック前処理の構築

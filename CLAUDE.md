@@ -66,12 +66,13 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ + TODO
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（76個）
+├── status/         # ステータスファイル群（82個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI 完了（1821テスト: fast 1448 / slow 283）。Phase 4.3（von Mises 3D）は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI 完了（1850テスト: fast 1470 / slow 290）。Phase 4.3（von Mises 3D）は凍結。
+**次のマイルストーン**: Phase S（スケーラビリティ）S1: Mortar離散化 + 同層除外 → S2: CPU並列 → S3: 91本BM → S4: 剛性比較BM → S5: ML → S6: 1000本 → S7: GPU。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。

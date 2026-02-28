@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1821テスト（fast: 1448 / slow: 283）**
+**1850テスト（fast: 1470 / slow: 290）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -23,6 +23,7 @@
 | Phase C6-L2: 一貫接線の完全化（∂(s,t)/∂u Jacobian） | ✓ |
 | Phase C6-L3: Semi-smooth Newton + NCP 関数 | ✓ |
 | Phase C6-L4: ブロック前処理強化（接触 Schur 補集合） | ✓ |
+| Phase C6-L1b: 摩擦力 line contact 拡張（GP Gauss 積分） | ✓ |
 | Phase 4.7 L0: 撚線基礎（7本撚り収束, ヒステリシス） | ✓ |
 | Phase 4.7 L0.5 S1-S4: シース挙動（コンプライアンス, 有限滑り, シース間接触） | ✓ |
 | 7本撚りブロック前処理ソルバー + adaptive omega | ✓ |
@@ -30,6 +31,9 @@
 | 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
 | GitHub Actions CI + slowテストマーカー | ✓ |
+| **Phase S: スケーラビリティ** | **計画策定済** |
+
+**次のマイルストーン**: Phase S — Mortar離散化 → CPU並列化 → 91本BM → 剛性比較BM → ML → 1000本トライ → GPU
 
 詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
 
@@ -121,7 +125,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（78個）
+├── status/         # ステータスファイル群（82個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
