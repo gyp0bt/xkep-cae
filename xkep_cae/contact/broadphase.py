@@ -77,11 +77,13 @@ def broadphase_aabb(
     else:
         r_arr = np.asarray(radii, dtype=float)
 
-    # AABB 計算
-    aabbs: list[tuple[np.ndarray, np.ndarray]] = []
-    for i, (x0, x1) in enumerate(segments):
-        lo, hi = compute_segment_aabb(x0, x1, r_arr[i], margin)
-        aabbs.append((lo, hi))
+    # AABB 計算（ベクトル化: numpy 一括処理）
+    x0_arr = np.array([s[0] for s in segments])  # (n, 3)
+    x1_arr = np.array([s[1] for s in segments])  # (n, 3)
+    expand = r_arr[:, None] + margin  # (n, 1)
+    lo_all = np.minimum(x0_arr, x1_arr) - expand  # (n, 3)
+    hi_all = np.maximum(x0_arr, x1_arr) + expand  # (n, 3)
+    aabbs: list[tuple[np.ndarray, np.ndarray]] = [(lo_all[i], hi_all[i]) for i in range(n)]
 
     # セルサイズ自動推定: 各 AABB の最大辺長の平均
     if cell_size is None:

@@ -201,9 +201,10 @@ class ContactConfig:
     omega_max: float = 0.3  # adaptive_omega時の上限ω
     omega_growth: float = 2.0  # adaptive_omega時のOuter反復ごとの成長係数
     preserve_inactive_lambda: bool = False  # INACTIVEペアのlambda_n保持（sticky contact）
-    linear_solver: str = "direct"  # 線形ソルバー: "direct" | "iterative" | "auto"
+    linear_solver: str = "auto"  # 線形ソルバー: "direct" | "iterative" | "auto"
     iterative_tol: float = 1e-10  # GMRES収束判定（iterativeモード用）
     ilu_drop_tol: float = 1e-4  # ILU前処理のdrop tolerance
+    gmres_dof_threshold: int = 2000  # DOFがこの閾値以上で自動的にGMRES（反復法）を使用
     no_deactivation_within_step: bool = (
         False  # ステップ内でのペア非活性化を禁止（活性セットチャタリング防止）
     )

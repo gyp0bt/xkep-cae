@@ -403,8 +403,14 @@ def _solve_linear_system(
     mode: str = "auto",
     iterative_tol: float = 1e-10,
     ilu_drop_tol: float = 1e-4,
+    gmres_dof_threshold: int = 2000,
 ) -> np.ndarray:
-    """線形連立方程式を解く."""
+    """線形連立方程式を解く.
+
+    mode="auto" では DOF 閾値に基づいて直接法と反復法を自動選択する:
+      - DOF < gmres_dof_threshold: 直接法（spsolve）
+      - DOF >= gmres_dof_threshold: 反復法（GMRES + ILU 前処理）
+    """
     import warnings
 
     import scipy.sparse.linalg as spla
@@ -424,15 +430,30 @@ def _solve_linear_system(
             x = spla.spsolve(K, rhs)
         return x
 
-    # auto: direct → iterative fallback
+    # auto: DOF 閾値ベースで選択
+    n = K.shape[0]
+    if n >= gmres_dof_threshold:
+        return _solve_linear_system(
+            K,
+            rhs,
+            mode="iterative",
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+        )
+
+    # 小規模: direct → iterative fallback
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         x = spla.spsolve(K, rhs)
     for w in caught:
         if "MatrixRankWarning" in str(w.category.__name__) or "singular" in str(w.message).lower():
-            return _solve_linear_system(K, rhs, mode="iterative", iterative_tol=iterative_tol)
+            return _solve_linear_system(
+                K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
+            )
     if not np.all(np.isfinite(x)):
-        return _solve_linear_system(K, rhs, mode="iterative", iterative_tol=iterative_tol)
+        return _solve_linear_system(
+            K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
+        )
     return x
 
 
@@ -513,17 +534,23 @@ def _solve_saddle_point_gmres(
         ilu = None
 
     # --- Schur 補集合の対角近似: S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T ---
+    # バッチ ILU ソルブで n_active 回のループを回避
     s_diag = np.ones(n_active) * 1e-12
     if ilu is not None:
-        G_A_bc_dense = G_A_bc_csr.toarray()
-        for i in range(n_active):
-            g_row = G_A_bc_dense[i, :]
-            v = ilu.solve(g_row)
-            s_diag[i] = g_row @ v + 1e-12
+        G_A_bc_dense = G_A_bc_csr.toarray()  # (n_active, ndof)
+        try:
+            # バッチソルブ: (ndof, n_active)
+            V = ilu.solve(G_A_bc_dense.T)
+            s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V) + 1e-12
+        except Exception:
+            # フォールバック: 行ごとのソルブ
+            for i in range(n_active):
+                g_row = G_A_bc_dense[i, :]
+                v = ilu.solve(g_row)
+                s_diag[i] = g_row @ v + 1e-12
     else:
         # ILU が失敗した場合の粗い近似
-        for i in range(n_active):
-            s_diag[i] = 1.0 / max(k_pen, 1e-12)
+        s_diag[:] = 1.0 / max(k_pen, 1e-12)
 
     # --- 拡大系行列-ベクトル積 ---
     def matvec(x):
@@ -648,8 +675,19 @@ def _solve_saddle_point_direct(
         G_A_T_bc[dof, :] = 0.0
 
     V = np.zeros((ndof, n_active))
-    for j in range(n_active):
-        V[:, j] = _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+    if n_active > 4:
+        # 並列ソルブ（ThreadPoolExecutor）: 各 RHS は独立
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _solve_col(j):
+            return j, _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+
+        with ThreadPoolExecutor() as pool:
+            for j, vj in pool.map(lambda j: _solve_col(j), range(n_active)):
+                V[:, j] = vj
+    else:
+        for j in range(n_active):
+            V[:, j] = _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
 
     # Step 3: S = G_A * V  (n_active × n_active — 制約 Schur 補集合)
     G_A_dense = G_A.toarray()
@@ -909,6 +947,7 @@ def _solve_saddle_point_contact(
     iterative_tol: float = 1e-10,
     ilu_drop_tol: float = 1e-4,
     use_block_preconditioner: bool = False,
+    gmres_dof_threshold: int = 2000,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を解く（直接法 or ブロック前処理 GMRES）.
 
@@ -919,6 +958,9 @@ def _solve_saddle_point_contact(
       ブロック対角前処理付き GMRES。n_active が大きい場合に効率的。
       K_eff^{-1} を ILU で近似し、Schur 補集合の対角近似を前処理に使用。
 
+    linear_solver="auto" かつ ndof >= gmres_dof_threshold の場合、
+    ブロック前処理 GMRES を自動選択する。
+
     Args:
         K_T: 構造接線剛性
         G_A: (n_active, ndof) NCP アクティブ制約ヤコビアン
@@ -926,25 +968,35 @@ def _solve_saddle_point_contact(
         R_u: (ndof,) 力残差
         g_active: (n_active,) アクティブペアのギャップ
         fixed_dofs: 拘束 DOF
-        linear_solver: 線形ソルバーモード（直接法のみ）
+        linear_solver: 線形ソルバーモード
         iterative_tol: 反復ソルバー許容値
         ilu_drop_tol: ILU drop tolerance
         use_block_preconditioner: ブロック前処理 GMRES の使用（Phase C6-L4）
+        gmres_dof_threshold: DOF 閾値。この値以上で自動的に反復法を選択
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
     """
     n_active = G_A.shape[0]
+    ndof = K_T.shape[0]
+
+    # auto モードで DOF 閾値を超えた場合、ブロック前処理 GMRES を自動選択
+    auto_block = linear_solver == "auto" and ndof >= gmres_dof_threshold and n_active > 0
 
     if n_active == 0:
         K_bc = K_T.tolil()
         rhs = -R_u.copy()
         _apply_bc(K_bc, rhs, fixed_dofs)
-        solve_kw = dict(mode=linear_solver, iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol)
+        solve_kw = dict(
+            mode=linear_solver,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+            gmres_dof_threshold=gmres_dof_threshold,
+        )
         du = _solve_linear_system(K_bc.tocsr(), rhs, **solve_kw)
         return du, np.array([])
 
-    if use_block_preconditioner:
+    if use_block_preconditioner or auto_block:
         return _solve_saddle_point_gmres(
             K_T,
             G_A,
@@ -1083,12 +1135,14 @@ def newton_raphson_contact_ncp(
     # Mortar 乗数（Mortar 有効時のみ使用）
     lam_mortar: np.ndarray | None = None
     mortar_nodes: list[int] = []
+    g_mortar: np.ndarray | None = None
 
     # 線形ソルバー設定
     linear_solver_mode = manager.config.linear_solver
     iterative_tol_cfg = manager.config.iterative_tol
     ilu_drop_tol_cfg = manager.config.ilu_drop_tol
     use_block_preconditioner = manager.config.ncp_block_preconditioner
+    gmres_dof_threshold_cfg = manager.config.gmres_dof_threshold
 
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
@@ -1404,7 +1458,9 @@ def newton_raphson_contact_ncp(
             K_T = assemble_tangent(u)
 
             # 8b. line contact 法線剛性を加算（Gauss 積分）
-            if _line_contact:
+            # Mortar 使用時はスキップ: Mortar 鞍点系の k_pen * G^T G が接触剛性を提供
+            # Per-pair K_line と Mortar 剛性の二重カウントを防止
+            if _line_contact and not _use_mortar:
                 _orig_lc = manager.config.line_contact
                 _orig_ng = manager.config.n_gauss
                 manager.config.line_contact = True
@@ -1439,6 +1495,7 @@ def newton_raphson_contact_ncp(
                     iterative_tol=iterative_tol_cfg,
                     ilu_drop_tol=ilu_drop_tol_cfg,
                     use_block_preconditioner=use_block_preconditioner,
+                    gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
                 # 11m. Mortar 乗数更新
@@ -1511,6 +1568,7 @@ def newton_raphson_contact_ncp(
                     iterative_tol=iterative_tol_cfg,
                     ilu_drop_tol=ilu_drop_tol_cfg,
                     use_block_preconditioner=use_block_preconditioner,
+                    gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
                 # 11. 更新
@@ -1566,6 +1624,43 @@ def newton_raphson_contact_ncp(
             if i < len(lam_all):
                 pair.state.lambda_n = lam_all[i]
                 pair.state.p_n = max(0.0, lam_all[i] + k_pen * (-pair.state.gap))
+
+        # --- Mortar 適応ペナルティ増大 ---
+        # Mortar 重み付きギャップから最大貫入率を推定し、k_pen を自動増大
+        if _use_mortar and lam_mortar is not None and len(mortar_nodes) > 0:
+            _tol_pen = manager.config.tol_penetration_ratio
+            _pen_growth = manager.config.penalty_growth_factor
+            _k_pen_max = manager.config.k_pen_max
+            if _tol_pen > 0.0 and g_mortar is not None:
+                # 法線力が正（接触活性）の Mortar 節点について貫入チェック
+                p_n_m = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
+                for mk in range(len(mortar_nodes)):
+                    if p_n_m[mk] > 0.0 and g_mortar[mk] < 0.0:
+                        # Mortar ギャップは重み付き → 代表半径で正規化
+                        pen_abs = abs(g_mortar[mk])
+                        # 代表半径の推定: アクティブペアの平均 search_radius
+                        sr_avg = (
+                            np.mean(
+                                [
+                                    p.search_radius
+                                    for p in manager.pairs
+                                    if p.state.status != ContactStatus.INACTIVE
+                                    and p.search_radius > 1e-30
+                                ]
+                            )
+                            if manager.n_active > 0
+                            else 1.0
+                        )
+                        pen_ratio = pen_abs / max(sr_avg, 1e-30)
+                        if pen_ratio > _tol_pen and k_pen < _k_pen_max:
+                            k_pen = min(k_pen * _pen_growth, _k_pen_max)
+                            if show_progress:
+                                print(
+                                    f"  Mortar adaptive k_pen: "
+                                    f"pen_ratio={pen_ratio:.3f} > tol={_tol_pen:.3f}, "
+                                    f"k_pen → {k_pen:.2e}"
+                                )
+                            break  # 1回の増大で次ステップへ
 
         # 摩擦用: 参照変位を更新（次ステップ用）
         u_ref = u.copy()
