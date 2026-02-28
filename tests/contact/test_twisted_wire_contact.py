@@ -182,6 +182,9 @@ def _make_contact_manager(
     omega_min=0.01,
     omega_max=0.3,
     omega_growth=2.0,
+    line_contact=False,
+    n_gauss=3,
+    n_gauss_auto=False,
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -224,6 +227,9 @@ def _make_contact_manager(
             omega_min=omega_min,
             omega_max=omega_max,
             omega_growth=omega_growth,
+            line_contact=line_contact,
+            n_gauss=n_gauss,
+            n_gauss_auto=n_gauss_auto,
         ),
     )
 
@@ -295,6 +301,9 @@ def _solve_twisted_wire(
     g_off: float = 1e-5,
     no_deactivation_within_step: bool = False,
     monolithic_geometry: bool = False,
+    line_contact: bool = False,
+    n_gauss: int = 3,
+    n_gauss_auto: bool = False,
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -311,6 +320,9 @@ def _solve_twisted_wire(
         auto_kpen: True で EI/L³ ベース自動推定
         staged_activation: True で層別段階的接触アクティベーション
         n_outer_max: Outer loop 最大反復数
+        line_contact: True で Line-to-line Gauss 積分の有効化
+        n_gauss: Gauss 積分点数
+        n_gauss_auto: True でセグメント角度に基づく自動選択
 
     Returns:
         (result, mgr, mesh)
@@ -412,6 +424,9 @@ def _solve_twisted_wire(
         g_off=g_off,
         no_deactivation_within_step=no_deactivation_within_step,
         monolithic_geometry=monolithic_geometry,
+        line_contact=line_contact,
+        n_gauss=n_gauss,
+        n_gauss_auto=n_gauss_auto,
     )
 
     result = newton_raphson_with_contact(
@@ -2246,3 +2261,176 @@ class TestHysteresisLoopArea:
 
         # 摩擦があるので、面積 >= 0 のはず
         assert hysteresis_area >= 0, f"ヒステリシス面積が負: {hysteresis_area}"
+
+
+# ====================================================================
+# テスト: Line contact + friction による撚線収束（Phase C6-L1b）
+# ====================================================================
+
+
+class TestTwistedWireLineContactFriction:
+    """Line-to-line Gauss積分 + 摩擦での撚線収束テスト.
+
+    PtP代表点の摩擦ではなく、各Gauss点で独立にCoulomb return mappingを行い、
+    摩擦力をGauss積分で空間分布として評価する（Phase C6-L1b）。
+    """
+
+    def test_3_strand_line_friction_tension(self):
+        """3本撚り + line contact + 摩擦 + 引張が収束する."""
+        result, mgr, mesh = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged, "3本撚り line friction 引張が収束しなかった"
+
+        # 接触ペアが活性化していることを確認
+        active = _count_active_pairs(mgr)
+        assert active > 0, "活性接触ペアが0"
+
+    def test_3_strand_line_friction_lateral(self):
+        """3本撚り + line contact + 摩擦 + 横力が収束する."""
+        result, mgr, _ = _solve_twisted_wire(
+            3,
+            "lateral",
+            5.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged, "3本撚り line friction 横力が収束しなかった"
+
+    def test_3_strand_line_friction_bending(self):
+        """3本撚り + line contact + 摩擦 + 曲げが収束する."""
+        result, _, _ = _solve_twisted_wire(
+            3,
+            "bending",
+            0.05,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged, "3本撚り line friction 曲げが収束しなかった"
+
+    def test_3_strand_line_contact_no_friction(self):
+        """3本撚り + line contact（摩擦なし）+ 引張が収束する."""
+        result, mgr, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            100.0,
+            n_pitches=1.0,
+            use_friction=False,
+            auto_kpen=True,
+            n_load_steps=15,
+            n_outer_max=10,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged, "3本撚り line contact（摩擦なし）が収束しなかった"
+
+    def test_line_vs_ptp_friction_similar(self):
+        """Line friction と PtP friction で同符号の変位応答."""
+        # PtP friction
+        result_ptp, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=False,
+        )
+        # Line friction
+        result_line, _, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result_ptp.converged, "PtP friction が収束しなかった"
+        assert result_line.converged, "Line friction が収束しなかった"
+
+        # z方向最大変位が同符号であること（定性的一致）
+        uz_ptp = result_ptp.u[2::_NDOF_PER_NODE]
+        uz_line = result_line.u[2::_NDOF_PER_NODE]
+        max_uz_ptp = np.max(np.abs(uz_ptp))
+        max_uz_line = np.max(np.abs(uz_line))
+        assert max_uz_ptp > 1e-12
+        assert max_uz_line > 1e-12
+
+        # 主変位方向が一致（z方向引張）
+        assert np.sign(np.max(uz_ptp)) == np.sign(np.max(uz_line))
+
+    def test_3_strand_line_friction_gp_states(self):
+        """Line friction 後にGP摩擦状態が設定されている."""
+        result, mgr, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged
+
+        # 活性ペアのGP状態が初期化されていることを確認
+        for pair in mgr.pairs:
+            if pair.state.status != ContactStatus.INACTIVE:
+                if pair.state.gp_z_t is not None:
+                    assert len(pair.state.gp_z_t) == 3  # n_gauss=3
+                    for z in pair.state.gp_z_t:
+                        assert z.shape == (2,)
+
+    def test_3_strand_penetration_controlled(self):
+        """Line contact + friction で貫入量が制御される."""
+        result, mgr, _ = _solve_twisted_wire(
+            3,
+            "tension",
+            50.0,
+            n_pitches=1.0,
+            use_friction=True,
+            mu=0.3,
+            auto_kpen=True,
+            n_load_steps=20,
+            n_outer_max=12,
+            line_contact=True,
+            n_gauss=3,
+        )
+        assert result.converged
+
+        max_pen = _max_penetration_ratio(mgr)
+        # 貫入比 < 10% で制御されている
+        assert max_pen < 0.10, f"貫入比が大きすぎる: {max_pen:.4f}"
