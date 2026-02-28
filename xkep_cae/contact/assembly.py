@@ -322,6 +322,7 @@ def compute_contact_force(
     ndof_per_node: int = 6,
     friction_forces: dict[int, np.ndarray] | None = None,
     node_coords: np.ndarray | None = None,
+    line_friction_forces: dict[int, np.ndarray] | None = None,
 ) -> np.ndarray:
     """全接触ペアの接触内力ベクトルを計算する.
 
@@ -332,14 +333,19 @@ def compute_contact_force(
     line_contact=True（ContactConfig）の場合、Gauss 積分で接触力を評価する。
     この場合 node_coords が必要。
 
+    line_friction_forces が指定されている場合、PtP 代表点ではなく
+    Gauss 積分で計算済みの分布摩擦力を使用する（Phase C6-L1b）。
+
     Args:
         manager: 接触マネージャ
         ndof_total: 全体 DOF 数
         ndof_per_node: 1節点あたりの DOF 数
-        friction_forces: {pair_index: q_t (2,)} 摩擦力マップ。
+        friction_forces: {pair_index: q_t (2,)} PtP 摩擦力マップ。
             None なら法線力のみ（後方互換）。
         node_coords: (n_nodes, 3) 変形後節点座標（line_contact 用）。
             line_contact=False の場合は不要。
+        line_friction_forces: {pair_index: f_local (12,)} Gauss 積分済み
+            摩擦力マップ（Phase C6-L1b）。指定時は friction_forces より優先。
 
     Returns:
         f_contact: (ndof_total,) 接触内力ベクトル
@@ -388,8 +394,16 @@ def compute_contact_force(
                         gdof = node * ndof_per_node + d
                         f_contact[gdof] += p_n * g_n[i * 3 + d]
 
-        # 摩擦力の組み込み（line contact でも PtP の代表点で評価）
-        if friction_forces is not None and pair_idx in friction_forces:
+        # 摩擦力の組み込み
+        if line_friction_forces is not None and pair_idx in line_friction_forces:
+            # Gauss 積分済み分布摩擦力（Phase C6-L1b）
+            f_fric_local = line_friction_forces[pair_idx]
+            for i, node in enumerate(nodes):
+                for d in range(3):
+                    gdof = node * ndof_per_node + d
+                    f_contact[gdof] += f_fric_local[i * 3 + d]
+        elif friction_forces is not None and pair_idx in friction_forces:
+            # PtP 代表点での摩擦力（従来方式）
             q_t = friction_forces[pair_idx]
             for axis in range(2):
                 if abs(q_t[axis]) < 1e-30:
@@ -501,6 +515,7 @@ def compute_contact_stiffness(
     friction_tangents: dict[int, np.ndarray] | None = None,
     use_geometric_stiffness: bool = True,
     node_coords: np.ndarray | None = None,
+    line_friction_stiffnesses: dict[int, np.ndarray] | None = None,
 ) -> sp.csr_matrix:
     """全接触ペアの接触接線剛性行列を計算する.
 
@@ -637,8 +652,13 @@ def compute_contact_stiffness(
                     )
                     _add_local_to_coo(K_st_local, gdofs, rows, cols, data)
 
-        # --- 摩擦接線剛性（PtP 代表点で評価、line contact でも同様）---
-        if friction_tangents is not None and pair_idx in friction_tangents:
+        # --- 摩擦接線剛性 ---
+        if line_friction_stiffnesses is not None and pair_idx in line_friction_stiffnesses:
+            # Gauss 積分済み分布摩擦剛性（Phase C6-L1b）
+            K_fric_local = line_friction_stiffnesses[pair_idx]
+            _add_local_to_coo(K_fric_local, gdofs, rows, cols, data)
+        elif friction_tangents is not None and pair_idx in friction_tangents:
+            # PtP 代表点での摩擦接線剛性（従来方式）
             D_t = friction_tangents[pair_idx]
             g_t = [
                 _contact_tangent_shape_vector(pair, 0),

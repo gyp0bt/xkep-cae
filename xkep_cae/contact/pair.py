@@ -66,6 +66,10 @@ class ContactState:
     status: ContactStatus = ContactStatus.INACTIVE
     stick: bool = True
     dissipation: float = 0.0
+    # Gauss point friction states (for line contact friction, Phase C6-L1b)
+    gp_z_t: list[np.ndarray] | None = None
+    gp_stick: list[bool] | None = None
+    gp_q_trial_norm: list[float] | None = None
 
     def copy(self) -> ContactState:
         """深いコピーを返す."""
@@ -85,6 +89,11 @@ class ContactState:
             status=self.status,
             stick=self.stick,
             dissipation=self.dissipation,
+            gp_z_t=[z.copy() for z in self.gp_z_t] if self.gp_z_t is not None else None,
+            gp_stick=list(self.gp_stick) if self.gp_stick is not None else None,
+            gp_q_trial_norm=list(self.gp_q_trial_norm)
+            if self.gp_q_trial_norm is not None
+            else None,
         )
 
 
