@@ -47,6 +47,12 @@ from xkep_cae.contact.law_friction import (
     friction_return_mapping,
     friction_tangent_2x2,
 )
+from xkep_cae.contact.mortar import (
+    build_mortar_system,
+    compute_mortar_contact_force,
+    compute_mortar_p_n,
+    identify_mortar_nodes,
+)
 from xkep_cae.contact.pair import ContactManager, ContactStatus
 
 
@@ -992,6 +998,7 @@ def newton_raphson_contact_ncp(
     mu_ramp_steps: int | None = None,
     line_contact: bool = False,
     n_gauss: int | None = None,
+    use_mortar: bool = False,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1064,11 +1071,18 @@ def newton_raphson_contact_ncp(
     _line_contact = line_contact or manager.config.line_contact
     _n_gauss = n_gauss if n_gauss is not None else manager.config.n_gauss
 
+    # Mortar 設定の解決（line contact 必須）
+    _use_mortar = (use_mortar or manager.config.use_mortar) and _line_contact
+
     # λ の初期化
     n_pairs = manager.n_pairs
     lam_all = np.zeros(n_pairs)
     # 接線乗数 λ_t（Alart-Curnier 摩擦用: 各ペア 2 成分）
     lam_t_all = np.zeros((n_pairs, 2))
+
+    # Mortar 乗数（Mortar 有効時のみ使用）
+    lam_mortar: np.ndarray | None = None
+    mortar_nodes: list[int] = []
 
     # 線形ソルバー設定
     linear_solver_mode = manager.config.linear_solver
@@ -1131,8 +1145,45 @@ def newton_raphson_contact_ncp(
             gaps = np.array([manager.pairs[i].state.gap for i in active_indices])
             lams = np.array([lam_all[i] for i in active_indices])
 
+            # 2m. Mortar 系の構築（Mortar 有効時）
+            if _use_mortar and n_geom_active > 0:
+                new_mortar_nodes, _node_to_pairs = identify_mortar_nodes(manager, active_indices)
+                n_mortar = len(new_mortar_nodes)
+
+                # Mortar 節点セット変更時の λ リマッピング
+                if lam_mortar is None or new_mortar_nodes != mortar_nodes:
+                    old_map = (
+                        {node: idx for idx, node in enumerate(mortar_nodes)} if mortar_nodes else {}
+                    )
+                    new_lam = np.zeros(n_mortar)
+                    if lam_mortar is not None:
+                        for new_idx, node in enumerate(new_mortar_nodes):
+                            old_idx = old_map.get(node)
+                            if old_idx is not None and old_idx < len(lam_mortar):
+                                new_lam[new_idx] = lam_mortar[old_idx]
+                    lam_mortar = new_lam
+                    mortar_nodes = new_mortar_nodes
+
+                G_mortar, g_mortar = build_mortar_system(
+                    manager,
+                    active_indices,
+                    mortar_nodes,
+                    coords_def,
+                    ndof,
+                    ndof_per_node,
+                    _n_gauss,
+                    k_pen,
+                )
+
             # 3. NCP アクティブセット判定
-            #    Active: λ + k_pen*(-g) > 0
+            if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
+                # Mortar: 節点ベースのアクティブセット
+                p_n_mortar_arr = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
+                ncp_mortar_active = p_n_mortar_arr > 0.0
+            else:
+                ncp_mortar_active = np.array([], dtype=bool)
+
+            #    Per-pair: Active: λ + k_pen*(-g) > 0
             p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
             ncp_active_mask = p_n_arr > 0.0  # boolean
 
@@ -1149,7 +1200,20 @@ def newton_raphson_contact_ncp(
                     pair.state.k_t = k_pen * manager.config.k_t_ratio
 
             # 4a. 接触力ベクトル（法線）
-            if _line_contact:
+            if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
+                # Mortar 接触力
+                f_c = compute_mortar_contact_force(
+                    manager,
+                    active_indices,
+                    mortar_nodes,
+                    lam_mortar,
+                    coords_def,
+                    ndof,
+                    ndof_per_node,
+                    _n_gauss,
+                    k_pen,
+                )
+            elif _line_contact:
                 # Line-to-line Gauss 積分（assembly の既存インフラを利用）
                 # line_contact フラグを一時的に有効化
                 _orig_lc = manager.config.line_contact
@@ -1198,6 +1262,19 @@ def newton_raphson_contact_ncp(
             R_u[fixed_dofs] = 0.0
 
             # 6. NCP 残差（Alart-Curnier 方式）
+            # 6-mortar: Mortar NCP 残差
+            if _use_mortar and len(mortar_nodes) > 0:
+                n_mortar = len(mortar_nodes)
+                C_mortar = np.empty(n_mortar)
+                for k in range(n_mortar):
+                    if ncp_mortar_active[k]:
+                        C_mortar[k] = k_pen * g_mortar[k]
+                    else:
+                        C_mortar[k] = lam_mortar[k]
+            else:
+                C_mortar = np.array([])
+
+            # 6-perpair: Per-pair NCP 残差
             #    Active: C_i = k_pen * g_i  (g → 0 を目標)
             #    Inactive: C_i = λ_i        (λ → 0 を目標)
             C_ac = np.empty(n_geom_active) if n_geom_active > 0 else np.array([])
@@ -1283,7 +1360,12 @@ def newton_raphson_contact_ncp(
 
             # 7. 収束判定
             res_u_norm = float(np.linalg.norm(R_u))
-            ncp_norm = float(np.linalg.norm(C_ac)) if n_geom_active > 0 else 0.0
+            if _use_mortar and len(C_mortar) > 0:
+                ncp_norm = float(np.linalg.norm(C_mortar))
+                n_ncp_active = int(np.sum(ncp_mortar_active))
+            else:
+                ncp_norm = float(np.linalg.norm(C_ac)) if n_geom_active > 0 else 0.0
+                n_ncp_active = int(np.sum(ncp_active_mask))
             ncp_t_norm = (
                 float(np.linalg.norm(C_t_ac)) if (_use_friction and n_geom_active > 0) else 0.0
             )
@@ -1292,8 +1374,6 @@ def newton_raphson_contact_ncp(
             ncp_conv = ncp_norm < tol_ncp
             ncp_t_conv = ncp_t_norm < tol_ncp if _use_friction else True
             all_conv = force_conv and ncp_conv and ncp_t_conv
-
-            n_ncp_active = int(np.sum(ncp_active_mask))
 
             if all_conv:
                 step_converged = True
@@ -1342,8 +1422,35 @@ def newton_raphson_contact_ncp(
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
 
-            # 9-10. 鞍点系で解く（摩擦有無で分岐）
-            if _use_friction and n_geom_active > 0:
+            # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
+            if _use_mortar and len(mortar_nodes) > 0 and n_ncp_active > 0:
+                # Mortar 鞍点系
+                active_mortar_rows = np.where(ncp_mortar_active)[0]
+                G_mortar_A = G_mortar[active_mortar_rows, :]
+                g_mortar_A = g_mortar[active_mortar_rows]
+                du, dlam_mortar_A = _solve_saddle_point_contact(
+                    K_T,
+                    G_mortar_A,
+                    k_pen,
+                    R_u,
+                    g_mortar_A,
+                    fixed_dofs,
+                    linear_solver=linear_solver_mode,
+                    iterative_tol=iterative_tol_cfg,
+                    ilu_drop_tol=ilu_drop_tol_cfg,
+                    use_block_preconditioner=use_block_preconditioner,
+                )
+
+                # 11m. Mortar 乗数更新
+                u += du
+                for j_local, row in enumerate(active_mortar_rows):
+                    lam_mortar[row] += dlam_mortar_A[j_local]
+                for k in range(len(mortar_nodes)):
+                    if not ncp_mortar_active[k]:
+                        lam_mortar[k] = 0.0
+                lam_mortar = np.maximum(lam_mortar, 0.0)
+
+            elif _use_friction and n_geom_active > 0:
                 # Alart-Curnier 摩擦拡大鞍点系
                 G_t_mat = _build_tangential_constraint_jacobian(
                     manager, active_indices, ndof, ndof_per_node
@@ -1417,14 +1524,13 @@ def newton_raphson_contact_ncp(
                     for j_local, pair_idx in enumerate(active_pair_indices):
                         lam_all[pair_idx] += dlam_A[j_local]
 
-            # NCP 非アクティブ乗数をゼロに
-            for j in range(n_geom_active):
-                if not ncp_active_mask[j]:
-                    lam_all[active_indices[j]] = 0.0
-                    lam_t_all[active_indices[j]] = 0.0
-
-            # λ_n ≥ 0 射影
-            lam_all = np.maximum(lam_all, 0.0)
+            # NCP 非アクティブ乗数をゼロに（Mortar 時はスキップ）
+            if not _use_mortar:
+                for j in range(n_geom_active):
+                    if not ncp_active_mask[j]:
+                        lam_all[active_indices[j]] = 0.0
+                        lam_t_all[active_indices[j]] = 0.0
+                lam_all = np.maximum(lam_all, 0.0)
 
             # 変位ノルム判定
             u_norm = float(np.linalg.norm(u))

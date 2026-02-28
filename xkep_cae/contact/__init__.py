@@ -15,6 +15,7 @@
 - assembly: 接触内力・接線の組み込み
 - solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
 - graph: 接触グラフ表現・可視化
+- mortar: Mortar 離散化（Phase C6-L5）
 """
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
@@ -56,6 +57,12 @@ from xkep_cae.contact.line_contact import (
     project_point_to_segment,
 )
 from xkep_cae.contact.line_search import backtracking_line_search, merit_function
+from xkep_cae.contact.mortar import (
+    build_mortar_system,
+    compute_mortar_contact_force,
+    compute_mortar_p_n,
+    identify_mortar_nodes,
+)
 from xkep_cae.contact.ncp import (
     build_augmented_residual,
     compute_gap_jacobian_wrt_u,
@@ -152,4 +159,8 @@ __all__ = [
     "newton_raphson_contact_ncp",
     "_solve_saddle_point_direct",
     "_solve_saddle_point_gmres",
+    "build_mortar_system",
+    "compute_mortar_contact_force",
+    "compute_mortar_p_n",
+    "identify_mortar_nodes",
 ]

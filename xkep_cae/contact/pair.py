@@ -219,6 +219,7 @@ class ContactConfig:
     ncp_reg: float = 1e-12  # FB 関数の正則化パラメータ
     ncp_block_preconditioner: bool = False  # NCP 鞍点系のブロック前処理付き GMRES（Phase C6-L4）
     exclude_same_layer: bool = False  # 同層素線間の接触ペアを除外（Phase S1: ~80%ペア削減）
+    use_mortar: bool = False  # Mortar 離散化の有効化（Phase C6-L5）
 
 
 @dataclass
