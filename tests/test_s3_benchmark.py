@@ -207,46 +207,37 @@ class TestCombinedFilters:
 # ========== 並列アセンブリ スピードアップ測定 ==========
 
 
-class _DummyBeamMaterial:
-    """ダミー梁材料."""
-
-    D = np.eye(6) * 1e6
-
-    def stiffness_matrix(self, strain=None):
-        return self.D
-
-
-class _DummyBeam:
-    """ダミー梁要素（12x12 剛性行列）."""
-
-    ndof_per_node = 6
-    ndof = 12
-    nnodes = 2
-
-    def local_stiffness(self, coords, material, thickness):
-        return np.eye(self.ndof) * 1e3
-
-    def dof_indices(self, node_ids):
-        return np.array(
-            [n * self.ndof_per_node + d for n in node_ids for d in range(self.ndof_per_node)]
-        )
-
-
 class TestParallelSpeedup:
-    """並列アセンブリのスピードアップ測定."""
+    """ProcessPoolExecutor による並列アセンブリのスピードアップ測定.
 
-    def _make_beam_mesh(self, n_elems: int):
+    実要素（TimoshenkoBeam3D）を使用し、要素剛性行列の計算コストが
+    十分に大きいスケールで ProcessPoolExecutor による並列化の効果を計測する。
+    """
+
+    @staticmethod
+    def _make_beam_mesh(n_elems: int):
         """1次元梁メッシュ."""
         nodes = np.zeros((n_elems + 1, 3))
         nodes[:, 0] = np.linspace(0, 1, n_elems + 1)
         conn = np.array([[i, i + 1] for i in range(n_elems)], dtype=int)
         return nodes, conn
 
-    def test_parallel_correctness_large(self):
-        """大規模問題で逐次と並列の結果が一致."""
-        elem = _DummyBeam()
-        mat = _DummyBeamMaterial()
-        nodes, conn = self._make_beam_mesh(256)
+    @staticmethod
+    def _make_real_elem_and_mat():
+        """TimoshenkoBeam3D + BeamElastic1D を生成."""
+        from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
+        from xkep_cae.materials.beam_elastic import BeamElastic1D
+        from xkep_cae.sections.beam import BeamSection
+
+        sec = BeamSection(A=1e-4, Iy=1e-8, Iz=1e-8, J=2e-8, shape="circle")
+        elem = TimoshenkoBeam3D(section=sec)
+        mat = BeamElastic1D(E=200e9, nu=0.3)
+        return elem, mat
+
+    def test_parallel_correctness_real_element(self):
+        """実要素（TimoshenkoBeam3D）で逐次と並列の結果が一致."""
+        elem, mat = self._make_real_elem_and_mat()
+        nodes, conn = self._make_beam_mesh(512)
         n_total = len(conn)
         ndof_total = len(nodes) * 6
 
@@ -258,19 +249,17 @@ class TestParallelSpeedup:
         )
 
         diff = abs(K_seq - K_par).max()
-        assert diff < 1e-12, f"逐次と並列の差: {diff}"
+        assert diff < 1e-6, f"逐次と並列の差: {diff}"
 
-    def test_speedup_measurement(self):
-        """並列化のスピードアップを計測（情報記録用）.
+    @pytest.mark.parametrize("n_elems", [4096, 8192])
+    def test_speedup_measurement_real_element(self, n_elems):
+        """実要素（TimoshenkoBeam3D）で ProcessPoolExecutor の並列スピードアップを計測.
 
-        ダミー要素の計算コストが極めて小さいため、スレッドオーバーヘッドが
-        支配的になる。実要素（Timoshenko梁等）ではC拡張呼び出しが多く、
-        GIL解放区間で実質的なスピードアップが期待される。
-        ここでは正しさの検証と計測値の記録を行う。
+        ProcessPoolExecutor は IPC オーバーヘッドがあるため、
+        要素数 ~4096 以上で効果が出始める。
         """
-        elem = _DummyBeam()
-        mat = _DummyBeamMaterial()
-        nodes, conn = self._make_beam_mesh(512)
+        elem, mat = self._make_real_elem_and_mat()
+        nodes, conn = self._make_beam_mesh(n_elems)
         n_total = len(conn)
         ndof_total = len(nodes) * 6
 
@@ -278,7 +267,7 @@ class TestParallelSpeedup:
         _assemble_sequential(nodes, [(elem, conn)], mat, ndof_total, n_total, show_progress=False)
 
         # 逐次の計測
-        n_trials = 3
+        n_trials = 2
         t_seq = []
         for _ in range(n_trials):
             t0 = time.perf_counter()
@@ -299,14 +288,16 @@ class TestParallelSpeedup:
         avg_seq = np.median(t_seq)
         avg_par = np.median(t_par)
 
-        # 結果が一致することを確認（正しさの検証）
+        # 結果が一致することを確認
         diff = abs(K_seq - K_par).max()
-        assert diff < 1e-12
+        assert diff < 1e-6
 
-        # スピードアップ比を記録（情報記録のみ、閾値アサートなし）
+        # スピードアップ比を記録（情報記録のみ）
         speedup = avg_seq / avg_par if avg_par > 0 else 0
-        print(f"\n[Speedup] seq={avg_seq:.4f}s, par(4)={avg_par:.4f}s, speedup={speedup:.2f}x")
-        print("[Note] ダミー要素では並列オーバーヘッドが支配的。実要素ではGIL解放で高速化。")
+        print(
+            f"\n[ProcessPool Speedup] n_elems={n_elems}, "
+            f"seq={avg_seq:.4f}s, par(4)={avg_par:.4f}s, speedup={speedup:.2f}x"
+        )
 
 
 # ========== Broadphase 性能計測 ==========

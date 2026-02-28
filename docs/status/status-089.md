@@ -1,4 +1,4 @@
-# Status 089: Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤
+# Status 089: Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤 + ProcessPoolExecutor切替
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
@@ -13,6 +13,7 @@
 status-087/088 の TODO を消化。Broadphase グリッドビニングの高速化、
 Broadphase→Narrowphase 間の中点距離プリスクリーニング、
 Phase S3 スケーラビリティベンチマーク基盤（7/19/37/61/91本）を実装。
+要素並列化を ThreadPoolExecutor → ProcessPoolExecutor に切替（GIL回避）。
 
 ## 実施内容
 
@@ -70,14 +71,34 @@ Phase S3 スケーラビリティベンチマーク基盤（7/19/37/61/91本）�
         37      296     5984     5984      53.73
 ```
 
-**並列アセンブリ**: ダミー要素では並列オーバーヘッドが支配的（speedup=0.20x）。
-実要素（Timoshenko梁等）では C拡張呼び出し中の GIL 解放で実質的なスピードアップが期待される。
+**ProcessPoolExecutor 並列アセンブリ（実要素: TimoshenkoBeam3D）**:
+```
+ n_elems   seq(s)  par4(s)  speedup
+    4096   0.3629   0.3293    1.10x
+    8192   0.7343   0.5408    1.36x
+```
+ProcessPoolExecutor はプロセス間通信オーバーヘッドがあるため、~4096要素以上でスピードアップが得られる。
+閾値 `_PARALLEL_MIN_ELEMENTS` を 64 → 4096 に変更。
+
+### 4. ProcessPoolExecutor 切替（GIL回避）
+
+**変更ファイル**: `xkep_cae/assembly.py`, `tests/test_s2_parallel.py`, `tests/test_s3_benchmark.py`
+
+- **Thread→Process 切替**: `ThreadPoolExecutor` → `ProcessPoolExecutor` に変更
+  - GIL制約により ThreadPoolExecutor ではスピードアップ不可（0.25x-0.43x、逆に遅い）
+  - ProcessPoolExecutor はプロセス並列で GIL を完全回避
+- **並列化閾値引き上げ**: `_PARALLEL_MIN_ELEMENTS` を 64 → 4096 に変更
+  - ProcessPoolExecutor の IPC オーバーヘッドにより ~4000 要素未満では逆に遅くなる
+- **ベンチマークテスト刷新**: ダミー要素 → 実要素（TimoshenkoBeam3D）に更新
+  - `test_parallel_correctness_real_element`: 逐次/並列の結果一致検証
+  - `test_speedup_measurement_real_element[4096]`: 1.10x スピードアップ
+  - `test_speedup_measurement_real_element[8192]`: 1.36x スピードアップ
+- 既存 13 テスト（test_s2_parallel）全通過
 
 ## TODO
 
 - [ ] S3 接触NR収束ベンチマーク（19/37/61/91本）— 実際の contact solve 込みの性能評価
 - [ ] ILU drop_tol / Schur 対角近似精度の段階的チューニング
-- [ ] ProcessPoolExecutor 切替検討（GIL制約を回避する純Python計算部分の並列化）
 
 ## 確認事項・懸念
 

@@ -101,11 +101,11 @@ class TestParallelAssembly:
 
     def test_parallel_threshold(self):
         """_PARALLEL_MIN_ELEMENTS 未満は並列化しない."""
-        assert _PARALLEL_MIN_ELEMENTS == 64
+        assert _PARALLEL_MIN_ELEMENTS == 4096
         elem = _DummyQ4()
         mat = _DummyMaterial()
         nodes, conn = self._make_mesh(10)
-        # n_jobs=4 でも要素数 < 64 なら逐次実行されるはず
+        # n_jobs=4 でも要素数 < 4096 なら逐次実行されるはず
         K = assemble_global_stiffness(nodes, [(elem, conn)], mat, show_progress=False, n_jobs=4)
         assert K.shape[0] > 0
 

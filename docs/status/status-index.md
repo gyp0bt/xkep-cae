@@ -96,7 +96,7 @@
 | [086](status-086.md) | 2026-02-28 | TODO消化 + MIT License + 3重統合テスト + 7本撚りMortar評価 | 1809 |
 | [087](status-087.md) | 2026-02-28 | Phase S2 CPU並列化基盤 + GMRES自動有効化 + Mortar適応ペナルティ | 1822 |
 | [088](status-088.md) | 2026-02-28 | CI test-slow タイムアウト修正（3並列シャード分割） | 1822 |
-| [089](status-089.md) | 2026-02-28 | Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤 | 1848 |
+| [089](status-089.md) | 2026-02-28 | Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤 + ProcessPoolExecutor切替 | 1848 |
 
 ## テスト数推移
 

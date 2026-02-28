@@ -3,14 +3,16 @@
 任意の ElementProtocol 適合要素を混在させて全体剛性行列を構築する。
 COO 形式で要素ごとの寄与を蓄積し、最終的に CSR 行列を生成する。
 
-Phase S2: n_jobs >= 2 のとき ThreadPoolExecutor で要素行列を並列計算する。
+Phase S2: n_jobs >= 2 のとき ProcessPoolExecutor で要素行列を並列計算する。
+GIL 制約を回避するためプロセス並列を採用（Thread→Process 切替: status-089）。
+大規模問題（~4000要素以上）で実効スピードアップが得られる。
 """
 
 from __future__ import annotations
 
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import scipy.sparse as sp
@@ -19,7 +21,8 @@ from xkep_cae.core.constitutive import ConstitutiveProtocol
 from xkep_cae.core.element import ElementProtocol
 
 # 並列化の最小要素数閾値（これ未満は逐次実行）
-_PARALLEL_MIN_ELEMENTS = 64
+# ProcessPoolExecutor のIPC オーバーヘッドにより ~4000 要素未満では逆に遅くなる
+_PARALLEL_MIN_ELEMENTS = 4096
 
 
 def _compute_element_batch(
@@ -52,7 +55,7 @@ def assemble_global_stiffness(
     """Protocol ベースの汎用全体剛性行列アセンブリ（COO→CSR）.
 
     要素型と接続配列のペアのリストを受け取り、任意の要素型を混在アセンブルする。
-    n_jobs >= 2 のとき ThreadPoolExecutor で要素行列計算を並列化する。
+    n_jobs >= 2 のとき ProcessPoolExecutor で要素行列計算を並列化する。
 
     Args:
         nodes_xy: (N, ndim) 内部インデックス順の節点座標
@@ -183,10 +186,10 @@ def _assemble_parallel(
     show_progress: bool = True,
     n_jobs: int = 2,
 ) -> sp.csr_matrix:
-    """ThreadPoolExecutor による並列アセンブリ.
+    """ProcessPoolExecutor による並列アセンブリ.
 
-    要素を n_jobs 個のバッチに分割し、各バッチで要素剛性行列を並列計算する。
-    COO への書き込みは逐次（メモリ安全）。
+    要素を n_jobs 個のバッチに分割し、各バッチで要素剛性行列をプロセス並列計算する。
+    GIL 制約を回避するためプロセス並列を採用。COO への書き込みは逐次（メモリ安全）。
     """
     nnz_est = sum(elem.ndof * elem.ndof * len(conn) for elem, conn in element_groups)
     nnz_est = max(nnz_est, 1)
@@ -208,8 +211,8 @@ def _assemble_parallel(
         batch_size = max(1, n_elem // n_jobs)
         batches = [conn_int[i : i + batch_size] for i in range(0, n_elem, batch_size)]
 
-        # 並列計算
-        with ThreadPoolExecutor(max_workers=n_jobs) as pool:
+        # 並列計算（ProcessPoolExecutor: GIL 回避）
+        with ProcessPoolExecutor(max_workers=n_jobs) as pool:
             futures = [
                 pool.submit(_compute_element_batch, elem, nodes_xy, batch, material, thickness)
                 for batch in batches
