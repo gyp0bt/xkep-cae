@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1850テスト（fast: 1470 / slow: 290）**
+**1875テスト（fast: 1493 / slow: 292）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -31,9 +31,10 @@
 | 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
 | GitHub Actions CI + slowテストマーカー | ✓ |
-| **Phase S: スケーラビリティ** | **計画策定済** |
+| Phase S1: 同層除外フィルタ + NCP摩擦統合 | ✓ |
+| **Phase S: スケーラビリティ** | **S1進行中** |
 
-**次のマイルストーン**: Phase S — Mortar離散化 → CPU並列化 → 91本BM → 剛性比較BM → ML → 1000本トライ → GPU
+**次のマイルストーン**: Phase S1 残り（Mortar離散化）→ S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本 → GPU
 
 詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
 

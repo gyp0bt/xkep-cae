@@ -17,9 +17,9 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 完了。1850テスト（fast: 1470 / slow: 290）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 同層除外 + NCP摩擦統合 完了。1875テスト（fast: 1493 / slow: 292）。**
 
-**次のマイルストーン**: Phase S（スケーラビリティ）— 接触高精度化 → 並列化 → 91本撚り → 剛性比較ベンチマーク → ML → 1000本トライ → GPU
+**次のマイルストーン**: Phase S1 残り（Mortar離散化）→ S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
 ### 完了済みフェーズ一覧
 
@@ -235,8 +235,8 @@
 | 項目 | 内容 | 状態 |
 |------|------|------|
 | **C6-L5** | Mortar 離散化（セグメント境界の力の連続化） | ⬜ |
-| **同層除外** | `exclude_same_layer` オプション（層間接触のみ、同層ペア除外、~80%削減） | ⬜ |
-| **NCP摩擦** | NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合 | ⬜ |
+| **同層除外** | `exclude_same_layer` オプション（層間接触のみ、同層ペア除外、~80%削減） | ✅ |
+| **NCP摩擦** | NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合 | ✅ |
 
 **判断基準**: 7本撚り + Mortar で貫入率 < 1% かつ Outer loop 不要を確認。
 
@@ -368,8 +368,8 @@ Phase 1-3 (アーキテクチャ, 梁要素, 幾何学的非線形) ✓
 ### 最高優先 — Phase S1: 接触高精度化
 
 - [ ] **C6-L5: Mortar 離散化**（セグメント境界の接触力連続化）
-- [ ] **同層除外フィルタ**（`exclude_same_layer` オプション、層間接触のみ、~80%ペア削減）
-- [ ] NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合
+- [x] **同層除外フィルタ**（`exclude_same_layer` オプション、14テスト、~80%ペア削減達成）
+- [x] NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合（11テスト）
 - [ ] 7本撚り + Mortar 検証（貫入率 < 1%, Outer loop 不要を確認）
 
 ### 高優先 — Phase S2-S3: 並列化 & 91本ベンチマーク
