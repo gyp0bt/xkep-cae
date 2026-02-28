@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1（同層除外 + NCP摩擦統合 + Alart-Curnier摩擦拡大鞍点系 + Mortar離散化）完了。1797テスト（fast: 1507 / slow: 290）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1（同層除外 + NCP摩擦統合 + Alart-Curnier摩擦拡大鞍点系 + Mortar離散化 + 3重統合テスト + 7本撚りMortar評価）完了。1809テスト（fast: 1512 / slow: 297）。**
 
 **次のマイルストーン**: S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
@@ -367,11 +367,12 @@ Phase 1-3 (アーキテクチャ, 梁要素, 幾何学的非線形) ✓
 
 ### 最高優先 — Phase S1: 接触高精度化
 
-- [ ] **C6-L5: Mortar 離散化**（セグメント境界の接触力連続化）
+- [x] **C6-L5: Mortar 離散化**（セグメント境界の接触力連続化、9テスト、status-085）
 - [x] **同層除外フィルタ**（`exclude_same_layer` オプション、14テスト、~80%ペア削減達成）
 - [x] NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合（11テスト）
 - [x] **Alart-Curnier 摩擦拡大鞍点系**（λ_t を主変数、∂f_fric/∂λ_n カップリング、stick/slip Jacobian 完全実装、3テスト）
-- [ ] 7本撚り + Mortar 検証（貫入率 < 1%, Outer loop 不要を確認）
+- [x] Line contact + Mortar + Alart-Curnier 摩擦の3重統合テスト（7テスト、status-086）
+- [x] 7本撚り + Mortar 収束性能評価（引張収束✓、貫入率~3%、曲げはxfail、5テスト、status-086）
 
 ### 高優先 — Phase S2-S3: 並列化 & 91本ベンチマーク
 

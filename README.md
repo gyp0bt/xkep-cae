@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1797テスト（fast: 1507 / slow: 290）**
+**1809テスト（fast: 1512 / slow: 297）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -126,7 +126,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（82個）
+├── status/         # ステータスファイル群（86個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
@@ -139,6 +139,10 @@ docs/
 - matplotlib, Pillow（可視化・GIF出力、オプション）
 - torch, torch-geometric（GNN/PINNサロゲート、`[ml]`オプション）
 - ruff（開発時lint/format）
+
+## ライセンス
+
+本プロジェクトは [MIT License](LICENSE) の下で公開されています。
 
 ## 運用
 
