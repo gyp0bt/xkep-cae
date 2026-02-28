@@ -33,8 +33,20 @@ from dataclasses import dataclass, field
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.contact.assembly import _contact_dofs, _contact_shape_vector
+from xkep_cae.contact.assembly import (
+    _contact_dofs,
+    _contact_shape_vector,
+    _contact_tangent_shape_vector,
+    compute_contact_force,
+    compute_contact_stiffness,
+)
 from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
+from xkep_cae.contact.law_friction import (
+    compute_mu_effective,
+    compute_tangential_displacement,
+    friction_return_mapping,
+    friction_tangent_2x2,
+)
 from xkep_cae.contact.pair import ContactManager, ContactStatus
 
 
@@ -126,6 +138,148 @@ def _compute_contact_force_from_lambdas(
                 f_c[global_idx] += p_n * g_shape[local_idx]
 
     return f_c
+
+
+def _compute_friction_forces_ncp(
+    manager: ContactManager,
+    lambdas: np.ndarray,
+    u: np.ndarray,
+    u_ref: np.ndarray,
+    node_coords_ref: np.ndarray,
+    ndof_total: int,
+    ndof_per_node: int = 6,
+    k_pen: float = 0.0,
+    mu: float = 0.3,
+    mu_ramp_counter: int = 0,
+    mu_ramp_steps: int = 0,
+) -> tuple[np.ndarray, dict[int, np.ndarray]]:
+    """NCP ソルバー用の摩擦力計算.
+
+    各 ACTIVE ペアで:
+    1. NCP 法線力 p_n = max(0, λ + k_pen*(-g)) を設定
+    2. 接線変位を計算
+    3. Coulomb return mapping を実行
+    4. 摩擦力ベクトルをアセンブリ
+
+    Args:
+        manager: 接触マネージャ
+        lambdas: (n_pairs,) ラグランジュ乗数
+        u: (ndof,) 現在の変位
+        u_ref: (ndof,) 参照変位（前ステップ収束解）
+        node_coords_ref: (n_nodes, 3) 参照座標
+        ndof_total: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+        k_pen: ペナルティ正則化パラメータ
+        mu: 摩擦係数
+        mu_ramp_counter: μランプカウンタ
+        mu_ramp_steps: μランプ総ステップ数
+
+    Returns:
+        f_friction: (ndof_total,) 摩擦内力ベクトル
+        friction_tangents: {pair_idx: D_t (2,2)} 摩擦接線剛性マップ
+    """
+    mu_eff = compute_mu_effective(mu, mu_ramp_counter, mu_ramp_steps)
+    f_friction = np.zeros(ndof_total)
+    friction_tangents: dict[int, np.ndarray] = {}
+
+    for i, pair in enumerate(manager.pairs):
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+
+        lam_i = lambdas[i] if i < len(lambdas) else 0.0
+        g_i = pair.state.gap
+        p_n = max(0.0, lam_i + k_pen * (-g_i))
+        pair.state.p_n = p_n
+
+        if p_n <= 0.0 or mu_eff <= 0.0:
+            continue
+
+        # ペナルティ剛性の初期化（未設定時）
+        if pair.state.k_pen <= 0.0:
+            pair.state.k_pen = k_pen
+            pair.state.k_t = k_pen * manager.config.k_t_ratio
+
+        # 接線変位
+        delta_ut = compute_tangential_displacement(pair, u, u_ref, node_coords_ref, ndof_per_node)
+
+        # Coulomb return mapping
+        q = friction_return_mapping(pair, delta_ut, mu_eff)
+
+        if float(np.linalg.norm(q)) < 1e-30:
+            continue
+
+        # 摩擦力アセンブリ
+        dofs = _contact_dofs(pair, ndof_per_node)
+        for axis in range(2):
+            if abs(q[axis]) < 1e-30:
+                continue
+            g_t = _contact_tangent_shape_vector(pair, axis)
+            for k in range(4):
+                for d in range(3):
+                    f_friction[dofs[k * ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
+
+        # 摩擦接線剛性
+        D_t = friction_tangent_2x2(pair, mu_eff)
+        friction_tangents[i] = D_t
+
+    return f_friction, friction_tangents
+
+
+def _build_friction_stiffness(
+    manager: ContactManager,
+    friction_tangents: dict[int, np.ndarray],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """摩擦接線剛性行列のみを組み立てる（法線剛性を含まない）.
+
+    NCP ソルバーでは法線剛性は鞍点系 (k_pen * G_A^T G_A) で処理されるため、
+    compute_contact_stiffness を使うと法線剛性が二重カウントされる。
+    この関数は摩擦接線剛性のみを構築する。
+
+    K_f = Σ D_t[a1,a2] * g_t[a1] * g_t[a2]^T
+    """
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+
+    for pair_idx, pair in enumerate(manager.pairs):
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+        if pair_idx not in friction_tangents:
+            continue
+
+        D_t = friction_tangents[pair_idx]
+        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        gdofs = np.empty(12, dtype=int)
+        for k, node in enumerate(nodes):
+            for d in range(3):
+                gdofs[k * 3 + d] = node * ndof_per_node + d
+
+        g_t = [
+            _contact_tangent_shape_vector(pair, 0),
+            _contact_tangent_shape_vector(pair, 1),
+        ]
+        for a1 in range(2):
+            for a2 in range(2):
+                d_val = D_t[a1, a2]
+                if abs(d_val) < 1e-30:
+                    continue
+                for i in range(12):
+                    for j in range(12):
+                        val = d_val * g_t[a1][i] * g_t[a2][j]
+                        if abs(val) > 1e-30:
+                            rows.append(gdofs[i])
+                            cols.append(gdofs[j])
+                            data.append(val)
+
+    if len(data) == 0:
+        return sp.csr_matrix((ndof_total, ndof_total))
+
+    return sp.coo_matrix(
+        (data, (rows, cols)),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()
 
 
 def _build_constraint_jacobian(
@@ -543,15 +697,32 @@ def newton_raphson_contact_ncp(
     ncp_reg: float = 1e-12,
     k_pen: float = 0.0,
     f_ext_base: np.ndarray | None = None,
+    use_friction: bool = False,
+    mu: float | None = None,
+    mu_ramp_steps: int | None = None,
+    line_contact: bool = False,
+    n_gauss: int | None = None,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
     Outer loop 不要。u と λ を同時に更新。
+    摩擦有効時は法線 NCP + 摩擦 return mapping のハイブリッド方式。
+    line_contact 有効時は Gauss 積分で接触力・剛性を評価。
 
     Alart-Curnier NCP + 鞍点系:
       Active set: A = {i : λ_i + k_pen*(-g_i) > 0}
       Active pairs → g = 0 を制約として鞍点系で解く
       Inactive pairs → λ = 0 に設定
+
+    摩擦（use_friction=True 時）:
+      各 Newton 反復で Coulomb return mapping を実行し、
+      摩擦力を残差に、摩擦接線剛性を K_T に加算する。
+      法線方向は NCP で Outer loop 不要、摩擦は return mapping で処理。
+
+    line contact（line_contact=True 時）:
+      法線力と法線剛性を Gauss 積分で評価する。
+      NCP 活性セット判定は代表点ギャップ（PtP）を使用し、
+      力・剛性評価のみ line-to-line を使用するハイブリッド方式。
 
     Args:
         f_ext_total: (ndof,) 最終外荷重
@@ -577,6 +748,11 @@ def newton_raphson_contact_ncp(
         k_pen: ペナルティ正則化パラメータ。0 の場合は
             manager.config.k_pen_scale を使用。
         f_ext_base: (ndof,) ベース外荷重
+        use_friction: Coulomb 摩擦の有効化（NCP + return mapping ハイブリッド）
+        mu: 摩擦係数（None なら config.mu）
+        mu_ramp_steps: μランプ（None なら config.mu_ramp_steps）
+        line_contact: Line-to-line Gauss 積分の有効化（None なら config.line_contact）
+        n_gauss: Gauss 積分点数（None なら config.n_gauss）
 
     Returns:
         NCPSolveResult
@@ -588,6 +764,15 @@ def newton_raphson_contact_ncp(
     # k_pen の決定
     if k_pen <= 0.0:
         k_pen = manager.config.k_pen_scale
+
+    # 摩擦設定の解決
+    _use_friction = use_friction or manager.config.use_friction
+    _mu = mu if mu is not None else manager.config.mu
+    _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
+
+    # line contact 設定の解決
+    _line_contact = line_contact or manager.config.line_contact
+    _n_gauss = n_gauss if n_gauss is not None else manager.config.n_gauss
 
     # λ の初期化
     n_pairs = manager.n_pairs
@@ -610,6 +795,9 @@ def newton_raphson_contact_ncp(
         f_ext_ref_norm = 1.0
 
     _f_ext_base = f_ext_base if f_ext_base is not None else np.zeros(ndof)
+
+    # 摩擦用: 参照変位（前ステップ収束解）
+    u_ref = u.copy()
 
     for step in range(1, n_load_steps + 1):
         load_frac = step / n_load_steps
@@ -653,10 +841,53 @@ def newton_raphson_contact_ncp(
             p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
             ncp_active_mask = p_n_arr > 0.0  # boolean
 
-            # 4. 接触力ベクトル
-            f_c = _compute_contact_force_from_lambdas(
-                manager, lam_all, ndof, ndof_per_node, k_pen=k_pen
-            )
+            # 4. NCP 法線力を pair.state に同期（assembly 関数が参照するため）
+            for idx_p, pair in enumerate(manager.pairs):
+                if pair.state.status == ContactStatus.INACTIVE:
+                    continue
+                lam_i = lam_all[idx_p] if idx_p < len(lam_all) else 0.0
+                p_n = max(0.0, lam_i + k_pen * (-pair.state.gap))
+                pair.state.lambda_n = lam_i
+                pair.state.p_n = p_n
+                if pair.state.k_pen <= 0.0:
+                    pair.state.k_pen = k_pen
+                    pair.state.k_t = k_pen * manager.config.k_t_ratio
+
+            # 4a. 接触力ベクトル（法線）
+            if _line_contact:
+                # Line-to-line Gauss 積分（assembly の既存インフラを利用）
+                # line_contact フラグを一時的に有効化
+                _orig_lc = manager.config.line_contact
+                _orig_ng = manager.config.n_gauss
+                manager.config.line_contact = True
+                manager.config.n_gauss = _n_gauss
+                f_c = compute_contact_force(
+                    manager, ndof, ndof_per_node=ndof_per_node, node_coords=coords_def
+                )
+                manager.config.line_contact = _orig_lc
+                manager.config.n_gauss = _orig_ng
+            else:
+                f_c = _compute_contact_force_from_lambdas(
+                    manager, lam_all, ndof, ndof_per_node, k_pen=k_pen
+                )
+
+            # 4b. 摩擦力ベクトル（Coulomb return mapping）
+            friction_tangents: dict[int, np.ndarray] = {}
+            if _use_friction:
+                f_friction, friction_tangents = _compute_friction_forces_ncp(
+                    manager,
+                    lam_all,
+                    u,
+                    u_ref,
+                    node_coords_ref,
+                    ndof,
+                    ndof_per_node,
+                    k_pen=k_pen,
+                    mu=_mu,
+                    mu_ramp_counter=step,
+                    mu_ramp_steps=_mu_ramp_steps,
+                )
+                f_c = f_c + f_friction
 
             # 5. 力残差
             f_int = assemble_internal_force(u)
@@ -703,6 +934,33 @@ def newton_raphson_contact_ncp(
 
             # 8. 構造接線剛性
             K_T = assemble_tangent(u)
+
+            # 8b. line contact 法線剛性を加算（Gauss 積分）
+            if _line_contact:
+                _orig_lc = manager.config.line_contact
+                _orig_ng = manager.config.n_gauss
+                manager.config.line_contact = True
+                manager.config.n_gauss = _n_gauss
+                K_line = compute_contact_stiffness(
+                    manager,
+                    ndof,
+                    ndof_per_node=ndof_per_node,
+                    use_geometric_stiffness=manager.config.use_geometric_stiffness,
+                    node_coords=coords_def,
+                )
+                manager.config.line_contact = _orig_lc
+                manager.config.n_gauss = _orig_ng
+                K_T = K_T + K_line
+
+            # 8c. 摩擦接線剛性を加算（法線剛性は鞍点系で処理済み）
+            if _use_friction and friction_tangents:
+                K_friction = _build_friction_stiffness(
+                    manager,
+                    friction_tangents,
+                    ndof,
+                    ndof_per_node,
+                )
+                K_T = K_T + K_friction
 
             # 9. NCP アクティブ制約行列を抽出
             if n_ncp_active > 0:
@@ -780,6 +1038,9 @@ def newton_raphson_contact_ncp(
             if i < len(lam_all):
                 pair.state.lambda_n = lam_all[i]
                 pair.state.p_n = max(0.0, lam_all[i] + k_pen * (-pair.state.gap))
+
+        # 摩擦用: 参照変位を更新（次ステップ用）
+        u_ref = u.copy()
 
         load_history.append(load_frac)
         disp_history.append(u.copy())
