@@ -147,6 +147,12 @@
 - [x] C3: Coulomb摩擦 return mapping + μランプ — 27テスト
 - [x] C4: merit line search + step length制御 — 26テスト
 - [x] C5: 一貫接線（K_geo）+ slip consistent tangent + PDAS + 平行輸送 — 35テスト
+- [x] C6-L1: Segment-to-segment Gauss 積分（Line-to-line 接触, 28テスト, status-077）
+- [x] C6-L2: 一貫接線の完全化（∂s/∂u, ∂t/∂u Jacobian, 15テスト, status-078）
+- [x] C6-L3: Semi-smooth Newton + NCP 関数（Outer loop 廃止, 35テスト, status-079）
+- [x] C6-L4: ブロック前処理強化（接触 Schur 補集合, 11テスト, status-080）
+- [x] C6-L1b: 摩擦力 line contact 拡張（GP Gauss 積分, 29テスト, status-081）
+- [ ] C6-L5: Mortar 離散化 → **Phase S1 で実施**
 
 ---
 
