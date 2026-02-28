@@ -73,6 +73,6 @@ docs/
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 同層除外+NCP摩擦統合 完了（1875テスト: fast 1493 / slow 292）。Phase 4.3（von Mises 3D）は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 同層除外+NCP摩擦統合+Alart-Curnier摩擦拡大鞍点系 完了（1878テスト: fast 1496 / slow 292）。Phase 4.3（von Mises 3D）は凍結。
 **次のマイルストーン**: Phase S1残り（Mortar離散化）→ S2: CPU並列 → S3: 91本BM → S4: 剛性比較BM → S5: ML → S6: 1000本 → S7: GPU。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。

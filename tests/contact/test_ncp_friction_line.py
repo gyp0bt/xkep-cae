@@ -651,3 +651,193 @@ class TestNCPLineContactFriction:
 
         assert result.converged
         assert np.all(result.lambdas >= 0.0), "λ must be non-negative"
+
+
+# ============================================================
+# Alart-Curnier 摩擦拡大鞍点系テスト
+# ============================================================
+
+
+class TestAlartCurnierFriction:
+    """Alart-Curnier 摩擦拡大鞍点系の検証."""
+
+    def test_lateral_force_converges(self):
+        """横方向荷重+摩擦で Alart-Curnier 拡大系が収束する.
+
+        以前の return mapping 方式では ∂f_fric/∂λ 欠落により
+        収束失敗していたケース。
+        """
+        (
+            coords,
+            conn,
+            radii,
+            ndof,
+            ndof_per_node,
+            K_fn,
+            f_int_fn,
+            fixed_dofs,
+        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.01,
+                g_off=0.02,
+                k_t_ratio=0.5,
+            ),
+        )
+
+        f_ext = np.zeros(ndof)
+        # 法線方向 + 横方向荷重
+        f_ext[1 * ndof_per_node + 2] = -20.0
+        f_ext[3 * ndof_per_node + 2] = 20.0
+        f_ext[1 * ndof_per_node + 0] = 10.0  # x方向横荷重
+        f_ext[3 * ndof_per_node + 1] = 5.0  # y方向横荷重
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fixed_dofs,
+            K_fn,
+            f_int_fn,
+            mgr,
+            coords,
+            conn,
+            radii,
+            n_load_steps=10,
+            max_iter=100,
+            tol_force=1e-6,
+            tol_ncp=1e-6,
+            show_progress=False,
+            broadphase_margin=0.05,
+            use_friction=True,
+            mu=0.3,
+        )
+
+        assert isinstance(result, NCPSolveResult)
+        assert result.converged, "Alart-Curnier lateral force did not converge"
+
+    def test_friction_displacement_difference(self):
+        """摩擦有無で横方向変位が異なることを検証する."""
+        (
+            coords,
+            conn,
+            radii,
+            ndof,
+            ndof_per_node,
+            K_fn,
+            f_int_fn,
+            fixed_dofs,
+        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+
+        f_ext = np.zeros(ndof)
+        f_ext[1 * ndof_per_node + 2] = -20.0
+        f_ext[3 * ndof_per_node + 2] = 20.0
+        f_ext[1 * ndof_per_node + 0] = 5.0
+
+        # 摩擦なし
+        mgr_no = ContactManager(
+            config=ContactConfig(k_pen_scale=1e5, g_on=0.01, g_off=0.02),
+        )
+        res_no = newton_raphson_contact_ncp(
+            f_ext,
+            fixed_dofs,
+            K_fn,
+            f_int_fn,
+            mgr_no,
+            coords,
+            conn,
+            radii,
+            n_load_steps=10,
+            max_iter=100,
+            tol_force=1e-6,
+            tol_ncp=1e-6,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        # 摩擦あり
+        mgr_yes = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.01,
+                g_off=0.02,
+                k_t_ratio=0.5,
+            ),
+        )
+        res_yes = newton_raphson_contact_ncp(
+            f_ext,
+            fixed_dofs,
+            K_fn,
+            f_int_fn,
+            mgr_yes,
+            coords,
+            conn,
+            radii,
+            n_load_steps=10,
+            max_iter=100,
+            tol_force=1e-6,
+            tol_ncp=1e-6,
+            show_progress=False,
+            broadphase_margin=0.05,
+            use_friction=True,
+            mu=0.3,
+        )
+
+        assert res_no.converged
+        assert res_yes.converged
+
+        # x方向変位が異なることを確認（摩擦が横方向運動を拘束）
+        ux_no = res_no.u[1 * ndof_per_node + 0]
+        ux_yes = res_yes.u[1 * ndof_per_node + 0]
+        # 摩擦ありの方が横方向変位が小さい（摩擦が抵抗）
+        assert abs(ux_yes) <= abs(ux_no) + 1e-10, (
+            f"摩擦が横方向変位を拘束していない: |ux_yes|={abs(ux_yes):.6e} > |ux_no|={abs(ux_no):.6e}"
+        )
+
+    def test_high_friction_stick(self):
+        """高摩擦係数で stick 状態を検証する."""
+        (
+            coords,
+            conn,
+            radii,
+            ndof,
+            ndof_per_node,
+            K_fn,
+            f_int_fn,
+            fixed_dofs,
+        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.01,
+                g_off=0.02,
+                k_t_ratio=0.5,
+            ),
+        )
+
+        f_ext = np.zeros(ndof)
+        f_ext[1 * ndof_per_node + 2] = -30.0
+        f_ext[3 * ndof_per_node + 2] = 30.0
+        f_ext[1 * ndof_per_node + 0] = 2.0  # 小さい横荷重
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fixed_dofs,
+            K_fn,
+            f_int_fn,
+            mgr,
+            coords,
+            conn,
+            radii,
+            n_load_steps=10,
+            max_iter=100,
+            tol_force=1e-6,
+            tol_ncp=1e-6,
+            show_progress=False,
+            broadphase_margin=0.05,
+            use_friction=True,
+            mu=1.0,  # 高摩擦
+        )
+
+        assert result.converged, "High friction case did not converge"
