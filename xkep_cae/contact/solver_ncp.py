@@ -1458,7 +1458,9 @@ def newton_raphson_contact_ncp(
             K_T = assemble_tangent(u)
 
             # 8b. line contact 法線剛性を加算（Gauss 積分）
-            if _line_contact:
+            # Mortar 使用時はスキップ: Mortar 鞍点系の k_pen * G^T G が接触剛性を提供
+            # Per-pair K_line と Mortar 剛性の二重カウントを防止
+            if _line_contact and not _use_mortar:
                 _orig_lc = manager.config.line_contact
                 _orig_ng = manager.config.n_gauss
                 manager.config.line_contact = True

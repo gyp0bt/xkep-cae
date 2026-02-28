@@ -226,12 +226,11 @@ class TestSevenStrandMortarConvergence:
             f"(steps={result.n_load_steps}, iters={result.total_newton_iterations})"
         )
 
-    @pytest.mark.xfail(
-        reason="7本撚り曲げ + Mortar は多接触ペア環境で収束が困難（S2並列化後に再評価）",
-        strict=False,
-    )
     def test_7strand_mortar_bending_converges(self):
-        """7本撚り曲げ + Mortar + 同層除外で NCP 収束."""
+        """7本撚り曲げ + Mortar + 同層除外で NCP 収束.
+
+        status-087: K_line/Mortar接触剛性の二重カウント修正後に収束達成。
+        """
         result, mgr, mesh = _solve_7strand_ncp_mortar(
             load_type="bending",
             load_value=0.01,
