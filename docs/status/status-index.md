@@ -89,6 +89,7 @@
 | [079](status-079.md) | 2026-02-27 | Phase C6-L3: Semi-smooth Newton + NCP 関数 | 1810 |
 | [080](status-080.md) | 2026-02-28 | Phase C6-L4: ブロック前処理強化（接触 Schur 補集合） | 1821 |
 | [081](status-081.md) | 2026-02-28 | Phase C6-L1b: 摩擦力 line contact 拡張 + 撚線収束テスト | 1850 |
+| [082](status-082.md) | 2026-02-28 | Phase S ロードマップ策定 — 1000本撚線スケーラビリティ計画 | — |
 
 ## テスト数推移
 

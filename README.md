@@ -31,6 +31,9 @@
 | 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
 | GitHub Actions CI + slowテストマーカー | ✓ |
+| **Phase S: スケーラビリティ** | **計画策定済** |
+
+**次のマイルストーン**: Phase S — Mortar離散化 → CPU並列化 → 91本BM → 剛性比較BM → ML → 1000本トライ → GPU
 
 詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
 
@@ -122,7 +125,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（81個）
+├── status/         # ステータスファイル群（82個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
