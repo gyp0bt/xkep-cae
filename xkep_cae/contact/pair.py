@@ -218,6 +218,8 @@ class ContactConfig:
     ncp_type: str = "fb"  # NCP 関数の種類: "fb" (Fischer-Burmeister) | "min"
     ncp_reg: float = 1e-12  # FB 関数の正則化パラメータ
     ncp_block_preconditioner: bool = False  # NCP 鞍点系のブロック前処理付き GMRES（Phase C6-L4）
+    exclude_same_layer: bool = False  # 同層素線間の接触ペアを除外（Phase S1: ~80%ペア削減）
+    use_mortar: bool = False  # Mortar 離散化の有効化（Phase C6-L5）
 
 
 @dataclass
@@ -327,11 +329,19 @@ class ContactManager:
         # 共有節点フィルタ: 同一梁内の隣接セグメントを除外
         # 2セグメントが節点を共有する場合は接触候補から除外する
         candidates = []
+        lm = self.config.elem_layer_map
+        exclude_same = self.config.exclude_same_layer and lm is not None
         for i, j in raw_candidates:
             nodes_i = set(int(n) for n in conn[i])
             nodes_j = set(int(n) for n in conn[j])
             if nodes_i & nodes_j:
                 continue  # 共有節点あり → 同一梁の隣接セグメント
+            # 同層除外フィルタ: 同じ層に属する要素ペアを除外
+            if exclude_same:
+                layer_i = lm.get(i, -1)
+                layer_j = lm.get(j, -1)
+                if layer_i == layer_j and layer_i >= 0:
+                    continue
             candidates.append((i, j))
 
         # 既存ペアをマップ化（(elem_a, elem_b) → index）
@@ -526,6 +536,28 @@ class ContactManager:
             # 接触は層間のペア。両方の層が max_layer 以内であること
             if layer_a > max_layer or layer_b > max_layer:
                 pair.state.status = ContactStatus.INACTIVE
+
+    def count_same_layer_pairs(self) -> int:
+        """同層ペア数を返す（除外効果の事前評価用）.
+
+        elem_layer_map が設定されている場合、両要素が同じ層に属する
+        ACTIVE ペアの数を返す。
+
+        Returns:
+            同層ペア数
+        """
+        lm = self.config.elem_layer_map
+        if not lm:
+            return 0
+        count = 0
+        for pair in self.pairs:
+            if pair.state.status == ContactStatus.INACTIVE:
+                continue
+            layer_a = lm.get(pair.elem_a, -1)
+            layer_b = lm.get(pair.elem_b, -1)
+            if layer_a == layer_b and layer_a >= 0:
+                count += 1
+        return count
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

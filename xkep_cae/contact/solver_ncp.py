@@ -33,8 +33,26 @@ from dataclasses import dataclass, field
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.contact.assembly import _contact_dofs, _contact_shape_vector
+from xkep_cae.contact.assembly import (
+    _contact_dofs,
+    _contact_shape_vector,
+    _contact_tangent_shape_vector,
+    compute_contact_force,
+    compute_contact_stiffness,
+)
 from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
+from xkep_cae.contact.law_friction import (
+    compute_mu_effective,
+    compute_tangential_displacement,
+    friction_return_mapping,
+    friction_tangent_2x2,
+)
+from xkep_cae.contact.mortar import (
+    build_mortar_system,
+    compute_mortar_contact_force,
+    compute_mortar_p_n,
+    identify_mortar_nodes,
+)
 from xkep_cae.contact.pair import ContactManager, ContactStatus
 
 
@@ -128,6 +146,148 @@ def _compute_contact_force_from_lambdas(
     return f_c
 
 
+def _compute_friction_forces_ncp(
+    manager: ContactManager,
+    lambdas: np.ndarray,
+    u: np.ndarray,
+    u_ref: np.ndarray,
+    node_coords_ref: np.ndarray,
+    ndof_total: int,
+    ndof_per_node: int = 6,
+    k_pen: float = 0.0,
+    mu: float = 0.3,
+    mu_ramp_counter: int = 0,
+    mu_ramp_steps: int = 0,
+) -> tuple[np.ndarray, dict[int, np.ndarray]]:
+    """NCP ソルバー用の摩擦力計算.
+
+    各 ACTIVE ペアで:
+    1. NCP 法線力 p_n = max(0, λ + k_pen*(-g)) を設定
+    2. 接線変位を計算
+    3. Coulomb return mapping を実行
+    4. 摩擦力ベクトルをアセンブリ
+
+    Args:
+        manager: 接触マネージャ
+        lambdas: (n_pairs,) ラグランジュ乗数
+        u: (ndof,) 現在の変位
+        u_ref: (ndof,) 参照変位（前ステップ収束解）
+        node_coords_ref: (n_nodes, 3) 参照座標
+        ndof_total: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+        k_pen: ペナルティ正則化パラメータ
+        mu: 摩擦係数
+        mu_ramp_counter: μランプカウンタ
+        mu_ramp_steps: μランプ総ステップ数
+
+    Returns:
+        f_friction: (ndof_total,) 摩擦内力ベクトル
+        friction_tangents: {pair_idx: D_t (2,2)} 摩擦接線剛性マップ
+    """
+    mu_eff = compute_mu_effective(mu, mu_ramp_counter, mu_ramp_steps)
+    f_friction = np.zeros(ndof_total)
+    friction_tangents: dict[int, np.ndarray] = {}
+
+    for i, pair in enumerate(manager.pairs):
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+
+        lam_i = lambdas[i] if i < len(lambdas) else 0.0
+        g_i = pair.state.gap
+        p_n = max(0.0, lam_i + k_pen * (-g_i))
+        pair.state.p_n = p_n
+
+        if p_n <= 0.0 or mu_eff <= 0.0:
+            continue
+
+        # ペナルティ剛性の初期化（未設定時）
+        if pair.state.k_pen <= 0.0:
+            pair.state.k_pen = k_pen
+            pair.state.k_t = k_pen * manager.config.k_t_ratio
+
+        # 接線変位
+        delta_ut = compute_tangential_displacement(pair, u, u_ref, node_coords_ref, ndof_per_node)
+
+        # Coulomb return mapping
+        q = friction_return_mapping(pair, delta_ut, mu_eff)
+
+        if float(np.linalg.norm(q)) < 1e-30:
+            continue
+
+        # 摩擦力アセンブリ
+        dofs = _contact_dofs(pair, ndof_per_node)
+        for axis in range(2):
+            if abs(q[axis]) < 1e-30:
+                continue
+            g_t = _contact_tangent_shape_vector(pair, axis)
+            for k in range(4):
+                for d in range(3):
+                    f_friction[dofs[k * ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
+
+        # 摩擦接線剛性
+        D_t = friction_tangent_2x2(pair, mu_eff)
+        friction_tangents[i] = D_t
+
+    return f_friction, friction_tangents
+
+
+def _build_friction_stiffness(
+    manager: ContactManager,
+    friction_tangents: dict[int, np.ndarray],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """摩擦接線剛性行列のみを組み立てる（法線剛性を含まない）.
+
+    NCP ソルバーでは法線剛性は鞍点系 (k_pen * G_A^T G_A) で処理されるため、
+    compute_contact_stiffness を使うと法線剛性が二重カウントされる。
+    この関数は摩擦接線剛性のみを構築する。
+
+    K_f = Σ D_t[a1,a2] * g_t[a1] * g_t[a2]^T
+    """
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+
+    for pair_idx, pair in enumerate(manager.pairs):
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+        if pair_idx not in friction_tangents:
+            continue
+
+        D_t = friction_tangents[pair_idx]
+        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        gdofs = np.empty(12, dtype=int)
+        for k, node in enumerate(nodes):
+            for d in range(3):
+                gdofs[k * 3 + d] = node * ndof_per_node + d
+
+        g_t = [
+            _contact_tangent_shape_vector(pair, 0),
+            _contact_tangent_shape_vector(pair, 1),
+        ]
+        for a1 in range(2):
+            for a2 in range(2):
+                d_val = D_t[a1, a2]
+                if abs(d_val) < 1e-30:
+                    continue
+                for i in range(12):
+                    for j in range(12):
+                        val = d_val * g_t[a1][i] * g_t[a2][j]
+                        if abs(val) > 1e-30:
+                            rows.append(gdofs[i])
+                            cols.append(gdofs[j])
+                            data.append(val)
+
+    if len(data) == 0:
+        return sp.csr_matrix((ndof_total, ndof_total))
+
+    return sp.coo_matrix(
+        (data, (rows, cols)),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()
+
+
 def _build_constraint_jacobian(
     manager: ContactManager,
     ndof_total: int,
@@ -171,6 +331,69 @@ def _build_constraint_jacobian(
         shape=(n_active, ndof_total),
     ).tocsr()
     return G, active_indices
+
+
+def _build_tangential_constraint_jacobian(
+    manager: ContactManager,
+    active_indices: list[int],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """接線方向の制約ヤコビアン G_t を構築する.
+
+    G_t は (2*n_active, ndof) の行列で、各アクティブペアに対して
+    2行（t1方向, t2方向）を持つ。
+
+    G_t[2*j,   :] = 接線変位の t1 成分の u 微分
+    G_t[2*j+1, :] = 接線変位の t2 成分の u 微分
+
+    接線相対変位: Δu_t = (u_B - u_A) · [t1, t2]
+    → coeffs = [-(1-s), -s, (1-t), t]  (B-A方向)
+
+    Args:
+        manager: 接触マネージャ
+        active_indices: アクティブペアインデックスリスト
+        ndof_total: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+
+    Returns:
+        G_t: (2*n_active, ndof_total) 接線制約ヤコビアン
+    """
+    n_active = len(active_indices)
+    if n_active == 0:
+        return sp.csr_matrix((0, ndof_total))
+
+    rows: list[int] = []
+    cols: list[int] = []
+    vals: list[float] = []
+
+    for j, pair_idx in enumerate(active_indices):
+        pair = manager.pairs[pair_idx]
+        s = pair.state.s
+        t = pair.state.t
+        t1 = pair.state.tangent1
+        t2 = pair.state.tangent2
+
+        dofs = _contact_dofs(pair, ndof_per_node)
+        # B - A 方向: coeffs = [-(1-s), -s, (1-t), t]
+        coeffs = [-(1.0 - s), -s, (1.0 - t), t]
+
+        for axis, ti in enumerate([t1, t2]):
+            row = 2 * j + axis
+            for k in range(4):
+                for d in range(3):
+                    global_dof = dofs[k * ndof_per_node + d]
+                    val = coeffs[k] * ti[d]
+                    if abs(val) > 1e-30:
+                        rows.append(row)
+                        cols.append(global_dof)
+                        vals.append(val)
+
+    G_t = sp.coo_matrix(
+        (vals, (rows, cols)),
+        shape=(2 * n_active, ndof_total),
+    ).tocsr()
+    return G_t
 
 
 def _solve_linear_system(
@@ -447,6 +670,233 @@ def _solve_saddle_point_direct(
     return du, dlam_A
 
 
+def _solve_augmented_friction_system(
+    K_T: sp.csr_matrix,
+    G_n: sp.csr_matrix,
+    G_t: sp.csr_matrix,
+    k_pen: float,
+    k_t: float,
+    R_u: np.ndarray,
+    C_n: np.ndarray,
+    C_t: np.ndarray,
+    J_blocks: dict,
+    fixed_dofs: np.ndarray,
+    n_ncp_active: int,
+    ncp_active_mask: np.ndarray,
+    active_indices: list[int],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Alart-Curnier 摩擦拡大鞍点系を解く.
+
+    拡大系:
+      [K_eff    -G_n_A^T  -G_t_A^T] [Δu    ]   [-R_u]
+      [J_n_u    J_n_n      0      ] [Δλ_n_A] = [-C_n]
+      [J_t_u    J_t_n      J_t_t  ] [Δλ_t_A]   [-C_t]
+
+    K_eff = K_T + k_pen * G_n_A^T G_n_A
+
+    各ペアの J ブロックは状態（active/inactive, stick/slip）に応じて異なる。
+
+    Args:
+        K_T: 構造接線剛性
+        G_n: (n_geom_active, ndof) 法線制約ヤコビアン（全幾何アクティブ）
+        G_t: (2*n_geom_active, ndof) 接線制約ヤコビアン（全幾何アクティブ）
+        k_pen: 法線ペナルティ剛性
+        k_t: 接線ペナルティ剛性
+        R_u: (ndof,) 力残差
+        C_n: (n_geom_active,) 法線 NCP 残差
+        C_t: (2*n_geom_active,) 接線 NCP 残差
+        J_blocks: 各ペアの Jacobian ブロック辞書
+        fixed_dofs: 拘束 DOF
+        n_ncp_active: NCP アクティブペア数
+        ncp_active_mask: NCP アクティブマスク
+        active_indices: アクティブペアインデックス
+
+    Returns:
+        (du, dlam_n, dlam_t): 変位増分, 法線乗数増分, 接線乗数増分
+    """
+    import scipy.sparse.linalg as spla
+
+    ndof = K_T.shape[0]
+
+    # NCP アクティブ行のみ抽出
+    if n_ncp_active > 0:
+        active_rows_n = np.where(ncp_active_mask)[0]
+        G_n_A = G_n[active_rows_n, :]
+    else:
+        G_n_A = sp.csr_matrix((0, ndof))
+        active_rows_n = np.array([], dtype=int)
+
+    # 接線行: NCP アクティブに対応する 2*n 行
+    if n_ncp_active > 0:
+        t_rows = []
+        for r in active_rows_n:
+            t_rows.extend([2 * r, 2 * r + 1])
+        t_rows = np.array(t_rows, dtype=int)
+        G_t_A = G_t[t_rows, :]
+    else:
+        G_t_A = sp.csr_matrix((0, ndof))
+        t_rows = np.array([], dtype=int)
+
+    n_n = n_ncp_active
+    n_t = 2 * n_ncp_active
+    n_total = ndof + n_n + n_t
+
+    # K_eff = K_T + k_pen * G_n_A^T G_n_A
+    if n_n > 0:
+        K_eff = K_T + k_pen * (G_n_A.T @ G_n_A)
+    else:
+        K_eff = K_T.copy()
+
+    # --- 拡大系をブロック行列で構築 ---
+    # J_n_u, J_n_n, J_t_u, J_t_n, J_t_t を密行列で構築
+    J_n_u = np.zeros((n_n, ndof))
+    J_n_n = np.zeros((n_n, n_n))
+    J_t_u = np.zeros((n_t, ndof))
+    J_t_n = np.zeros((n_t, n_n))
+    J_t_t = np.zeros((n_t, n_t))
+
+    G_n_A_dense = G_n_A.toarray() if n_n > 0 else np.zeros((0, ndof))
+    G_t_A_dense = G_t_A.toarray() if n_t > 0 else np.zeros((0, ndof))
+
+    for j_local in range(n_ncp_active):
+        j_geom = int(active_rows_n[j_local])
+        pair_idx = active_indices[j_geom]
+        jb = J_blocks.get(pair_idx)
+        if jb is None:
+            # デフォルト: 法線 active, stick
+            # C_n = k_pen * g → J_n_u = k_pen * G_n
+            J_n_u[j_local, :] = k_pen * G_n_A_dense[j_local, :]
+            # C_t = -k_t * Δu_t → J_t_u = -k_t * G_t, J_t_t = 0
+            J_t_u[2 * j_local, :] = -k_t * G_t_A_dense[2 * j_local, :]
+            J_t_u[2 * j_local + 1, :] = -k_t * G_t_A_dense[2 * j_local + 1, :]
+            continue
+
+        mode = jb["mode"]  # "active_stick", "active_slip", "inactive"
+
+        if mode == "inactive":
+            # C_n = λ_n → J_n_n = 1, C_t = λ_t → J_t_t = I
+            J_n_n[j_local, j_local] = 1.0
+            J_t_t[2 * j_local, 2 * j_local] = 1.0
+            J_t_t[2 * j_local + 1, 2 * j_local + 1] = 1.0
+
+        elif mode == "active_stick":
+            # C_n = k_pen * g → J_n_u = k_pen * G_n
+            J_n_u[j_local, :] = k_pen * G_n_A_dense[j_local, :]
+            # C_t = -k_t * Δu_t → J_t_u = -k_t * G_t, J_t_t = 0
+            J_t_u[2 * j_local, :] = -k_t * G_t_A_dense[2 * j_local, :]
+            J_t_u[2 * j_local + 1, :] = -k_t * G_t_A_dense[2 * j_local + 1, :]
+
+        elif mode == "active_slip":
+            # 法線: C_n = k_pen * g → J_n_u = k_pen * G_n
+            J_n_u[j_local, :] = k_pen * G_n_A_dense[j_local, :]
+
+            # 接線 slip Jacobians
+            # J_t_t = I - (μ*p_n/||λ̂_t||) * (I - q̂⊗q̂)
+            J_t_t_local = jb["J_t_t"]  # (2,2)
+            J_t_t[2 * j_local : 2 * j_local + 2, 2 * j_local : 2 * j_local + 2] = J_t_t_local
+
+            # J_t_n = -μ * q̂  (2,1) — critical coupling term
+            J_t_n_local = jb["J_t_n"]  # (2,)
+            J_t_n[2 * j_local, j_local] = J_t_n_local[0]
+            J_t_n[2 * j_local + 1, j_local] = J_t_n_local[1]
+
+            # J_t_u: slip の変位微分
+            # ∂C_t/∂u = μ*k_pen * outer(q̂, G_n) - μ*p_n*k_t/||λ̂_t|| * (I-q̂⊗q̂) @ G_t
+            if "J_t_u" in jb:
+                J_t_u[2 * j_local : 2 * j_local + 2, :] = jb["J_t_u"]  # (2, ndof)
+
+    # C_n, C_t を NCP アクティブ行のみに絞る
+    C_n_A = C_n[active_rows_n] if n_n > 0 else np.array([])
+    C_t_A = C_t[t_rows] if n_t > 0 else np.array([])
+
+    # 拡大系組立: sp.bmat で構築
+    # [K_eff, -G_n_A^T, -G_t_A^T]   [-R_u ]
+    # [J_n_u,  J_n_n,    0       ] = [-C_n_A]
+    # [J_t_u,  J_t_n,    J_t_t   ]   [-C_t_A]
+    K_eff_lil = K_eff.tolil()
+
+    # BC を K_eff に適用
+    rhs_u = -R_u.copy()
+    _apply_bc(K_eff_lil, rhs_u, fixed_dofs)
+    K_eff_bc = K_eff_lil.tocsr()
+
+    # G の BC 処理（拘束 DOF 列をゼロに）
+    if n_n > 0:
+        G_n_A_bc = G_n_A_dense.copy()
+        for dof in fixed_dofs:
+            G_n_A_bc[:, dof] = 0.0
+            J_n_u[:, dof] = 0.0
+    if n_t > 0:
+        G_t_A_bc = G_t_A_dense.copy()
+        for dof in fixed_dofs:
+            G_t_A_bc[:, dof] = 0.0
+            J_t_u[:, dof] = 0.0
+
+    # 拡大行列を構築
+    if n_n == 0 and n_t == 0:
+        du = spla.spsolve(K_eff_bc, rhs_u)
+        return du, np.array([]), np.array([])
+
+    blocks = [[K_eff_bc, None, None], [None, None, None], [None, None, None]]
+
+    if n_n > 0:
+        blocks[0][1] = sp.csr_matrix(-G_n_A_bc.T)
+        blocks[1][0] = sp.csr_matrix(J_n_u)
+        blocks[1][1] = sp.csr_matrix(J_n_n)
+    if n_t > 0:
+        blocks[0][2] = sp.csr_matrix(-G_t_A_bc.T) if n_t > 0 else None
+        blocks[2][0] = sp.csr_matrix(J_t_u)
+        blocks[2][2] = sp.csr_matrix(J_t_t)
+    if n_n > 0 and n_t > 0:
+        blocks[1][2] = sp.csr_matrix((n_n, n_t))
+        blocks[2][1] = sp.csr_matrix(J_t_n)
+
+    # None ブロックをゼロ行列で埋める
+    sizes = [ndof, n_n, n_t]
+    for i_b in range(3):
+        for j_b in range(3):
+            if blocks[i_b][j_b] is None:
+                if sizes[i_b] > 0 and sizes[j_b] > 0:
+                    blocks[i_b][j_b] = sp.csr_matrix((sizes[i_b], sizes[j_b]))
+
+    # サイズ 0 のブロック行/列を除外
+    active_block_rows = [i_b for i_b in range(3) if sizes[i_b] > 0]
+    filtered_blocks = []
+    for i_b in active_block_rows:
+        row_blocks = []
+        for j_b in active_block_rows:
+            row_blocks.append(blocks[i_b][j_b])
+        filtered_blocks.append(row_blocks)
+
+    A = sp.bmat(filtered_blocks, format="csc")
+
+    # RHS
+    rhs_parts = []
+    if ndof > 0:
+        rhs_parts.append(rhs_u)
+    if n_n > 0:
+        rhs_parts.append(-C_n_A)
+    if n_t > 0:
+        rhs_parts.append(-C_t_A)
+    rhs = np.concatenate(rhs_parts)
+
+    # 解く
+    x = spla.spsolve(A, rhs)
+    if not np.all(np.isfinite(x)):
+        # フォールバック: GMRES
+        x_gm, info = spla.gmres(A.tocsr(), rhs, atol=1e-10, maxiter=max(500, n_total))
+        if info == 0 and np.all(np.isfinite(x_gm)):
+            x = x_gm
+
+    du = x[:ndof]
+    offset = ndof
+    dlam_n = x[offset : offset + n_n] if n_n > 0 else np.array([])
+    offset += n_n
+    dlam_t = x[offset : offset + n_t] if n_t > 0 else np.array([])
+
+    return du, dlam_n, dlam_t
+
+
 def _solve_saddle_point_contact(
     K_T: sp.csr_matrix,
     G_A: sp.csr_matrix,
@@ -543,15 +993,33 @@ def newton_raphson_contact_ncp(
     ncp_reg: float = 1e-12,
     k_pen: float = 0.0,
     f_ext_base: np.ndarray | None = None,
+    use_friction: bool = False,
+    mu: float | None = None,
+    mu_ramp_steps: int | None = None,
+    line_contact: bool = False,
+    n_gauss: int | None = None,
+    use_mortar: bool = False,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
     Outer loop 不要。u と λ を同時に更新。
+    摩擦有効時は法線 NCP + 摩擦 return mapping のハイブリッド方式。
+    line_contact 有効時は Gauss 積分で接触力・剛性を評価。
 
     Alart-Curnier NCP + 鞍点系:
       Active set: A = {i : λ_i + k_pen*(-g_i) > 0}
       Active pairs → g = 0 を制約として鞍点系で解く
       Inactive pairs → λ = 0 に設定
+
+    摩擦（use_friction=True 時）:
+      各 Newton 反復で Coulomb return mapping を実行し、
+      摩擦力を残差に、摩擦接線剛性を K_T に加算する。
+      法線方向は NCP で Outer loop 不要、摩擦は return mapping で処理。
+
+    line contact（line_contact=True 時）:
+      法線力と法線剛性を Gauss 積分で評価する。
+      NCP 活性セット判定は代表点ギャップ（PtP）を使用し、
+      力・剛性評価のみ line-to-line を使用するハイブリッド方式。
 
     Args:
         f_ext_total: (ndof,) 最終外荷重
@@ -577,6 +1045,11 @@ def newton_raphson_contact_ncp(
         k_pen: ペナルティ正則化パラメータ。0 の場合は
             manager.config.k_pen_scale を使用。
         f_ext_base: (ndof,) ベース外荷重
+        use_friction: Coulomb 摩擦の有効化（NCP + return mapping ハイブリッド）
+        mu: 摩擦係数（None なら config.mu）
+        mu_ramp_steps: μランプ（None なら config.mu_ramp_steps）
+        line_contact: Line-to-line Gauss 積分の有効化（None なら config.line_contact）
+        n_gauss: Gauss 積分点数（None なら config.n_gauss）
 
     Returns:
         NCPSolveResult
@@ -589,9 +1062,27 @@ def newton_raphson_contact_ncp(
     if k_pen <= 0.0:
         k_pen = manager.config.k_pen_scale
 
+    # 摩擦設定の解決
+    _use_friction = use_friction or manager.config.use_friction
+    _mu = mu if mu is not None else manager.config.mu
+    _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
+
+    # line contact 設定の解決
+    _line_contact = line_contact or manager.config.line_contact
+    _n_gauss = n_gauss if n_gauss is not None else manager.config.n_gauss
+
+    # Mortar 設定の解決（line contact 必須）
+    _use_mortar = (use_mortar or manager.config.use_mortar) and _line_contact
+
     # λ の初期化
     n_pairs = manager.n_pairs
     lam_all = np.zeros(n_pairs)
+    # 接線乗数 λ_t（Alart-Curnier 摩擦用: 各ペア 2 成分）
+    lam_t_all = np.zeros((n_pairs, 2))
+
+    # Mortar 乗数（Mortar 有効時のみ使用）
+    lam_mortar: np.ndarray | None = None
+    mortar_nodes: list[int] = []
 
     # 線形ソルバー設定
     linear_solver_mode = manager.config.linear_solver
@@ -610,6 +1101,9 @@ def newton_raphson_contact_ncp(
         f_ext_ref_norm = 1.0
 
     _f_ext_base = f_ext_base if f_ext_base is not None else np.zeros(ndof)
+
+    # 摩擦用: 参照変位（前ステップ収束解）
+    u_ref = u.copy()
 
     for step in range(1, n_load_steps + 1):
         load_frac = step / n_load_steps
@@ -633,6 +1127,9 @@ def newton_raphson_contact_ncp(
             lam_new = np.zeros(manager.n_pairs)
             lam_new[: len(lam_all)] = lam_all
             lam_all = lam_new
+            lam_t_new = np.zeros((manager.n_pairs, 2))
+            lam_t_new[: len(lam_t_all)] = lam_t_all
+            lam_t_all = lam_t_new
 
         for it in range(max_iter):
             total_newton += 1
@@ -648,15 +1145,116 @@ def newton_raphson_contact_ncp(
             gaps = np.array([manager.pairs[i].state.gap for i in active_indices])
             lams = np.array([lam_all[i] for i in active_indices])
 
+            # 2m. Mortar 系の構築（Mortar 有効時）
+            if _use_mortar and n_geom_active > 0:
+                new_mortar_nodes, _node_to_pairs = identify_mortar_nodes(manager, active_indices)
+                n_mortar = len(new_mortar_nodes)
+
+                # Mortar 節点セット変更時の λ リマッピング
+                if lam_mortar is None or new_mortar_nodes != mortar_nodes:
+                    old_map = (
+                        {node: idx for idx, node in enumerate(mortar_nodes)} if mortar_nodes else {}
+                    )
+                    new_lam = np.zeros(n_mortar)
+                    if lam_mortar is not None:
+                        for new_idx, node in enumerate(new_mortar_nodes):
+                            old_idx = old_map.get(node)
+                            if old_idx is not None and old_idx < len(lam_mortar):
+                                new_lam[new_idx] = lam_mortar[old_idx]
+                    lam_mortar = new_lam
+                    mortar_nodes = new_mortar_nodes
+
+                G_mortar, g_mortar = build_mortar_system(
+                    manager,
+                    active_indices,
+                    mortar_nodes,
+                    coords_def,
+                    ndof,
+                    ndof_per_node,
+                    _n_gauss,
+                    k_pen,
+                )
+
             # 3. NCP アクティブセット判定
-            #    Active: λ + k_pen*(-g) > 0
+            if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
+                # Mortar: 節点ベースのアクティブセット
+                p_n_mortar_arr = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
+                ncp_mortar_active = p_n_mortar_arr > 0.0
+            else:
+                ncp_mortar_active = np.array([], dtype=bool)
+
+            #    Per-pair: Active: λ + k_pen*(-g) > 0
             p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
             ncp_active_mask = p_n_arr > 0.0  # boolean
 
-            # 4. 接触力ベクトル
-            f_c = _compute_contact_force_from_lambdas(
-                manager, lam_all, ndof, ndof_per_node, k_pen=k_pen
-            )
+            # 4. NCP 法線力を pair.state に同期（assembly 関数が参照するため）
+            for idx_p, pair in enumerate(manager.pairs):
+                if pair.state.status == ContactStatus.INACTIVE:
+                    continue
+                lam_i = lam_all[idx_p] if idx_p < len(lam_all) else 0.0
+                p_n = max(0.0, lam_i + k_pen * (-pair.state.gap))
+                pair.state.lambda_n = lam_i
+                pair.state.p_n = p_n
+                if pair.state.k_pen <= 0.0:
+                    pair.state.k_pen = k_pen
+                    pair.state.k_t = k_pen * manager.config.k_t_ratio
+
+            # 4a. 接触力ベクトル（法線）
+            if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
+                # Mortar 接触力
+                f_c = compute_mortar_contact_force(
+                    manager,
+                    active_indices,
+                    mortar_nodes,
+                    lam_mortar,
+                    coords_def,
+                    ndof,
+                    ndof_per_node,
+                    _n_gauss,
+                    k_pen,
+                )
+            elif _line_contact:
+                # Line-to-line Gauss 積分（assembly の既存インフラを利用）
+                # line_contact フラグを一時的に有効化
+                _orig_lc = manager.config.line_contact
+                _orig_ng = manager.config.n_gauss
+                manager.config.line_contact = True
+                manager.config.n_gauss = _n_gauss
+                f_c = compute_contact_force(
+                    manager, ndof, ndof_per_node=ndof_per_node, node_coords=coords_def
+                )
+                manager.config.line_contact = _orig_lc
+                manager.config.n_gauss = _orig_ng
+            else:
+                f_c = _compute_contact_force_from_lambdas(
+                    manager, lam_all, ndof, ndof_per_node, k_pen=k_pen
+                )
+
+            # 4b. 摩擦力ベクトル（Alart-Curnier 接線乗数方式）
+            if _use_friction:
+                mu_eff = compute_mu_effective(_mu, step, _mu_ramp_steps)
+                # 接線乗数から摩擦力を計算: f_fric = -G_t^T * λ_t
+                f_friction = np.zeros(ndof)
+                for _j, pair_idx in enumerate(active_indices):
+                    pair = manager.pairs[pair_idx]
+                    if pair.state.status == ContactStatus.INACTIVE:
+                        continue
+                    lam_t_j = lam_t_all[pair_idx]
+                    if float(np.linalg.norm(lam_t_j)) < 1e-30:
+                        continue
+                    dofs = _contact_dofs(pair, ndof_per_node)
+                    for axis in range(2):
+                        if abs(lam_t_j[axis]) < 1e-30:
+                            continue
+                        g_t = _contact_tangent_shape_vector(pair, axis)
+                        for kk in range(4):
+                            for d in range(3):
+                                # g_t_shape の符号は -(G_t^T) に対応
+                                # f = -G_t^T * λ_t, g_t_shape は assembly 規約に従う
+                                f_friction[dofs[kk * ndof_per_node + d]] += (
+                                    lam_t_j[axis] * g_t[kk * 3 + d]
+                                )
+                f_c = f_c + f_friction
 
             # 5. 力残差
             f_int = assemble_internal_force(u)
@@ -664,6 +1262,19 @@ def newton_raphson_contact_ncp(
             R_u[fixed_dofs] = 0.0
 
             # 6. NCP 残差（Alart-Curnier 方式）
+            # 6-mortar: Mortar NCP 残差
+            if _use_mortar and len(mortar_nodes) > 0:
+                n_mortar = len(mortar_nodes)
+                C_mortar = np.empty(n_mortar)
+                for k in range(n_mortar):
+                    if ncp_mortar_active[k]:
+                        C_mortar[k] = k_pen * g_mortar[k]
+                    else:
+                        C_mortar[k] = lam_mortar[k]
+            else:
+                C_mortar = np.array([])
+
+            # 6-perpair: Per-pair NCP 残差
             #    Active: C_i = k_pen * g_i  (g → 0 を目標)
             #    Inactive: C_i = λ_i        (λ → 0 を目標)
             C_ac = np.empty(n_geom_active) if n_geom_active > 0 else np.array([])
@@ -673,78 +1284,253 @@ def newton_raphson_contact_ncp(
                 else:
                     C_ac[j] = lams[j]
 
+            # 6b. 接線 NCP 残差 + J ブロック構築（Alart-Curnier 摩擦）
+            C_t_ac = np.zeros(2 * n_geom_active)
+            J_blocks: dict = {}
+            if _use_friction and n_geom_active > 0:
+                _k_t = k_pen * manager.config.k_t_ratio
+                for j in range(n_geom_active):
+                    pair_idx = active_indices[j]
+                    pair = manager.pairs[pair_idx]
+                    lam_t_j = lam_t_all[pair_idx]  # (2,)
+                    p_n_j = p_n_arr[j] if ncp_active_mask[j] else 0.0
+
+                    if not ncp_active_mask[j]:
+                        # 法線非アクティブ → 接線も非アクティブ
+                        C_t_ac[2 * j] = lam_t_j[0]
+                        C_t_ac[2 * j + 1] = lam_t_j[1]
+                        J_blocks[pair_idx] = {"mode": "inactive"}
+                        continue
+
+                    # 接線変位増分 Δu_t
+                    delta_ut = compute_tangential_displacement(
+                        pair, u, u_ref, node_coords_ref, ndof_per_node
+                    )
+
+                    # 増強接線乗数: λ̂_t = λ_t + k_t * Δu_t
+                    lam_t_hat = lam_t_j + _k_t * delta_ut
+                    lam_t_hat_norm = float(np.linalg.norm(lam_t_hat))
+
+                    # Stick/slip 判定
+                    if lam_t_hat_norm <= mu_eff * p_n_j or lam_t_hat_norm < 1e-30:
+                        # Stick: C_t = λ_t - λ̂_t = -k_t * Δu_t
+                        C_t_ac[2 * j : 2 * j + 2] = lam_t_j - lam_t_hat
+                        J_blocks[pair_idx] = {"mode": "active_stick"}
+                    else:
+                        # Slip: C_t = λ_t - μ*p_n * q̂
+                        q_hat = lam_t_hat / lam_t_hat_norm
+                        C_t_ac[2 * j : 2 * j + 2] = lam_t_j - mu_eff * p_n_j * q_hat
+
+                        # J_t_t = I - (μ*p_n/||λ̂_t||) * (I - q̂⊗q̂)
+                        ratio = mu_eff * p_n_j / lam_t_hat_norm
+                        I2 = np.eye(2)
+                        J_t_t_local = I2 - ratio * (I2 - np.outer(q_hat, q_hat))
+
+                        # J_t_n = -μ * q̂  (∂f_fric/∂λ_n coupling!)
+                        J_t_n_local = -mu_eff * q_hat
+
+                        # J_t_u: slip の変位微分
+                        # ∂C_t/∂u = μ*k_pen * outer(q̂, G_n_row) - μ*p_n*k_t/||λ̂_t|| * (I-q̂⊗q̂) @ G_t_rows
+                        G_n_row_j = G_mat[j, :].toarray().ravel()  # (ndof,)
+                        G_t_rows_j = np.zeros((2, ndof))
+                        dofs_j = _contact_dofs(pair, ndof_per_node)
+                        for ax in range(2):
+                            g_t_sv = _contact_tangent_shape_vector(pair, ax)
+                            # G_t の符号: coeffs = [-(1-s), -s, (1-t), t]
+                            # g_t_shape の符号: [(1-s), s, -(1-t), -t]
+                            # G_t = -g_t_shape を DOF 配置
+                            for kk in range(4):
+                                for d in range(3):
+                                    G_t_rows_j[ax, dofs_j[kk * ndof_per_node + d]] = -g_t_sv[
+                                        kk * 3 + d
+                                    ]
+
+                        proj = np.eye(2) - np.outer(q_hat, q_hat)
+                        J_t_u_local = (
+                            mu_eff * k_pen * np.outer(q_hat, G_n_row_j)
+                            - mu_eff * p_n_j * _k_t / lam_t_hat_norm * proj @ G_t_rows_j
+                        )
+
+                        J_blocks[pair_idx] = {
+                            "mode": "active_slip",
+                            "J_t_t": J_t_t_local,
+                            "J_t_n": J_t_n_local,
+                            "J_t_u": J_t_u_local,
+                        }
+
             # 7. 収束判定
             res_u_norm = float(np.linalg.norm(R_u))
-            ncp_norm = float(np.linalg.norm(C_ac)) if n_geom_active > 0 else 0.0
+            if _use_mortar and len(C_mortar) > 0:
+                ncp_norm = float(np.linalg.norm(C_mortar))
+                n_ncp_active = int(np.sum(ncp_mortar_active))
+            else:
+                ncp_norm = float(np.linalg.norm(C_ac)) if n_geom_active > 0 else 0.0
+                n_ncp_active = int(np.sum(ncp_active_mask))
+            ncp_t_norm = (
+                float(np.linalg.norm(C_t_ac)) if (_use_friction and n_geom_active > 0) else 0.0
+            )
 
             force_conv = res_u_norm / f_ext_ref_norm < tol_force
             ncp_conv = ncp_norm < tol_ncp
+            ncp_t_conv = ncp_t_norm < tol_ncp if _use_friction else True
+            all_conv = force_conv and ncp_conv and ncp_t_conv
 
-            n_ncp_active = int(np.sum(ncp_active_mask))
-
-            if force_conv and ncp_conv:
+            if all_conv:
                 step_converged = True
                 if show_progress:
-                    print(
+                    msg = (
                         f"  Step {step}/{n_load_steps}, iter {it}, "
                         f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
-                        f"||C_AC|| = {ncp_norm:.3e} "
-                        f"(converged, {n_ncp_active} active)"
+                        f"||C_n|| = {ncp_norm:.3e}"
                     )
+                    if _use_friction:
+                        msg += f", ||C_t|| = {ncp_t_norm:.3e}"
+                    msg += f" (converged, {n_ncp_active} active)"
+                    print(msg)
                 break
 
             if show_progress and it % 5 == 0:
-                print(
+                msg = (
                     f"  Step {step}/{n_load_steps}, iter {it}, "
                     f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
-                    f"||C_AC|| = {ncp_norm:.3e}, "
-                    f"active={n_ncp_active}/{n_geom_active}"
+                    f"||C_n|| = {ncp_norm:.3e}"
                 )
+                if _use_friction:
+                    msg += f", ||C_t|| = {ncp_t_norm:.3e}"
+                msg += f", active={n_ncp_active}/{n_geom_active}"
+                print(msg)
 
             # 8. 構造接線剛性
             K_T = assemble_tangent(u)
 
-            # 9. NCP アクティブ制約行列を抽出
-            if n_ncp_active > 0:
-                active_row_indices = np.where(ncp_active_mask)[0]
-                G_A = G_mat[active_row_indices, :]
-                g_A = gaps[active_row_indices]
+            # 8b. line contact 法線剛性を加算（Gauss 積分）
+            if _line_contact:
+                _orig_lc = manager.config.line_contact
+                _orig_ng = manager.config.n_gauss
+                manager.config.line_contact = True
+                manager.config.n_gauss = _n_gauss
+                K_line = compute_contact_stiffness(
+                    manager,
+                    ndof,
+                    ndof_per_node=ndof_per_node,
+                    use_geometric_stiffness=manager.config.use_geometric_stiffness,
+                    node_coords=coords_def,
+                )
+                manager.config.line_contact = _orig_lc
+                manager.config.n_gauss = _orig_ng
+                K_T = K_T + K_line
+
+            # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
+
+            # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
+            if _use_mortar and len(mortar_nodes) > 0 and n_ncp_active > 0:
+                # Mortar 鞍点系
+                active_mortar_rows = np.where(ncp_mortar_active)[0]
+                G_mortar_A = G_mortar[active_mortar_rows, :]
+                g_mortar_A = g_mortar[active_mortar_rows]
+                du, dlam_mortar_A = _solve_saddle_point_contact(
+                    K_T,
+                    G_mortar_A,
+                    k_pen,
+                    R_u,
+                    g_mortar_A,
+                    fixed_dofs,
+                    linear_solver=linear_solver_mode,
+                    iterative_tol=iterative_tol_cfg,
+                    ilu_drop_tol=ilu_drop_tol_cfg,
+                    use_block_preconditioner=use_block_preconditioner,
+                )
+
+                # 11m. Mortar 乗数更新
+                u += du
+                for j_local, row in enumerate(active_mortar_rows):
+                    lam_mortar[row] += dlam_mortar_A[j_local]
+                for k in range(len(mortar_nodes)):
+                    if not ncp_mortar_active[k]:
+                        lam_mortar[k] = 0.0
+                lam_mortar = np.maximum(lam_mortar, 0.0)
+
+            elif _use_friction and n_geom_active > 0:
+                # Alart-Curnier 摩擦拡大鞍点系
+                G_t_mat = _build_tangential_constraint_jacobian(
+                    manager, active_indices, ndof, ndof_per_node
+                )
+                _k_t = k_pen * manager.config.k_t_ratio
+
+                du, dlam_n, dlam_t = _solve_augmented_friction_system(
+                    K_T,
+                    G_mat,
+                    G_t_mat,
+                    k_pen,
+                    _k_t,
+                    R_u,
+                    C_ac,
+                    C_t_ac,
+                    J_blocks,
+                    fixed_dofs,
+                    n_ncp_active,
+                    ncp_active_mask,
+                    active_indices,
+                )
+
+                # 11. 更新
+                u += du
+
+                # 法線乗数の更新
+                if n_ncp_active > 0:
+                    active_rows_n = np.where(ncp_active_mask)[0]
+                    for j_local in range(n_ncp_active):
+                        j_geom = int(active_rows_n[j_local])
+                        pair_idx = active_indices[j_geom]
+                        lam_all[pair_idx] += dlam_n[j_local]
+
+                    # 接線乗数の更新
+                    for j_local in range(n_ncp_active):
+                        j_geom = int(active_rows_n[j_local])
+                        pair_idx = active_indices[j_geom]
+                        lam_t_all[pair_idx] += dlam_t[2 * j_local : 2 * j_local + 2]
+
             else:
-                G_A = sp.csr_matrix((0, ndof))
-                g_A = np.array([])
+                # 従来の法線のみ鞍点系
+                if n_ncp_active > 0:
+                    active_row_indices = np.where(ncp_active_mask)[0]
+                    G_A = G_mat[active_row_indices, :]
+                    g_A = gaps[active_row_indices]
+                else:
+                    G_A = sp.csr_matrix((0, ndof))
+                    g_A = np.array([])
 
-            # 10. 鞍点系で解く
-            du, dlam_A = _solve_saddle_point_contact(
-                K_T,
-                G_A,
-                k_pen,
-                R_u,
-                g_A,
-                fixed_dofs,
-                linear_solver=linear_solver_mode,
-                iterative_tol=iterative_tol_cfg,
-                ilu_drop_tol=ilu_drop_tol_cfg,
-                use_block_preconditioner=use_block_preconditioner,
-            )
+                du, dlam_A = _solve_saddle_point_contact(
+                    K_T,
+                    G_A,
+                    k_pen,
+                    R_u,
+                    g_A,
+                    fixed_dofs,
+                    linear_solver=linear_solver_mode,
+                    iterative_tol=iterative_tol_cfg,
+                    ilu_drop_tol=ilu_drop_tol_cfg,
+                    use_block_preconditioner=use_block_preconditioner,
+                )
 
-            # 11. 更新
-            u += du
+                # 11. 更新
+                u += du
 
-            # NCP アクティブ乗数の更新
-            if n_ncp_active > 0:
-                active_pair_indices = [
-                    active_indices[j] for j in range(n_geom_active) if ncp_active_mask[j]
-                ]
-                for j_local, pair_idx in enumerate(active_pair_indices):
-                    lam_all[pair_idx] += dlam_A[j_local]
+                # NCP アクティブ乗数の更新
+                if n_ncp_active > 0:
+                    active_pair_indices = [
+                        active_indices[j] for j in range(n_geom_active) if ncp_active_mask[j]
+                    ]
+                    for j_local, pair_idx in enumerate(active_pair_indices):
+                        lam_all[pair_idx] += dlam_A[j_local]
 
-            # NCP 非アクティブ乗数をゼロに
-            for j in range(n_geom_active):
-                if not ncp_active_mask[j]:
-                    lam_all[active_indices[j]] = 0.0
-
-            # λ ≥ 0 射影
-            lam_all = np.maximum(lam_all, 0.0)
+            # NCP 非アクティブ乗数をゼロに（Mortar 時はスキップ）
+            if not _use_mortar:
+                for j in range(n_geom_active):
+                    if not ncp_active_mask[j]:
+                        lam_all[active_indices[j]] = 0.0
+                        lam_t_all[active_indices[j]] = 0.0
+                lam_all = np.maximum(lam_all, 0.0)
 
             # 変位ノルム判定
             u_norm = float(np.linalg.norm(u))
@@ -780,6 +1566,9 @@ def newton_raphson_contact_ncp(
             if i < len(lam_all):
                 pair.state.lambda_n = lam_all[i]
                 pair.state.p_n = max(0.0, lam_all[i] + k_pen * (-pair.state.gap))
+
+        # 摩擦用: 参照変位を更新（次ステップ用）
+        u_ref = u.copy()
 
         load_history.append(load_frac)
         disp_history.append(u.copy())

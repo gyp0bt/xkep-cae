@@ -90,6 +90,9 @@
 | [080](status-080.md) | 2026-02-28 | Phase C6-L4: ブロック前処理強化（接触 Schur 補集合） | 1821 |
 | [081](status-081.md) | 2026-02-28 | Phase C6-L1b: 摩擦力 line contact 拡張 + 撚線収束テスト | 1850 |
 | [082](status-082.md) | 2026-02-28 | Phase S ロードマップ策定 — 1000本撚線スケーラビリティ計画 | — |
+| [083](status-083.md) | 2026-02-28 | Phase S1 同層除外フィルタ + NCP摩擦拡張 + line contact統合 | 1875 |
+| [084](status-084.md) | 2026-02-28 | Alart-Curnier 摩擦拡大鞍点系の完全実装 | 1878 |
+| [085](status-085.md) | 2026-02-28 | Phase C6-L5 Mortar 離散化の実装 | 1797 |
 
 ## テスト数推移
 
@@ -158,6 +161,9 @@
 079:     1810     (Phase C6-L3: Semi-smooth Newton + NCP 関数)
 080:     1821     (Phase C6-L4: ブロック前処理強化 接触 Schur 補集合)
 081:     1850     (Phase C6-L1b: 摩擦力 line contact 拡張 + 撚線収束テスト)
+083:     1875     (Phase S1: 同層除外フィルタ + NCP摩擦拡張 + line contact統合)
+084:     1878     (Alart-Curnier 摩擦拡大鞍点系)
+085:     1797     (Phase C6-L5: Mortar 離散化)
 ```
 
 ## 備考
