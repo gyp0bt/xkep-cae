@@ -17,9 +17,9 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L4 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 同層除外 + NCP摩擦統合 + Alart-Curnier摩擦拡大鞍点系 完了。1878テスト（fast: 1496 / slow: 292）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1（同層除外 + NCP摩擦統合 + Alart-Curnier摩擦拡大鞍点系 + Mortar離散化）完了。1797テスト（fast: 1507 / slow: 290）。**
 
-**次のマイルストーン**: Phase S1 残り（Mortar離散化）→ S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
+**次のマイルストーン**: S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
 ### 完了済みフェーズ一覧
 
@@ -152,7 +152,7 @@
 - [x] C6-L3: Semi-smooth Newton + NCP 関数（Outer loop 廃止, 35テスト, status-079）
 - [x] C6-L4: ブロック前処理強化（接触 Schur 補集合, 11テスト, status-080）
 - [x] C6-L1b: 摩擦力 line contact 拡張（GP Gauss 積分, 29テスト, status-081）
-- [ ] C6-L5: Mortar 離散化 → **Phase S1 で実施**
+- [x] C6-L5: Mortar 離散化（9テスト, status-085）→ **Phase S1 で実施**
 
 ---
 
@@ -234,7 +234,7 @@
 
 | 項目 | 内容 | 状態 |
 |------|------|------|
-| **C6-L5** | Mortar 離散化（セグメント境界の力の連続化） | ⬜ |
+| **C6-L5** | Mortar 離散化（セグメント境界の力の連続化, 9テスト, status-085） | ✅ |
 | **同層除外** | `exclude_same_layer` オプション（層間接触のみ、同層ペア除外、~80%削減） | ✅ |
 | **NCP摩擦** | NCP ソルバーの Coulomb 摩擦拡張 + line contact 統合 | ✅ |
 
