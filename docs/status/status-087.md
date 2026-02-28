@@ -81,12 +81,35 @@ status-086 のTODO3件を消化。Phase S2（CPU並列化）の基盤実装と�
 | TestMortarAdaptivePenalty | test_mortar_p_n_computation | Mortar法線力計算 |
 | TestMortarAdaptivePenalty | test_config_has_adaptive_mortar_params | 設定パラメータ存在 |
 
+### 7. Mortar K_line 二重カウントバグ修正
+
+**問題**: Mortar使用時に per-pair 接触剛性（K_line）を K_T に加算していたため、
+接触力（Mortar定式化）と接触剛性（per-pair定式化）が異なる汎関数から導出され、
+NR の二次収束が線形収束率 ~0.68 に劣化していた。
+
+**修正**: `if _line_contact:` → `if _line_contact and not _use_mortar:` に変更。
+Mortar鞍点系の `k_pen · G_mortar^T · G_mortar` が唯一の接触剛性として機能する。
+
+**結果**:
+- 7本撚り曲げ + Mortar: 30反復で非収束 → **2反復で機械精度収束**
+- `test_7strand_mortar_bending_converges`: xfail → **PASSED に昇格**
+
 ## 確認事項・今後の課題
 
-- [ ] 7本撚り曲げ + Mortar の収束改善: 適応ペナルティの効果を再評価（S3以降で実施）
+- [x] ~~7本撚り曲げ + Mortar の収束改善~~ → K_line二重カウント修正で解決
 - [ ] 要素並列化の実際のスピードアップ測定（大規模問題: 91本撚り等）
 - [ ] Broadphase グリッドビニングの並列化（現状は逐次、大規模問題でのボトルネック）
 - [ ] Phase S3: 19本 → 37本 → 61本 → 91本 段階的ベンチマーク
+- [ ] Active ペア管理戦略の最適化（Broadphase → Mortar active set の中間フィルタリング）
+
+## 設計メモ: Mortar代替としての仮想要素接触力伝播
+
+Mortar離散化の代わりに、Active要素の隣接要素（滑り時に次にActiveになりそうな要素）との間に仮想的な接触要素を作り、接触力を周辺に「漏らす」手法が考えられる。
+
+- **Mortar との類似性**: Mortar の線形基底関数 Φ_k(s) = 1-s, s による力の分配と概念的に等価
+- **利点**: 実装が単純。Mortar節点管理や重み付きギャップ計算が不要
+- **欠点**: 変分原理に基づかないため、エネルギー保存やパッチテストの保証なし
+- **結論**: Mortar の方が変分的に正当化されており、整合性が高い。**Mortar を維持する方針**
 
 ## 開発運用メモ
 
