@@ -17,9 +17,9 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1（同層除外 + NCP摩擦統合 + Alart-Curnier摩擦拡大鞍点系 + Mortar離散化 + 3重統合テスト + 7本撚りMortar評価）完了。1809テスト（fast: 1512 / slow: 297）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤（GMRES自動有効化 + 要素並列化 + Broadphaseベクトル化 + Mortar適応ペナルティ）完了。1822テスト（fast: 1525 / slow: 297）。**
 
-**次のマイルストーン**: S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
+**次のマイルストーン**: S2残り（大規模実測）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
 ### 完了済みフェーズ一覧
 
@@ -244,10 +244,13 @@
 
 単一ノード CPU での並列化。全て serial の現状からの脱却。
 
-- [ ] 要素行列計算の並列化（`multiprocessing` / `joblib`）
-- [ ] Broadphase の並列候補抽出
-- [ ] ブロック前処理の並列ブロック逆行列計算
-- [ ] GMRES 自動有効化（DOF 閾値 ~2000 で直接法→反復法切替）
+- [x] GMRES 自動有効化（DOF 閾値 ~2000 で直接法→反復法切替、status-087）
+- [x] 要素行列計算の並列化（`ThreadPoolExecutor`、n_jobs パラメータ、status-087）
+- [x] Broadphase AABB ベクトル化（numpy 一括処理、status-087）
+- [x] ブロック前処理 Schur 対角近似のバッチ化（`ilu.solve` 行列ソルブ、status-087）
+- [x] Mortar 適応ペナルティ増大（NCP ステップ完了時の自動 k_pen 増大、status-087）
+- [ ] 大規模問題での実測スピードアップ評価（19本以上の撚り線ベンチマーク）
+- [ ] Broadphase グリッドビニングの並列化（現状逐次）
 
 ### S3: 撚線大規模化（91本まで）
 
@@ -376,9 +379,12 @@ Phase 1-3 (アーキテクチャ, 梁要素, 幾何学的非線形) ✓
 
 ### 高優先 — Phase S2-S3: 並列化 & 91本ベンチマーク
 
-- [ ] 要素行列計算の並列化（`multiprocessing` / `joblib`）
-- [ ] Broadphase 並列候補抽出
-- [ ] GMRES 自動有効化（DOF 閾値 ~2000 で直接法→反復法切替）
+- [x] GMRES 自動有効化（DOF 閾値 ~2000 で直接法→反復法切替、status-087）
+- [x] 要素行列計算の並列化（`ThreadPoolExecutor`、status-087）
+- [x] Broadphase AABB ベクトル化（status-087）
+- [x] ブロック前処理バッチ化（status-087）
+- [x] Mortar 適応ペナルティ増大（status-087）
+- [ ] 大規模問題での実測スピードアップ評価
 - [ ] 19本 → 37本 → 61本 → 91本 段階的ベンチマーク
 
 ### 中優先 — Phase S4-S6: 剛性比較 & ML & 1000本

@@ -8,7 +8,7 @@
 
 ## 現在の状態
 
-**1809テスト（fast: 1512 / slow: 297）**
+**1822テスト（fast: 1525 / slow: 297）**
 
 | フェーズ | 状態 |
 |---------|------|
@@ -32,9 +32,10 @@
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
 | GitHub Actions CI + slowテストマーカー | ✓ |
 | Phase S1: 同層除外 + NCP摩擦 + Alart-Curnier摩擦 + Mortar離散化 | ✓ |
-| **Phase S: スケーラビリティ** | **S1完了、S2以降** |
+| Phase S2: CPU並列化基盤（GMRES自動有効化 + 要素並列化 + Mortar適応ペナルティ） | ✓ |
+| **Phase S: スケーラビリティ** | **S2基盤完了、S3以降** |
 
-**次のマイルストーン**: S2（CPU並列化）→ S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本 → GPU
+**次のマイルストーン**: S3（91本BM）→ S4（剛性比較BM）→ ML → 1000本 → GPU
 
 詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
 
@@ -126,7 +127,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（86個）
+├── status/         # ステータスファイル群（87個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
