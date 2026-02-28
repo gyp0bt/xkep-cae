@@ -37,7 +37,7 @@
 | **過渡応答出力** | Step/Increment/Frame + CSV/JSON/VTK + FIELD ANIMATION + GIF | ~80 |
 | **I/O** | Abaqus .inp パーサー, テーブル硬化則, KINEMATIC→AF変換 | ~50 |
 | **Phase 6.0 PoC** | 2D熱伝導FEM + GNN/PINN サロゲート | ~100 |
-| **CI/CD** | GitHub Actions 3ジョブ + slow テストマーカー | — |
+| **CI/CD** | GitHub Actions CI（lint + fast×3 + slow×3シャード）+ slow テストマーカー | — |
 
 > 完了済みPhaseの詳細設計情報は [archive/completed-phases.md](archive/completed-phases.md) を参照。
 

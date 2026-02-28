@@ -30,7 +30,7 @@
 | HEX8要素ファミリ（C3D8/C3D8B/C3D8R/C3D8I） | ✓ |
 | 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
 | Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
-| GitHub Actions CI + slowテストマーカー | ✓ |
+| GitHub Actions CI + slowテストマーカー + 3並列シャード | ✓ |
 | Phase S1: 同層除外 + NCP摩擦 + Alart-Curnier摩擦 + Mortar離散化 | ✓ |
 | Phase S2: CPU並列化基盤（GMRES自動有効化 + 要素並列化 + Mortar適応ペナルティ） | ✓ |
 | **Phase S: スケーラビリティ** | **S2基盤完了、S3以降** |
@@ -127,7 +127,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（87個）
+├── status/         # ステータスファイル群（88個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
