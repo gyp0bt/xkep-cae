@@ -208,6 +208,7 @@ class ContactConfig:
     use_ncp: bool = False  # NCP Semi-smooth Newton の有効化（Phase C6-L3）
     ncp_type: str = "fb"  # NCP 関数の種類: "fb" (Fischer-Burmeister) | "min"
     ncp_reg: float = 1e-12  # FB 関数の正則化パラメータ
+    ncp_block_preconditioner: bool = False  # NCP 鞍点系のブロック前処理付き GMRES（Phase C6-L4）
 
 
 @dataclass
