@@ -222,7 +222,146 @@ def _apply_bc(K_lil, rhs, fixed_dofs):
         rhs[dof] = 0.0
 
 
-def _solve_saddle_point_contact(
+def _solve_saddle_point_gmres(
+    K_T: sp.csr_matrix,
+    G_A: sp.csr_matrix,
+    k_pen: float,
+    R_u: np.ndarray,
+    g_active: np.ndarray,
+    fixed_dofs: np.ndarray,
+    *,
+    iterative_tol: float = 1e-10,
+    ilu_drop_tol: float = 1e-4,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Alart-Curnier NCP 鞍点系をブロック前処理付き GMRES で解く.
+
+    拡大系:
+      [K_eff   -G_A^T] [Δu  ] = [-R_u    ]
+      [G_A      0    ] [Δλ_A]   [-g_active]
+
+    ブロック対角前処理:
+      P = [K_eff^{-1}   0      ]    K_eff^{-1} ≈ ILU
+          [0            S_d^{-1}]    S_d ≈ diag(G_A * K_eff^{-1} * G_A^T)
+
+    n_active が大きい場合に直接 Schur complement より効率的。
+    K_eff^{-1} の (1 + n_active) 回の求解を GMRES 反復に置き換える。
+
+    設計仕様: docs/contact/contact-algorithm-overhaul-c6.md §6
+
+    Args:
+        K_T: 構造接線剛性
+        G_A: (n_active, ndof) NCP アクティブ制約ヤコビアン
+        k_pen: ペナルティ正則化パラメータ
+        R_u: (ndof,) 力残差
+        g_active: (n_active,) アクティブペアのギャップ
+        fixed_dofs: 拘束 DOF
+        iterative_tol: GMRES 収束判定
+        ilu_drop_tol: ILU drop tolerance
+
+    Returns:
+        (du, dlam_A): 変位増分, アクティブ乗数増分
+    """
+    import scipy.sparse.linalg as spla
+
+    ndof = K_T.shape[0]
+    n_active = G_A.shape[0]
+    n_total = ndof + n_active
+
+    # K_eff = K_T + k_pen * G_A^T * G_A
+    K_eff = K_T + k_pen * (G_A.T @ G_A)
+
+    # BC 適用
+    K_bc = K_eff.tolil()
+    rhs_u = -R_u.copy()
+    _apply_bc(K_bc, rhs_u, fixed_dofs)
+    K_bc_csr = K_bc.tocsr()
+
+    # G_A の BC 処理（拘束 DOF 列をゼロに）
+    G_A_bc = G_A.tolil()
+    for dof in fixed_dofs:
+        G_A_bc[:, dof] = 0.0
+    G_A_bc_csr = G_A_bc.tocsr()
+    G_A_bc_T = G_A_bc_csr.T.tocsr()
+
+    # --- ILU 前処理構築 ---
+    try:
+        ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=ilu_drop_tol)
+    except RuntimeError:
+        ilu = None
+
+    # --- Schur 補集合の対角近似: S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T ---
+    s_diag = np.ones(n_active) * 1e-12
+    if ilu is not None:
+        G_A_bc_dense = G_A_bc_csr.toarray()
+        for i in range(n_active):
+            g_row = G_A_bc_dense[i, :]
+            v = ilu.solve(g_row)
+            s_diag[i] = g_row @ v + 1e-12
+    else:
+        # ILU が失敗した場合の粗い近似
+        for i in range(n_active):
+            s_diag[i] = 1.0 / max(k_pen, 1e-12)
+
+    # --- 拡大系行列-ベクトル積 ---
+    def matvec(x):
+        x_u = x[:ndof]
+        x_lam = x[ndof:]
+        y = np.zeros(n_total)
+        y[:ndof] = K_bc_csr @ x_u - G_A_bc_T @ x_lam
+        y[ndof:] = G_A_bc_csr @ x_u
+        # BC 行: 拘束 DOF は identity
+        for dof in fixed_dofs:
+            y[dof] = x_u[dof]
+        return y
+
+    A_op = spla.LinearOperator((n_total, n_total), matvec=matvec)
+
+    # --- ブロック対角前処理演算子 ---
+    def precond(x):
+        y = np.zeros(n_total)
+        if ilu is not None:
+            y[:ndof] = ilu.solve(x[:ndof])
+        else:
+            y[:ndof] = x[:ndof]
+        y[ndof:] = x[ndof:] / s_diag
+        return y
+
+    M = spla.LinearOperator((n_total, n_total), matvec=precond)
+
+    # --- RHS ---
+    rhs = np.zeros(n_total)
+    rhs[:ndof] = rhs_u
+    rhs[ndof:] = -g_active
+
+    # --- GMRES ---
+    x, info = spla.gmres(
+        A_op,
+        rhs,
+        M=M,
+        atol=iterative_tol,
+        maxiter=max(500, n_total),
+    )
+
+    if info != 0:
+        # フォールバック: 直接 Schur complement
+        return _solve_saddle_point_direct(
+            K_T,
+            G_A,
+            k_pen,
+            R_u,
+            g_active,
+            fixed_dofs,
+            linear_solver="auto",
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+        )
+
+    du = x[:ndof]
+    dlam_A = x[ndof:]
+    return du, dlam_A
+
+
+def _solve_saddle_point_direct(
     K_T: sp.csr_matrix,
     G_A: sp.csr_matrix,
     k_pen: float,
@@ -234,7 +373,7 @@ def _solve_saddle_point_contact(
     iterative_tol: float = 1e-10,
     ilu_drop_tol: float = 1e-4,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Alart-Curnier NCP 鞍点系を Schur complement で解く.
+    """Alart-Curnier NCP 鞍点系を直接 Schur complement で解く.
 
     鞍点系:
       [K_eff   -G_A^T] [Δu  ] = [-R_u    ]
@@ -266,13 +405,6 @@ def _solve_saddle_point_contact(
     ndof = K_T.shape[0]
     n_active = G_A.shape[0]
     solve_kw = dict(mode=linear_solver, iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol)
-
-    if n_active == 0:
-        K_bc = K_T.tolil()
-        rhs = -R_u.copy()
-        _apply_bc(K_bc, rhs, fixed_dofs)
-        du = _solve_linear_system(K_bc.tocsr(), rhs, **solve_kw)
-        return du, np.array([])
 
     # K_eff = K_T + k_pen * G_A^T * G_A （ペナルティ正則化）
     K_eff = K_T + k_pen * (G_A.T @ G_A)
@@ -313,6 +445,78 @@ def _solve_saddle_point_contact(
     du = v0 + V @ dlam_A
 
     return du, dlam_A
+
+
+def _solve_saddle_point_contact(
+    K_T: sp.csr_matrix,
+    G_A: sp.csr_matrix,
+    k_pen: float,
+    R_u: np.ndarray,
+    g_active: np.ndarray,
+    fixed_dofs: np.ndarray,
+    *,
+    linear_solver: str = "auto",
+    iterative_tol: float = 1e-10,
+    ilu_drop_tol: float = 1e-4,
+    use_block_preconditioner: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Alart-Curnier NCP 鞍点系を解く（直接法 or ブロック前処理 GMRES）.
+
+    use_block_preconditioner=False (デフォルト):
+      制約空間 Schur complement で直接解法。n_active が小さい場合に高速。
+
+    use_block_preconditioner=True:
+      ブロック対角前処理付き GMRES。n_active が大きい場合に効率的。
+      K_eff^{-1} を ILU で近似し、Schur 補集合の対角近似を前処理に使用。
+
+    Args:
+        K_T: 構造接線剛性
+        G_A: (n_active, ndof) NCP アクティブ制約ヤコビアン
+        k_pen: ペナルティ正則化パラメータ
+        R_u: (ndof,) 力残差
+        g_active: (n_active,) アクティブペアのギャップ
+        fixed_dofs: 拘束 DOF
+        linear_solver: 線形ソルバーモード（直接法のみ）
+        iterative_tol: 反復ソルバー許容値
+        ilu_drop_tol: ILU drop tolerance
+        use_block_preconditioner: ブロック前処理 GMRES の使用（Phase C6-L4）
+
+    Returns:
+        (du, dlam_A): 変位増分, アクティブ乗数増分
+    """
+    n_active = G_A.shape[0]
+
+    if n_active == 0:
+        K_bc = K_T.tolil()
+        rhs = -R_u.copy()
+        _apply_bc(K_bc, rhs, fixed_dofs)
+        solve_kw = dict(mode=linear_solver, iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol)
+        du = _solve_linear_system(K_bc.tocsr(), rhs, **solve_kw)
+        return du, np.array([])
+
+    if use_block_preconditioner:
+        return _solve_saddle_point_gmres(
+            K_T,
+            G_A,
+            k_pen,
+            R_u,
+            g_active,
+            fixed_dofs,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+        )
+
+    return _solve_saddle_point_direct(
+        K_T,
+        G_A,
+        k_pen,
+        R_u,
+        g_active,
+        fixed_dofs,
+        linear_solver=linear_solver,
+        iterative_tol=iterative_tol,
+        ilu_drop_tol=ilu_drop_tol,
+    )
 
 
 def newton_raphson_contact_ncp(
@@ -393,6 +597,7 @@ def newton_raphson_contact_ncp(
     linear_solver_mode = manager.config.linear_solver
     iterative_tol_cfg = manager.config.iterative_tol
     ilu_drop_tol_cfg = manager.config.ilu_drop_tol
+    use_block_preconditioner = manager.config.ncp_block_preconditioner
 
     load_history: list[float] = []
     disp_history: list[np.ndarray] = []
@@ -519,6 +724,7 @@ def newton_raphson_contact_ncp(
                 linear_solver=linear_solver_mode,
                 iterative_tol=iterative_tol_cfg,
                 ilu_drop_tol=ilu_drop_tol_cfg,
+                use_block_preconditioner=use_block_preconditioner,
             )
 
             # 11. 更新

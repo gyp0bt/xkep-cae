@@ -85,6 +85,8 @@ from xkep_cae.contact.solver_hooks import (
 )
 from xkep_cae.contact.solver_ncp import (
     NCPSolveResult,
+    _solve_saddle_point_direct,
+    _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
 )
 
@@ -144,4 +146,6 @@ __all__ = [
     "ncp_fischer_burmeister",
     "ncp_min",
     "newton_raphson_contact_ncp",
+    "_solve_saddle_point_direct",
+    "_solve_saddle_point_gmres",
 ]
