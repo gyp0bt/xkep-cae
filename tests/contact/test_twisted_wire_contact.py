@@ -1682,15 +1682,30 @@ class TestAdaptiveOmega:
 # 7本撚りサイクリック荷重テスト
 # ====================================================================
 class TestSevenStrandCyclic:
-    """7本撚りブロックソルバーでのサイクリック荷重テスト."""
+    """7本撚りモノリシックソルバーでのサイクリック荷重テスト.
 
-    @pytest.mark.slow
-    def test_seven_strand_tension_cyclic(self):
-        """7本撚り引張の往復荷重（0→1→0）で収束."""
-        from xkep_cae.contact.solver_hooks import (
-            newton_raphson_block_contact,
-        )
+    TestSevenStrandImprovedSolver と同じ安定化パラメータ（活性セット安定化 +
+    純ペナルティ法 + 段階的アクティベーション）を使用し、往復荷重の収束を確認。
+    """
 
+    _GAP = 0.0005
+    _SOLVER_KWARGS: dict = {
+        "n_outer_max": 1,
+        "k_pen_scale": 0.1,
+        "k_pen_mode": "beam_ei",
+        "beam_E": _E,
+        "beam_I": _SECTION.Iy,
+        "k_pen_scaling": "sqrt",
+        "al_relaxation": 0.01,
+        "penalty_growth_factor": 1.0,
+        "preserve_inactive_lambda": True,
+        "g_off": 0.001,
+        "contact_damping": 1.0,
+        "no_deactivation_within_step": True,
+    }
+
+    def _setup_cyclic(self, load_type):
+        """サイクリックテスト共通セットアップ."""
         mesh = make_twisted_wire_mesh(
             7,
             _WIRE_D,
@@ -1698,45 +1713,44 @@ class TestSevenStrandCyclic:
             length=0.0,
             n_elems_per_strand=4,
             n_pitches=1.0,
-            gap=0.0005,
+            gap=self._GAP,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)
 
         f_ext = np.zeros(ndof_total)
-        f_per_strand = 1.0 / 7
-        for sid in range(mesh.n_strands):
-            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
-            f_ext[end_dofs[2]] = f_per_strand
+        if load_type == "tension":
+            f_per_strand = 1.0 / 7
+            for sid in range(mesh.n_strands):
+                end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+                f_ext[end_dofs[2]] = f_per_strand
+        elif load_type == "bending":
+            m_per_strand = 0.001 / 7
+            for sid in range(mesh.n_strands):
+                end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+                f_ext[end_dofs[4]] = m_per_strand
 
         elem_layer_map = mesh.build_elem_layer_map()
         max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
         staged_steps = (max_lay + 1) * 2
 
         mgr = _make_contact_manager(
-            use_friction=True,
-            mu=0.3,
-            n_outer_max=1,
-            k_pen_mode="beam_ei",
-            beam_E=_E,
-            beam_I=_SECTION.Iy,
-            k_pen_scaling="sqrt",
-            al_relaxation=0.01,
-            penalty_growth_factor=1.0,
-            preserve_inactive_lambda=True,
-            g_off=0.001,
-            no_deactivation_within_step=True,
-            staged_activation_steps=staged_steps,
             elem_layer_map=elem_layer_map,
+            staged_activation_steps=staged_steps,
+            **self._SOLVER_KWARGS,
         )
 
-        strand_dof_ranges = []
-        for sid in range(mesh.n_strands):
-            ns, ne = mesh.strand_node_ranges[sid]
-            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+        return mesh, assemble_tangent, assemble_internal_force, fixed_dofs, f_ext, mgr
+
+    @pytest.mark.slow
+    def test_seven_strand_tension_cyclic(self):
+        """7本撚り引張の往復荷重（0→1→0）で収束."""
+        mesh, assemble_tangent, assemble_internal_force, fixed_dofs, f_ext, mgr = (
+            self._setup_cyclic("tension")
+        )
 
         # Phase 1: 0 → 1 (loading)
-        result1 = newton_raphson_block_contact(
+        result1 = newton_raphson_with_contact(
             f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1745,16 +1759,15 @@ class TestSevenStrandCyclic:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
-            n_load_steps=10,
-            max_iter=50,
+            n_load_steps=50,
+            max_iter=30,
             show_progress=False,
             broadphase_margin=0.01,
         )
         assert result1.converged, "Phase1(loading) が収束しなかった"
 
-        # Phase 2: 1 → 0 (unloading) using f_ext_base
-        result2 = newton_raphson_block_contact(
+        # Phase 2: 1 → 0 (unloading)
+        result2 = newton_raphson_with_contact(
             -f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1763,9 +1776,8 @@ class TestSevenStrandCyclic:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
-            n_load_steps=10,
-            max_iter=50,
+            n_load_steps=50,
+            max_iter=30,
             show_progress=False,
             broadphase_margin=0.01,
             u0=result1.u,
@@ -1776,54 +1788,12 @@ class TestSevenStrandCyclic:
     @pytest.mark.slow
     def test_seven_strand_bending_cyclic(self):
         """7本撚り曲げの往復荷重で収束."""
-        mesh = make_twisted_wire_mesh(
-            7,
-            _WIRE_D,
-            _PITCH,
-            length=0.0,
-            n_elems_per_strand=4,
-            n_pitches=1.0,
-            gap=0.0005,
+        mesh, assemble_tangent, assemble_internal_force, fixed_dofs, f_ext, mgr = (
+            self._setup_cyclic("bending")
         )
-        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
-        fixed_dofs = _fix_all_strand_starts(mesh)
-
-        f_ext = np.zeros(ndof_total)
-        m_per_strand = 0.001 / 7
-        for sid in range(mesh.n_strands):
-            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
-            f_ext[end_dofs[4]] = m_per_strand
-
-        elem_layer_map = mesh.build_elem_layer_map()
-        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
-        staged_steps = (max_lay + 1) * 2
-
-        mgr = _make_contact_manager(
-            use_friction=True,
-            mu=0.3,
-            n_outer_max=1,
-            k_pen_mode="beam_ei",
-            beam_E=_E,
-            beam_I=_SECTION.Iy,
-            k_pen_scaling="sqrt",
-            al_relaxation=0.01,
-            penalty_growth_factor=1.0,
-            preserve_inactive_lambda=True,
-            g_off=0.001,
-            no_deactivation_within_step=True,
-            staged_activation_steps=staged_steps,
-            elem_layer_map=elem_layer_map,
-        )
-
-        strand_dof_ranges = []
-        for sid in range(mesh.n_strands):
-            ns, ne = mesh.strand_node_ranges[sid]
-            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
-
-        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
 
         # Loading
-        result1 = newton_raphson_block_contact(
+        result1 = newton_raphson_with_contact(
             f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1832,16 +1802,15 @@ class TestSevenStrandCyclic:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
-            n_load_steps=10,
-            max_iter=50,
+            n_load_steps=50,
+            max_iter=30,
             show_progress=False,
             broadphase_margin=0.01,
         )
         assert result1.converged, "曲げ loading が収束しなかった"
 
         # Unloading
-        result2 = newton_raphson_block_contact(
+        result2 = newton_raphson_with_contact(
             -f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1850,9 +1819,8 @@ class TestSevenStrandCyclic:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
-            n_load_steps=10,
-            max_iter=50,
+            n_load_steps=50,
+            max_iter=30,
             show_progress=False,
             broadphase_margin=0.01,
             u0=result1.u,
@@ -1863,53 +1831,11 @@ class TestSevenStrandCyclic:
     @pytest.mark.slow
     def test_seven_strand_cyclic_has_contact_forces(self):
         """7本撚りサイクリック荷重で接触力が記録されている."""
-        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
-
-        mesh = make_twisted_wire_mesh(
-            7,
-            _WIRE_D,
-            _PITCH,
-            length=0.0,
-            n_elems_per_strand=4,
-            n_pitches=1.0,
-            gap=0.0005,
-        )
-        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
-        fixed_dofs = _fix_all_strand_starts(mesh)
-
-        f_ext = np.zeros(ndof_total)
-        f_per_strand = 1.0 / 7
-        for sid in range(mesh.n_strands):
-            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
-            f_ext[end_dofs[2]] = f_per_strand
-
-        elem_layer_map = mesh.build_elem_layer_map()
-        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
-        staged_steps = (max_lay + 1) * 2
-
-        mgr = _make_contact_manager(
-            use_friction=True,
-            mu=0.3,
-            n_outer_max=1,
-            k_pen_mode="beam_ei",
-            beam_E=_E,
-            beam_I=_SECTION.Iy,
-            k_pen_scaling="sqrt",
-            al_relaxation=0.01,
-            penalty_growth_factor=1.0,
-            preserve_inactive_lambda=True,
-            g_off=0.001,
-            no_deactivation_within_step=True,
-            staged_activation_steps=staged_steps,
-            elem_layer_map=elem_layer_map,
+        mesh, assemble_tangent, assemble_internal_force, fixed_dofs, f_ext, mgr = (
+            self._setup_cyclic("tension")
         )
 
-        strand_dof_ranges = []
-        for sid in range(mesh.n_strands):
-            ns, ne = mesh.strand_node_ranges[sid]
-            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
-
-        result = newton_raphson_block_contact(
+        result = newton_raphson_with_contact(
             f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1918,9 +1844,8 @@ class TestSevenStrandCyclic:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
-            n_load_steps=10,
-            max_iter=50,
+            n_load_steps=50,
+            max_iter=30,
             show_progress=False,
             broadphase_margin=0.01,
         )
