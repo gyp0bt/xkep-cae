@@ -59,13 +59,17 @@ def apply_dirichlet(
         K_csc = K.tocsc()
         fbc -= K_csc[:, nz_dofs] @ nz_vals
 
-    # 2) CSR/CSC で行・列ゼロクリア（tolil → CSR/CSC 直接操作に高速化）
+    # 2) CSR/CSC indptr/data 直接操作で行・列ゼロクリア
     Kbc = K.tocsr().copy()
     for dof in fixed_dofs:
-        Kbc[dof, :] = 0.0
+        start = Kbc.indptr[dof]
+        end = Kbc.indptr[dof + 1]
+        Kbc.data[start:end] = 0.0
     K_csc2 = Kbc.tocsc()
     for dof in fixed_dofs:
-        K_csc2[:, dof] = 0.0
+        start = K_csc2.indptr[dof]
+        end = K_csc2.indptr[dof + 1]
+        K_csc2.data[start:end] = 0.0
     Kbc = K_csc2.tocsr()
     Kbc[fixed_dofs, fixed_dofs] = 1.0
     Kbc.eliminate_zeros()

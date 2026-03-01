@@ -528,10 +528,12 @@ def _solve_saddle_point_gmres(
     rhs_u = -R_u.copy()
     K_bc_csr, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
-    # G_A の BC 処理（拘束 DOF 列をゼロに: CSC 経由で高速化）
+    # G_A の BC 処理（拘束 DOF 列をゼロに: indptr/data 直接操作）
     G_A_csc = G_A.tocsc().copy()
     for dof in fixed_dofs:
-        G_A_csc[:, dof] = 0.0
+        start = G_A_csc.indptr[dof]
+        end = G_A_csc.indptr[dof + 1]
+        G_A_csc.data[start:end] = 0.0
     G_A_bc_csr = G_A_csc.tocsr()
     G_A_bc_T = G_A_bc_csr.T.tocsr()
 

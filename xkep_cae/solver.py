@@ -376,9 +376,10 @@ def _apply_bc(
     r: np.ndarray,
     fixed_dofs: np.ndarray,
 ) -> tuple[sp.csr_matrix, np.ndarray]:
-    """境界条件適用（ベクトル化行列消去法）.
+    """境界条件適用（indptr/data 直接操作版）.
 
-    tolil() + Python ループを CSR 直接操作に置換し高速化。
+    CSR/CSC の indptr/data を直接操作し高速化。
+    scipy の __setitem__（行/列スライス代入）を回避。
     """
     K_bc = K.tocsr().copy()
     r_bc = r.copy()
@@ -386,14 +387,20 @@ def _apply_bc(
     if len(fixed_dofs) == 0:
         return K_bc, r_bc
 
-    # 行の消去（CSR 行操作は効率的）
+    # 行の消去（CSR: indptr/data 直接操作）
     for dof in fixed_dofs:
-        K_bc[dof, :] = 0.0
-    # 列の消去（CSC に変換して効率的に列操作）
+        start = K_bc.indptr[dof]
+        end = K_bc.indptr[dof + 1]
+        K_bc.data[start:end] = 0.0
+
+    # 列の消去（CSC 変換 + indptr/data 直接操作）
     K_csc = K_bc.tocsc()
     for dof in fixed_dofs:
-        K_csc[:, dof] = 0.0
+        start = K_csc.indptr[dof]
+        end = K_csc.indptr[dof + 1]
+        K_csc.data[start:end] = 0.0
     K_bc = K_csc.tocsr()
+
     # 対角に 1.0 を設定
     K_bc[fixed_dofs, fixed_dofs] = 1.0
     K_bc.eliminate_zeros()
