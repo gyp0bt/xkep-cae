@@ -29,6 +29,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
+from xkep_cae.contact.bc_utils import apply_bc_fast
 from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
 from xkep_cae.contact.law_friction import (
     compute_mu_effective,
@@ -712,17 +713,11 @@ def newton_raphson_with_contact(
                         # "full": 標準の完全接触接線剛性
                         K_total = K_T + K_c
 
-                # BC 適用
-                K_bc = K_total.tolil()
-                r_bc = residual.copy()
-                for dof in fixed_dofs:
-                    K_bc[dof, :] = 0.0
-                    K_bc[:, dof] = 0.0
-                    K_bc[dof, dof] = 1.0
-                    r_bc[dof] = 0.0
+                # BC 適用（ベクトル化版）
+                K_bc, r_bc = apply_bc_fast(K_total, residual, fixed_dofs)
 
                 du = _solve_linear_system(
-                    K_bc.tocsr(),
+                    K_bc,
                     r_bc,
                     mode=linear_solver_mode,
                     iterative_tol=iterative_tol,
@@ -1567,19 +1562,13 @@ def newton_raphson_block_contact(
                     strand_dof_ranges,
                 )
 
-                # 全体剛性行列 + BC 適用
+                # 全体剛性行列 + BC 適用（ベクトル化版）
                 K_total = K_T + K_c if K_c is not None else K_T
-                K_bc = K_total.tolil()
-                r_bc = residual.copy()
-                for dof in fixed_dofs:
-                    K_bc[dof, :] = 0.0
-                    K_bc[:, dof] = 0.0
-                    K_bc[dof, dof] = 1.0
-                    r_bc[dof] = 0.0
+                K_bc, r_bc = apply_bc_fast(K_total, residual, fixed_dofs)
 
                 # ブロック前処理付き GMRES
                 du = _solve_block_preconditioned(
-                    K_bc.tocsr(),
+                    K_bc,
                     r_bc,
                     fixed_dofs,
                     block_invs,

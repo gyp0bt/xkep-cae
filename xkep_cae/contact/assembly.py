@@ -44,12 +44,13 @@ def _contact_dofs(pair: ContactPair, ndof_per_node: int = 6) -> np.ndarray:
     Returns:
         dofs: (4 * ndof_per_node,) 全体DOFインデックス
     """
-    nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-    dofs = np.empty(4 * ndof_per_node, dtype=int)
-    for i, n in enumerate(nodes):
-        for d in range(ndof_per_node):
-            dofs[i * ndof_per_node + d] = n * ndof_per_node + d
-    return dofs
+    nodes = np.array(
+        [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]],
+        dtype=int,
+    )
+    # nodes[:, None] * ndof_per_node + arange で一括計算
+    offsets = np.arange(ndof_per_node, dtype=int)
+    return (nodes[:, None] * ndof_per_node + offsets).ravel()
 
 
 def _contact_shape_vector(pair: ContactPair) -> np.ndarray:
@@ -358,7 +359,12 @@ def compute_contact_force(
         if pair.state.status == ContactStatus.INACTIVE:
             continue
 
-        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        # 並進DOFインデックスの一括計算（4節点 × 3DOF = 12成分）
+        nodes_arr = np.array(
+            [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]],
+            dtype=int,
+        )
+        gdofs = (nodes_arr[:, None] * ndof_per_node + np.arange(3, dtype=int)).ravel()
 
         if use_line_contact:
             # --- Line-to-line Gauss 積分（Phase C6-L1）---
@@ -379,40 +385,29 @@ def compute_contact_force(
             f_local, total_p_n = compute_line_contact_force_local(pair, xA0, xA1, xB0, xB1, n_gp)
             pair.state.p_n = total_p_n
 
-            for i, node in enumerate(nodes):
-                for d in range(3):
-                    gdof = node * ndof_per_node + d
-                    f_contact[gdof] += f_local[i * 3 + d]
+            # scatter-add: ベクトル化
+            np.add.at(f_contact, gdofs, f_local)
         else:
             # --- 従来の PtP 接触力 ---
             p_n = evaluate_normal_force(pair)
 
             if p_n > 0.0:
                 g_n = _contact_shape_vector(pair)
-                for i, node in enumerate(nodes):
-                    for d in range(3):
-                        gdof = node * ndof_per_node + d
-                        f_contact[gdof] += p_n * g_n[i * 3 + d]
+                # scatter-add: ベクトル化
+                np.add.at(f_contact, gdofs, p_n * g_n)
 
         # 摩擦力の組み込み
         if line_friction_forces is not None and pair_idx in line_friction_forces:
-            # Gauss 積分済み分布摩擦力（Phase C6-L1b）
-            f_fric_local = line_friction_forces[pair_idx]
-            for i, node in enumerate(nodes):
-                for d in range(3):
-                    gdof = node * ndof_per_node + d
-                    f_contact[gdof] += f_fric_local[i * 3 + d]
+            # Gauss 積分済み分布摩擦力（Phase C6-L1b）: scatter-add
+            np.add.at(f_contact, gdofs, line_friction_forces[pair_idx])
         elif friction_forces is not None and pair_idx in friction_forces:
-            # PtP 代表点での摩擦力（従来方式）
+            # PtP 代表点での摩擦力（従来方式）: ベクトル化
             q_t = friction_forces[pair_idx]
             for axis in range(2):
                 if abs(q_t[axis]) < 1e-30:
                     continue
                 g_t = _contact_tangent_shape_vector(pair, axis)
-                for i, node in enumerate(nodes):
-                    for d in range(3):
-                        gdof = node * ndof_per_node + d
-                        f_contact[gdof] += q_t[axis] * g_t[i * 3 + d]
+                np.add.at(f_contact, gdofs, q_t[axis] * g_t)
 
     return f_contact
 
@@ -425,14 +420,14 @@ def _add_local_to_coo(
     data: list[float],
     tol: float = 1e-30,
 ) -> None:
-    """局所行列を COO リストに追加する."""
-    for i in range(12):
-        for j in range(12):
-            val = K_local[i, j]
-            if abs(val) > tol:
-                rows.append(gdofs[i])
-                cols.append(gdofs[j])
-                data.append(val)
+    """局所行列を COO リストに追加する（ベクトル化版）."""
+    mask = np.abs(K_local) > tol
+    ii, jj = np.nonzero(mask)
+    if len(ii) == 0:
+        return
+    rows.extend(gdofs[ii].tolist())
+    cols.extend(gdofs[jj].tolist())
+    data.extend(K_local[ii, jj].tolist())
 
 
 def _compute_line_contact_st_stiffness_local(
@@ -558,12 +553,12 @@ def compute_contact_stiffness(
         if pair.state.status == ContactStatus.INACTIVE:
             continue
 
-        # 全体DOFインデックス（並進DOFのみ抽出）
-        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-        gdofs = np.empty(12, dtype=int)
-        for i, node in enumerate(nodes):
-            for d in range(3):
-                gdofs[i * 3 + d] = node * ndof_per_node + d
+        # 全体DOFインデックス（並進DOFのみ抽出）: ベクトル化
+        nodes_arr = np.array(
+            [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]],
+            dtype=int,
+        )
+        gdofs = (nodes_arr[:, None] * ndof_per_node + np.arange(3, dtype=int)).ravel()
 
         if use_line_contact:
             # --- Line-to-line Gauss 積分（Phase C6-L1）---
@@ -605,17 +600,12 @@ def compute_contact_stiffness(
 
             _add_local_to_coo(K_line_local, gdofs, rows, cols, data)
         else:
-            # --- 従来の PtP 法線接線剛性（主項）---
+            # --- 従来の PtP 法線接線剛性（主項）: np.outer化 ---
             k_eff = normal_force_linearization(pair)
             if k_eff > 0.0:
                 g_n = _contact_shape_vector(pair)
-                for i in range(12):
-                    for j in range(12):
-                        val = k_eff * g_n[i] * g_n[j]
-                        if abs(val) > 1e-30:
-                            rows.append(gdofs[i])
-                            cols.append(gdofs[j])
-                            data.append(val)
+                K_n_local = k_eff * np.outer(g_n, g_n)
+                _add_local_to_coo(K_n_local, gdofs, rows, cols, data)
 
             # --- 幾何剛性（Phase C5）---
             if use_geometric_stiffness and pair.state.p_n > 0.0:
@@ -658,24 +648,19 @@ def compute_contact_stiffness(
             K_fric_local = line_friction_stiffnesses[pair_idx]
             _add_local_to_coo(K_fric_local, gdofs, rows, cols, data)
         elif friction_tangents is not None and pair_idx in friction_tangents:
-            # PtP 代表点での摩擦接線剛性（従来方式）
+            # PtP 代表点での摩擦接線剛性（np.outer化）
             D_t = friction_tangents[pair_idx]
-            g_t = [
-                _contact_tangent_shape_vector(pair, 0),
-                _contact_tangent_shape_vector(pair, 1),
-            ]
+            g_t0 = _contact_tangent_shape_vector(pair, 0)
+            g_t1 = _contact_tangent_shape_vector(pair, 1)
+            g_t = [g_t0, g_t1]
+            K_fric_local = np.zeros((12, 12))
             for a1 in range(2):
                 for a2 in range(2):
                     d_val = D_t[a1, a2]
                     if abs(d_val) < 1e-30:
                         continue
-                    for i in range(12):
-                        for j in range(12):
-                            val = d_val * g_t[a1][i] * g_t[a2][j]
-                            if abs(val) > 1e-30:
-                                rows.append(gdofs[i])
-                                cols.append(gdofs[j])
-                                data.append(val)
+                    K_fric_local += d_val * np.outer(g_t[a1], g_t[a2])
+            _add_local_to_coo(K_fric_local, gdofs, rows, cols, data)
 
     if not rows:
         return sp.csr_matrix((ndof_total, ndof_total))
