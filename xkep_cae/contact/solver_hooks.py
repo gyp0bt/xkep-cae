@@ -959,8 +959,8 @@ def newton_raphson_with_contact(
                         f"  WARNING: Step {step}, outer {outer} "
                         f"did not converge in {max_iter} iterations."
                     )
-                if outer == 0:
-                    # 最初の outer で発散 → 回復不能
+                if outer == n_outer_max - 1:
+                    # 最終 outer でも発散 → 回復不能
                     return ContactSolveResult(
                         u=u,
                         converged=False,
@@ -974,18 +974,18 @@ def newton_raphson_with_contact(
                         contact_force_history=contact_force_history,
                         graph_history=graph_history,
                     )
-                # outer > 0: 前回の outer で inner が収束しているため、
-                # 現在の解を受容してステップ完了とする。
-                # 商用ソルバー（Abaqus/LS-DYNA）の "accept on best iteration"
-                # と同等の挙動。
+                # outer < n_outer_max - 1: 幾何更新して次の outer 反復へ進む。
+                # 接触状態の更新により収束が改善される可能性がある。
                 if show_progress:
                     print(
                         f"  Step {step}, outer {outer}: "
-                        f"accepting current solution (inner stalled, "
-                        f"active={manager.n_active})"
+                        f"inner not converged, continuing to next outer "
+                        f"(active={manager.n_active})"
                     )
-                step_converged = True
-                break
+                # 幾何更新して次の outer 反復へ
+                coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
+                manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
+                continue
 
             # --- Outer 収束判定 ---
             # 幾何更新して (s,t) の変化を検査
@@ -1741,7 +1741,8 @@ def newton_raphson_block_contact(
                         f"  WARNING: Step {step}, outer {outer} "
                         f"did not converge in {max_iter} iterations."
                     )
-                if outer == 0:
+                if outer == n_outer_max - 1:
+                    # 最終 outer 反復でも未収束 → 失敗を返す
                     return ContactSolveResult(
                         u=u,
                         converged=False,
@@ -1754,14 +1755,13 @@ def newton_raphson_block_contact(
                         contact_force_history=contact_force_history,
                         graph_history=graph_history,
                     )
+                # 未収束だが残りの outer 反復がある → 接触幾何・AL乗数を更新して再試行
                 if show_progress:
                     print(
                         f"  Step {step}, outer {outer}: "
-                        f"accepting current solution (inner stalled, "
-                        f"active={manager.n_active})"
+                        f"inner not converged, retrying with updated geometry "
+                        f"(active={manager.n_active})"
                     )
-                step_converged = True
-                break
 
             # --- Outer 収束判定 ---
             coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
