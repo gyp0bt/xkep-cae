@@ -28,7 +28,11 @@ Pythonループのnumpyベクトル化および境界条件適用の高速化を
 ### 2. NR境界条件適用の高速化
 
 **変更前**: `K.tolil()` + Python forループ（各固定DOFごとに行・列をゼロ化）
-**変更後**: CSR/CSC直接操作（`K.tocsr()` → 行消去 → `tocsc()` → 列消去 → `tocsr()`）
+**変更後（v2）**: CSR/CSC の `indptr/data` 直接操作
+
+**注記**: 初期実装では scipy の `__setitem__`（`K[dof, :] = 0.0`）を使用していたが、
+ベンチマークで tolil より遅いことが判明。`indptr/data` 直接スライス操作に修正し
+78-135倍の高速化を達成。
 
 **適用箇所**:
 - `xkep_cae/solver.py`: `newton_raphson()`, `_apply_bc()`, `arc_length()`
@@ -74,9 +78,31 @@ Pythonループのnumpyベクトル化および境界条件適用の高速化を
 | PtP剛性: 12×12 loop → np.outer | ✅ 実施 | ⭐⭐⭐ |
 | 摩擦剛性: 4重ループ → np.outer | ✅ 実施 | ⭐⭐⭐ |
 | _add_local_to_coo: ループ → np.nonzero | ✅ 実施 | ⭐⭐⭐ |
-| BC適用: tolil → CSR/CSC | ✅ 実施 | ⭐⭐⭐ |
+| BC適用: tolil → indptr/data 直接操作 | ✅ 実施（v2） | ⭐⭐⭐ |
 | Gauss積分バッチ化 | 未着手 | ⭐⭐ |
 | Narrowphaseペア並列化 | 未着手 | ⭐⭐ |
+
+## ベンチマーク実測結果（4096+要素）
+
+**テストファイル**: `tests/test_optimization_benchmark.py`
+
+| 最適化対象 | 旧実装 | 新実装 | 速度比 |
+|-----------|--------|--------|--------|
+| `_add_local_to_coo` (8192回) | 0.465s | 0.225s | **2.1x** |
+| `compute_contact_force` (4096ペア) | 0.076s | 0.056s | **1.4x** |
+| `compute_contact_stiffness` (4096ペア) | 1.10s | 0.31s | **3.6x** |
+| BC適用 (ndof=24576, fixed=491) | 2.93s | 0.037s | **78x** |
+| BC適用 (ndof=49152, fixed=983) | 12.10s | 0.090s | **135x** |
+| **統合** (4096ペア+BC, ndof=98904) | 33.0s | 0.47s | **71x** |
+| Broadphase AABB (4096 seg) | — | 0.075s | — |
+| Broadphase AABB (8192 seg) | — | 0.112s | — |
+
+**SparseEfficiencyWarning**: 38922 → 17091 に大幅削減（indptr直接操作により）
+
+### BC適用の教訓
+
+scipy の `__setitem__`（`K[dof, :] = 0.0`）は CSR 行列でも内部で構造変更を伴い、
+tolil よりも遅い。`indptr/data` の直接スライス操作が最速。
 
 ## TODO
 
@@ -85,11 +111,12 @@ Pythonループのnumpyベクトル化および境界条件適用の高速化を
 - [ ] 10万要素規模での実測ベンチマーク
 - [ ] Gauss積分のバッチ化（複数ペア同時評価）
 - [ ] Narrowphaseペア更新の並列化
+- [ ] Rust/numba によるさらなる高速化（接触アセンブリ全体）
 
 ## 懸念事項
 
-- `SparseEfficiencyWarning` が CSC行列への代入時に発生するが、
-  `tolil()`変換を避けた方が全体としては高速（トレードオフ）
+- `SparseEfficiencyWarning` は対角設定 (`K[fixed, fixed] = 1.0`) で残存するが、
+  indptr 直接操作により大部分を解消。残存分はトレードオフとして許容
 - 修正NR法は収束性が悪化する場合がある（反復数20-50%増）。
   接触問題では K_T が急激に変化するため、interval=1 が安全
 - Broadphaseのスケーリングテスト閾値緩和は暫定措置。
