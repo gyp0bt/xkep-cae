@@ -458,12 +458,22 @@ def _solve_linear_system(
 
 
 def _apply_bc(K_lil, rhs, fixed_dofs):
-    """境界条件を適用する（in-place 変更）."""
+    """境界条件を適用する（in-place 変更）.
+
+    LIL/CSR/CSC いずれの形式でも動作する。
+    """
     for dof in fixed_dofs:
         K_lil[dof, :] = 0.0
         K_lil[:, dof] = 0.0
         K_lil[dof, dof] = 1.0
         rhs[dof] = 0.0
+
+
+def _apply_bc_csr(K, rhs, fixed_dofs):
+    """境界条件を適用する（CSR/CSC ベース高速版、コピーを返す）."""
+    from xkep_cae.contact.bc_utils import apply_bc_fast
+
+    return apply_bc_fast(K, rhs, fixed_dofs)
 
 
 def _solve_saddle_point_gmres(
@@ -514,17 +524,15 @@ def _solve_saddle_point_gmres(
     # K_eff = K_T + k_pen * G_A^T * G_A
     K_eff = K_T + k_pen * (G_A.T @ G_A)
 
-    # BC 適用
-    K_bc = K_eff.tolil()
+    # BC 適用（高速版）
     rhs_u = -R_u.copy()
-    _apply_bc(K_bc, rhs_u, fixed_dofs)
-    K_bc_csr = K_bc.tocsr()
+    K_bc_csr, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
-    # G_A の BC 処理（拘束 DOF 列をゼロに）
-    G_A_bc = G_A.tolil()
+    # G_A の BC 処理（拘束 DOF 列をゼロに: CSC 経由で高速化）
+    G_A_csc = G_A.tocsc().copy()
     for dof in fixed_dofs:
-        G_A_bc[:, dof] = 0.0
-    G_A_bc_csr = G_A_bc.tocsr()
+        G_A_csc[:, dof] = 0.0
+    G_A_bc_csr = G_A_csc.tocsr()
     G_A_bc_T = G_A_bc_csr.T.tocsr()
 
     # --- ILU 前処理構築 ---
@@ -659,11 +667,9 @@ def _solve_saddle_point_direct(
     # K_eff = K_T + k_pen * G_A^T * G_A （ペナルティ正則化）
     K_eff = K_T + k_pen * (G_A.T @ G_A)
 
-    # BC 適用
-    K_bc = K_eff.tolil()
+    # BC 適用（高速版）
     rhs_u = -R_u.copy()
-    _apply_bc(K_bc, rhs_u, fixed_dofs)
-    K_bc_csr = K_bc.tocsr()
+    K_bc_csr, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
     # Step 1: v0 = K_eff^{-1} * (-R_u)
     v0 = _solve_linear_system(K_bc_csr, rhs_u, **solve_kw)
@@ -851,12 +857,9 @@ def _solve_augmented_friction_system(
     # [K_eff, -G_n_A^T, -G_t_A^T]   [-R_u ]
     # [J_n_u,  J_n_n,    0       ] = [-C_n_A]
     # [J_t_u,  J_t_n,    J_t_t   ]   [-C_t_A]
-    K_eff_lil = K_eff.tolil()
-
-    # BC を K_eff に適用
+    # BC を K_eff に適用（高速版）
     rhs_u = -R_u.copy()
-    _apply_bc(K_eff_lil, rhs_u, fixed_dofs)
-    K_eff_bc = K_eff_lil.tocsr()
+    K_eff_bc, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
     # G の BC 処理（拘束 DOF 列をゼロに）
     if n_n > 0:
@@ -984,16 +987,15 @@ def _solve_saddle_point_contact(
     auto_block = linear_solver == "auto" and ndof >= gmres_dof_threshold and n_active > 0
 
     if n_active == 0:
-        K_bc = K_T.tolil()
         rhs = -R_u.copy()
-        _apply_bc(K_bc, rhs, fixed_dofs)
+        K_bc_csr, rhs = _apply_bc_csr(K_T, rhs, fixed_dofs)
         solve_kw = dict(
             mode=linear_solver,
             iterative_tol=iterative_tol,
             ilu_drop_tol=ilu_drop_tol,
             gmres_dof_threshold=gmres_dof_threshold,
         )
-        du = _solve_linear_system(K_bc.tocsr(), rhs, **solve_kw)
+        du = _solve_linear_system(K_bc_csr, rhs, **solve_kw)
         return du, np.array([])
 
     if use_block_preconditioner or auto_block:
