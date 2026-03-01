@@ -221,6 +221,8 @@ class ContactConfig:
     ncp_block_preconditioner: bool = False  # NCP 鞍点系のブロック前処理付き GMRES（Phase C6-L4）
     exclude_same_layer: bool = False  # 同層素線間の接触ペアを除外（Phase S1: ~80%ペア削減）
     use_mortar: bool = False  # Mortar 離散化の有効化（Phase C6-L5）
+    midpoint_prescreening: bool = True  # 中点距離プリスクリーニングの有効化
+    prescreening_margin: float = 0.0  # プリスクリーニング追加マージン（0=自動推定）
 
 
 @dataclass
@@ -344,6 +346,31 @@ class ContactManager:
                 if layer_i == layer_j and layer_i >= 0:
                     continue
             candidates.append((i, j))
+
+        # 中点距離プリスクリーニング（ベクトル化）
+        # Broadphase AABB は軸整列で粗いため、3D 中点間距離でタイトに絞る
+        if self.config.midpoint_prescreening and candidates:
+            cand_arr = np.array(candidates, dtype=int)
+            n0 = conn[cand_arr[:, 0], 0]  # 要素A 始点ノード
+            n1 = conn[cand_arr[:, 0], 1]  # 要素A 終点ノード
+            m0 = conn[cand_arr[:, 1], 0]  # 要素B 始点ノード
+            m1 = conn[cand_arr[:, 1], 1]  # 要素B 終点ノード
+            mid_a = 0.5 * (coords[n0] + coords[n1])  # (m, 3)
+            mid_b = 0.5 * (coords[m0] + coords[m1])  # (m, 3)
+            half_len_a = 0.5 * np.linalg.norm(coords[n1] - coords[n0], axis=1)
+            half_len_b = 0.5 * np.linalg.norm(coords[m1] - coords[m0], axis=1)
+            mid_dist = np.linalg.norm(mid_a - mid_b, axis=1)  # (m,)
+            r_a = r_arr[cand_arr[:, 0]]
+            r_b = r_arr[cand_arr[:, 1]]
+            # 最小可能距離: 中点間距離 - 半長の和（セグメント端点が最も近い場合）
+            min_possible_dist = np.maximum(0.0, mid_dist - half_len_a - half_len_b)
+            # 接触カットオフ: 半径の和 + マージン
+            extra_margin = self.config.prescreening_margin
+            if extra_margin <= 0.0:
+                extra_margin = float(np.mean(r_a + r_b)) * 0.5
+            cutoff = r_a + r_b + extra_margin
+            keep = min_possible_dist <= cutoff
+            candidates = [candidates[k] for k in range(len(candidates)) if keep[k]]
 
         # 既存ペアをマップ化（(elem_a, elem_b) → index）
         existing: dict[tuple[int, int], int] = {}

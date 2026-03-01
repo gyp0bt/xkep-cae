@@ -83,48 +83,50 @@ def broadphase_aabb(
     expand = r_arr[:, None] + margin  # (n, 1)
     lo_all = np.minimum(x0_arr, x1_arr) - expand  # (n, 3)
     hi_all = np.maximum(x0_arr, x1_arr) + expand  # (n, 3)
-    aabbs: list[tuple[np.ndarray, np.ndarray]] = [(lo_all[i], hi_all[i]) for i in range(n)]
 
-    # セルサイズ自動推定: 各 AABB の最大辺長の平均
+    # セルサイズ自動推定（ベクトル化: np.max(axis=1) 一括計算）
     if cell_size is None:
-        sizes = []
-        for lo, hi in aabbs:
-            sizes.append(float(np.max(hi - lo)))
-        cell_size = max(np.mean(sizes) * 1.5, 1e-30)
+        sizes = np.max(hi_all - lo_all, axis=1)  # (n,)
+        cell_size = max(float(np.mean(sizes)) * 1.5, 1e-30)
 
     inv_cell = 1.0 / cell_size
 
+    # セルインデックスを一括計算（per-segment np.floor を排除）
+    ilo_all = np.floor(lo_all * inv_cell).astype(np.intp)  # (n, 3)
+    ihi_all = np.floor(hi_all * inv_cell).astype(np.intp)  # (n, 3)
+
     # 空間ハッシュ: 各セグメントが占めるセルにビニング
     grid: dict[tuple[int, int, int], list[int]] = defaultdict(list)
-    segment_cells: list[list[tuple[int, int, int]]] = []
 
-    for i, (lo, hi) in enumerate(aabbs):
-        ilo = np.floor(lo * inv_cell).astype(int)
-        ihi = np.floor(hi * inv_cell).astype(int)
-        cells = []
-        for ix in range(ilo[0], ihi[0] + 1):
-            for iy in range(ilo[1], ihi[1] + 1):
-                for iz in range(ilo[2], ihi[2] + 1):
-                    key = (ix, iy, iz)
-                    grid[key].append(i)
-                    cells.append(key)
-        segment_cells.append(cells)
+    for i in range(n):
+        ix0 = int(ilo_all[i, 0])
+        iy0 = int(ilo_all[i, 1])
+        iz0 = int(ilo_all[i, 2])
+        ix1 = int(ihi_all[i, 0])
+        iy1 = int(ihi_all[i, 1])
+        iz1 = int(ihi_all[i, 2])
+        for ix in range(ix0, ix1 + 1):
+            for iy in range(iy0, iy1 + 1):
+                for iz in range(iz0, iz1 + 1):
+                    grid[(ix, iy, iz)].append(i)
 
-    # 候補ペア抽出: 同一セル内のペアで AABB 重複を確認
+    # 候補ペア収集（重複除去のみ、AABB チェックは後でバッチ処理）
     seen: set[tuple[int, int]] = set()
-    candidates: list[tuple[int, int]] = []
-
     for cell_indices in grid.values():
-        for a_idx in range(len(cell_indices)):
-            for b_idx in range(a_idx + 1, len(cell_indices)):
+        nc = len(cell_indices)
+        if nc < 2:
+            continue
+        for a_idx in range(nc):
+            for b_idx in range(a_idx + 1, nc):
                 i = cell_indices[a_idx]
                 j = cell_indices[b_idx]
-                pair_key = (min(i, j), max(i, j))
-                if pair_key in seen:
-                    continue
-                seen.add(pair_key)
-                # AABB の精密重複判定
-                if _aabb_overlap(aabbs[i][0], aabbs[i][1], aabbs[j][0], aabbs[j][1]):
-                    candidates.append(pair_key)
+                seen.add((i, j) if i < j else (j, i))
 
-    return candidates
+    if not seen:
+        return []
+
+    # バッチ AABB 重複判定（ベクトル化: 全ペア一括で numpy 演算）
+    pairs_arr = np.array(list(seen), dtype=np.intp)  # (m, 2)
+    pi, pj = pairs_arr[:, 0], pairs_arr[:, 1]
+    overlap = np.all(lo_all[pi] <= hi_all[pj], axis=1) & np.all(lo_all[pj] <= hi_all[pi], axis=1)
+    return [(int(r[0]), int(r[1])) for r in pairs_arr[overlap]]
