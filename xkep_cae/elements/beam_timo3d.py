@@ -1140,8 +1140,12 @@ def assemble_cr_beam3d(
     scf: float | None = None,
     stiffness: bool = True,
     internal_force: bool = True,
-) -> tuple[np.ndarray | None, np.ndarray | None]:
-    """Corotational Timoshenko 3D 梁のグローバルアセンブリ.
+    sparse: bool = True,
+) -> tuple:
+    """Corotational Timoshenko 3D 梁のグローバルアセンブリ（COO/CSR高速版）.
+
+    edofs事前一括計算 + COO蓄積 → CSR変換で高速化。
+    密行列の np.ix_ アクセスを排除し、メモリを O(nnz) に削減。
 
     Args:
         nodes_init: (n_nodes, 3) 初期節点座標
@@ -1154,28 +1158,83 @@ def assemble_cr_beam3d(
         scf: スレンダネス補償係数
         stiffness: True の場合、接線剛性行列を計算
         internal_force: True の場合、内力ベクトルを計算
+        sparse: True → CSR行列で返す（デフォルト）。False → 密ndarray。
 
     Returns:
-        (K_T, f_int): 接線剛性行列 (ndof, ndof) と内力ベクトル (ndof,)
+        (K_T, f_int): 接線剛性行列と内力ベクトル (ndof,)
+            sparse=True: K_T は scipy.sparse.csr_matrix
+            sparse=False: K_T は (ndof, ndof) ndarray
             要求されなかった場合は None
     """
     n_nodes = len(nodes_init)
+    n_elems = len(connectivity)
     ndof = 6 * n_nodes
+    m = 12  # DOF per element (2 nodes × 6 DOF)
 
-    K_T_global = np.zeros((ndof, ndof), dtype=float) if stiffness else None
     f_int_global = np.zeros(ndof, dtype=float) if internal_force else None
 
-    for elem in connectivity:
-        n1, n2 = int(elem[0]), int(elem[1])
+    # --- edofs 事前一括計算 ---
+    conn_int = connectivity.astype(np.int64)
+    dof_offsets = np.arange(6, dtype=np.int64)
+    all_edofs = (conn_int[:, :, None] * 6 + dof_offsets[None, None, :]).reshape(n_elems, m)
+
+    # --- sparse=False: 密行列に直接書き込み（小規模問題向け） ---
+    if stiffness and not sparse:
+        K_T_dense = np.zeros((ndof, ndof), dtype=float)
+        for i in range(n_elems):
+            n1, n2 = int(conn_int[i, 0]), int(conn_int[i, 1])
+            coords = nodes_init[np.array([n1, n2])]
+            edofs = all_edofs[i]
+            u_elem = u[edofs]
+            if internal_force:
+                f_e = timo_beam3d_cr_internal_force(
+                    coords,
+                    u_elem,
+                    E,
+                    G,
+                    A,
+                    Iy,
+                    Iz,
+                    J,
+                    kappa_y,
+                    kappa_z,
+                    v_ref=v_ref,
+                    scf=scf,
+                )
+                f_int_global[edofs] += f_e
+            K_e = timo_beam3d_cr_tangent(
+                coords,
+                u_elem,
+                E,
+                G,
+                A,
+                Iy,
+                Iz,
+                J,
+                kappa_y,
+                kappa_z,
+                v_ref=v_ref,
+                scf=scf,
+            )
+            K_T_dense[np.ix_(edofs, edofs)] += K_e
+        return K_T_dense, f_int_global
+
+    # --- COO インデックス事前計算 (stiffness + sparse用) ---
+    if stiffness:
+        import scipy.sparse as sp
+
+        block_nnz = m * m  # 144
+        total_nnz = n_elems * block_nnz
+        coo_rows = np.repeat(all_edofs, m, axis=1).ravel()
+        coo_cols = np.tile(all_edofs, (1, m)).ravel()
+        coo_data = np.empty(total_nnz, dtype=float)
+
+    # --- 要素ループ ---
+    for i in range(n_elems):
+        n1, n2 = int(conn_int[i, 0]), int(conn_int[i, 1])
         coords = nodes_init[np.array([n1, n2])]
-
-        # 要素 DOF インデックス
-        edofs = np.array(
-            [6 * n1 + d for d in range(6)] + [6 * n2 + d for d in range(6)],
-            dtype=int,
-        )
+        edofs = all_edofs[i]
         u_elem = u[edofs]
-
         if internal_force:
             f_e = timo_beam3d_cr_internal_force(
                 coords,
@@ -1192,7 +1251,6 @@ def assemble_cr_beam3d(
                 scf=scf,
             )
             f_int_global[edofs] += f_e
-
         if stiffness:
             K_e = timo_beam3d_cr_tangent(
                 coords,
@@ -1208,9 +1266,16 @@ def assemble_cr_beam3d(
                 v_ref=v_ref,
                 scf=scf,
             )
-            K_T_global[np.ix_(edofs, edofs)] += K_e
+            offset = i * block_nnz
+            coo_data[offset : offset + block_nnz] = K_e.ravel()
 
-    return K_T_global, f_int_global
+    # --- CSR 変換 ---
+    if stiffness:
+        K_T_csr = sp.csr_matrix((coo_data, (coo_rows, coo_cols)), shape=(ndof, ndof))
+        K_T_csr.sum_duplicates()
+        return K_T_csr, f_int_global
+
+    return None, f_int_global
 
 
 # ---------------------------------------------------------------------------

@@ -177,7 +177,7 @@ def _make_cr_assemblers(node_coords_ref, connectivity, ndof_total):
             stiffness=True,
             internal_force=False,
         )
-        return sp.csr_matrix(K_T)
+        return K_T
 
     def assemble_internal_force(u):
         _, f_int = assemble_cr_beam3d(

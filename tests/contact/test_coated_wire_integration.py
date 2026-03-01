@@ -16,7 +16,6 @@
 
 import numpy as np
 import pytest
-import scipy.sparse as sp
 
 from xkep_cae.contact.pair import (
     ContactConfig,
@@ -123,7 +122,7 @@ def _make_cr_assembler_coated(mesh, coating):
             stiffness=True,
             internal_force=False,
         )
-        return sp.csr_matrix(K_T)
+        return K_T
 
     def assemble_internal_force(u):
         _, f_int = assemble_cr_beam3d(
@@ -168,7 +167,7 @@ def _make_cr_assembler_bare(mesh):
             stiffness=True,
             internal_force=False,
         )
-        return sp.csr_matrix(K_T)
+        return K_T
 
     def assemble_internal_force(u):
         _, f_int = assemble_cr_beam3d(

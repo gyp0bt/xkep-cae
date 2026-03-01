@@ -17,9 +17,9 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 完了。1903テスト（fast: 1560 / slow: 343）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 + CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング 完了。1886テスト（fast: 1542 / slow: 344）。**
 
-**次のマイルストーン**: CR梁アセンブリ高速化 → S3パラメータチューニング（収束性改善）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
+**次のマイルストーン**: S3パラメータチューニング（収束性改善）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
 ### 完了済みフェーズ一覧
 

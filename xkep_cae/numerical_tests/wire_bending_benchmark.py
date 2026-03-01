@@ -30,7 +30,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-import scipy.sparse as sp
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
 from xkep_cae.contact.solver_hooks import (
@@ -128,7 +127,7 @@ def _make_cr_assemblers(mesh: TwistedWireMesh, E: float, G: float, section: Beam
             stiffness=True,
             internal_force=False,
         )
-        return sp.csr_matrix(K_T)
+        return K_T
 
     def assemble_internal_force(u):
         _, f_int = assemble_cr_beam3d(
