@@ -22,6 +22,7 @@ Phase C5: 幾何微分込み一貫接線 + PDAS Active-set + slip consistent tan
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -44,6 +45,85 @@ from xkep_cae.contact.law_normal import (
 )
 from xkep_cae.contact.line_search import backtracking_line_search, merit_function
 from xkep_cae.contact.pair import ContactManager, ContactStatus
+
+
+@dataclass
+class TimingRecord:
+    """NRソルバー各工程の1回分の処理時間記録."""
+
+    step: int
+    outer: int
+    inner: int
+    phase: str
+    elapsed_s: float
+
+
+@dataclass
+class BenchmarkTimingCollector:
+    """ベンチマーク用タイミング収集器.
+
+    newton_raphson_with_contact に渡すことで、各工程の処理時間を
+    自動的に記録する。収束性と処理時間のボトルネック分析用。
+
+    使用方法::
+
+        timing = BenchmarkTimingCollector()
+        result = newton_raphson_with_contact(..., timing=timing)
+        print(timing.summary_table())
+    """
+
+    records: list[TimingRecord] = field(default_factory=list)
+
+    def record(self, step: int, outer: int, inner: int, phase: str, elapsed_s: float) -> None:
+        """タイミング記録を追加."""
+        self.records.append(TimingRecord(step, outer, inner, phase, elapsed_s))
+
+    def phase_totals(self) -> dict[str, float]:
+        """工程ごとの合計時間 (秒) を返す."""
+        totals: dict[str, float] = {}
+        for r in self.records:
+            totals[r.phase] = totals.get(r.phase, 0.0) + r.elapsed_s
+        return totals
+
+    def phase_counts(self) -> dict[str, int]:
+        """工程ごとの呼び出し回数を返す."""
+        counts: dict[str, int] = {}
+        for r in self.records:
+            counts[r.phase] = counts.get(r.phase, 0) + 1
+        return counts
+
+    def total_time(self) -> float:
+        """全記録の合計時間 (秒)."""
+        return sum(r.elapsed_s for r in self.records)
+
+    def step_times(self) -> dict[int, float]:
+        """荷重ステップごとの合計時間 (秒)."""
+        step_t: dict[int, float] = {}
+        for r in self.records:
+            step_t[r.step] = step_t.get(r.step, 0.0) + r.elapsed_s
+        return step_t
+
+    def summary_table(self) -> str:
+        """工程ごとの集計テーブル（表示用文字列）."""
+        totals = self.phase_totals()
+        counts = self.phase_counts()
+        total = self.total_time()
+        if total < 1e-30:
+            return "(no timing data)"
+
+        lines = [
+            f"{'Phase':<30} {'Total(s)':>10} {'Count':>6} {'Avg(ms)':>10} {'%':>6}",
+            "-" * 66,
+        ]
+        for phase in sorted(totals, key=lambda p: -totals[p]):
+            t = totals[phase]
+            c = counts[phase]
+            avg_ms = (t / c * 1000) if c > 0 else 0.0
+            pct = t / total * 100
+            lines.append(f"{phase:<30} {t:>10.4f} {c:>6} {avg_ms:>10.3f} {pct:>5.1f}%")
+        lines.append("-" * 66)
+        lines.append(f"{'TOTAL':<30} {total:>10.4f}")
+        return "\n".join(lines)
 
 
 @dataclass
@@ -245,6 +325,7 @@ def newton_raphson_with_contact(
     broadphase_margin: float = 0.0,
     broadphase_cell_size: float | None = None,
     f_ext_base: np.ndarray | None = None,
+    timing: BenchmarkTimingCollector | None = None,
 ) -> ContactSolveResult:
     """接触付き Newton-Raphson（Outer/Inner 分離）.
 
@@ -276,6 +357,7 @@ def newton_raphson_with_contact(
         broadphase_cell_size: broadphase セルサイズ
         f_ext_base: (ndof,) ベース外荷重（サイクリック荷重用）。
             設定時の実効荷重: f_ext = f_ext_base + lam * f_ext_total
+        timing: ベンチマーク用タイミング収集器。指定時に各工程の処理時間を記録。
 
     Returns:
         ContactSolveResult
@@ -390,6 +472,7 @@ def newton_raphson_with_contact(
             _is_first_outer = outer == 0 and step == 1
             _skip_detect = no_deact and not _is_first_outer
             if not _skip_detect:
+                _t0 = time.perf_counter()
                 manager.detect_candidates(
                     coords_def,
                     connectivity,
@@ -397,6 +480,8 @@ def newton_raphson_with_contact(
                     margin=broadphase_margin,
                     cell_size=broadphase_cell_size,
                 )
+                if timing is not None:
+                    timing.record(step, outer, -1, "broadphase", time.perf_counter() - _t0)
 
             # --- 段階的接触アクティベーション ---
             if manager.config.staged_activation_steps > 0 and not _skip_detect:
@@ -417,7 +502,10 @@ def newton_raphson_with_contact(
 
             # no_deactivation_within_step: 非活性化を全面禁止（活性化のみ許可）
             _allow_deact = not no_deact
+            _t0 = time.perf_counter()
             manager.update_geometry(coords_def, allow_deactivation=_allow_deact)
+            if timing is not None:
+                timing.record(step, outer, -1, "geometry_update", time.perf_counter() - _t0)
 
             # --- 摩擦履歴の平行輸送: 旧フレーム → 新フレーム ---
             if use_friction and old_frames:
@@ -529,6 +617,7 @@ def newton_raphson_with_contact(
                                 pair.state.p_n = 0.0
 
                 # --- 摩擦 return mapping ---
+                _t0_fric = time.perf_counter()
                 friction_forces: dict[int, np.ndarray] = {}
                 friction_tangents: dict[int, np.ndarray] = {}
                 # Line contact 摩擦（Phase C6-L1b）
@@ -634,11 +723,21 @@ def newton_raphson_with_contact(
                                 friction_forces[pair_idx] = q_t
                                 D_t = friction_tangent_2x2(pair, mu_eff)
                                 friction_tangents[pair_idx] = D_t
+                if timing is not None:
+                    timing.record(
+                        step, outer, it, "friction_mapping", time.perf_counter() - _t0_fric
+                    )
 
                 # 構造内力
+                _t0 = time.perf_counter()
                 f_int = assemble_internal_force(u)
+                if timing is not None:
+                    timing.record(
+                        step, outer, it, "structural_internal_force", time.perf_counter() - _t0
+                    )
 
                 # 接触内力（法線 + 摩擦）
+                _t0 = time.perf_counter()
                 f_c_raw = compute_contact_force(
                     manager,
                     ndof,
@@ -647,6 +746,8 @@ def newton_raphson_with_contact(
                     node_coords=_line_coords,
                     line_friction_forces=_line_fric_forces if _line_fric_forces else None,
                 )
+                if timing is not None:
+                    timing.record(step, outer, it, "contact_force", time.perf_counter() - _t0)
 
                 # Contact damping: under-relaxation で接触力の急変を抑制
                 if contact_damping < 1.0 and f_c_prev is not None:
@@ -679,18 +780,22 @@ def newton_raphson_with_contact(
 
                 # 接線剛性（構造 + 接触法線 + 接触摩擦）
                 # Modified Newton: K_T を初回とrefresh間隔でのみ再計算
+                _t0 = time.perf_counter()
                 if use_modified_newton:
                     if it == 0 or it % modified_newton_refresh == 0:
                         K_T_frozen = assemble_tangent(u)
                     K_T = K_T_frozen
                 else:
                     K_T = assemble_tangent(u)
+                if timing is not None:
+                    timing.record(step, outer, it, "structural_tangent", time.perf_counter() - _t0)
                 # 接触接線モードに応じた K_c の組込み
                 if contact_tangent_mode == "structural_only":
                     # Uzawa型: 接触剛性をシステム行列に含めない
                     # 接触力は残差 f_c にのみ反映される
                     K_total = K_T
                 else:
+                    _t0 = time.perf_counter()
                     K_c = compute_contact_stiffness(
                         manager,
                         ndof,
@@ -702,6 +807,10 @@ def newton_raphson_with_contact(
                             _line_fric_stiffs if _line_fric_stiffs else None
                         ),
                     )
+                    if timing is not None:
+                        timing.record(
+                            step, outer, it, "contact_stiffness", time.perf_counter() - _t0
+                        )
                     if contact_tangent_mode == "diagonal":
                         # 対角近似: K_c の対角成分のみを使用
                         K_total = K_T + sp.diags(K_c.diagonal())
@@ -714,8 +823,12 @@ def newton_raphson_with_contact(
                         K_total = K_T + K_c
 
                 # BC 適用（ベクトル化版）
+                _t0 = time.perf_counter()
                 K_bc, r_bc = apply_bc_fast(K_total, residual, fixed_dofs)
+                if timing is not None:
+                    timing.record(step, outer, it, "bc_apply", time.perf_counter() - _t0)
 
+                _t0 = time.perf_counter()
                 du = _solve_linear_system(
                     K_bc,
                     r_bc,
@@ -723,6 +836,8 @@ def newton_raphson_with_contact(
                     iterative_tol=iterative_tol,
                     ilu_drop_tol=ilu_drop_tol,
                 )
+                if timing is not None:
+                    timing.record(step, outer, it, "linear_solve", time.perf_counter() - _t0)
 
                 # エネルギーノルム
                 energy = abs(float(np.dot(du, residual)))
@@ -741,6 +856,7 @@ def newton_raphson_with_contact(
                     )
 
                 # --- Line search ---
+                _t0_ls = time.perf_counter()
                 if use_line_search and manager.n_active > 0:
                     phi_current = merit_function(
                         residual,
@@ -811,6 +927,8 @@ def newton_raphson_with_contact(
                         u,
                         ndof_per_node,
                     )
+                    if timing is not None:
+                        timing.record(step, outer, it, "line_search", time.perf_counter() - _t0_ls)
                 else:
                     u += du
 
@@ -871,6 +989,7 @@ def newton_raphson_with_contact(
 
             # --- Outer 収束判定 ---
             # 幾何更新して (s,t) の変化を検査
+            _t0 = time.perf_counter()
             coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
             manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
 
@@ -895,6 +1014,8 @@ def newton_raphson_with_contact(
             preserve_inactive = manager.config.preserve_inactive_lambda
             for pair in manager.pairs:
                 update_al_multiplier(pair, omega=omega_current, preserve_inactive=preserve_inactive)
+            if timing is not None:
+                timing.record(step, outer, -1, "outer_convergence_check", time.perf_counter() - _t0)
 
             # --- 適応的ペナルティ増大 ---
             # 貫入量が tol_penetration_ratio * search_radius を超えるペアの k_pen を増大

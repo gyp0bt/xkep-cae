@@ -86,8 +86,10 @@ from xkep_cae.contact.sheath_contact import (
     evaluate_sheath_contact,
 )
 from xkep_cae.contact.solver_hooks import (
+    BenchmarkTimingCollector,
     ContactSolveResult,
     CyclicContactResult,
+    TimingRecord,
     newton_raphson_block_contact,
     newton_raphson_with_contact,
     run_contact_cyclic,
@@ -100,6 +102,7 @@ from xkep_cae.contact.solver_ncp import (
 )
 
 __all__ = [
+    "BenchmarkTimingCollector",
     "ContactConfig",
     "ContactEdge",
     "ContactGraph",
@@ -149,6 +152,7 @@ __all__ = [
     "rotate_friction_history",
     "snapshot_contact_graph",
     "update_al_multiplier",
+    "TimingRecord",
     "NCPSolveResult",
     "build_augmented_residual",
     "compute_gap_jacobian_wrt_u",
