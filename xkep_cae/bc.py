@@ -59,17 +59,21 @@ def apply_dirichlet(
         K_csc = K.tocsc()
         fbc -= K_csc[:, nz_dofs] @ nz_vals
 
-    # 2) LIL形式で行・列ゼロクリア（行・列両方の変更が効率的）
-    Kbc = K.tolil(copy=True)
+    # 2) CSR/CSC で行・列ゼロクリア（tolil → CSR/CSC 直接操作に高速化）
+    Kbc = K.tocsr().copy()
     for dof in fixed_dofs:
         Kbc[dof, :] = 0.0
-        Kbc[:, dof] = 0.0
-        Kbc[dof, dof] = 1.0
+    K_csc2 = Kbc.tocsc()
+    for dof in fixed_dofs:
+        K_csc2[:, dof] = 0.0
+    Kbc = K_csc2.tocsr()
+    Kbc[fixed_dofs, fixed_dofs] = 1.0
+    Kbc.eliminate_zeros()
 
     # 3) 固定DOFの右辺を規定値に設定
     fbc[fixed_dofs] = values
 
-    return DirichletResult(K=Kbc.tocsr(), f=fbc)
+    return DirichletResult(K=Kbc, f=fbc)
 
 
 def apply_dirichlet_penalty(

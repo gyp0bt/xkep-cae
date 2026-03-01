@@ -176,6 +176,7 @@ def newton_raphson(
     show_progress: bool = True,
     u0: np.ndarray | None = None,
     fixed_values: float | np.ndarray = 0.0,
+    tangent_update_interval: int = 1,
 ) -> NonlinearResult:
     """荷重増分 + Newton-Raphson 法による非線形静解析.
 
@@ -190,6 +191,10 @@ def newton_raphson(
       - ||Δu|| / ||u|| < tol_disp      （変位ノルム）
       - |Δu · R| / |Δu₀ · R₀| < tol_energy  （エネルギーノルム）
 
+    修正NR法:
+      tangent_update_interval > 1 の場合、接線剛性を毎反復ではなく
+      指定間隔でのみ再計算する。反復数は増えるが各反復のコストが削減される。
+
     Args:
         f_ext_total: (ndof,) 最終荷重ベクトル（全荷重）
         fixed_dofs: 拘束DOFの配列
@@ -203,6 +208,8 @@ def newton_raphson(
         show_progress: 進捗表示
         u0: 初期変位（None = ゼロ）
         fixed_values: 拘束変位値
+        tangent_update_interval: 接線剛性更新間隔。1=完全NR（毎反復更新）、
+            2以上=修正NR（N反復ごとに更新）。大規模問題で有効。
 
     Returns:
         NonlinearResult: 解析結果
@@ -231,6 +238,7 @@ def newton_raphson(
         converged_step = False
         energy_ref = None
         res_norm = 0.0
+        K_bc_cached = None  # 修正NR用: キャッシュされたBC適用済み剛性行列
 
         for it in range(max_iter):
             total_iter += 1
@@ -254,20 +262,17 @@ def newton_raphson(
                     )
                 break
 
-            # 接線剛性の組み立てと求解
-            K_T = assemble_tangent(u)
+            # 接線剛性の組み立て（修正NR: interval に応じて再計算）
+            if K_bc_cached is None or it % tangent_update_interval == 0:
+                K_T = assemble_tangent(u)
+                K_bc_cached, _ = _apply_bc(K_T, residual, fixed_dofs)
 
-            # 境界条件適用（行列消去法）
-            K_bc = K_T.tolil()
+            # 右辺のみBC適用
             r_bc = residual.copy()
-            for dof in fixed_dofs:
-                K_bc[dof, :] = 0.0
-                K_bc[:, dof] = 0.0
-                K_bc[dof, dof] = 1.0
-                r_bc[dof] = 0.0
+            r_bc[fixed_dofs] = 0.0
 
             # 線形求解
-            du = spla.spsolve(K_bc.tocsr(), r_bc)
+            du = spla.spsolve(K_bc_cached, r_bc)
 
             # エネルギーノルム判定
             energy = abs(float(np.dot(du, residual)))
@@ -371,15 +376,30 @@ def _apply_bc(
     r: np.ndarray,
     fixed_dofs: np.ndarray,
 ) -> tuple[sp.csr_matrix, np.ndarray]:
-    """境界条件適用（行列消去法）."""
-    K_bc = K.tolil()
+    """境界条件適用（ベクトル化行列消去法）.
+
+    tolil() + Python ループを CSR 直接操作に置換し高速化。
+    """
+    K_bc = K.tocsr().copy()
     r_bc = r.copy()
+
+    if len(fixed_dofs) == 0:
+        return K_bc, r_bc
+
+    # 行の消去（CSR 行操作は効率的）
     for dof in fixed_dofs:
         K_bc[dof, :] = 0.0
-        K_bc[:, dof] = 0.0
-        K_bc[dof, dof] = 1.0
-        r_bc[dof] = 0.0
-    return K_bc.tocsr(), r_bc
+    # 列の消去（CSC に変換して効率的に列操作）
+    K_csc = K_bc.tocsc()
+    for dof in fixed_dofs:
+        K_csc[:, dof] = 0.0
+    K_bc = K_csc.tocsr()
+    # 対角に 1.0 を設定
+    K_bc[fixed_dofs, fixed_dofs] = 1.0
+    K_bc.eliminate_zeros()
+
+    r_bc[fixed_dofs] = 0.0
+    return K_bc, r_bc
 
 
 def arc_length(
