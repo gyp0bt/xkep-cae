@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 完了。1866テスト（fast: 1541 / slow: 325）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 完了。1866テスト（fast: 1541 / slow: 325）。**
 
 **次のマイルストーン**: S3実測（91本BM）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
@@ -259,6 +259,9 @@
 - [x] 並列化スピードアップ計測テスト（status-089）
 - [x] COO書き込みベクトル化（DOFインデックス一括計算, repeat/tile排除, 6.1x高速化, status-090）
 - [x] 共有メモリ並列化（ProcessPoolExecutor→mp.Pool+shared_memory, IPC排除, 8192要素で1.70x, status-090）
+- [x] 接触アセンブリnumpyベクトル化（PtP力/剛性のPythonループ→np.add.at/np.outer, status-091）
+- [x] NR境界条件適用高速化（tolil+ループ→CSR/CSC直接操作, 全ソルバー統一, status-091）
+- [x] 修正NR法オプション（tangent_update_interval パラメータ, 大規模問題で15-35%高速化, status-091）
 
 ### S3: 撚線大規模化（91本まで）
 
