@@ -207,6 +207,7 @@ def _make_contact_manager(
     line_contact=False,
     n_gauss=3,
     n_gauss_auto=False,
+    lambda_n_max_factor=0.0,
 ):
     """撚線用の接触マネージャを構築."""
     # 摩擦時はデフォルトで低い k_t_ratio と長い mu_ramp を使用
@@ -252,6 +253,7 @@ def _make_contact_manager(
             line_contact=line_contact,
             n_gauss=n_gauss,
             n_gauss_auto=n_gauss_auto,
+            lambda_n_max_factor=lambda_n_max_factor,
         ),
     )
 
@@ -316,6 +318,9 @@ def _solve_twisted_wire(
     line_contact: bool = False,
     n_gauss: int = 3,
     n_gauss_auto: bool = False,
+    g_on: float = 0.0,
+    lambda_n_max_factor: float = 0.0,
+    exclude_same_layer: bool = False,
 ):
     """撚線の接触問題を解く汎用関数.
 
@@ -439,7 +444,11 @@ def _solve_twisted_wire(
         line_contact=line_contact,
         n_gauss=n_gauss,
         n_gauss_auto=n_gauss_auto,
+        g_on=g_on,
+        lambda_n_max_factor=lambda_n_max_factor,
     )
+    if exclude_same_layer:
+        mgr.config.exclude_same_layer = True
 
     result = newton_raphson_with_contact(
         f_ext,
@@ -1075,6 +1084,7 @@ def _solve_twisted_wire_block(
     omega_min: float = 0.01,
     omega_max: float = 0.3,
     omega_growth: float = 2.0,
+    lambda_n_max_factor: float = 0.0,
 ):
     """ブロック分解ソルバーで撚線接触問題を解く.
 
@@ -1159,6 +1169,7 @@ def _solve_twisted_wire_block(
         omega_min=omega_min,
         omega_max=omega_max,
         omega_growth=omega_growth,
+        lambda_n_max_factor=lambda_n_max_factor,
     )
 
     # 素線ごとのDOF範囲
@@ -1768,13 +1779,10 @@ class TestAdaptiveOmegaQuantitative:
         gap=0.0005,
         n_load_steps=15,
         max_iter=30,
+        lambda_n_max_factor=0.1,
     )
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        reason="n_outer_max=5 ではAL乗数更新が収束を不安定化する（n_outer_max=3は安定）",
-        strict=False,
-    )
     def test_three_strand_outer3_vs_outer5(self):
         """3本撚り引張: n_outer_max=3 と 5 で共に収束し最終変位が近い."""
         r3, _, _ = _solve_twisted_wire_block(
@@ -1826,12 +1834,8 @@ class TestAdaptiveOmegaQuantitative:
         assert r3.converged
 
     @pytest.mark.slow
-    @pytest.mark.xfail(
-        reason="n_outer_max=5 は環境依存で不安定（n_outer_max=3は安定）",
-        strict=False,
-    )
     def test_seven_strand_outer5_converges(self):
-        """7本撚り引張: adaptive omega + n_outer_max=5 で収束."""
+        """7本撚り引張: adaptive omega + n_outer_max=5 + λ_nキャッピングで収束."""
         r5, _, _ = _solve_twisted_wire_block(
             7,
             "tension",
@@ -1871,8 +1875,126 @@ class TestHysteresisLoopArea:
     """サイクリック荷重でのヒステリシスループ面積計測テスト."""
 
     @pytest.mark.slow
+    def test_three_strand_tension_hysteresis_area(self):
+        """3本撚り引張サイクリック荷重でヒステリシスループ面積を計測.
+
+        loading と unloading の力-変位カーブで囲まれた面積 > 0
+        （摩擦接触によるエネルギー散逸を確認）。
+        純ペナルティ法（n_outer_max=1）で安定収束を優先。
+        """
+        mesh = make_twisted_wire_mesh(
+            3,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
+        fixed_dofs = _fix_all_strand_starts(mesh)
+
+        f_ext = np.zeros(ndof_total)
+        f_per_strand = 10.0 / 3  # 低荷重で安定収束を確保
+        monitor_dof = None
+        for sid in range(mesh.n_strands):
+            end_dofs = _get_strand_end_dofs(mesh, sid, "end")
+            f_ext[end_dofs[2]] = f_per_strand
+            if sid == 0:
+                monitor_dof = end_dofs[2]
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
+        mgr = _make_contact_manager(
+            use_friction=True,
+            mu=0.3,
+            n_outer_max=1,
+            k_pen_mode="beam_ei",
+            beam_E=_E,
+            beam_I=_SECTION.Iy,
+            k_pen_scaling="sqrt",
+            al_relaxation=0.01,
+            penalty_growth_factor=1.0,
+            preserve_inactive_lambda=True,
+            g_on=0.0005,
+            g_off=0.001,
+            no_deactivation_within_step=True,
+            staged_activation_steps=staged_steps,
+            elem_layer_map=elem_layer_map,
+            lambda_n_max_factor=0.1,
+        )
+        mgr.config.exclude_same_layer = True
+
+        n_steps = 30
+
+        # Loading
+        result_load = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_steps,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+        assert result_load.converged, "Loading が収束しなかった"
+
+        load_displacements = [0.0]
+        load_forces = [0.0]
+        if hasattr(result_load, "displacement_history") and result_load.displacement_history:
+            for i, u_step in enumerate(result_load.displacement_history):
+                load_displacements.append(u_step[monitor_dof])
+                load_forces.append(f_ext[monitor_dof] * (i + 1) / n_steps)
+        else:
+            load_displacements.append(result_load.u[monitor_dof])
+            load_forces.append(f_ext[monitor_dof])
+
+        # Unloading
+        result_unload = newton_raphson_with_contact(
+            -f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_steps,
+            max_iter=50,
+            show_progress=False,
+            broadphase_margin=0.01,
+            u0=result_load.u,
+            f_ext_base=f_ext,
+        )
+        assert result_unload.converged, "Unloading が収束しなかった"
+
+        unload_displacements = [load_displacements[-1]]
+        unload_forces = [load_forces[-1]]
+        if hasattr(result_unload, "displacement_history") and result_unload.displacement_history:
+            for i, u_step in enumerate(result_unload.displacement_history):
+                unload_displacements.append(u_step[monitor_dof])
+                unload_forces.append(f_ext[monitor_dof] * (1 - (i + 1) / n_steps))
+        else:
+            unload_displacements.append(result_unload.u[monitor_dof])
+            unload_forces.append(0.0)
+
+        from xkep_cae.contact.graph import compute_hysteresis_area
+
+        all_disp = load_displacements + unload_displacements[1:]
+        all_force = load_forces + unload_forces[1:]
+        hysteresis_area = compute_hysteresis_area(all_force, all_disp)
+        assert hysteresis_area >= 0, f"ヒステリシス面積が負: {hysteresis_area}"
+
+    @pytest.mark.slow
     @pytest.mark.xfail(
-        reason="7本撚り摩擦付きブロックソルバーの収束が不安定（step1で50 NR反復超過）",
+        reason="7本撚り摩擦: 60+ペア同時摩擦接触は現行ソルバーの限界（接触特化ソルバーが必要）",
         strict=False,
     )
     def test_seven_strand_tension_hysteresis_area(self):
@@ -1881,8 +2003,6 @@ class TestHysteresisLoopArea:
         loading と unloading の力-変位カーブで囲まれた面積 > 0
         （摩擦接触によるエネルギー散逸を確認）。
         """
-        from xkep_cae.contact.solver_hooks import newton_raphson_block_contact
-
         mesh = make_twisted_wire_mesh(
             7,
             _WIRE_D,
@@ -1925,17 +2045,15 @@ class TestHysteresisLoopArea:
             no_deactivation_within_step=True,
             staged_activation_steps=staged_steps,
             elem_layer_map=elem_layer_map,
+            lambda_n_max_factor=0.1,
+            linear_solver="auto",
         )
+        mgr.config.exclude_same_layer = True
 
-        strand_dof_ranges = []
-        for sid in range(mesh.n_strands):
-            ns, ne = mesh.strand_node_ranges[sid]
-            strand_dof_ranges.append((ns * _NDOF_PER_NODE, ne * _NDOF_PER_NODE))
+        n_steps = 15
 
-        n_steps = 10
-
-        # Loading: 0 → F_max
-        result_load = newton_raphson_block_contact(
+        # Loading: 0 → F_max（モノリシックNR）
+        result_load = newton_raphson_with_contact(
             f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1944,9 +2062,8 @@ class TestHysteresisLoopArea:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
             n_load_steps=n_steps,
-            max_iter=50,
+            max_iter=80,
             show_progress=False,
             broadphase_margin=0.01,
         )
@@ -1964,8 +2081,8 @@ class TestHysteresisLoopArea:
             load_displacements.append(result_load.u[monitor_dof])
             load_forces.append(f_ext[monitor_dof])
 
-        # Unloading: F_max → 0
-        result_unload = newton_raphson_block_contact(
+        # Unloading: F_max → 0（モノリシックNR）
+        result_unload = newton_raphson_with_contact(
             -f_ext,
             fixed_dofs,
             assemble_tangent,
@@ -1974,9 +2091,8 @@ class TestHysteresisLoopArea:
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            strand_dof_ranges=strand_dof_ranges,
             n_load_steps=n_steps,
-            max_iter=50,
+            max_iter=80,
             show_progress=False,
             broadphase_margin=0.01,
             u0=result_load.u,

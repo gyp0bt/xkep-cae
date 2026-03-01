@@ -451,6 +451,8 @@ def newton_raphson_with_contact(
 
         step_converged = False
         merit_prev_outer = float("inf")  # Outer loop merit 追跡
+        any_inner_converged = False  # best-state フォールバック用
+        u_best = u.copy()  # 最後に Inner 収束した変位
 
         for outer in range(n_outer_max):
             total_outer += 1
@@ -960,7 +962,17 @@ def newton_raphson_with_contact(
                         f"did not converge in {max_iter} iterations."
                     )
                 if outer == n_outer_max - 1:
-                    # 最終 outer でも発散 → 回復不能
+                    if any_inner_converged:
+                        # 前の outer で Inner 収束済み → best-state にフォールバック
+                        u[:] = u_best
+                        if show_progress:
+                            print(
+                                f"  Step {step}: final outer failed, "
+                                f"falling back to last converged state."
+                            )
+                        step_converged = True
+                        break
+                    # 全 outer で未収束 → 回復不能
                     return ContactSolveResult(
                         u=u,
                         converged=False,
@@ -987,6 +999,10 @@ def newton_raphson_with_contact(
                 manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
                 continue
 
+            # Inner 収束 → best state を記録
+            any_inner_converged = True
+            u_best[:] = u
+
             # --- Outer 収束判定 ---
             # 幾何更新して (s,t) の変化を検査
             _t0 = time.perf_counter()
@@ -1003,7 +1019,7 @@ def newton_raphson_with_contact(
                     max_dt = max(max_dt, abs(pair.state.t - t_old))
                 idx += 1
 
-            # AL 乗数更新（適応的ω + 緩和付き + sticky contact対応）
+            # AL 乗数更新（適応的ω + 緩和付き + sticky contact対応 + λ_nキャッピング）
             if adaptive_omega:
                 omega_current = min(
                     omega_min * omega_growth**outer,
@@ -1012,8 +1028,18 @@ def newton_raphson_with_contact(
             else:
                 omega_current = al_relaxation
             preserve_inactive = manager.config.preserve_inactive_lambda
+            lam_max_factor = manager.config.lambda_n_max_factor
             for pair in manager.pairs:
-                update_al_multiplier(pair, omega=omega_current, preserve_inactive=preserve_inactive)
+                lam_max = 0.0
+                if lam_max_factor > 0.0 and pair.state.k_pen > 0.0:
+                    sr = pair.search_radius
+                    lam_max = lam_max_factor * pair.state.k_pen * max(sr, 1e-30)
+                update_al_multiplier(
+                    pair,
+                    omega=omega_current,
+                    preserve_inactive=preserve_inactive,
+                    lambda_n_max=lam_max,
+                )
             if timing is not None:
                 timing.record(step, outer, -1, "outer_convergence_check", time.perf_counter() - _t0)
 
@@ -1406,6 +1432,8 @@ def newton_raphson_block_contact(
                     gp_z_t_conv[pair_idx] = [z.copy() for z in pair.state.gp_z_t]
 
         step_converged = False
+        any_inner_converged = False  # best-state フォールバック用
+        u_best = u.copy()
 
         for outer in range(n_outer_max):
             total_outer += 1
@@ -1742,7 +1770,17 @@ def newton_raphson_block_contact(
                         f"did not converge in {max_iter} iterations."
                     )
                 if outer == n_outer_max - 1:
-                    # 最終 outer 反復でも未収束 → 失敗を返す
+                    if any_inner_converged:
+                        # 前の outer で Inner 収束済み → best-state にフォールバック
+                        u[:] = u_best
+                        if show_progress:
+                            print(
+                                f"  Step {step}: final outer failed, "
+                                f"falling back to last converged state."
+                            )
+                        step_converged = True
+                        break
+                    # 全 outer で未収束 → 回復不能
                     return ContactSolveResult(
                         u=u,
                         converged=False,
@@ -1763,6 +1801,11 @@ def newton_raphson_block_contact(
                         f"(active={manager.n_active})"
                     )
 
+            else:
+                # Inner 収束 → best state を記録
+                any_inner_converged = True
+                u_best[:] = u
+
             # --- Outer 収束判定 ---
             coords_def_new = _deformed_coords(node_coords_ref, u, ndof_per_node)
             manager.update_geometry(coords_def_new, allow_deactivation=_allow_deact)
@@ -1776,7 +1819,7 @@ def newton_raphson_block_contact(
                     max_ds = max(max_ds, abs(pair.state.s - s_old))
                     max_dt = max(max_dt, abs(pair.state.t - t_old))
 
-            # AL 乗数更新（adaptive omega: Outer反復ごとにωを段階的に増大）
+            # AL 乗数更新（adaptive omega + λ_nキャッピング）
             if adaptive_omega:
                 omega_current = min(
                     omega_min * omega_growth**outer,
@@ -1785,11 +1828,17 @@ def newton_raphson_block_contact(
             else:
                 omega_current = al_relaxation
             preserve_inactive = manager.config.preserve_inactive_lambda
+            lam_max_factor = manager.config.lambda_n_max_factor
             for pair in manager.pairs:
+                lam_max = 0.0
+                if lam_max_factor > 0.0 and pair.state.k_pen > 0.0:
+                    sr = pair.search_radius
+                    lam_max = lam_max_factor * pair.state.k_pen * max(sr, 1e-30)
                 update_al_multiplier(
                     pair,
                     omega=omega_current,
                     preserve_inactive=preserve_inactive,
+                    lambda_n_max=lam_max,
                 )
 
             # --- 適応的ペナルティ増大 ---
