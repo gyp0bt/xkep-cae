@@ -337,6 +337,7 @@ class TestAssembly:
             J,
             KAPPA_Y,
             KAPPA_Z,
+            sparse=False,
         )
 
         np.testing.assert_allclose(f_int, 0.0, atol=1e-12)
@@ -372,6 +373,7 @@ class TestAssembly:
             J,
             KAPPA_Y,
             KAPPA_Z,
+            sparse=False,
         )
 
         # 線形剛性でのアセンブリ
@@ -423,6 +425,7 @@ class TestAssembly:
             KAPPA_Z,
             stiffness=True,
             internal_force=False,
+            sparse=False,
         )
 
         assert K_T is not None
@@ -438,7 +441,6 @@ class TestCantileverNonlinear:
     @staticmethod
     def _make_cr_assemblers(nodes, conn):
         """CR 梁用のスパース行列コールバックを生成."""
-        import scipy.sparse as sp
 
         def assemble_f_int(u):
             _, fi = assemble_cr_beam3d(
@@ -474,7 +476,7 @@ class TestCantileverNonlinear:
                 stiffness=True,
                 internal_force=False,
             )
-            return sp.csr_matrix(kt)
+            return kt
 
         return assemble_f_int, assemble_K_T
 

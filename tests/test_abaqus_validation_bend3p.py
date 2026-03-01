@@ -370,6 +370,7 @@ class TestAbaqusBend3pNLGEOM:
                     kz,
                     stiffness=True,
                     internal_force=True,
+                    sparse=False,
                 )
                 R = -f_int.copy()
                 R[all_fixed] = 0.0
