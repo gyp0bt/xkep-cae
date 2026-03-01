@@ -41,9 +41,12 @@
 | CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング | ✓ |
 | xfailテスト根本対策（λ_nキャッピング + best-state fallback） | ✓ |
 | S3パラメータチューニング基盤 + S4剛性比較BM + S6 1000本BM | ✓ |
-| **Phase S: スケーラビリティ** | **S3: 19本以上の収束改善が次の課題** |
+| 推奨ソルバー構成明文化（NCP基準）+ S4方針更新（撚線構造剛性比較） | ✓ |
+| **Phase S: スケーラビリティ** | **S3: NCPソルバーで19本以上の収束改善が次の課題** |
 
-**次のマイルストーン**: S3収束改善（19本以上）→ S5: ML → S6: 1000本接触 → S7: GPU
+**推奨ソルバー構成**: NCP Semi-smooth Newton（`solver_ncp.py`）+ Line contact + Mortar + 同層除外。詳細は [roadmap](docs/roadmap.md) を参照。
+
+**次のマイルストーン**: S3収束改善（NCPソルバーで19本以上）→ S4: 撚線構造剛性比較 → S5: ML → S6: 1000本接触 → S7: GPU
 
 詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
 

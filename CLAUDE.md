@@ -52,7 +52,7 @@ xkep_cae/
 ├── materials/      # 構成則（弾性, 1D/3D弾塑性）
 ├── sections/       # 断面モデル（BeamSection, FiberSection）
 ├── math/           # 数学ユーティリティ（四元数, SO(3)）
-├── contact/        # 梁–梁接触（Broadphase, AL, 摩擦, グラフ）
+├── contact/        # 梁–梁接触（NCP, AL, Mortar, 摩擦, グラフ）
 ├── mesh/           # メッシュ生成（撚線, シース, チューブ）
 ├── thermal/        # 熱伝導FEM + GNN/PINNサロゲート
 ├── numerical_tests/ # 数値試験フレームワーク
@@ -66,13 +66,24 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ + TODO
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（96個）
+├── status/         # ステータスファイル群（98個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤（GMRES自動有効化+要素並列化+Broadphaseベクトル化+Mortar適応ペナルティ）+ Phase S2+（Broadphase強化+中点距離プリスクリーニング+S3ベンチマーク基盤）+ COOベクトル化+共有メモリ並列化+接触アセンブリnumpyベクトル化+NR BC高速化+修正NR法+S3タイミング計測基盤+曲げ揺動ベンチマーク（変位制御+GIF出力）+outer loop早期終了バグ修正+CI修正+CR梁アセンブリCOO/CSR高速化+接触閾値チューニング 完了（1886テスト: fast 1542 / slow 344）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
-**次のマイルストーン**: S3パラメータチューニング → S4: 剛性比較BM → S5: ML → S6: 1000本 → S7: GPU。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤 + Phase S2+ + COOベクトル化+共有メモリ並列化 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク + CR梁COO/CSR高速化 + xfailテスト根本対策 + S3パラメータチューニング + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 完了（1906テスト: fast 1542 / slow 364）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
+
+### 推奨ソルバー構成（リファレンス）
+
+**全ベンチマークは以下の構成を基準とする**（詳細は `docs/roadmap.md` Phase S セクション）:
+- ソルバー: `newton_raphson_contact_ncp`（`solver_ncp.py`）— Outer loop 不要
+- 接触: Line-to-line Gauss 積分 + Mortar + 同層除外 + 摩擦
+- NCP関数: Fischer-Burmeister
+- 線形: DOF閾値で直接法/GMRES自動切替 + ブロック前処理
+
+> AL法ソルバー（`solver_hooks.py`）はレガシー比較用。adaptive omega / lambda_n_max_factor 等のワークアラウンドが不要な NCP が標準。
+
+**次のマイルストーン**: S3収束改善（NCPで19本以上）→ S4: 撚線構造剛性比較（素線+被膜/シース、曲げ/ねじり/引張/圧縮/大変形）→ S5: ML → S6: 1000本 → S7: GPU。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
