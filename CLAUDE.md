@@ -66,13 +66,13 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ + TODO
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（91個）
+├── status/         # ステータスファイル群（92個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤（GMRES自動有効化+要素並列化+Broadphaseベクトル化+Mortar適応ペナルティ）+ Phase S2+（Broadphase強化+中点距離プリスクリーニング+S3ベンチマーク基盤）+ COOベクトル化+共有メモリ並列化+接触アセンブリnumpyベクトル化+NR BC高速化+修正NR法 完了（1866テスト: fast 1541 / slow 325）。Phase 4.3（von Mises 3D）は凍結。
-**次のマイルストーン**: S3実測: 91本BM → S4: 剛性比較BM → S5: ML → S6: 1000本 → S7: GPU。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤（GMRES自動有効化+要素並列化+Broadphaseベクトル化+Mortar適応ペナルティ）+ Phase S2+（Broadphase強化+中点距離プリスクリーニング+S3ベンチマーク基盤）+ COOベクトル化+共有メモリ並列化+接触アセンブリnumpyベクトル化+NR BC高速化+修正NR法+S3タイミング計測基盤 完了（1875テスト: fast 1541 / slow 334）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
+**次のマイルストーン**: S3パラメータチューニング → S4: 剛性比較BM → S5: ML → S6: 1000本 → S7: GPU。
 詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
