@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 + CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング + xfailテスト根本対策（λ_nキャッピング + best-state fallback）+ S3パラメータチューニング基盤 + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 + S4方針更新 + S4-1素線+被膜/シース剛性BM 完了。1916テスト（fast: 1542 / slow: 374）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 + CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング + 撚線規模別計算時間計測（7〜91本）+ xfailテスト根本対策（λ_nキャッピング + best-state fallback）+ S3パラメータチューニング基盤 + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 + S4方針更新 + S4-1素線+被膜/シース剛性BM 完了。1916テスト（fast: 1542 / slow: 374）。**
 
 **次のマイルストーン**: S3収束改善（NCPソルバーで19本以上）→ S4: 撚線構造剛性比較 → S5: ML → S6: 1000本接触 → S7: GPU
 
@@ -462,6 +462,7 @@ Phase 1-3 (アーキテクチャ, 梁要素, 幾何学的非線形) ✓
 - [x] ブロック前処理バッチ化（status-087）
 - [x] Mortar 適応ペナルティ増大（status-087）
 - [ ] 大規模問題での実測スピードアップ評価
+- [x] 7本 → 19本 → 37本 → 61本 → 91本 段階的ベンチマーク（計算時間計測、status-099）
 - [x] S3パラメータチューニング基盤（7本収束、19本以上は未収束、status-097）
 - [ ] 19本以上の接触NR収束改善（ブロックソルバーの根本改良）
 - [ ] 前処理パラメータチューニング（ILU drop_tol, Schur対角近似精度）

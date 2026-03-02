@@ -73,7 +73,7 @@ docs/
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤 + Phase S2+ + COOベクトル化+共有メモリ並列化 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク + CR梁COO/CSR高速化 + xfailテスト根本対策 + S3パラメータチューニング + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 + S4-1素線+被膜/シース剛性BM 完了（1916テスト: fast 1542 / slow 374）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
+Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤 + Phase S2+ + COOベクトル化+共有メモリ並列化 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク + CR梁COO/CSR高速化 + 撚線規模別計算時間計測 + xfailテスト根本対策 + S3パラメータチューニング + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 + S4-1素線+被膜/シース剛性BM 完了（1916テスト: fast 1542 / slow 374）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
 
 ### 推奨ソルバー構成（リファレンス）
 
