@@ -3,72 +3,56 @@
 [![CI](https://github.com/gyp0bt/xkep-cae/actions/workflows/ci.yml/badge.svg)](https://github.com/gyp0bt/xkep-cae/actions/workflows/ci.yml)
 
 ニッチドメイン問題を解くための自作有限要素ソルバー基盤。
-支配方程式・構成則・要素・更新則・積分スキーマをモジュール化し、
-組み合わせて問題特化ソルバーを構成する。
+構成則・要素・ソルバー・接触をモジュール化し、問題特化ソルバーを構成する。
+
+## ターゲットマイルストーン
+
+> **1000本撚線（10万節点）の曲げ揺動シミュレーションを6時間以内に完了する。**
+
+| 項目 | 現状 | 目標 |
+|------|------|------|
+| 素線数 | 7本（210 DOF）で収束 | 1000本（~30,000 DOF, 長手分割で~100,000節点） |
+| 計算時間 | 91本で~25分/曲げ揺動 | 1000本で6時間以内 |
+| ソルバー | NCP: 7本収束、19本以上未収束 | NCP: 91本収束 |
+| 接触ペア | 91本で~66,000候補 | 1000本で~730万候補→ML削減 |
 
 ## 現在の状態
 
-**1886テスト（fast: 1542 / slow: 344）**
+**1916テスト** — 2026-03-02時点
 
-| フェーズ | 状態 |
-|---------|------|
-| Phase 1: アーキテクチャ（Protocol/ABC） | ✓ |
-| Phase 2: 空間梁要素（EB/Timo/Cosserat） | ✓ |
-| Phase 3: 幾何学的非線形（NR, 弧長法, CR, TL/UL） | ✓ |
-| Phase 4.1-4.2: 弾塑性 + ファイバーモデル | ✓ |
-| Phase 4.3: von Mises 3D | 凍結 |
-| Phase 5: 動的解析（Newmark-β, 陽解法, モーダル減衰） | ✓ |
-| Phase C0-C5: 梁–梁接触（AL, 摩擦, merit LS, PDAS） | ✓ |
-| Phase C6-L1: Line-to-line Gauss 積分 | ✓ |
-| Phase C6-L2: 一貫接線の完全化（∂(s,t)/∂u Jacobian） | ✓ |
-| Phase C6-L3: Semi-smooth Newton + NCP 関数 | ✓ |
-| Phase C6-L4: ブロック前処理強化（接触 Schur 補集合） | ✓ |
-| Phase C6-L1b: 摩擦力 line contact 拡張（GP Gauss 積分） | ✓ |
-| Phase 4.7 L0: 撚線基礎（7本撚り収束, ヒステリシス） | ✓ |
-| Phase 4.7 L0.5 S1-S4: シース挙動（コンプライアンス, 有限滑り, シース間接触） | ✓ |
-| 7本撚りブロック前処理ソルバー + adaptive omega | ✓ |
-| HEX8要素ファミリ（C3D8/C3D8B/C3D8R/C3D8I） | ✓ |
-| 過渡応答出力 + FIELD ANIMATION + GIF | ✓ |
-| Phase 6.0: 2D熱伝導GNN/PINNサロゲート（PoC） | ✓ |
-| GitHub Actions CI + slowテストマーカー + 3並列シャード | ✓ |
-| Phase S1: 同層除外 + NCP摩擦 + Alart-Curnier摩擦 + Mortar離散化 | ✓ |
-| Phase S2: CPU並列化基盤（GMRES自動有効化 + 要素並列化 + Mortar適応ペナルティ） | ✓ |
-| Phase S2+: Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤 | ✓ |
-| Phase S2++: COOベクトル化 + 共有メモリ並列化（10万要素対応） | ✓ |
-| Phase S2+++: 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 | ✓ |
-| Phase S3基盤: タイミング計測 + 工程別ボトルネック分析（91本122秒） | ✓ |
-| 曲げ揺動ベンチマーク（変位制御+GIF出力）+ CI修正 | ✓ |
-| CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング | ✓ |
-| 撚線規模別計算時間計測（7〜91本、曲げ揺動BM） | ✓ |
-| **Phase S: スケーラビリティ** | **91本計測完了、S3パラメータチューニング以降** |
+| 分野 | 内容 | 状態 |
+|------|------|------|
+| FEM基盤 | 梁要素（EB/Timo/Cosserat/CR）、平面要素（Q4/TRI）、固体要素（HEX8）| 完了 |
+| 非線形 | 幾何学的非線形（NR/弧長/CR/TL/UL）、弾塑性、ファイバーモデル | 完了 |
+| 動的解析 | Newmark-β/HHT-α/陽解法/モーダル減衰 | 完了 |
+| 接触 | 梁–梁接触（NCP+Mortar+Line contact+摩擦）| 完了 |
+| 撚線モデル | 7本撚り収束、被膜/シース、ヒステリシス観測 | 完了 |
+| 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理 | 完了 |
+| GNN/PINN | 2D熱伝導サロゲートPoC（R²=0.995） | 完了 |
+| **大規模収束** | **19本以上のNCP収束** | **次の課題** |
 
-**次のマイルストーン**: S3パラメータチューニング → S4（剛性比較BM）→ ML → 1000本 → GPU
-
-詳細は[ロードマップ](docs/roadmap.md)および最新の[ステータス](docs/status/status-index.md)を参照。
+**推奨ソルバー構成**: NCP Semi-smooth Newton + Line contact + Mortar + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成リファレンス構成)）
 
 ## ドキュメント
 
-### 計画・設計
+| ドキュメント | 内容 |
+|------------|------|
+| [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
+| [ステータス一覧](docs/status/status-index.md) | 全100件のstatus + テスト数推移 |
+| [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図15枚） |
+| [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
+| [使用例](docs/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
 
-- [ロードマップ](docs/roadmap.md) — 全体開発計画と TODO
-- [ステータス一覧](docs/status/status-index.md) — 全ステータスファイルとテスト数推移
+### モジュール別ドキュメント
 
-### 設計仕様
+各モジュールの設計仕様は、対応するソースディレクトリの README.md に配置。
 
-- [Cosserat rod 設計](docs/cosserat-design.md) — 四元数回転・B行列定式化
-- [過渡応答出力設計](docs/transient-output-design.md) — Step/Increment/Frame + 出力I/F
-- [梁–梁接触仕様群](docs/contact/) — 接触アルゴリズム・撚線改善・ML設計
-
-### バリデーション
-
-- [検証文書](docs/verification/validation.md) — 解析解・厳密解との比較（検証図15枚）
-- [接触テストカタログ](docs/verification/contact_test_catalog.md) — 全接触テスト（~240テスト）
-
-### 利用ガイド
-
-- [使用例](docs/examples.md) — API・梁要素・非線形・弾塑性のコード例
-- [Abaqus差異](docs/abaqus-differences.md) — xkep-cae と Abaqus の既知の差異
-- [サンプル入力ファイル](examples/README.md) — `.inp` ファイルのサンプル集
+| モジュール | README | 主な設計仕様 |
+|-----------|--------|------------|
+| [contact/](xkep_cae/contact/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
+| [elements/](xkep_cae/elements/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
+| [mesh/](xkep_cae/mesh/README.md) | メッシュ生成 | 撚線/シース/被膜 |
+| [solver](xkep_cae/solver.py) | 非線形ソルバー | NR/弧長法 |
 
 ## インストール
 
@@ -95,22 +79,6 @@ ruff check xkep_cae/ tests/
 ruff format xkep_cae/ tests/
 ```
 
-## クイックスタート
-
-```python
-from xkep_cae.api import solve_plane_strain
-
-u_map = solve_plane_strain(
-    node_coord_array=nodes,
-    node_label_df_mapping={1: (False, False), 2: (False, False)},
-    node_label_load_mapping={5: (1.0, 0.0)},
-    E=200e3, nu=0.3, thickness=1.0,
-    elem_quads=elem_q4, elem_tris=elem_t3,
-)
-```
-
-その他の使用例は [docs/examples.md](docs/examples.md) を参照。
-
 ## プロジェクト構成
 
 ```
@@ -120,7 +88,7 @@ xkep_cae/
 ├── materials/      # 構成則（弾性, 1D/3D弾塑性）
 ├── sections/       # 断面モデル（BeamSection, FiberSection）
 ├── math/           # 数学ユーティリティ（四元数, SO(3)）
-├── contact/        # 梁–梁接触（Broadphase, AL, 摩擦, グラフ）
+├── contact/        # 梁–梁接触（NCP, Mortar, 摩擦, グラフ）
 ├── mesh/           # メッシュ生成（撚線, シース, チューブ）
 ├── thermal/        # 熱伝導FEM + GNN/PINNサロゲート
 ├── numerical_tests/ # 数値試験フレームワーク
@@ -128,31 +96,16 @@ xkep_cae/
 ├── io/             # Abaqus .inp パーサー
 ├── solver.py       # 線形/非線形ソルバー
 ├── assembly.py     # アセンブリ
-├── dynamics.py     # 動的解析（Newmark-β, HHT-α, 陽解法）
+├── dynamics.py     # 動的解析
 ├── bc.py           # 境界条件
 └── api.py          # 高レベル API
-docs/
-├── roadmap.md      # 全体ロードマップ
-├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（93個）
-├── contact/        # 接触モジュール仕様群
-└── verification/   # バリデーション文書・検証図
 ```
-
-## 依存ライブラリ
-
-- numpy, scipy（必須）
-- pyamg（大規模問題AMGソルバー、オプション）
-- numba（TRI6高速化、オプション）
-- matplotlib, Pillow（可視化・GIF出力、オプション）
-- torch, torch-geometric（GNN/PINNサロゲート、`[ml]`オプション）
-- ruff（開発時lint/format）
 
 ## ライセンス
 
-本プロジェクトは [MIT License](LICENSE) の下で公開されています。
+[MIT License](LICENSE)
 
 ## 運用
 
 本プロジェクトはCodexとClaude Codeの2交代制で運用。
-引き継ぎ情報は `docs/status/` 配下のステータスファイルを参照のこと。
+引き継ぎ情報は [docs/status/](docs/status/status-index.md) を参照。

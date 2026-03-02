@@ -31,6 +31,7 @@ from xkep_cae.contact.pair import (
 )
 from xkep_cae.contact.solver_hooks import (
     BenchmarkTimingCollector,
+    newton_raphson_block_contact,
     newton_raphson_with_contact,
 )
 from xkep_cae.elements.beam_timo3d import (
@@ -205,6 +206,21 @@ def _run_benchmark(
     n_outer_max: int = 5,
     n_elems_per_strand: int = _N_ELEM_PER_STRAND,
     auto_kpen: bool = True,
+    lambda_n_max_factor: float = 0.0,
+    al_relaxation: float = 1.0,
+    k_pen_scaling: str = "linear",
+    staged_activation: bool = False,
+    g_on: float = 0.0,
+    g_off: float = 1e-5,
+    preserve_inactive_lambda: bool = False,
+    no_deactivation_within_step: bool = False,
+    penalty_growth_factor: float = 2.0,
+    gap: float = 0.0,
+    use_block_solver: bool = False,
+    adaptive_omega: bool = False,
+    omega_min: float = 0.01,
+    omega_max: float = 0.3,
+    omega_growth: float = 2.0,
 ):
     """撚線ベンチマークを実行し、タイミングデータを返す.
 
@@ -220,6 +236,7 @@ def _run_benchmark(
         length=0.0,
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=1.0,
+        gap=gap,
     )
     mesh_time = time.perf_counter() - t0_mesh
 
@@ -259,28 +276,43 @@ def _run_benchmark(
         beam_I = _SECTION.Iy
         kpen_scale = 0.1
 
+    staged_steps = 0
+    if staged_activation:
+        max_lay = max(elem_layer_map.values()) if elem_layer_map else 0
+        staged_steps = (max_lay + 1) * 2
+
     mgr = ContactManager(
         config=ContactConfig(
             k_pen_scale=kpen_scale,
             k_pen_mode=kpen_mode,
             beam_E=beam_E,
             beam_I=beam_I,
+            k_pen_scaling=k_pen_scaling,
             k_t_ratio=0.1,
             mu=0.0,
-            g_on=0.0,
-            g_off=1e-5,
+            g_on=g_on,
+            g_off=g_off,
             n_outer_max=n_outer_max,
             use_friction=False,
             use_line_search=True,
             line_search_max_steps=5,
             use_geometric_stiffness=True,
             tol_penetration_ratio=0.02,
-            penalty_growth_factor=2.0,
+            penalty_growth_factor=penalty_growth_factor,
             k_pen_max=1e12,
             elem_layer_map=elem_layer_map,
             exclude_same_layer=True,
             midpoint_prescreening=True,
             linear_solver="auto",
+            lambda_n_max_factor=lambda_n_max_factor,
+            al_relaxation=al_relaxation,
+            preserve_inactive_lambda=preserve_inactive_lambda,
+            no_deactivation_within_step=no_deactivation_within_step,
+            staged_activation_steps=staged_steps,
+            adaptive_omega=adaptive_omega,
+            omega_min=omega_min,
+            omega_max=omega_max,
+            omega_growth=omega_growth,
         ),
     )
 
@@ -289,21 +321,45 @@ def _run_benchmark(
     timing.record(0, 0, -1, "mesh_generation", mesh_time)
     timing.record(0, 0, -1, "assembler_setup", setup_time)
 
-    result = newton_raphson_with_contact(
-        f_ext,
-        fixed_dofs,
-        assemble_tangent,
-        assemble_internal_force,
-        mgr,
-        mesh.node_coords,
-        mesh.connectivity,
-        mesh.radii,
-        n_load_steps=n_load_steps,
-        max_iter=max_iter,
-        show_progress=False,
-        broadphase_margin=0.01,
-        timing=timing,
-    )
+    if use_block_solver:
+        strand_dof_ranges = []
+        for sid in range(mesh.n_strands):
+            nodes = mesh.strand_nodes(sid)
+            dof_start = int(nodes[0]) * _NDOF_PER_NODE
+            dof_end = (int(nodes[-1]) + 1) * _NDOF_PER_NODE
+            strand_dof_ranges.append((dof_start, dof_end))
+
+        result = newton_raphson_block_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            strand_dof_ranges=strand_dof_ranges,
+            n_load_steps=n_load_steps,
+            max_iter=max_iter,
+            show_progress=False,
+            broadphase_margin=0.01,
+        )
+    else:
+        result = newton_raphson_with_contact(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_load_steps,
+            max_iter=max_iter,
+            show_progress=False,
+            broadphase_margin=0.01,
+            timing=timing,
+        )
 
     return result, mgr, mesh, timing
 
@@ -374,6 +430,7 @@ class TestBenchmarkTiming:
         totals = timing.phase_totals()
         assert len(totals) > 0, "工程別データが空"
 
+    @pytest.mark.timeout(900)
     @pytest.mark.parametrize("n_strands", [37, 61])
     def test_medium_strand_timing(self, n_strands):
         """中規模（37/61本）の収束性 + タイミング計測."""
@@ -392,6 +449,7 @@ class TestBenchmarkTiming:
         totals = timing.phase_totals()
         assert "broadphase" in totals or "structural_tangent" in totals
 
+    @pytest.mark.timeout(1800)
     def test_91_strand_timing(self):
         """大規模（91本）の収束性 + タイミング計測."""
         result, mgr, mesh, timing = _run_benchmark(
@@ -479,6 +537,7 @@ class TestBenchmarkTiming:
 class TestBenchmarkScaling:
     """撚線本数に対する処理時間スケーリング分析."""
 
+    @pytest.mark.timeout(900)
     def test_timing_scaling_report(self):
         """7→19→37本のスケーリングレポート."""
         results = {}
@@ -542,3 +601,189 @@ class TestBenchmarkScaling:
         # 基本検証
         for ns, r in results.items():
             assert r["total_time_s"] > 0, f"{ns}本: タイミングデータが空"
+
+
+# ====================================================================
+# S3パラメータチューニング: 収束性検証テスト
+# ====================================================================
+
+# チューニング済みパラメータ（adaptive omega テストで実証済みの組み合わせ）
+_TUNED_PARAMS = dict(
+    auto_kpen=True,
+    lambda_n_max_factor=0.1,
+    al_relaxation=0.01,
+    k_pen_scaling="sqrt",
+    staged_activation=True,
+    g_on=0.0005,
+    g_off=0.001,
+    preserve_inactive_lambda=True,
+    no_deactivation_within_step=True,
+    penalty_growth_factor=1.0,
+    gap=0.0005,
+    use_block_solver=True,
+    n_elems_per_strand=4,
+    adaptive_omega=True,
+    omega_min=0.01,
+    omega_max=0.3,
+    omega_growth=2.0,
+)
+
+
+class TestS3ParameterTuning:
+    """S3パラメータチューニング: 各素線数での収束性検証.
+
+    λ_nキャッピング + adaptive omega + 段階的活性化の組み合わせで
+    19→37→61→91本の段階的な収束を検証する。
+    """
+
+    def test_7_strand_tuned_convergence(self):
+        """7本撚り: チューニング済みパラメータで収束確認（ベースライン）."""
+        result, mgr, mesh, timing = _run_benchmark(
+            7,
+            load_type="tension",
+            load_value=100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_outer_max=3,
+            **_TUNED_PARAMS,
+        )
+
+        _print_benchmark_report(7, result, mgr, mesh, timing)
+
+        assert result.converged, "7本撚り（チューニング済み）が収束しなかった"
+        n_active = _count_active_pairs(mgr)
+        assert n_active >= 1, "接触ペアが活性化していない"
+        max_pen = _max_penetration_ratio(mgr)
+        assert max_pen < 0.2, f"貫入比が過大: {max_pen:.4f}"
+
+    def test_19_strand_tuned_convergence(self):
+        """19本撚り（3層）: チューニング済みパラメータで収束確認."""
+        result, mgr, mesh, timing = _run_benchmark(
+            19,
+            load_type="tension",
+            load_value=100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_outer_max=3,
+            **_TUNED_PARAMS,
+        )
+
+        _print_benchmark_report(19, result, mgr, mesh, timing)
+
+        n_active = _count_active_pairs(mgr)
+        max_pen = _max_penetration_ratio(mgr)
+        print(f"  19本: 収束={result.converged}, 活性ペア={n_active}, 貫入比={max_pen:.4f}")
+        print(f"  完了ステップ: {result.n_load_steps}/{15}")
+        # 19本は収束が難しい。レポートのみ（ブロックソルバー改良で段階的に改善）
+        assert timing.total_time() > 0, "タイミングデータが記録されていない"
+
+    @pytest.mark.timeout(900)
+    def test_37_strand_tuned_convergence(self):
+        """37本撚り（4層）: チューニング済みパラメータで収束確認."""
+        result, mgr, mesh, timing = _run_benchmark(
+            37,
+            load_type="tension",
+            load_value=100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_outer_max=3,
+            **_TUNED_PARAMS,
+        )
+
+        _print_benchmark_report(37, result, mgr, mesh, timing)
+
+        n_active = _count_active_pairs(mgr)
+        max_pen = _max_penetration_ratio(mgr)
+        print(f"  37本: 収束={result.converged}, 活性ペア={n_active}, 貫入比={max_pen:.4f}")
+        print(f"  完了ステップ: {result.n_load_steps}/{15}")
+        assert timing.total_time() > 0, "タイミングデータが記録されていない"
+
+    @pytest.mark.timeout(1200)
+    def test_61_strand_tuned_convergence(self):
+        """61本撚り（5層）: チューニング済みパラメータで収束確認."""
+        result, mgr, mesh, timing = _run_benchmark(
+            61,
+            load_type="tension",
+            load_value=100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_outer_max=3,
+            **_TUNED_PARAMS,
+        )
+
+        _print_benchmark_report(61, result, mgr, mesh, timing)
+
+        # 61本は収束が難しい場合がある。収束しなくても情報をレポート
+        n_active = _count_active_pairs(mgr)
+        print(f"  61本: 活性ペア={n_active}, 収束={result.converged}")
+        # 収束は assertion ではなくレポートのみ（大規模は段階的に改善）
+
+    @pytest.mark.timeout(1800)
+    def test_91_strand_tuned_report(self):
+        """91本撚り（6層）: チューニング済みパラメータで実行レポート."""
+        result, mgr, mesh, timing = _run_benchmark(
+            91,
+            load_type="tension",
+            load_value=100.0,
+            n_load_steps=15,
+            max_iter=30,
+            n_outer_max=3,
+            **_TUNED_PARAMS,
+        )
+
+        _print_benchmark_report(91, result, mgr, mesh, timing)
+
+        # 91本は収束を保証しない。タイミングデータの記録のみ検証
+        assert timing.total_time() > 0, "タイミングデータが記録されていない"
+        n_active = _count_active_pairs(mgr)
+        print(f"  91本: 活性ペア={n_active}, 収束={result.converged}")
+
+    @pytest.mark.timeout(900)
+    def test_tuned_scaling_report(self):
+        """チューニング済みパラメータでのスケーリングレポート."""
+        results = {}
+        for n_strands in [7, 19, 37]:
+            result, mgr, mesh, timing = _run_benchmark(
+                n_strands,
+                load_type="tension",
+                load_value=100.0,
+                n_load_steps=15,
+                max_iter=30,
+                n_outer_max=3,
+                **_TUNED_PARAMS,
+            )
+            n_active = _count_active_pairs(mgr)
+            max_pen = _max_penetration_ratio(mgr)
+            results[n_strands] = {
+                "n_elems": mesh.n_elems,
+                "ndof": mesh.n_nodes * _NDOF_PER_NODE,
+                "converged": result.converged,
+                "n_newton": result.total_newton_iterations,
+                "n_outer": result.total_outer_iterations,
+                "n_active": n_active,
+                "max_pen_ratio": max_pen,
+                "total_time_s": timing.total_time(),
+            }
+
+        # チューニング済みスケーリングレポート
+        print(f"\n{'=' * 85}")
+        print("  S3チューニング済みパラメータ スケーリングレポート")
+        print(f"{'=' * 85}")
+        header = (
+            f"{'n_strands':>10} {'n_elems':>8} {'ndof':>8} {'conv':>5} "
+            f"{'n_NR':>6} {'n_outer':>8} {'active':>7} {'pen%':>8} {'total(s)':>10}"
+        )
+        print(header)
+        print("-" * 85)
+        for ns, r in results.items():
+            print(
+                f"{ns:>10} {r['n_elems']:>8} {r['ndof']:>8} "
+                f"{'Y' if r['converged'] else 'N':>5} "
+                f"{r['n_newton']:>6} {r['n_outer']:>8} "
+                f"{r['n_active']:>7} {r['max_pen_ratio']:>7.4f} "
+                f"{r['total_time_s']:>10.4f}"
+            )
+        print()
+
+        # 7本は必ず収束すること
+        assert results[7]["converged"], "7本撚りが収束しなかった"

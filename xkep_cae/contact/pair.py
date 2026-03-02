@@ -223,6 +223,9 @@ class ContactConfig:
     use_mortar: bool = False  # Mortar 離散化の有効化（Phase C6-L5）
     midpoint_prescreening: bool = True  # 中点距離プリスクリーニングの有効化
     prescreening_margin: float = 0.0  # プリスクリーニング追加マージン（0=自動推定）
+    lambda_n_max_factor: float = (
+        0.0  # λ_n上限: lambda_n_max_factor * k_pen * search_radius（0=無効）
+    )
 
 
 @dataclass
