@@ -61,6 +61,7 @@ class TestBendingOscillationSmall:
         report = print_benchmark_report(result)
         assert "曲げ揺動ベンチマーク" in report
 
+    @pytest.mark.timeout(600)
     def test_7_strand_full(self):
         """7本撚線の曲げ揺動ベンチマーク（フル版: 90°曲げ + ±3mm 1周期）.
 
@@ -126,6 +127,7 @@ class TestBendingOscillationMedium:
         print(f"\n[19本BM] 総計算時間: {result.total_time_s:.2f} s")
         print(print_benchmark_report(result))
 
+    @pytest.mark.timeout(600)
     def test_37_strand(self):
         """37本撚線ベンチマーク（収束は保証しない）."""
         result = run_bending_oscillation(

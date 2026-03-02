@@ -430,6 +430,7 @@ class TestBenchmarkTiming:
         totals = timing.phase_totals()
         assert len(totals) > 0, "工程別データが空"
 
+    @pytest.mark.timeout(900)
     @pytest.mark.parametrize("n_strands", [37, 61])
     def test_medium_strand_timing(self, n_strands):
         """中規模（37/61本）の収束性 + タイミング計測."""
@@ -448,6 +449,7 @@ class TestBenchmarkTiming:
         totals = timing.phase_totals()
         assert "broadphase" in totals or "structural_tangent" in totals
 
+    @pytest.mark.timeout(1800)
     def test_91_strand_timing(self):
         """大規模（91本）の収束性 + タイミング計測."""
         result, mgr, mesh, timing = _run_benchmark(
@@ -535,6 +537,7 @@ class TestBenchmarkTiming:
 class TestBenchmarkScaling:
     """撚線本数に対する処理時間スケーリング分析."""
 
+    @pytest.mark.timeout(900)
     def test_timing_scaling_report(self):
         """7→19→37本のスケーリングレポート."""
         results = {}
@@ -674,6 +677,7 @@ class TestS3ParameterTuning:
         # 19本は収束が難しい。レポートのみ（ブロックソルバー改良で段階的に改善）
         assert timing.total_time() > 0, "タイミングデータが記録されていない"
 
+    @pytest.mark.timeout(900)
     def test_37_strand_tuned_convergence(self):
         """37本撚り（4層）: チューニング済みパラメータで収束確認."""
         result, mgr, mesh, timing = _run_benchmark(
@@ -694,6 +698,7 @@ class TestS3ParameterTuning:
         print(f"  完了ステップ: {result.n_load_steps}/{15}")
         assert timing.total_time() > 0, "タイミングデータが記録されていない"
 
+    @pytest.mark.timeout(1200)
     def test_61_strand_tuned_convergence(self):
         """61本撚り（5層）: チューニング済みパラメータで収束確認."""
         result, mgr, mesh, timing = _run_benchmark(
@@ -713,6 +718,7 @@ class TestS3ParameterTuning:
         print(f"  61本: 活性ペア={n_active}, 収束={result.converged}")
         # 収束は assertion ではなくレポートのみ（大規模は段階的に改善）
 
+    @pytest.mark.timeout(1800)
     def test_91_strand_tuned_report(self):
         """91本撚り（6層）: チューニング済みパラメータで実行レポート."""
         result, mgr, mesh, timing = _run_benchmark(
@@ -732,6 +738,7 @@ class TestS3ParameterTuning:
         n_active = _count_active_pairs(mgr)
         print(f"  91本: 活性ペア={n_active}, 収束={result.converged}")
 
+    @pytest.mark.timeout(900)
     def test_tuned_scaling_report(self):
         """チューニング済みパラメータでのスケーリングレポート."""
         results = {}

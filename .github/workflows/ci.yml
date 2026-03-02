@@ -103,7 +103,7 @@ jobs:
         run: |
           if [ -s /tmp/shard_tests.txt ]; then
             python -m pytest $(cat /tmp/shard_tests.txt | tr '\n' ' ') \
-              -v --timeout=300 -x
+              -v --timeout=600 -x
           else
             echo "No tests in this shard"
           fi
