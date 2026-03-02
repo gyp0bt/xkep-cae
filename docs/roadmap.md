@@ -17,7 +17,7 @@
 
 ## 現在地
 
-**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 + CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング 完了。1886テスト（fast: 1542 / slow: 344）。**
+**Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + L0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + Phase 6.0 PoC + ML基盤 + Phase S1 + Phase S2基盤 + Phase S2+（Broadphase強化 + 中点距離プリスクリーニング + S3ベンチマーク基盤）+ COOベクトル化 + 共有メモリ並列化 + 接触アセンブリnumpyベクトル化 + NR BC高速化 + 修正NR法 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク（変位制御+GIF出力）+ outer loop早期終了バグ修正 + CI修正 + CR梁アセンブリCOO/CSR高速化 + 接触閾値チューニング + 撚線規模別計算時間計測（7〜91本） 完了。1886テスト（fast: 1542 / slow: 344）。**
 
 **次のマイルストーン**: S3パラメータチューニング（収束性改善）→ S4（剛性比較BM）→ ML → 1000本トライ → GPU
 
@@ -403,7 +403,7 @@ Phase 1-3 (アーキテクチャ, 梁要素, 幾何学的非線形) ✓
 - [x] ブロック前処理バッチ化（status-087）
 - [x] Mortar 適応ペナルティ増大（status-087）
 - [ ] 大規模問題での実測スピードアップ評価
-- [ ] 19本 → 37本 → 61本 → 91本 段階的ベンチマーク
+- [x] 7本 → 19本 → 37本 → 61本 → 91本 段階的ベンチマーク（計算時間計測、status-097）
 
 ### 中優先 — Phase S4-S6: 剛性比較 & ML & 1000本
 
