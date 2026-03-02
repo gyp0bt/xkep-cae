@@ -66,7 +66,7 @@ xkep_cae/
 docs/
 ├── roadmap.md      # 全体ロードマップ + TODO
 ├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（98個）
+├── status/         # ステータスファイル群（100個）
 ├── contact/        # 接触モジュール仕様群
 └── verification/   # バリデーション文書・検証図
 ```
