@@ -14,15 +14,16 @@
 - 実装状況は `docs/status/status-{index}.md` に記録する
 - **現在の状況**は index が最大の status ファイルに書かれている
 - **`docs/status/status-index.md`** にステータス一覧を管理する（新規status作成時に必ず行を追加すること）
+- status-001〜096 は `docs/status/archive/` に移動済み
 - status に書いた内容は **git の commit メッセージと整合**を取ること
 - 実装状況は細かく書き出す（別の AI アシスタントが参照して簡便に状況を把握する目的）
 
 ### 作業完了時の必須手順
 
-1. **README.md** を更新（現在の状態、ステータスリンク）
+1. **README.md** を更新（テスト数、マイルストーン進捗）
 2. **status ファイル**を新規作成 or 更新（TODO は status に記入）
 3. **status-index.md** を更新（新規statusの行を追加）
-4. **roadmap.md** を更新（チェックボックス、テスト数、「現在地」）
+4. **roadmap.md** を更新（Phase S のチェックボックス、「現在地」）
 5. 実装とドキュメントの不整合を発見したら**その場で修正**するか、TODO に追加
 6. **feature ごとにコミットを切って**、最後に push
 
@@ -41,49 +42,54 @@
 - 文献値や解析解との比較結果は `docs/verification/` に**図付き**で残す
 - 図は `tests/generate_verification_plots.py` で生成（matplotlib → PNG）
 - `pytest` 実行時にはプロットを生成しない（図生成は別スクリプト）
-- 図には解析解（実線）と数値解（マーカー）を重ね描きし、一致を視覚的に確認できるようにする
 
 ## プロジェクト構成
 
 ```
 xkep_cae/
-├── core/           # Protocol 定義（Element, Constitutive, State）
-├── elements/       # 要素（Q4, TRI3/6, Beam, Cosserat, HEX8）
-├── materials/      # 構成則（弾性, 1D/3D弾塑性）
-├── sections/       # 断面モデル（BeamSection, FiberSection）
-├── math/           # 数学ユーティリティ（四元数, SO(3)）
-├── contact/        # 梁–梁接触（NCP, AL, Mortar, 摩擦, グラフ）
-├── mesh/           # メッシュ生成（撚線, シース, チューブ）
-├── thermal/        # 熱伝導FEM + GNN/PINNサロゲート
+├── core/           # Protocol 定義
+├── elements/       # 要素（README.md に一覧）
+├── materials/      # 構成則
+├── sections/       # 断面モデル
+├── math/           # 四元数, SO(3)
+├── contact/        # 梁–梁接触（README.md に設計詳細）
+├── mesh/           # 撚線メッシュ（README.md に構成）
+├── thermal/        # 熱伝導 + GNN/PINN
 ├── numerical_tests/ # 数値試験フレームワーク
-├── output/         # 過渡応答出力（CSV/JSON/VTK/GIF）
+├── output/         # 過渡応答出力
 ├── io/             # Abaqus .inp パーサー
-├── solver.py       # 線形/非線形ソルバー（NR, 弧長法）
+├── solver.py       # NR, 弧長法
 ├── assembly.py     # アセンブリ
-├── dynamics.py     # 動的解析（Newmark-β, HHT-α, 陽解法）
+├── dynamics.py     # 動的解析
 ├── bc.py           # 境界条件
 └── api.py          # 高レベル API
 docs/
-├── roadmap.md      # 全体ロードマップ + TODO
-├── archive/        # 完了済みPhase詳細設計
-├── status/         # ステータスファイル群（100個）
-├── contact/        # 接触モジュール仕様群
+├── roadmap.md      # ロードマップ + マイルストーン
+├── archive/        # 完了済みPhase詳細
+├── status/         # アクティブstatus（097〜）
+│   └── archive/    # 旧status（001〜096）
+├── contact/        # 接触モジュール設計仕様群
 └── verification/   # バリデーション文書・検証図
 ```
 
 ## 現在の状態
 
-Phase 1〜3 + Phase 4.1〜4.2 + Phase 5.1〜5.4 + Phase C0〜C5 + Phase C6-L1〜L5 + C6-L1b + Phase 4.7 Level 0 + Phase 4.7 Level 0.5 S1-S4 + ブロック前処理ソルバー + adaptive omega + HEX8要素ファミリ + 過渡応答出力 + Phase 6.0 GNN/PINNサロゲートPoC + GitHub Actions CI + Phase S1 + Phase S2基盤 + Phase S2+ + COOベクトル化+共有メモリ並列化 + S3タイミング計測基盤 + 曲げ揺動ベンチマーク + CR梁COO/CSR高速化 + 撚線規模別計算時間計測 + xfailテスト根本対策 + S3パラメータチューニング + S4剛性比較BM + S6 1000本BM + 推奨ソルバー構成明文化 + S4-1素線+被膜/シース剛性BM 完了（1916テスト: fast 1542 / slow 374）。Phase 4.3（von Mises 3D）は凍結。Rust化は凍結。
+**1916テスト（fast: 1542 / slow: 374）** — 2026-03-02
 
-### 推奨ソルバー構成（リファレンス）
+FEM基盤（梁/平面/固体要素）、非線形（幾何学的/材料）、動的解析、梁–梁接触（NCP/Mortar/Line contact/摩擦）、撚線モデル（7本撚り収束/被膜/シース）、高速化基盤（COO/CSR/共有メモリ並列/ブロック前処理）、GNN/PINNサロゲートPoC — 全て完了。
 
-**全ベンチマークは以下の構成を基準とする**（詳細は `docs/roadmap.md` Phase S セクション）:
-- ソルバー: `newton_raphson_contact_ncp`（`solver_ncp.py`）— Outer loop 不要
-- 接触: Line-to-line Gauss 積分 + Mortar + 同層除外 + 摩擦
-- NCP関数: Fischer-Burmeister
-- 線形: DOF閾値で直接法/GMRES自動切替 + ブロック前処理
+### ターゲットマイルストーン
 
-> AL法ソルバー（`solver_hooks.py`）はレガシー比較用。adaptive omega / lambda_n_max_factor 等のワークアラウンドが不要な NCP が標準。
+> **1000本撚線（10万節点）の曲げ揺動計算を6時間以内に完了する。**
 
-**次のマイルストーン**: S3収束改善（NCPで19本以上）→ S4: 撚線構造剛性比較（素線+被膜/シース、曲げ/ねじり/引張/圧縮/大変形）→ S5: ML → S6: 1000本 → S7: GPU。
-詳細は `docs/roadmap.md` および最新の status ファイル（`docs/status/status-index.md` で一覧確認）を参照。
+### 推奨ソルバー構成
+
+- `newton_raphson_contact_ncp`（`solver_ncp.py`）
+- Line-to-line Gauss積分 + Mortar + 同層除外 + Fischer-Burmeister NCP
+- DOF閾値で直接法/GMRES自動切替 + ブロック前処理
+
+### 次の課題
+
+**S3: 19本以上のNCP収束** → S4: 剛性比較 → S5: ML → S6: 1000本6時間 → S7: GPU
+
+詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
