@@ -1034,16 +1034,13 @@ def _ncp_line_search(
     res_u_norm: float,
     max_steps: int = 6,
     f_c: np.ndarray | None = None,
-    diverge_factor: float = 10.0,
+    diverge_factor: float = 1000.0,
 ) -> float:
-    """NCP Newton ステップの発散防止 line search（安全弁方式）.
+    """NCP Newton ステップの発散防止 line search.
 
-    CR 梁の大回転問題では NR の残差が一時的に増加するのは正常。
-    完全な残差減少を要求すると収束を阻害する。
-    NaN/Inf や diverge_factor 倍以上の発散のみを防ぐ。
-
-    diverge_factor=10: CR梁16要素/ピッチの振動発散を抑制しつつ、
-    正常な一時的残差増加（~5倍）は許容。
+    diverge_factor で残差増大の許容倍率を設定:
+      - 1000.0: 安全弁（Full NR 用、一時的増加を許容）
+      - 1.5: 厳密バックトラッキング（Modified NR 用、振動抑制）
     """
     f_c_vec = f_c if f_c is not None else np.zeros_like(f_ext)
     alpha = 1.0
@@ -1099,6 +1096,9 @@ def newton_raphson_contact_ncp(
     use_line_search: bool = True,
     line_search_max_steps: int = 5,
     max_step_cuts: int = 0,
+    modified_nr_threshold: int = 0,
+    prescribed_dofs: np.ndarray | None = None,
+    prescribed_values: np.ndarray | None = None,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1151,6 +1151,12 @@ def newton_raphson_contact_ncp(
         line_contact: Line-to-line Gauss 積分の有効化（None なら config.line_contact）
         n_gauss: Gauss 積分点数（None なら config.n_gauss）
         max_step_cuts: ステップ二分法の最大回数（0=無効、3=1ステップを最大8分割）
+        modified_nr_threshold: Modified NR 切替閾値。N>0 の場合、
+            N 反復後に接線剛性を凍結（CR梁の振動発散抑制）。0=常に Full NR。
+        prescribed_dofs: 処方変位DOFのインデックス配列（変位制御用）。
+            各ステップで u[prescribed_dofs] = load_frac * prescribed_values を設定。
+            fixed_dofs とは別に管理（NR反復中は fixed_dofs に統合）。
+        prescribed_values: 処方変位の目標値（load_frac=1.0 での値）。
 
     Returns:
         NCPSolveResult
@@ -1158,6 +1164,22 @@ def newton_raphson_contact_ncp(
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+
+    # 処方変位の設定
+    _prescribed_dofs = (
+        np.asarray(prescribed_dofs, dtype=int)
+        if prescribed_dofs is not None
+        else np.array([], dtype=int)
+    )
+    _prescribed_values = (
+        np.asarray(prescribed_values, dtype=float)
+        if prescribed_values is not None
+        else np.array([])
+    )
+    has_prescribed = len(_prescribed_dofs) > 0
+    if has_prescribed:
+        # 処方変位DOFを固定DOFに統合
+        fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
 
     # k_pen の決定
     if k_pen <= 0.0:
@@ -1200,8 +1222,10 @@ def newton_raphson_contact_ncp(
     total_newton = 0
 
     f_ext_ref_norm = float(np.linalg.norm(f_ext_total))
-    if f_ext_ref_norm < 1e-30:
-        f_ext_ref_norm = 1.0
+    # 変位制御時（f_ext=0）: 初回残差から動的にスケーリング
+    _dynamic_ref = f_ext_ref_norm < 1e-30
+    if _dynamic_ref:
+        f_ext_ref_norm = 1.0  # 初回反復まで暫定値
 
     _f_ext_base = f_ext_base if f_ext_base is not None else np.zeros(ndof)
 
@@ -1225,6 +1249,10 @@ def newton_raphson_contact_ncp(
     lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
     u_ref_ckpt = u_ref.copy()
 
+    # 接線予測子用: 前ステップの変位増分を記録
+    u_prev_converged = u.copy()
+    delta_frac_prev = 0.0  # 前ステップの荷重分率増分
+
     while step_queue:
         step_display += 1
         load_frac = step_queue[0]
@@ -1232,6 +1260,22 @@ def newton_raphson_contact_ncp(
 
         step_converged = False
         energy_ref = None  # エネルギー収束基準値
+
+        # --- 接線予測子（前ステップの変位増分から外挿） ---
+        delta_frac = load_frac - load_frac_prev
+        if delta_frac_prev > 1e-30 and delta_frac > 1e-30:
+            # u_pred = u + du_prev * (delta_frac / delta_frac_prev)
+            du_prev = u - u_prev_converged
+            du_prev_norm = float(np.linalg.norm(du_prev))
+            if du_prev_norm > 1e-30:
+                ratio = delta_frac / delta_frac_prev
+                # 安全制限: 外挿比率を最大 2.0 に
+                ratio = min(ratio, 2.0)
+                u = u + ratio * du_prev
+
+        # --- 処方変位の適用 ---
+        if has_prescribed:
+            u[_prescribed_dofs] = load_frac * _prescribed_values
 
         # --- ステップ開始時: 候補検出 ---
         coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
@@ -1253,6 +1297,7 @@ def newton_raphson_contact_ncp(
             lam_t_new[: len(lam_t_all)] = lam_t_all
             lam_t_all = lam_t_new
 
+        K_T = None  # Modified NR 用: 接線凍結時に再利用
         for it in range(max_iter):
             total_newton += 1
 
@@ -1482,6 +1527,9 @@ def newton_raphson_contact_ncp(
 
             # 7. 収束判定
             res_u_norm = float(np.linalg.norm(R_u))
+            # 変位制御時: 初回反復の残差を基準ノルムに設定
+            if _dynamic_ref and it == 0 and res_u_norm > 1e-30:
+                f_ext_ref_norm = res_u_norm
             if _use_mortar and len(C_mortar) > 0:
                 ncp_norm = float(np.linalg.norm(C_mortar))
                 n_ncp_active = int(np.sum(ncp_mortar_active))
@@ -1522,8 +1570,21 @@ def newton_raphson_contact_ncp(
                 msg += f", active={n_ncp_active}/{n_geom_active}"
                 print(msg)
 
-            # 8. 構造接線剛性
-            K_T = assemble_tangent(u)
+            # 8. 適応 line search 係数 + 接線更新判定
+            # Modified NR: 閾値以降は接線を凍結（周期的にリフレッシュ）
+            _mnr_refresh = 5  # Modified NR の接線リフレッシュ周期
+            _in_mnr = modified_nr_threshold > 0 and it >= modified_nr_threshold
+            _mnr_refresh_iter = _in_mnr and (it - modified_nr_threshold) % _mnr_refresh == 0
+
+            # Full NR / MNRリフレッシュ: 残差3倍まで許容（初期過渡対応）
+            # MNR凍結中: 単調減少要求
+            _ls_diverge = 1.0 if (_in_mnr and not _mnr_refresh_iter) else 3.0
+
+            # 9. 構造接線剛性
+            if _in_mnr and not _mnr_refresh_iter and K_T is not None:
+                pass  # K_T を再利用（Modified NR 凍結中）
+            else:
+                K_T = assemble_tangent(u)
 
             # 8b. line contact 法線剛性を加算（Gauss 積分）
             # Mortar 使用時はスキップ: Mortar 鞍点系の k_pen * G^T G が接触剛性を提供
@@ -1577,6 +1638,7 @@ def newton_raphson_contact_ncp(
                         res_u_norm,
                         max_steps=line_search_max_steps,
                         f_c=f_c,
+                        diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
                 u += du
@@ -1621,6 +1683,7 @@ def newton_raphson_contact_ncp(
                         res_u_norm,
                         max_steps=line_search_max_steps,
                         f_c=f_c,
+                        diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
                 u += du
@@ -1674,6 +1737,7 @@ def newton_raphson_contact_ncp(
                         res_u_norm,
                         max_steps=line_search_max_steps,
                         f_c=f_c,
+                        diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
                 u += du
@@ -1734,6 +1798,8 @@ def newton_raphson_contact_ncp(
                 if lam_mortar_ckpt is not None:
                     lam_mortar = lam_mortar_ckpt.copy()
                 u_ref = u_ref_ckpt.copy()
+                # 予測子もリセット（ロールバック後は外挿しない）
+                delta_frac_prev = 0.0
                 # 中間点を挿入
                 mid_frac = load_frac_prev + delta / 2.0
                 step_queue.appendleft(load_frac)  # 元のターゲットを戻す
@@ -1768,6 +1834,9 @@ def newton_raphson_contact_ncp(
 
         # ステップ完了 — キューから消費 & チェックポイント保存
         step_queue.popleft()
+        # 接線予測子用: 前ステップの変位増分と荷重増分を記録
+        delta_frac_prev = load_frac - load_frac_prev
+        u_prev_converged = u_ckpt.copy()  # チェックポイント = 前ステップ収束点
         load_frac_prev = load_frac
         for i, pair in enumerate(manager.pairs):
             if i < len(lam_all):

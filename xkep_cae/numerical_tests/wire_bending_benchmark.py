@@ -463,6 +463,7 @@ def run_bending_oscillation(
     ncp_active_threshold: float = 0.0,
     lambda_relaxation: float = 1.0,
     max_step_cuts: int = 3,
+    modified_nr_threshold: int = 5,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -602,22 +603,35 @@ def run_bending_oscillation(
     _record_snapshot(np.zeros(ndof), "初期")
 
     # ------------------------------------------------------------------
-    # Phase 1: 曲げ（モーメント荷重 — 力制御）
+    # Phase 1: 曲げ
     # ------------------------------------------------------------------
     bend_angle_rad = np.deg2rad(bend_angle_deg)
     M_per_strand = _E * section.Iy * bend_angle_rad / L
 
     f_ext_bend = np.zeros(ndof)
+    rx_dofs_end: list[int] = []
     for sid in range(mesh.n_strands):
         end_dofs = _get_strand_end_dofs(mesh, sid, "end")
         f_ext_bend[end_dofs[3]] = M_per_strand  # DOF 3 = rx
-
-    if show_progress:
-        print(f"\n--- Phase 1: 曲げ（M={M_per_strand:.4e} N·m/strand, {n_bending_steps} steps）---")
+        rx_dofs_end.append(int(end_dofs[3]))
+    rx_dofs_end_arr = np.array(rx_dofs_end, dtype=int)
 
     if use_ncp:
+        # --- 変位制御: 自由端 rx DOF に回転角を処方 ---
+        # 力制御の限界点(frac≈0.178)を回避するため、
+        # 回転角を直接処方して各ステップで平衡解を求める
+        # NCPソルバーの内部機構（二分法、Modified NR、適応LS、接線予測子）を活用
+
+        # 処方変位: load_frac=1.0 で θ = bend_angle_rad
+        prescribed_vals = np.full(len(rx_dofs_end), bend_angle_rad)
+
+        if show_progress:
+            print(
+                f"\n--- Phase 1: 曲げ（変位制御 θ={bend_angle_deg}°, {n_bending_steps} steps）---"
+            )
+
         _ncp_result = newton_raphson_contact_ncp(
-            f_ext_bend,
+            np.zeros(ndof),  # 変位制御: 外力なし
             fixed_dofs_base,
             assemble_tangent,
             assemble_internal_force,
@@ -636,6 +650,9 @@ def run_bending_oscillation(
             n_gauss=n_gauss,
             k_pen=ncp_k_pen,
             max_step_cuts=max_step_cuts,
+            modified_nr_threshold=modified_nr_threshold,
+            prescribed_dofs=rx_dofs_end_arr,
+            prescribed_values=prescribed_vals,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
@@ -650,6 +667,11 @@ def run_bending_oscillation(
             graph_history=_ncp_result.graph_history,
         )
     else:
+        if show_progress:
+            print(
+                f"\n--- Phase 1: 曲げ（M={M_per_strand:.4e} N·m/strand, "
+                f"{n_bending_steps} steps）---"
+            )
         result_bend = newton_raphson_with_contact(
             f_ext_bend,
             fixed_dofs_base,
@@ -693,7 +715,13 @@ def run_bending_oscillation(
     z_dofs_end_arr = np.array(z_dofs_end, dtype=int)
 
     # Phase 2 用の拘束 DOF = 基本拘束 + 自由端 z-DOF
-    fixed_dofs_phase2 = np.unique(np.concatenate([fixed_dofs_base, z_dofs_end_arr]))
+    # NCP変位制御時は rx DOFs も拘束に含める（曲げ角維持）
+    if use_ncp:
+        fixed_dofs_phase2 = np.unique(
+            np.concatenate([fixed_dofs_base, z_dofs_end_arr, rx_dofs_end_arr])
+        )
+    else:
+        fixed_dofs_phase2 = np.unique(np.concatenate([fixed_dofs_base, z_dofs_end_arr]))
 
     # Phase 1 完了時の自由端 z 変位（基準値）
     z_base = u_after_bend[z_dofs_end_arr].copy()
@@ -719,10 +747,12 @@ def run_bending_oscillation(
         # 自由端 z-DOF に変位を処方
         u[z_dofs_end_arr] = z_base + delta_z
 
-        # NR ソルバー実行（n_load_steps=1, 曲げモーメント維持）
+        # NR ソルバー実行（n_load_steps=1, 曲げ維持）
+        # NCP変位制御: 外力0、rx DOFで曲げ角維持
+        # AL力制御: f_ext_bend で曲げモーメント維持
         if use_ncp:
             _ncp_step = newton_raphson_contact_ncp(
-                f_ext_bend,
+                np.zeros(ndof),
                 fixed_dofs_phase2,
                 assemble_tangent,
                 assemble_internal_force,
