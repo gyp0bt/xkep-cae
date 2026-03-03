@@ -37,6 +37,7 @@ from xkep_cae.contact.solver_hooks import (
     ContactSolveResult,
     newton_raphson_with_contact,
 )
+from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
 from xkep_cae.sections.beam import BeamSection
@@ -194,6 +195,14 @@ def _build_contact_manager(
     auto_kpen: bool = True,
     use_friction: bool = False,
     mu: float = 0.0,
+    k_pen_scaling: str = "sqrt",
+    penalty_growth_factor: float = 4.0,
+    use_mortar: bool = False,
+    n_gauss: int = 2,
+    augmented_threshold: int = 20,
+    saddle_regularization: float = 0.0,
+    ncp_active_threshold: float = 0.0,
+    lambda_relaxation: float = 1.0,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -216,12 +225,20 @@ def _build_contact_manager(
             line_search_max_steps=5,
             use_geometric_stiffness=True,
             tol_penetration_ratio=0.02,
-            penalty_growth_factor=2.0,
+            penalty_growth_factor=penalty_growth_factor,
             k_pen_max=1e12,
             elem_layer_map=elem_layer_map,
             exclude_same_layer=True,
             midpoint_prescreening=True,
             linear_solver="auto",
+            k_pen_scaling=k_pen_scaling,
+            use_mortar=use_mortar,
+            line_contact=True,
+            n_gauss=n_gauss,
+            augmented_threshold=augmented_threshold,
+            saddle_regularization=saddle_regularization,
+            ncp_active_threshold=ncp_active_threshold,
+            lambda_relaxation=lambda_relaxation,
         ),
     )
 
@@ -412,11 +429,12 @@ def run_bending_oscillation(
     *,
     wire_diameter: float = _WIRE_D,
     pitch: float = 0.040,
-    n_elems_per_strand: int = 8,
+    n_elems_per_pitch: int = 16,
+    n_elems_per_strand: int | None = None,  # 後方互換: 指定時は n_elems_per_pitch を上書き
     n_pitches: float = 1.0,
     # 曲げパラメータ
     bend_angle_deg: float = 90.0,
-    n_bending_steps: int = 20,
+    n_bending_steps: int = 45,
     # 揺動パラメータ（サイクル変位）
     oscillation_amplitude_mm: float = 5.0,
     n_cycles: int = 2,
@@ -429,10 +447,23 @@ def run_bending_oscillation(
     auto_kpen: bool = True,
     use_friction: bool = False,
     mu: float = 0.0,
+    k_pen_scaling: str = "sqrt",
+    penalty_growth_factor: float = 4.0,
     show_progress: bool = True,
     # GIF 出力
     gif_output_dir: str | Path | None = None,
     gif_snapshot_interval: int = 1,
+    # S3: NCP ソルバーパラメータ
+    use_ncp: bool = False,
+    use_mortar: bool = True,
+    n_gauss: int = 2,
+    ncp_k_pen: float = 0.0,
+    augmented_threshold: int = 20,
+    saddle_regularization: float = 0.0,
+    ncp_active_threshold: float = 0.0,
+    lambda_relaxation: float = 1.0,
+    max_step_cuts: int = 3,
+    modified_nr_threshold: int = 5,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -446,7 +477,7 @@ def run_bending_oscillation(
         n_strands: 素線本数（3, 7, 19, 37, 61, 91, ...）
         wire_diameter: 素線直径 [m]
         pitch: 撚ピッチ [m]
-        n_elems_per_strand: 素線あたり要素数
+        n_elems_per_pitch: 1ピッチあたり要素数（n_pitchesでスケーリング）
         n_pitches: ピッチ数
         bend_angle_deg: 目標曲げ角度 [°]
         n_bending_steps: 曲げ荷重ステップ数
@@ -472,13 +503,20 @@ def run_bending_oscillation(
     # ------------------------------------------------------------------
     # 1. メッシュ生成
     # ------------------------------------------------------------------
+    # ピッチあたりの要素数 → 素線あたりの要素数にスケーリング
+    # n_elems_per_strand が明示指定された場合はそちらを優先（後方互換）
+    if n_elems_per_strand is not None:
+        _n_elems_per_strand = n_elems_per_strand
+    else:
+        _n_elems_per_strand = max(4, int(round(n_elems_per_pitch * n_pitches)))
+
     t0 = time.perf_counter()
     mesh = make_twisted_wire_mesh(
         n_strands,
         wire_diameter,
         pitch,
         length=0.0,
-        n_elems_per_strand=n_elems_per_strand,
+        n_elems_per_strand=_n_elems_per_strand,
         n_pitches=n_pitches,
     )
     timing.record(0, 0, -1, "mesh_generation", time.perf_counter() - t0)
@@ -520,7 +558,32 @@ def run_bending_oscillation(
         auto_kpen=auto_kpen,
         use_friction=use_friction,
         mu=mu,
+        k_pen_scaling=k_pen_scaling,
+        penalty_growth_factor=penalty_growth_factor,
+        use_mortar=use_mortar if use_ncp else False,
+        n_gauss=n_gauss,
+        augmented_threshold=augmented_threshold,
+        saddle_regularization=saddle_regularization,
+        ncp_active_threshold=ncp_active_threshold,
+        lambda_relaxation=lambda_relaxation,
     )
+
+    # ------------------------------------------------------------------
+    # 4b. 初期貫入オフセット（LS-DYNA IGNORE=1 相当）
+    # ------------------------------------------------------------------
+    t0 = time.perf_counter()
+    mgr.detect_candidates(
+        mesh.node_coords,
+        mesh.connectivity,
+        mesh.radii,
+        margin=0.01,
+    )
+    n_initial_pen = mgr.store_initial_offsets(mesh.node_coords)
+    timing.record(0, 0, -1, "initial_penetration_offset", time.perf_counter() - t0)
+
+    if show_progress and n_initial_pen > 0:
+        max_offset = min(p.gap_offset for p in mgr.pairs if p.gap_offset < 0.0)
+        print(f"  初期貫入オフセット: {n_initial_pen}ペア（最大 {max_offset * 1000:.4f} mm）")
 
     # ------------------------------------------------------------------
     # GIF 用スナップショット収集
@@ -540,35 +603,91 @@ def run_bending_oscillation(
     _record_snapshot(np.zeros(ndof), "初期")
 
     # ------------------------------------------------------------------
-    # Phase 1: 曲げ（モーメント荷重 — 力制御）
+    # Phase 1: 曲げ
     # ------------------------------------------------------------------
     bend_angle_rad = np.deg2rad(bend_angle_deg)
     M_per_strand = _E * section.Iy * bend_angle_rad / L
 
     f_ext_bend = np.zeros(ndof)
+    rx_dofs_end: list[int] = []
     for sid in range(mesh.n_strands):
         end_dofs = _get_strand_end_dofs(mesh, sid, "end")
         f_ext_bend[end_dofs[3]] = M_per_strand  # DOF 3 = rx
+        rx_dofs_end.append(int(end_dofs[3]))
+    rx_dofs_end_arr = np.array(rx_dofs_end, dtype=int)
 
-    if show_progress:
-        print(f"\n--- Phase 1: 曲げ（M={M_per_strand:.4e} N·m/strand, {n_bending_steps} steps）---")
+    if use_ncp:
+        # --- 変位制御: 自由端 rx DOF に回転角を処方 ---
+        # 力制御の限界点(frac≈0.178)を回避するため、
+        # 回転角を直接処方して各ステップで平衡解を求める
+        # NCPソルバーの内部機構（二分法、Modified NR、適応LS、接線予測子）を活用
 
-    result_bend = newton_raphson_with_contact(
-        f_ext_bend,
-        fixed_dofs_base,
-        assemble_tangent,
-        assemble_internal_force,
-        mgr,
-        mesh.node_coords,
-        mesh.connectivity,
-        mesh.radii,
-        n_load_steps=n_bending_steps,
-        max_iter=max_iter,
-        tol_force=tol_force,
-        show_progress=show_progress,
-        broadphase_margin=0.01,
-        timing=timing,
-    )
+        # 処方変位: load_frac=1.0 で θ = bend_angle_rad
+        prescribed_vals = np.full(len(rx_dofs_end), bend_angle_rad)
+
+        if show_progress:
+            print(
+                f"\n--- Phase 1: 曲げ（変位制御 θ={bend_angle_deg}°, {n_bending_steps} steps）---"
+            )
+
+        _ncp_result = newton_raphson_contact_ncp(
+            np.zeros(ndof),  # 変位制御: 外力なし
+            fixed_dofs_base,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_bending_steps,
+            max_iter=max_iter,
+            tol_force=tol_force,
+            tol_ncp=tol_force,
+            show_progress=show_progress,
+            broadphase_margin=0.01,
+            line_contact=True,
+            use_mortar=use_mortar,
+            n_gauss=n_gauss,
+            k_pen=ncp_k_pen,
+            max_step_cuts=max_step_cuts,
+            modified_nr_threshold=modified_nr_threshold,
+            prescribed_dofs=rx_dofs_end_arr,
+            prescribed_values=prescribed_vals,
+        )
+        result_bend = ContactSolveResult(
+            u=_ncp_result.u,
+            converged=_ncp_result.converged,
+            n_load_steps=_ncp_result.n_load_steps,
+            total_newton_iterations=_ncp_result.total_newton_iterations,
+            total_outer_iterations=0,
+            n_active_final=_ncp_result.n_active_final,
+            load_history=_ncp_result.load_history,
+            displacement_history=_ncp_result.displacement_history,
+            contact_force_history=_ncp_result.contact_force_history,
+            graph_history=_ncp_result.graph_history,
+        )
+    else:
+        if show_progress:
+            print(
+                f"\n--- Phase 1: 曲げ（M={M_per_strand:.4e} N·m/strand, "
+                f"{n_bending_steps} steps）---"
+            )
+        result_bend = newton_raphson_with_contact(
+            f_ext_bend,
+            fixed_dofs_base,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_bending_steps,
+            max_iter=max_iter,
+            tol_force=tol_force,
+            show_progress=show_progress,
+            broadphase_margin=0.01,
+            timing=timing,
+        )
 
     u_after_bend = result_bend.u.copy()
     _record_snapshot(u_after_bend, f"曲げ完了 ({bend_angle_deg}°)")
@@ -596,7 +715,13 @@ def run_bending_oscillation(
     z_dofs_end_arr = np.array(z_dofs_end, dtype=int)
 
     # Phase 2 用の拘束 DOF = 基本拘束 + 自由端 z-DOF
-    fixed_dofs_phase2 = np.unique(np.concatenate([fixed_dofs_base, z_dofs_end_arr]))
+    # NCP変位制御時は rx DOFs も拘束に含める（曲げ角維持）
+    if use_ncp:
+        fixed_dofs_phase2 = np.unique(
+            np.concatenate([fixed_dofs_base, z_dofs_end_arr, rx_dofs_end_arr])
+        )
+    else:
+        fixed_dofs_phase2 = np.unique(np.concatenate([fixed_dofs_base, z_dofs_end_arr]))
 
     # Phase 1 完了時の自由端 z 変位（基準値）
     z_base = u_after_bend[z_dofs_end_arr].copy()
@@ -622,24 +747,61 @@ def run_bending_oscillation(
         # 自由端 z-DOF に変位を処方
         u[z_dofs_end_arr] = z_base + delta_z
 
-        # NR ソルバー実行（n_load_steps=1, 曲げモーメント維持）
-        result_step = newton_raphson_with_contact(
-            f_ext_bend,
-            fixed_dofs_phase2,
-            assemble_tangent,
-            assemble_internal_force,
-            mgr,
-            mesh.node_coords,
-            mesh.connectivity,
-            mesh.radii,
-            n_load_steps=1,
-            max_iter=max_iter,
-            tol_force=tol_force,
-            show_progress=False,
-            u0=u,
-            broadphase_margin=0.01,
-            timing=timing,
-        )
+        # NR ソルバー実行（n_load_steps=1, 曲げ維持）
+        # NCP変位制御: 外力0、rx DOFで曲げ角維持
+        # AL力制御: f_ext_bend で曲げモーメント維持
+        if use_ncp:
+            _ncp_step = newton_raphson_contact_ncp(
+                np.zeros(ndof),
+                fixed_dofs_phase2,
+                assemble_tangent,
+                assemble_internal_force,
+                mgr,
+                mesh.node_coords,
+                mesh.connectivity,
+                mesh.radii,
+                n_load_steps=1,
+                max_iter=max_iter,
+                tol_force=tol_force,
+                tol_ncp=tol_force,
+                show_progress=False,
+                u0=u,
+                broadphase_margin=0.01,
+                line_contact=True,
+                use_mortar=use_mortar,
+                n_gauss=n_gauss,
+                k_pen=ncp_k_pen,
+            )
+            result_step = ContactSolveResult(
+                u=_ncp_step.u,
+                converged=_ncp_step.converged,
+                n_load_steps=_ncp_step.n_load_steps,
+                total_newton_iterations=_ncp_step.total_newton_iterations,
+                total_outer_iterations=0,
+                n_active_final=_ncp_step.n_active_final,
+                load_history=_ncp_step.load_history,
+                displacement_history=_ncp_step.displacement_history,
+                contact_force_history=_ncp_step.contact_force_history,
+                graph_history=_ncp_step.graph_history,
+            )
+        else:
+            result_step = newton_raphson_with_contact(
+                f_ext_bend,
+                fixed_dofs_phase2,
+                assemble_tangent,
+                assemble_internal_force,
+                mgr,
+                mesh.node_coords,
+                mesh.connectivity,
+                mesh.radii,
+                n_load_steps=1,
+                max_iter=max_iter,
+                tol_force=tol_force,
+                show_progress=False,
+                u0=u,
+                broadphase_margin=0.01,
+                timing=timing,
+            )
 
         u = result_step.u.copy()
         phase2_results.append(result_step)
