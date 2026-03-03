@@ -109,8 +109,9 @@
 | 項目 | 状態 |
 |------|------|
 | 7本 NCP収束 | ✅ チューニング済み（adaptive omega + λ_nキャッピング） |
-| 19本以上 NCP収束 | ❌ 第1ステップで不収束 |
+| 19本以上 NCP収束 | 🔧 収束安定化基盤実装済み（status-102）、k_penスケーリング未完 |
 | S3パラメータチューニング基盤 | ✅ 6テスト（status-097） |
+| NCP収束安定化機能 | ✅ adaptive omega / bisection / active-set freeze / du cap（status-102） |
 | 91本タイミング計測 | ✅ ~25分（status-099） |
 
 **TODO**:
