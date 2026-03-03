@@ -9,6 +9,7 @@ from xkep_cae.io.abaqus_inp import (
     AbaqusMesh,
     AbaqusNode,
     read_abaqus_inp,
+    write_abaqus_inp,
 )
 from xkep_cae.io.inp_runner import (
     BeamModel,
@@ -38,4 +39,5 @@ __all__ = [
     "node_dof",
     "read_abaqus_inp",
     "solve_beam_static",
+    "write_abaqus_inp",
 ]

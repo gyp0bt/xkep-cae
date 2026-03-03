@@ -1055,6 +1055,16 @@ def newton_raphson_contact_ncp(
     line_contact: bool = False,
     n_gauss: int | None = None,
     use_mortar: bool = False,
+    # --- 収束安定化パラメータ ---
+    adaptive_omega: bool = False,
+    omega_init: float = 1.0,
+    omega_min: float = 0.05,
+    omega_max: float = 1.0,
+    omega_shrink: float = 0.5,
+    omega_growth: float = 1.2,
+    bisection_max_depth: int = 0,
+    active_set_update_interval: int = 1,
+    du_norm_cap: float = 0.0,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1106,6 +1116,17 @@ def newton_raphson_contact_ncp(
         mu_ramp_steps: μランプ（None なら config.mu_ramp_steps）
         line_contact: Line-to-line Gauss 積分の有効化（None なら config.line_contact）
         n_gauss: Gauss 積分点数（None なら config.n_gauss）
+        adaptive_omega: 適応的緩和係数の有効化
+        omega_init: 緩和係数の初期値
+        omega_min: 緩和係数の下限
+        omega_max: 緩和係数の上限
+        omega_shrink: メリット増大時の縮小係数
+        omega_growth: メリット減少時の成長係数
+        bisection_max_depth: 荷重ステップ二分法の最大深さ（0 = 無効）
+        active_set_update_interval: NCP active set の更新間隔（反復数）。
+            1=毎反復（デフォルト）、N=N反復ごと。chattering 抑制用。
+        du_norm_cap: Newton ステップのノルム上限
+            （||du|| / max(||u||, 1) ≤ cap）。0=無制限。
 
     Returns:
         NCPSolveResult
@@ -1163,11 +1184,21 @@ def newton_raphson_contact_ncp(
     # 摩擦用: 参照変位（前ステップ収束解）
     u_ref = u.copy()
 
-    for step in range(1, n_load_steps + 1):
-        load_frac = step / n_load_steps
+    # --- 二分法用のステップキュー ---
+    _step_queue: list[float] = [s / n_load_steps for s in range(1, n_load_steps + 1)]
+    _completed_steps = 0
+
+    while _step_queue:
+        load_frac = _step_queue.pop(0)
+        _completed_steps += 1
+        step = _completed_steps
         f_ext = _f_ext_base + load_frac * f_ext_total
 
         step_converged = False
+
+        # --- 適応的緩和係数の初期化 ---
+        _omega = omega_init if adaptive_omega else 1.0
+        _prev_merit = float("inf")
 
         # --- ステップ開始時: 候補検出 ---
         coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
@@ -1188,6 +1219,16 @@ def newton_raphson_contact_ncp(
             lam_t_new = np.zeros((manager.n_pairs, 2))
             lam_t_new[: len(lam_t_all)] = lam_t_all
             lam_t_all = lam_t_new
+
+        # --- 二分法用の状態保存（ペア拡張後） ---
+        _u_saved = u.copy()
+        _lam_saved = lam_all.copy()
+        _lam_t_saved = lam_t_all.copy()
+        _bisect_depth = 0
+
+        # --- Active-set freeze 用の前回値 ---
+        _frozen_ncp_active_mask: np.ndarray | None = None
+        _frozen_ncp_mortar_active: np.ndarray | None = None
 
         for it in range(max_iter):
             total_newton += 1
@@ -1233,17 +1274,35 @@ def newton_raphson_contact_ncp(
                     k_pen,
                 )
 
-            # 3. NCP アクティブセット判定
-            if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
-                # Mortar: 節点ベースのアクティブセット
-                p_n_mortar_arr = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
-                ncp_mortar_active = p_n_mortar_arr > 0.0
+            # 3. NCP アクティブセット判定（frozen active-set 対応）
+            _update_active = (
+                it % active_set_update_interval == 0
+                or _frozen_ncp_active_mask is None
+                or (
+                    _frozen_ncp_active_mask is not None
+                    and len(_frozen_ncp_active_mask) != n_geom_active
+                )
+            )
+            if _update_active:
+                if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
+                    p_n_mortar_arr = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
+                    ncp_mortar_active = p_n_mortar_arr > 0.0
+                else:
+                    ncp_mortar_active = np.array([], dtype=bool)
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
+                ncp_active_mask = p_n_arr > 0.0
+                _frozen_ncp_active_mask = ncp_active_mask.copy()
+                _frozen_ncp_mortar_active = (
+                    ncp_mortar_active.copy() if len(ncp_mortar_active) > 0 else None
+                )
             else:
-                ncp_mortar_active = np.array([], dtype=bool)
-
-            #    Per-pair: Active: λ + k_pen*(-g) > 0
-            p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
-            ncp_active_mask = p_n_arr > 0.0  # boolean
+                # Frozen: p_n_arr のみ更新、active mask は前回値を使用
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
+                ncp_active_mask = _frozen_ncp_active_mask
+                if _frozen_ncp_mortar_active is not None:
+                    ncp_mortar_active = _frozen_ncp_mortar_active
+                else:
+                    ncp_mortar_active = np.array([], dtype=bool)
 
             # 4. NCP 法線力を pair.state に同期（assembly 関数が参照するため）
             for idx_p, pair in enumerate(manager.pairs):
@@ -1437,7 +1496,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     msg = (
-                        f"  Step {step}/{n_load_steps}, iter {it}, "
+                        f"  Step {step} (λ={load_frac:.3f}), iter {it}, "
                         f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                         f"||C_n|| = {ncp_norm:.3e}"
                     )
@@ -1449,13 +1508,15 @@ def newton_raphson_contact_ncp(
 
             if show_progress and it % 5 == 0:
                 msg = (
-                    f"  Step {step}/{n_load_steps}, iter {it}, "
+                    f"  Step {step} (λ={load_frac:.3f}), iter {it}, "
                     f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                     f"||C_n|| = {ncp_norm:.3e}"
                 )
                 if _use_friction:
                     msg += f", ||C_t|| = {ncp_t_norm:.3e}"
                 msg += f", active={n_ncp_active}/{n_geom_active}"
+                if adaptive_omega:
+                    msg += f", ω={_omega:.3f}"
                 print(msg)
 
             # 8. 構造接線剛性
@@ -1502,10 +1563,15 @@ def newton_raphson_contact_ncp(
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
-                # 11m. Mortar 乗数更新
-                u += du
+                # 11m. Mortar 乗数更新（omega + du cap）
+                if du_norm_cap > 0.0:
+                    _du_n = float(np.linalg.norm(du))
+                    _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
+                    if _du_n > du_norm_cap * _u_ref_n:
+                        du *= du_norm_cap * _u_ref_n / _du_n
+                u += _omega * du
                 for j_local, row in enumerate(active_mortar_rows):
-                    lam_mortar[row] += dlam_mortar_A[j_local]
+                    lam_mortar[row] += _omega * dlam_mortar_A[j_local]
                 for k in range(len(mortar_nodes)):
                     if not ncp_mortar_active[k]:
                         lam_mortar[k] = 0.0
@@ -1534,8 +1600,13 @@ def newton_raphson_contact_ncp(
                     active_indices,
                 )
 
-                # 11. 更新
-                u += du
+                # 11. 更新（omega + du cap）
+                if du_norm_cap > 0.0:
+                    _du_n = float(np.linalg.norm(du))
+                    _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
+                    if _du_n > du_norm_cap * _u_ref_n:
+                        du *= du_norm_cap * _u_ref_n / _du_n
+                u += _omega * du
 
                 # 法線乗数の更新
                 if n_ncp_active > 0:
@@ -1543,13 +1614,13 @@ def newton_raphson_contact_ncp(
                     for j_local in range(n_ncp_active):
                         j_geom = int(active_rows_n[j_local])
                         pair_idx = active_indices[j_geom]
-                        lam_all[pair_idx] += dlam_n[j_local]
+                        lam_all[pair_idx] += _omega * dlam_n[j_local]
 
                     # 接線乗数の更新
                     for j_local in range(n_ncp_active):
                         j_geom = int(active_rows_n[j_local])
                         pair_idx = active_indices[j_geom]
-                        lam_t_all[pair_idx] += dlam_t[2 * j_local : 2 * j_local + 2]
+                        lam_t_all[pair_idx] += _omega * dlam_t[2 * j_local : 2 * j_local + 2]
 
             else:
                 # 従来の法線のみ鞍点系
@@ -1575,8 +1646,13 @@ def newton_raphson_contact_ncp(
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
-                # 11. 更新
-                u += du
+                # 11. 更新（omega + du cap）
+                if du_norm_cap > 0.0:
+                    _du_n = float(np.linalg.norm(du))
+                    _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
+                    if _du_n > du_norm_cap * _u_ref_n:
+                        du *= du_norm_cap * _u_ref_n / _du_n
+                u += _omega * du
 
                 # NCP アクティブ乗数の更新
                 if n_ncp_active > 0:
@@ -1584,7 +1660,7 @@ def newton_raphson_contact_ncp(
                         active_indices[j] for j in range(n_geom_active) if ncp_active_mask[j]
                     ]
                     for j_local, pair_idx in enumerate(active_pair_indices):
-                        lam_all[pair_idx] += dlam_A[j_local]
+                        lam_all[pair_idx] += _omega * dlam_A[j_local]
 
             # NCP 非アクティブ乗数をゼロに（Mortar 時はスキップ）
             if not _use_mortar:
@@ -1594,22 +1670,54 @@ def newton_raphson_contact_ncp(
                         lam_t_all[active_indices[j]] = 0.0
                 lam_all = np.maximum(lam_all, 0.0)
 
-            # 変位ノルム判定
+            # --- adaptive omega: メリット関数による緩和係数更新 ---
+            if adaptive_omega:
+                _merit = res_u_norm + ncp_norm
+                if _merit < _prev_merit:
+                    _omega = min(_omega * omega_growth, omega_max)
+                else:
+                    _omega = max(_omega * omega_shrink, omega_min)
+                _prev_merit = _merit
+
+            # 変位ノルム判定（omega 適用済みの実効 du で評価）
             u_norm = float(np.linalg.norm(u))
-            du_norm = float(np.linalg.norm(du))
-            if u_norm > 1e-30 and du_norm / u_norm < tol_disp and ncp_conv:
+            du_eff_norm = float(np.linalg.norm(_omega * du))
+            if u_norm > 1e-30 and du_eff_norm / u_norm < tol_disp and ncp_conv:
                 step_converged = True
                 if show_progress:
                     print(
-                        f"  Step {step}/{n_load_steps}, iter {it}, "
-                        f"||du||/||u|| = {du_norm / u_norm:.3e} "
+                        f"  Step {step} (λ={load_frac:.3f}), iter {it}, "
+                        f"||du||/||u|| = {du_eff_norm / u_norm:.3e} "
                         f"(disp converged, {n_ncp_active} active)"
                     )
                 break
 
         if not step_converged:
+            # --- ステップ二分法 ---
+            if bisection_max_depth > 0 and _bisect_depth < bisection_max_depth:
+                _bisect_depth += 1
+                # 状態をリストア
+                u[:] = _u_saved
+                lam_all = _lam_saved.copy()
+                lam_t_all = _lam_t_saved.copy()
+                # 半分の荷重を先頭に挿入
+                _prev_frac = (_completed_steps - 1) / n_load_steps if _completed_steps > 1 else 0.0
+                mid_frac = (_prev_frac + load_frac) / 2.0
+                _step_queue.insert(0, load_frac)  # 元のステップを再キュー
+                _step_queue.insert(0, mid_frac)  # 中間ステップを先に
+                _completed_steps -= 1  # このステップを無効化
+                if show_progress:
+                    print(
+                        f"  BISECT: Step {step} (λ={load_frac:.3f}) failed, "
+                        f"inserting λ={mid_frac:.4f} (depth {_bisect_depth})"
+                    )
+                continue
+
             if show_progress:
-                print(f"  WARNING: Step {step} did not converge in {max_iter} iterations.")
+                print(
+                    f"  WARNING: Step {step} (λ={load_frac:.3f}) did not converge "
+                    f"in {max_iter} iterations."
+                )
             return NCPSolveResult(
                 u=u,
                 lambdas=lam_all,
