@@ -1034,15 +1034,18 @@ def _ncp_line_search(
     res_u_norm: float,
     max_steps: int = 6,
     f_c: np.ndarray | None = None,
+    diverge_factor: float = 10.0,
 ) -> float:
     """NCP Newton ステップの発散防止 line search（安全弁方式）.
 
     CR 梁の大回転問題では NR の残差が一時的に増加するのは正常。
     完全な残差減少を要求すると収束を阻害する。
-    NaN/Inf や極端な発散（1000倍）のみを防ぐ。
+    NaN/Inf や diverge_factor 倍以上の発散のみを防ぐ。
+
+    diverge_factor=10: CR梁16要素/ピッチの振動発散を抑制しつつ、
+    正常な一時的残差増加（~5倍）は許容。
     """
     f_c_vec = f_c if f_c is not None else np.zeros_like(f_ext)
-    diverge_factor = 1000.0
     alpha = 1.0
     for _ in range(max_steps):
         u_try = u + alpha * du
@@ -1095,6 +1098,7 @@ def newton_raphson_contact_ncp(
     use_mortar: bool = False,
     use_line_search: bool = True,
     line_search_max_steps: int = 5,
+    max_step_cuts: int = 0,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1146,6 +1150,7 @@ def newton_raphson_contact_ncp(
         mu_ramp_steps: μランプ（None なら config.mu_ramp_steps）
         line_contact: Line-to-line Gauss 積分の有効化（None なら config.line_contact）
         n_gauss: Gauss 積分点数（None なら config.n_gauss）
+        max_step_cuts: ステップ二分法の最大回数（0=無効、3=1ステップを最大8分割）
 
     Returns:
         NCPSolveResult
@@ -1203,8 +1208,26 @@ def newton_raphson_contact_ncp(
     # 摩擦用: 参照変位（前ステップ収束解）
     u_ref = u.copy()
 
-    for step in range(1, n_load_steps + 1):
-        load_frac = step / n_load_steps
+    # --- ステップ二分法サポート ---
+    from collections import deque
+
+    step_queue: deque[float] = deque()
+    for _s in range(1, n_load_steps + 1):
+        step_queue.append(_s / n_load_steps)
+    load_frac_prev = 0.0
+    step_display = 0  # 表示用ステップカウンタ
+    total_sub_steps = len(step_queue)
+
+    # チェックポイント（二分法のロールバック用）
+    u_ckpt = u.copy()
+    lam_ckpt = lam_all.copy()
+    lam_t_ckpt = lam_t_all.copy()
+    lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
+    u_ref_ckpt = u_ref.copy()
+
+    while step_queue:
+        step_display += 1
+        load_frac = step_queue[0]
         f_ext = _f_ext_base + load_frac * f_ext_total
 
         step_converged = False
@@ -1331,7 +1354,7 @@ def newton_raphson_contact_ncp(
 
             # 4b. 摩擦力ベクトル（Alart-Curnier 接線乗数方式）
             if _use_friction:
-                mu_eff = compute_mu_effective(_mu, step, _mu_ramp_steps)
+                mu_eff = compute_mu_effective(_mu, step_display, _mu_ramp_steps)
                 # 接線乗数から摩擦力を計算: f_fric = -G_t^T * λ_t
                 f_friction = np.zeros(ndof)
                 for _j, pair_idx in enumerate(active_indices):
@@ -1478,7 +1501,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     msg = (
-                        f"  Step {step}/{n_load_steps}, iter {it}, "
+                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
                         f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                         f"||C_n|| = {ncp_norm:.3e}"
                     )
@@ -1490,7 +1513,7 @@ def newton_raphson_contact_ncp(
 
             if show_progress and it % 5 == 0:
                 msg = (
-                    f"  Step {step}/{n_load_steps}, iter {it}, "
+                    f"  Step {step_display}/{n_load_steps}, iter {it}, "
                     f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                     f"||C_n|| = {ncp_norm:.3e}"
                 )
@@ -1678,7 +1701,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     print(
-                        f"  Step {step}/{n_load_steps}, iter {it}, "
+                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
                         f"||du||/||u|| = {du_norm / u_norm:.3e} "
                         f"(disp converged, {n_ncp_active} active)"
                     )
@@ -1692,29 +1715,60 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     print(
-                        f"  Step {step}/{n_load_steps}, iter {it}, "
+                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
                         f"energy = {energy:.3e} "
                         f"(energy converged, {n_ncp_active} active)"
                     )
                 break
 
         if not step_converged:
-            if show_progress:
-                print(f"  WARNING: Step {step} did not converge in {max_iter} iterations.")
-            return NCPSolveResult(
-                u=u,
-                lambdas=lam_all,
-                converged=False,
-                n_load_steps=step,
-                total_newton_iterations=total_newton,
-                n_active_final=manager.n_active,
-                load_history=load_history,
-                displacement_history=disp_history,
-                contact_force_history=contact_force_history,
-                graph_history=graph_history,
-            )
+            # --- ステップ二分法 ---
+            # 現在の荷重分率と直前の収束点の中間にサブステップを挿入
+            delta = load_frac - load_frac_prev
+            min_delta = 1.0 / (n_load_steps * 2**max_step_cuts) if max_step_cuts > 0 else 0.0
+            if max_step_cuts > 0 and delta > min_delta * 1.5:
+                # ロールバック
+                u = u_ckpt.copy()
+                lam_all = lam_ckpt.copy()
+                lam_t_all = lam_t_ckpt.copy()
+                if lam_mortar_ckpt is not None:
+                    lam_mortar = lam_mortar_ckpt.copy()
+                u_ref = u_ref_ckpt.copy()
+                # 中間点を挿入
+                mid_frac = load_frac_prev + delta / 2.0
+                step_queue.appendleft(load_frac)  # 元のターゲットを戻す
+                step_queue.appendleft(mid_frac)  # 中間点を先頭に
+                total_sub_steps += 1
+                step_display -= 1  # カウンタを巻き戻し
+                if show_progress:
+                    print(
+                        f"  Step bisection: frac {load_frac:.4f} → "
+                        f"sub-steps [{mid_frac:.4f}, {load_frac:.4f}] "
+                        f"(delta {delta:.4f} → {delta / 2:.4f})"
+                    )
+                continue
+            else:
+                if show_progress:
+                    print(
+                        f"  WARNING: Step {step_display} (frac={load_frac:.4f}) "
+                        f"did not converge in {max_iter} iterations."
+                    )
+                return NCPSolveResult(
+                    u=u,
+                    lambdas=lam_all,
+                    converged=False,
+                    n_load_steps=step_display,
+                    total_newton_iterations=total_newton,
+                    n_active_final=manager.n_active,
+                    load_history=load_history,
+                    displacement_history=disp_history,
+                    contact_force_history=contact_force_history,
+                    graph_history=graph_history,
+                )
 
-        # ステップ完了
+        # ステップ完了 — キューから消費 & チェックポイント保存
+        step_queue.popleft()
+        load_frac_prev = load_frac
         for i, pair in enumerate(manager.pairs):
             if i < len(lam_all):
                 pair.state.lambda_n = lam_all[i]
@@ -1760,13 +1814,20 @@ def newton_raphson_contact_ncp(
         # 摩擦用: 参照変位を更新（次ステップ用）
         u_ref = u.copy()
 
+        # チェックポイント保存（二分法ロールバック用）
+        u_ckpt = u.copy()
+        lam_ckpt = lam_all.copy()
+        lam_t_ckpt = lam_t_all.copy()
+        lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
+        u_ref_ckpt = u_ref.copy()
+
         load_history.append(load_frac)
         disp_history.append(u.copy())
         f_c_norm = float(np.linalg.norm(f_c))
         contact_force_history.append(f_c_norm)
 
         try:
-            graph = snapshot_contact_graph(manager, step_index=step - 1)
+            graph = snapshot_contact_graph(manager, step_index=step_display - 1)
             graph_history.add_snapshot(graph)
         except Exception:
             pass
@@ -1775,7 +1836,7 @@ def newton_raphson_contact_ncp(
         u=u,
         lambdas=lam_all,
         converged=True,
-        n_load_steps=n_load_steps,
+        n_load_steps=step_display,
         total_newton_iterations=total_newton,
         n_active_final=manager.n_active,
         load_history=load_history,

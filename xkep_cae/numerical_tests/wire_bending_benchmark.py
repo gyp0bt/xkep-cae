@@ -434,7 +434,7 @@ def run_bending_oscillation(
     n_pitches: float = 1.0,
     # 曲げパラメータ
     bend_angle_deg: float = 90.0,
-    n_bending_steps: int = 20,
+    n_bending_steps: int = 45,
     # 揺動パラメータ（サイクル変位）
     oscillation_amplitude_mm: float = 5.0,
     n_cycles: int = 2,
@@ -462,6 +462,7 @@ def run_bending_oscillation(
     saddle_regularization: float = 0.0,
     ncp_active_threshold: float = 0.0,
     lambda_relaxation: float = 1.0,
+    max_step_cuts: int = 3,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -634,6 +635,7 @@ def run_bending_oscillation(
             use_mortar=use_mortar,
             n_gauss=n_gauss,
             k_pen=ncp_k_pen,
+            max_step_cuts=max_step_cuts,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
