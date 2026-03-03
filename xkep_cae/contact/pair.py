@@ -120,6 +120,7 @@ class ContactPair:
     state: ContactState = field(default_factory=ContactState)
     radius_a: float = 0.0
     radius_b: float = 0.0
+    gap_offset: float = 0.0  # 初期貫入オフセット（LS-DYNA IGNORE=1 相当）
 
     @property
     def search_radius(self) -> float:
@@ -226,6 +227,11 @@ class ContactConfig:
     lambda_n_max_factor: float = (
         0.0  # λ_n上限: lambda_n_max_factor * k_pen * search_radius（0=無効）
     )
+    # --- S3: 大規模NCP収束改善パラメータ ---
+    augmented_threshold: int = 20  # n_active がこの閾値超で拡大系直接法
+    saddle_regularization: float = 0.0  # 鞍点系(2,2)ブロックの正則化δ（0=自動推定）
+    ncp_active_threshold: float = 0.0  # NCP活性セットのヒステリシス閾値
+    lambda_relaxation: float = 1.0  # λ更新の under-relaxation 係数
 
 
 @dataclass
@@ -433,8 +439,9 @@ class ContactManager:
             # 最近接点計算
             result = closest_point_segments(xA0, xA1, xB0, xB1)
 
-            # ギャップ計算
+            # ギャップ計算（初期貫入オフセット適用）
             gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
+            gap -= pair.gap_offset
 
             # 接触フレーム更新（法線履歴 + 平行輸送で連続性を保持）
             prev_t1 = pair.state.tangent1
@@ -589,6 +596,40 @@ class ContactManager:
             if layer_a == layer_b and layer_a >= 0:
                 count += 1
         return count
+
+    def store_initial_offsets(self, node_coords: np.ndarray) -> int:
+        """初期貫入オフセットを計算・保存する（LS-DYNA IGNORE=1 相当）.
+
+        t=0 時点の各ペアのギャップを計測し、初期貫入（g < 0）分を
+        gap_offset として保存する。以後の update_geometry() で
+        g_effective = g_raw - gap_offset が使われ、初期貫入による
+        偽の接触力が発生しない。
+
+        Args:
+            node_coords: 初期節点座標 (n_nodes, 3)
+
+        Returns:
+            初期貫入ペア数
+        """
+        coords = np.asarray(node_coords, dtype=float)
+        n_offset = 0
+
+        for pair in self.pairs:
+            xA0 = coords[pair.nodes_a[0]]
+            xA1 = coords[pair.nodes_a[1]]
+            xB0 = coords[pair.nodes_b[0]]
+            xB1 = coords[pair.nodes_b[1]]
+
+            result = closest_point_segments(xA0, xA1, xB0, xB1)
+            gap_raw = compute_gap(result.distance, pair.radius_a, pair.radius_b)
+
+            if gap_raw < 0.0:
+                pair.gap_offset = gap_raw
+                n_offset += 1
+            else:
+                pair.gap_offset = 0.0
+
+        return n_offset
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

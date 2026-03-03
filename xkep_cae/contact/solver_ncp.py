@@ -1025,6 +1025,44 @@ def _solve_saddle_point_contact(
     )
 
 
+def _ncp_line_search(
+    u: np.ndarray,
+    du: np.ndarray,
+    f_ext: np.ndarray,
+    fixed_dofs: np.ndarray,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray],
+    res_u_norm: float,
+    max_steps: int = 6,
+    f_c: np.ndarray | None = None,
+) -> float:
+    """NCP Newton ステップの発散防止 line search（安全弁方式）.
+
+    CR 梁の大回転問題では NR の残差が一時的に増加するのは正常。
+    完全な残差減少を要求すると収束を阻害する。
+    NaN/Inf や極端な発散（1000倍）のみを防ぐ。
+    """
+    f_c_vec = f_c if f_c is not None else np.zeros_like(f_ext)
+    diverge_factor = 1000.0
+    alpha = 1.0
+    for _ in range(max_steps):
+        u_try = u + alpha * du
+        try:
+            f_int_try = assemble_internal_force(u_try)
+        except Exception:
+            alpha *= 0.5
+            continue
+        R_try = f_int_try + f_c_vec - f_ext
+        R_try[fixed_dofs] = 0.0
+        if not np.all(np.isfinite(R_try)):
+            alpha *= 0.5
+            continue
+        r_try = float(np.linalg.norm(R_try))
+        if r_try < diverge_factor * max(res_u_norm, 1e-30):
+            return alpha
+        alpha *= 0.5
+    return alpha
+
+
 def newton_raphson_contact_ncp(
     f_ext_total: np.ndarray,
     fixed_dofs: np.ndarray,
@@ -1055,6 +1093,8 @@ def newton_raphson_contact_ncp(
     line_contact: bool = False,
     n_gauss: int | None = None,
     use_mortar: bool = False,
+    use_line_search: bool = True,
+    line_search_max_steps: int = 5,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1168,6 +1208,7 @@ def newton_raphson_contact_ncp(
         f_ext = _f_ext_base + load_frac * f_ext_total
 
         step_converged = False
+        energy_ref = None  # エネルギー収束基準値
 
         # --- ステップ開始時: 候補検出 ---
         coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
@@ -1502,7 +1543,19 @@ def newton_raphson_contact_ncp(
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
-                # 11m. Mortar 乗数更新
+                # 11m. Line search + Mortar 乗数更新
+                if use_line_search:
+                    alpha = _ncp_line_search(
+                        u,
+                        du,
+                        f_ext,
+                        fixed_dofs,
+                        assemble_internal_force,
+                        res_u_norm,
+                        max_steps=line_search_max_steps,
+                        f_c=f_c,
+                    )
+                    du = alpha * du
                 u += du
                 for j_local, row in enumerate(active_mortar_rows):
                     lam_mortar[row] += dlam_mortar_A[j_local]
@@ -1534,7 +1587,19 @@ def newton_raphson_contact_ncp(
                     active_indices,
                 )
 
-                # 11. 更新
+                # 11. Line search + 更新
+                if use_line_search:
+                    alpha = _ncp_line_search(
+                        u,
+                        du,
+                        f_ext,
+                        fixed_dofs,
+                        assemble_internal_force,
+                        res_u_norm,
+                        max_steps=line_search_max_steps,
+                        f_c=f_c,
+                    )
+                    du = alpha * du
                 u += du
 
                 # 法線乗数の更新
@@ -1575,7 +1640,19 @@ def newton_raphson_contact_ncp(
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
                 )
 
-                # 11. 更新
+                # 11. Line search + 更新
+                if use_line_search:
+                    alpha = _ncp_line_search(
+                        u,
+                        du,
+                        f_ext,
+                        fixed_dofs,
+                        assemble_internal_force,
+                        res_u_norm,
+                        max_steps=line_search_max_steps,
+                        f_c=f_c,
+                    )
+                    du = alpha * du
                 u += du
 
                 # NCP アクティブ乗数の更新
@@ -1604,6 +1681,20 @@ def newton_raphson_contact_ncp(
                         f"  Step {step}/{n_load_steps}, iter {it}, "
                         f"||du||/||u|| = {du_norm / u_norm:.3e} "
                         f"(disp converged, {n_ncp_active} active)"
+                    )
+                break
+
+            # エネルギー収束判定: |du · R_u| / |du_0 · R_0| < tol_energy
+            energy = abs(float(np.dot(du, R_u)))
+            if energy_ref is None:
+                energy_ref = energy if energy > 1e-30 else 1.0
+            if energy_ref > 1e-30 and energy / energy_ref < 1e-10 and ncp_conv:
+                step_converged = True
+                if show_progress:
+                    print(
+                        f"  Step {step}/{n_load_steps}, iter {it}, "
+                        f"energy = {energy:.3e} "
+                        f"(energy converged, {n_ncp_active} active)"
                     )
                 break
 
