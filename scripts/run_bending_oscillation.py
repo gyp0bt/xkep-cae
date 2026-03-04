@@ -59,7 +59,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 from xkep_cae.contact.graph import save_contact_graph_gif
-from xkep_cae.io.abaqus_inp import write_abaqus_inp
+from xkep_cae.io.abaqus_inp import (
+    InpContactDef,
+    InpOutputRequest,
+    InpStep,
+    write_abaqus_model,
+)
 from xkep_cae.mesh.twisted_wire import (
     TwistedWireMesh,
     make_twisted_wire_mesh,
@@ -187,18 +192,87 @@ def export_bending_oscillation_inp(
         elems = mesh.strand_elems(sid)
         elsets[f"STRAND_{sid}"] = [int(e) + 1 for e in elems]  # 1-based
 
-    # --- 境界条件: 固定端を全 DOF 拘束 ---
-    boundaries: list[tuple[int, int, int, float]] = []
-    for node_label in nsets["FIXED_END"]:
-        boundaries.append((node_label, 1, 6, 0.0))
-
     # --- 断面寸法 ---
     r = p["wire_diameter"] / 2.0
     beam_section_dims = [r]
 
+    # --- 接触定義 ---
+    contact_alg = "NCP" if p["use_ncp"] else "AL"
+    contact_def = InpContactDef(
+        algorithm=contact_alg,
+        k_pen=p.get("ncp_k_pen", 0.0),
+        friction=p.get("mu", 0.0),
+        mortar=p.get("use_mortar", True),
+        exclude_same_layer=True,
+    )
+
+    # --- Step 1: 曲げ（静解析）---
+    bending_bcs: list[tuple[int | str, int, int, float]] = []
+    for node_label in nsets["FIXED_END"]:
+        bending_bcs.append((node_label, 1, 6, 0.0))
+
+    step_bend = InpStep(
+        name="Bending",
+        procedure="STATIC",
+        nlgeom=True,
+        unsymm=True,
+        inc=1000,
+        time_params=(1.0 / p["n_bending_steps"], 1.0, 1e-8, 1.0),
+        boundaries=bending_bcs,
+        contact=contact_def,
+        output_requests=[
+            InpOutputRequest(
+                domain="FIELD",
+                frequency=1,
+                variables=["U", "RF", "S", "COORD"],
+            ),
+            InpOutputRequest(
+                domain="HISTORY",
+                frequency=1,
+                variables=["ALLKE", "ALLIE", "ETOTAL"],
+            ),
+        ],
+    )
+
+    # --- Step 2: 揺動（動解析）---
+    osc_bcs: list[tuple[int | str, int, int, float]] = []
+    for node_label in nsets["FIXED_END"]:
+        osc_bcs.append((node_label, 1, 6, 0.0))
+
+    n_quarter = p["n_steps_per_quarter"]
+    n_osc_steps = 4 * p["n_cycles"] * n_quarter
+    total_osc_time = float(n_osc_steps)
+    dt_osc = 1.0
+
+    step_osc = InpStep(
+        name="Oscillation",
+        procedure="DYNAMIC",
+        nlgeom=True,
+        unsymm=True,
+        inc=n_osc_steps * 10,
+        time_params=(dt_osc, total_osc_time, 1e-8, dt_osc),
+        boundaries=osc_bcs,
+        boundary_type="DISPLACEMENT",
+        contact=contact_def,
+        output_requests=[
+            InpOutputRequest(
+                domain="FIELD",
+                frequency=1,
+                variables=["U", "V", "A", "RF", "S", "COORD"],
+            ),
+            InpOutputRequest(
+                domain="HISTORY",
+                frequency=1,
+                variables=["ALLKE", "ALLIE", "ETOTAL"],
+            ),
+        ],
+    )
+
+    steps = [step_bend, step_osc]
+
     # --- xkep-cae メタデータ（ソルバー・荷重パラメータ）---
     metadata = {
-        "xkep_version": "1.0",
+        "xkep_version": "2.0",
         "problem_type": "bending_oscillation",
         "n_strands": n_strands,
         "wire_diameter": p["wire_diameter"],
@@ -233,8 +307,11 @@ def export_bending_oscillation_inp(
         "strand_elem_ranges": mesh.strand_elem_ranges,
     }
 
+    # --- 鋼線密度 ---
+    steel_density = 7850.0  # kg/m³
+
     # --- .inp 書き出し ---
-    inp_path = write_abaqus_inp(
+    inp_path = write_abaqus_model(
         out_dir / f"model_{n_strands}strand.inp",
         mesh.node_coords,
         mesh.connectivity,
@@ -242,13 +319,14 @@ def export_bending_oscillation_inp(
         title=f"xkep-cae bending oscillation {n_strands}-strand twisted wire",
         nsets=nsets,
         elsets=elsets,
-        boundaries=boundaries,
         material_name="STEEL",
         E=p["E"],
         nu=p["nu"],
+        density=steel_density,
         beam_section_type="CIRC",
         beam_section_dims=beam_section_dims,
         beam_section_direction=[0.0, 1.0, 0.0],
+        steps=steps,
     )
 
     # --- メタデータをファイル末尾に追記 ---
