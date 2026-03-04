@@ -65,6 +65,7 @@ from xkep_cae.io.abaqus_inp import (
     InpStep,
     InpSurfaceDef,
     InpSurfaceInteraction,
+    read_abaqus_inp,
     write_abaqus_model,
 )
 from xkep_cae.mesh.twisted_wire import (
@@ -124,6 +125,21 @@ DEFAULT_PARAMS = {
     "lambda_relaxation": 1.0,
     "max_step_cuts": 3,
     "modified_nr_threshold": 5,
+    # カテゴリD: 接触パラメータ（従来ハードコード）
+    "k_t_ratio": 0.1,
+    "g_on": 0.0,
+    "g_off": 1e-5,
+    "use_line_search": True,
+    "line_search_max_steps": 5,
+    "use_geometric_stiffness": True,
+    "tol_penetration_ratio": 0.02,
+    "k_pen_max": 1e12,
+    "exclude_same_layer": True,
+    "midpoint_prescreening": True,
+    "linear_solver": "auto",
+    "line_contact": True,
+    # カテゴリE: 数値パラメータ（従来ハードコード）
+    "broadphase_margin": 0.01,
 }
 
 STRAND_COUNTS_DEFAULT = [7, 19, 37, 61, 91]
@@ -298,7 +314,7 @@ def export_bending_oscillation_inp(
 
     # --- xkep-cae メタデータ（ソルバー・荷重パラメータ）---
     metadata = {
-        "xkep_version": "2.0",
+        "xkep_version": "3.0",
         "problem_type": "bending_oscillation",
         "n_strands": n_strands,
         "wire_diameter": p["wire_diameter"],
@@ -306,19 +322,26 @@ def export_bending_oscillation_inp(
         "strand_diameter": sd_value,
         "n_elems_per_strand": p["n_elems_per_strand"],
         "n_pitches": p["n_pitches"],
+        # 材料（カテゴリB+C: .inp *ELASTIC と整合）
+        "E": p["E"],
+        "nu": p["nu"],
+        # 荷重・ステップ
         "bend_angle_deg": p["bend_angle_deg"],
         "n_bending_steps": p["n_bending_steps"],
         "oscillation_amplitude_mm": p["oscillation_amplitude_mm"],
         "n_cycles": p["n_cycles"],
         "n_steps_per_quarter": p["n_steps_per_quarter"],
+        # NR パラメータ
         "max_iter": p["max_iter"],
         "n_outer_max": p["n_outer_max"],
         "tol_force": p["tol_force"],
+        # 接触基本パラメータ
         "auto_kpen": p["auto_kpen"],
         "use_friction": p["use_friction"],
         "mu": p["mu"],
         "k_pen_scaling": p["k_pen_scaling"],
         "penalty_growth_factor": p["penalty_growth_factor"],
+        # NCP ソルバーパラメータ
         "use_ncp": p["use_ncp"],
         "use_mortar": p["use_mortar"],
         "n_gauss": p["n_gauss"],
@@ -329,6 +352,22 @@ def export_bending_oscillation_inp(
         "lambda_relaxation": p["lambda_relaxation"],
         "max_step_cuts": p["max_step_cuts"],
         "modified_nr_threshold": p["modified_nr_threshold"],
+        # カテゴリD: 接触パラメータ（従来ハードコード → メタデータ記録）
+        "k_t_ratio": p["k_t_ratio"],
+        "g_on": p["g_on"],
+        "g_off": p["g_off"],
+        "use_line_search": p["use_line_search"],
+        "line_search_max_steps": p["line_search_max_steps"],
+        "use_geometric_stiffness": p["use_geometric_stiffness"],
+        "tol_penetration_ratio": p["tol_penetration_ratio"],
+        "k_pen_max": p["k_pen_max"],
+        "exclude_same_layer": p["exclude_same_layer"],
+        "midpoint_prescreening": p["midpoint_prescreening"],
+        "linear_solver": p["linear_solver"],
+        "line_contact": p["line_contact"],
+        # カテゴリE: 数値パラメータ（従来ハードコード → メタデータ記録）
+        "broadphase_margin": p["broadphase_margin"],
+        # メッシュ位相
         "strand_node_ranges": mesh.strand_node_ranges,
         "strand_elem_ranges": mesh.strand_elem_ranges,
     }
@@ -397,6 +436,86 @@ def load_metadata_from_inp(inp_path: Path) -> dict:
     return json.loads("\n".join(meta_lines))
 
 
+def _validate_inp_vs_metadata(inp_path: Path, meta: dict) -> dict:
+    """標準 Abaqus データとメタデータの整合を検証.
+
+    .inp の *NODE, *ELEMENT, *ELASTIC 等を読み取り、メタデータと比較する。
+    不整合がある場合は警告を出し、.inp の値を truth として返す。
+
+    Returns:
+        overrides: メタデータを上書きすべきパラメータ辞書
+    """
+    overrides: dict = {}
+    warnings: list[str] = []
+
+    try:
+        abaqus_mesh = read_abaqus_inp(inp_path)
+    except Exception as e:
+        print(f"  [WARN] .inp 標準データの読み取りに失敗: {e}")
+        return overrides
+
+    # --- 材料: *ELASTIC → E, nu ---
+    if abaqus_mesh.materials:
+        mat = abaqus_mesh.materials[0]
+        if mat.elastic is not None:
+            inp_E, inp_nu = mat.elastic
+            meta_E = meta.get("E", 200e9)
+            meta_nu = meta.get("nu", 0.3)
+            if abs(inp_E - meta_E) / max(abs(meta_E), 1.0) > 1e-10:
+                warnings.append(f"E: .inp={inp_E:.6e} ≠ metadata={meta_E:.6e} → .inp を採用")
+                overrides["E"] = inp_E
+            if abs(inp_nu - meta_nu) > 1e-10:
+                warnings.append(f"nu: .inp={inp_nu} ≠ metadata={meta_nu} → .inp を採用")
+                overrides["nu"] = inp_nu
+
+    # --- 節点数・要素数の整合チェック ---
+    n_nodes_inp = len(abaqus_mesh.nodes)
+    n_elems_inp = sum(len(g.elements) for g in abaqus_mesh.element_groups)
+    n_strands = meta.get("n_strands", 0)
+    n_elems_per_strand = meta.get("n_elems_per_strand", 0)
+    expected_elems = n_strands * n_elems_per_strand if n_strands and n_elems_per_strand else 0
+    expected_nodes = n_strands * (n_elems_per_strand + 1) if n_strands and n_elems_per_strand else 0
+
+    if expected_elems > 0 and n_elems_inp != expected_elems:
+        warnings.append(f"要素数: .inp={n_elems_inp} ≠ expected={expected_elems}")
+    if expected_nodes > 0 and n_nodes_inp != expected_nodes:
+        warnings.append(f"節点数: .inp={n_nodes_inp} ≠ expected={expected_nodes}")
+
+    # --- 境界条件の整合チェック ---
+    n_bc_inp = len(abaqus_mesh.boundaries)
+    if n_bc_inp > 0:
+        fixed_nodes = {bc.node_label for bc in abaqus_mesh.boundaries}
+        overrides["_inp_n_fixed_nodes"] = len(fixed_nodes)
+
+    # --- 断面: *BEAM SECTION ---
+    if abaqus_mesh.beam_sections:
+        bsec = abaqus_mesh.beam_sections[0]
+        if bsec.section_type.upper() == "CIRC" and bsec.dimensions:
+            inp_radius = bsec.dimensions[0]
+            meta_d = meta.get("wire_diameter", 0.002)
+            if abs(inp_radius - meta_d / 2.0) / max(meta_d / 2.0, 1e-10) > 1e-6:
+                warnings.append(f"断面半径: .inp={inp_radius} ≠ metadata d/2={meta_d / 2.0}")
+
+    # --- 節点座標の差分チェック（サンプリング検証）---
+    if n_nodes_inp > 0 and abaqus_mesh.nodes:
+        # 最初と最後の節点座標を検証用に記録
+        first_node = abaqus_mesh.nodes[0]
+        last_node = abaqus_mesh.nodes[-1]
+        overrides["_inp_first_node"] = (first_node.x, first_node.y, first_node.z)
+        overrides["_inp_last_node"] = (last_node.x, last_node.y, last_node.z)
+        overrides["_inp_n_nodes"] = n_nodes_inp
+        overrides["_inp_n_elems"] = n_elems_inp
+
+    if warnings:
+        print("  [.inp 検証] 不整合検出:")
+        for w in warnings:
+            print(f"    - {w}")
+    else:
+        print("  [.inp 検証] メタデータと標準データの整合: OK")
+
+    return overrides
+
+
 def solve_from_inp(
     inp_path: Path,
     out_dir: Path,
@@ -407,6 +526,8 @@ def solve_from_inp(
 
     .inp のメッシュ + メタデータを読み込み、
     run_bending_oscillation に橋渡しする。
+    標準 Abaqus データ（*ELASTIC 等）とメタデータの整合を検証し、
+    不整合時は .inp の値を truth として採用する。
 
     Args:
         inp_path: .inp ファイルパス
@@ -423,6 +544,13 @@ def solve_from_inp(
             f"problem_type が 'bending_oscillation' ではありません: {meta.get('problem_type')}"
         )
 
+    # カテゴリA: .inp 標準データの読み取りとメタデータ検証
+    overrides = _validate_inp_vs_metadata(inp_path, meta)
+    # .inp の値で上書き（_inp_ プレフィックスの内部データは除外）
+    for k, v in overrides.items():
+        if not k.startswith("_inp_"):
+            meta[k] = v
+
     n_strands = meta["n_strands"]
     print(f"\n  .inp ロード: {inp_path}")
     print(f"  素線数: {n_strands}, 要素/素線: {meta['n_elems_per_strand']}")
@@ -436,14 +564,20 @@ def solve_from_inp(
             n_elems_per_strand=meta["n_elems_per_strand"],
             n_pitches=meta["n_pitches"],
             strand_diameter=meta.get("strand_diameter"),
+            # 材料パラメータ（カテゴリB+C: メタデータから読み取り）
+            E=meta.get("E", 200e9),
+            nu=meta.get("nu", 0.3),
+            # 荷重・ステップ
             bend_angle_deg=meta["bend_angle_deg"],
             n_bending_steps=meta["n_bending_steps"],
             oscillation_amplitude_mm=meta["oscillation_amplitude_mm"],
             n_cycles=meta["n_cycles"],
             n_steps_per_quarter=meta["n_steps_per_quarter"],
+            # NR パラメータ
             max_iter=meta["max_iter"],
             n_outer_max=meta["n_outer_max"],
             tol_force=meta["tol_force"],
+            # 接触基本パラメータ
             auto_kpen=meta.get("auto_kpen", True),
             use_friction=meta.get("use_friction", False),
             mu=meta.get("mu", 0.0),
@@ -463,6 +597,21 @@ def solve_from_inp(
             lambda_relaxation=meta.get("lambda_relaxation", 1.0),
             max_step_cuts=meta.get("max_step_cuts", 3),
             modified_nr_threshold=meta.get("modified_nr_threshold", 5),
+            # カテゴリD: 接触パラメータ（メタデータから読み取り）
+            k_t_ratio=meta.get("k_t_ratio", 0.1),
+            g_on=meta.get("g_on", 0.0),
+            g_off=meta.get("g_off", 1e-5),
+            use_line_search=meta.get("use_line_search", True),
+            line_search_max_steps=meta.get("line_search_max_steps", 5),
+            use_geometric_stiffness=meta.get("use_geometric_stiffness", True),
+            tol_penetration_ratio=meta.get("tol_penetration_ratio", 0.02),
+            k_pen_max=meta.get("k_pen_max", 1e12),
+            exclude_same_layer=meta.get("exclude_same_layer", True),
+            midpoint_prescreening=meta.get("midpoint_prescreening", True),
+            linear_solver=meta.get("linear_solver", "auto"),
+            line_contact=meta.get("line_contact", True),
+            # カテゴリE: 数値パラメータ（メタデータから読み取り）
+            broadphase_margin=meta.get("broadphase_margin", 0.01),
         )
     except Exception as e:
         print(f"\n  [ERROR] ソルバー失敗: {e}")
