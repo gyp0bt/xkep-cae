@@ -60,6 +60,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from xkep_cae.contact.graph import save_contact_graph_gif
 from xkep_cae.io.abaqus_inp import (
+    InpAnimationRequest,
     InpContactDef,
     InpOutputRequest,
     InpStep,
@@ -140,6 +141,19 @@ DEFAULT_PARAMS = {
     "line_contact": True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
     "broadphase_margin": 0.01,
+    # 出力設定（従来ハードコード）
+    "output_vtk": True,
+    "output_vtk_prefix": "result",
+    "output_gif": True,
+    "output_gif_views": ["yz", "xz"],
+    "output_gif_figsize": [10.0, 8.0],
+    "output_gif_dpi": 80,
+    "output_gif_duration": 300,
+    "output_contact_graph": True,
+    "output_contact_graph_fps": 2,
+    "output_contact_graph_figsize": [8, 6],
+    "output_contact_graph_dpi": 80,
+    "output_summary": True,
 }
 
 STRAND_COUNTS_DEFAULT = [7, 19, 37, 61, 91]
@@ -248,6 +262,18 @@ def export_bending_oscillation_inp(
         surface_interactions=[contact_interaction],
     )
 
+    # --- アニメーション出力設定（独自拡張 *ANIMATION）---
+    gif_views = p.get("output_gif_views", ["yz", "xz"])
+    animation_req = (
+        InpAnimationRequest(
+            output_dir="animation",
+            views=gif_views,
+            frequency=1,
+        )
+        if p.get("output_gif", True)
+        else None
+    )
+
     # --- Step 1: 曲げ（静解析）---
     bending_bcs: list[tuple[int | str, int, int, float]] = []
     for node_label in nsets["FIXED_END"]:
@@ -274,6 +300,7 @@ def export_bending_oscillation_inp(
                 variables=["ALLKE", "ALLIE", "ETOTAL"],
             ),
         ],
+        animation=animation_req,
     )
 
     # --- Step 2: 揺動（動解析）---
@@ -308,6 +335,7 @@ def export_bending_oscillation_inp(
                 variables=["ALLKE", "ALLIE", "ETOTAL"],
             ),
         ],
+        animation=animation_req,
     )
 
     steps = [step_bend, step_osc]
@@ -367,6 +395,19 @@ def export_bending_oscillation_inp(
         "line_contact": p["line_contact"],
         # カテゴリE: 数値パラメータ（従来ハードコード → メタデータ記録）
         "broadphase_margin": p["broadphase_margin"],
+        # 出力設定（従来ハードコード → メタデータ記録）
+        "output_vtk": p.get("output_vtk", True),
+        "output_vtk_prefix": p.get("output_vtk_prefix", "result"),
+        "output_gif": p.get("output_gif", True),
+        "output_gif_views": p.get("output_gif_views", ["yz", "xz"]),
+        "output_gif_figsize": p.get("output_gif_figsize", [10.0, 8.0]),
+        "output_gif_dpi": p.get("output_gif_dpi", 80),
+        "output_gif_duration": p.get("output_gif_duration", 300),
+        "output_contact_graph": p.get("output_contact_graph", True),
+        "output_contact_graph_fps": p.get("output_contact_graph_fps", 2),
+        "output_contact_graph_figsize": p.get("output_contact_graph_figsize", [8, 6]),
+        "output_contact_graph_dpi": p.get("output_contact_graph_dpi", 80),
+        "output_summary": p.get("output_summary", True),
         # メッシュ位相
         "strand_node_ranges": mesh.strand_node_ranges,
         "strand_elem_ranges": mesh.strand_elem_ranges,
@@ -635,13 +676,37 @@ def solve_from_inp(
         strand_diameter=meta.get("strand_diameter"),
     )
 
-    # --- エクスポートフック ---
+    # --- エクスポートフック（メタデータの出力設定を使用）---
     out_dir.mkdir(parents=True, exist_ok=True)
     print("\n  エクスポート:")
-    _hook_summary(result, out_dir)
-    _hook_vtk(result, mesh, out_dir)
-    _hook_gif(result, mesh, out_dir)
-    _hook_contact_graph(result, mesh, out_dir)
+    if meta.get("output_summary", True):
+        _hook_summary(result, out_dir)
+    if meta.get("output_vtk", True):
+        _hook_vtk(
+            result,
+            mesh,
+            out_dir,
+            prefix=meta.get("output_vtk_prefix", "result"),
+        )
+    if meta.get("output_gif", True):
+        _hook_gif(
+            result,
+            mesh,
+            out_dir,
+            views=meta.get("output_gif_views", ["yz", "xz"]),
+            figsize=tuple(meta.get("output_gif_figsize", [10.0, 8.0])),
+            dpi=meta.get("output_gif_dpi", 80),
+            duration=meta.get("output_gif_duration", 300),
+        )
+    if meta.get("output_contact_graph", True):
+        _hook_contact_graph(
+            result,
+            mesh,
+            out_dir,
+            fps=meta.get("output_contact_graph_fps", 2),
+            figsize=tuple(meta.get("output_contact_graph_figsize", [8, 6])),
+            dpi=meta.get("output_contact_graph_dpi", 80),
+        )
 
     return result
 
@@ -655,6 +720,8 @@ def _hook_vtk(
     result: BendingOscillationResult,
     mesh: TwistedWireMesh,
     out_dir: Path,
+    *,
+    prefix: str = "result",
 ) -> str | None:
     """VTK (.vtu + .pvd) エクスポート."""
     vtk_dir = out_dir / "vtk"
@@ -681,7 +748,7 @@ def _hook_vtk(
     sr = StepResult(step=step, step_index=0, frames=frames)
     db.step_results.append(sr)
 
-    pvd_path = export_vtk(db, vtk_dir, prefix="result")
+    pvd_path = export_vtk(db, vtk_dir, prefix=prefix)
     print(f"    [VTK] {pvd_path} ({n_frames} frames)")
     return pvd_path
 
@@ -690,8 +757,15 @@ def _hook_gif(
     result: BendingOscillationResult,
     mesh: TwistedWireMesh,
     out_dir: Path,
+    *,
+    views: list[str] | None = None,
+    figsize: tuple[float, float] = (10.0, 8.0),
+    dpi: int = 80,
+    duration: int = 300,
 ) -> list[Path]:
     """変位 GIF エクスポート."""
+    if views is None:
+        views = ["yz", "xz"]
     if not result.displacement_snapshots:
         print("    [GIF] スナップショットなし — スキップ")
         return []
@@ -703,10 +777,10 @@ def _hook_gif(
             result.snapshot_labels,
             out_dir,
             prefix=f"bending_oscillation_{result.n_strands}strand",
-            views=["yz", "xz"],
-            figsize=(10.0, 8.0),
-            dpi=80,
-            duration=300,
+            views=views,
+            figsize=figsize,
+            dpi=dpi,
+            duration=duration,
         )
         for p in gif_paths:
             print(f"    [GIF] {p}")
@@ -720,6 +794,10 @@ def _hook_contact_graph(
     result: BendingOscillationResult,
     mesh: TwistedWireMesh,
     out_dir: Path,
+    *,
+    fps: int = 2,
+    figsize: tuple[float, float] = (8, 6),
+    dpi: int = 80,
 ) -> Path | None:
     """接触グラフ GIF エクスポート."""
     graph_history = None
@@ -744,9 +822,9 @@ def _hook_contact_graph(
         save_contact_graph_gif(
             graph_history,
             str(gif_path),
-            fps=2,
-            figsize=(8, 6),
-            dpi=80,
+            fps=fps,
+            figsize=figsize,
+            dpi=dpi,
         )
         print(f"    [接触グラフ] {gif_path} ({graph_history.n_steps} snapshots)")
         return gif_path

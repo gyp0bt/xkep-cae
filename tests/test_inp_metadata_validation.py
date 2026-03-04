@@ -139,6 +139,73 @@ class TestMetadataExportImport:
         assert meta["line_contact"] is True
 
 
+class TestOutputSettingsMetadata:
+    """出力設定のメタデータ記録テスト."""
+
+    def test_output_settings_roundtrip(self, tmp_path):
+        """出力設定がメタデータにラウンドトリップする."""
+        from scripts.run_bending_oscillation import (
+            export_bending_oscillation_inp,
+            load_metadata_from_inp,
+        )
+
+        out_dir = tmp_path / "output_rt"
+        inp_path = export_bending_oscillation_inp(3, out_dir)
+        meta = load_metadata_from_inp(inp_path)
+
+        # 全出力設定がメタデータに記録されている
+        assert meta["output_vtk"] is True
+        assert meta["output_vtk_prefix"] == "result"
+        assert meta["output_gif"] is True
+        assert meta["output_gif_views"] == ["yz", "xz"]
+        assert meta["output_gif_figsize"] == [10.0, 8.0]
+        assert meta["output_gif_dpi"] == 80
+        assert meta["output_gif_duration"] == 300
+        assert meta["output_contact_graph"] is True
+        assert meta["output_contact_graph_fps"] == 2
+        assert meta["output_contact_graph_figsize"] == [8, 6]
+        assert meta["output_contact_graph_dpi"] == 80
+        assert meta["output_summary"] is True
+
+    def test_custom_output_settings(self, tmp_path):
+        """カスタム出力設定がメタデータに正しく記録される."""
+        from scripts.run_bending_oscillation import (
+            export_bending_oscillation_inp,
+            load_metadata_from_inp,
+        )
+
+        custom_params = {
+            "output_vtk": False,
+            "output_vtk_prefix": "custom_out",
+            "output_gif_views": ["xy"],
+            "output_gif_dpi": 150,
+            "output_gif_duration": 500,
+            "output_contact_graph_fps": 5,
+        }
+        out_dir = tmp_path / "custom_output"
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=custom_params)
+        meta = load_metadata_from_inp(inp_path)
+
+        assert meta["output_vtk"] is False
+        assert meta["output_vtk_prefix"] == "custom_out"
+        assert meta["output_gif_views"] == ["xy"]
+        assert meta["output_gif_dpi"] == 150
+        assert meta["output_gif_duration"] == 500
+        assert meta["output_contact_graph_fps"] == 5
+        # 未指定のものはデフォルト値
+        assert meta["output_gif"] is True
+        assert meta["output_summary"] is True
+
+    def test_animation_request_in_inp(self, tmp_path):
+        """InpAnimationRequest が .inp ファイルに記録される."""
+        from scripts.run_bending_oscillation import export_bending_oscillation_inp
+
+        out_dir = tmp_path / "animation"
+        inp_path = export_bending_oscillation_inp(3, out_dir)
+        content = inp_path.read_text()
+        assert "*OUTPUT, FIELD ANIMATION" in content
+
+
 class TestInpValidation:
     """カテゴリA: .inp 標準データ検証テスト."""
 

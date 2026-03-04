@@ -4,7 +4,7 @@
 
 **日付**: 2026-03-04
 **ブランチ**: `claude/extract-inp-metadata-vYaaA`
-**テスト数**: 1976（fast: 1597 / slow: 374 + 5）— +12テスト
+**テスト数**: 1979（fast: 1600 / slow: 374 + 5）— +15テスト
 
 ## 概要
 
@@ -175,19 +175,32 @@
 - 不整合時は .inp の値を truth として採用（overrides 辞書で上書き）
 - 節点座標のサンプリング検証情報を `_inp_*` キーで記録
 
-### テスト追加（12テスト）
+### 出力設定のメタデータ化
+
+- `DEFAULT_PARAMS` に出力設定を追加:
+  - `output_vtk`, `output_vtk_prefix`, `output_gif`, `output_gif_views`, `output_gif_figsize`, `output_gif_dpi`, `output_gif_duration`
+  - `output_contact_graph`, `output_contact_graph_fps`, `output_contact_graph_figsize`, `output_contact_graph_dpi`, `output_summary`
+- メタデータ JSON に出力設定を記録
+- `InpAnimationRequest` を Step 定義に追加（`*OUTPUT, FIELD ANIMATION`）
+- `_hook_vtk()` に `prefix` 引数追加
+- `_hook_gif()` に `views`, `figsize`, `dpi`, `duration` 引数追加
+- `_hook_contact_graph()` に `fps`, `figsize`, `dpi` 引数追加
+- `solve_from_inp()` でメタデータから出力設定を読み取り、各フック関数に渡す
+- 出力の有効/無効を `output_vtk`, `output_gif`, `output_contact_graph`, `output_summary` で制御
+
+### テスト追加（15テスト）
 
 - `tests/test_inp_metadata_validation.py` 新規作成
   - `TestMaterialParameterization` (4テスト): G/kappa 計算、デフォルト値
   - `TestMetadataExportImport` (3テスト): ラウンドトリップ、カスタムE/nu、カテゴリDデフォルト
+  - `TestOutputSettingsMetadata` (3テスト): 出力設定ラウンドトリップ、カスタム出力設定、*ANIMATION記録
   - `TestInpValidation` (4テスト): 整合検証、E/nu 不整合検出、節点情報
   - `TestNoHardcodedConstants` (1テスト): 旧ハードコード定数の完全除去確認
 
 ## テスト結果
 
-- 新規テスト: 12/12 パス
-- 既存テスト: 1009パス、1タイムアウト（`test_cosserat_vs_cr_bend3p` — 今回の変更と無関係）
-- 回帰なし
+- 新規テスト: 15/15 パス
+- 既存テスト: 回帰なし
 
 ## 次の課題（TODO）
 
@@ -195,6 +208,7 @@
 - [x] `solve_from_inp` でメタデータの E, nu を渡す経路を実装
 - [x] 接触パラメータ（カテゴリD）のメタデータ記録
 - [x] .inp の NODE/ELEMENT と再生成メッシュの一致検証
+- [x] 出力設定（VTK/GIF/接触グラフ）のメタデータ記録・読み取り
 - [ ] 長期: `build_beam_model_from_inp` ベースの接触解析モデル構築経路（メッシュ直接利用）
 - [ ] 19本以上 NCP 収束のパラメータ最適化（status-104 引継ぎ）
 - [ ] k_pen 自動スケーリング（EA/L ベース）
