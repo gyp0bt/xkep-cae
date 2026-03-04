@@ -24,6 +24,7 @@ from xkep_cae.mesh.twisted_wire import (
     compute_strand_length_per_pitch,
     make_strand_layout,
     make_twisted_wire_mesh,
+    minimum_strand_diameter,
     outermost_layer,
     outermost_strand_ids,
     outermost_strand_node_indices,
@@ -32,6 +33,7 @@ from xkep_cae.mesh.twisted_wire import (
     sheath_inner_radius,
     sheath_radial_gap,
     sheath_section_properties,
+    validate_strand_geometry,
 )
 
 __all__ = [
@@ -56,6 +58,7 @@ __all__ = [
     "compute_strand_length_per_pitch",
     "make_strand_layout",
     "make_twisted_wire_mesh",
+    "minimum_strand_diameter",
     "outermost_layer",
     "outermost_strand_ids",
     "outermost_strand_node_indices",
@@ -64,4 +67,5 @@ __all__ = [
     "sheath_inner_radius",
     "sheath_radial_gap",
     "sheath_section_properties",
+    "validate_strand_geometry",
 ]

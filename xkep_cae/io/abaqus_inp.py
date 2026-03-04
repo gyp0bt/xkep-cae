@@ -910,7 +910,169 @@ def _parse_plastic_section(
 
 
 # ====================================================================
-# .inp 書き出し
+# .inp 書き出し — データ構造
+# ====================================================================
+
+
+@dataclass
+class InpInitialCondition:
+    """初期条件（*INITIAL CONDITIONS）.
+
+    Attributes:
+        type: 条件タイプ（"VELOCITY", "TEMPERATURE" 等）
+        data: [(node_or_nset, dof_or_component, value), ...]
+    """
+
+    type: str = "VELOCITY"
+    data: list[tuple[str | int, int, float]] = field(default_factory=list)
+
+
+@dataclass
+class InpOutputRequest:
+    """出力要求（*OUTPUT）.
+
+    Attributes:
+        domain: "FIELD" or "HISTORY"
+        frequency: 出力頻度（ステップ数単位、0=最終のみ）
+        variables: 変数リスト ["U", "S", "E", "RF", "COORD", ...]
+        nset: ノードセット名（HISTORY のみ）
+        elset: 要素セット名（HISTORY のみ）
+    """
+
+    domain: str = "FIELD"
+    frequency: int = 1
+    variables: list[str] = field(default_factory=lambda: ["U", "S", "RF"])
+    nset: str | None = None
+    elset: str | None = None
+
+
+@dataclass
+class InpAnimationRequest:
+    """アニメーション出力要求（*ANIMATION、独自拡張）.
+
+    Attributes:
+        output_dir: 出力ディレクトリ
+        views: ビュー方向リスト
+        frequency: 出力頻度
+    """
+
+    output_dir: str = "animation"
+    views: list[str] = field(default_factory=lambda: ["xy", "xz", "yz"])
+    frequency: int = 1
+
+
+@dataclass
+class InpSurfaceDef:
+    """サーフェス定義（*SURFACE）.
+
+    Abaqus の *SURFACE キーワードに対応。要素セットベースで
+    接触サーフェスを定義する。
+
+    Attributes:
+        name: サーフェス名
+        type: サーフェスタイプ ("ELEMENT" or "NODE")
+        elset: 要素セット名（TYPE=ELEMENT の場合）
+        nset: ノードセット名（TYPE=NODE の場合）
+    """
+
+    name: str = ""
+    type: str = "ELEMENT"
+    elset: str | None = None
+    nset: str | None = None
+
+
+@dataclass
+class InpSurfaceInteraction:
+    """サーフェスインタラクション定義（*SURFACE INTERACTION + *SURFACE BEHAVIOR）.
+
+    Abaqus の *SURFACE INTERACTION キーワードと、そのサブキーワード
+    *SURFACE BEHAVIOR に対応。接触挙動（ペナルティ法/ハード接触）を定義する。
+
+    Attributes:
+        name: インタラクション名
+        pressure_overclosure: 圧力-貫入関係 ("HARD", "LINEAR", "EXPONENTIAL", "TABULAR")
+        k_pen: ペナルティ剛性（pressure_overclosure="LINEAR" 時の勾配、0=デフォルト）
+        friction: 摩擦係数（0=摩擦なし）
+        algorithm: 接触アルゴリズム ("NCP" or "AL"、xkep-cae 独自拡張)
+        mortar: Mortar 積分の有効化（xkep-cae 独自拡張）
+        options: その他のキー=値オプション
+    """
+
+    name: str = "CONTACT_PROP"
+    pressure_overclosure: str = "HARD"
+    k_pen: float = 0.0
+    friction: float = 0.0
+    algorithm: str = "NCP"
+    mortar: bool = True
+    options: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class InpContactDef:
+    """接触定義（General Contact）.
+
+    Abaqus の General Contact に対応。ステップレベルで
+    *CONTACT / *CONTACT INCLUSIONS / *CONTACT PROPERTY ASSIGNMENT を出力する。
+    サーフェスとインタラクションはモデルレベルで事前定義される。
+
+    Attributes:
+        interaction: サーフェスインタラクション参照名
+        inclusions: 接触ペアリスト [("surf1", "surf2"), ...]
+            空リスト=全自己接触 (ALLEXT, ALLEXT)
+        exclude_same_layer: 同層除外（xkep-cae 独自拡張）
+        surfaces: サーフェス定義リスト（モデルレベルで出力される）
+        surface_interactions: インタラクション定義リスト（モデルレベルで出力される）
+    """
+
+    interaction: str = "CONTACT_PROP"
+    inclusions: list[tuple[str, str]] = field(default_factory=list)
+    exclude_same_layer: bool = True
+    surfaces: list[InpSurfaceDef] = field(default_factory=list)
+    surface_interactions: list[InpSurfaceInteraction] = field(default_factory=list)
+
+
+@dataclass
+class InpStep:
+    """解析ステップ定義.
+
+    Abaqus の *STEP ～ *END STEP ブロックに対応。
+
+    Attributes:
+        name: ステップ名（None = 自動番号付け）
+        procedure: プロシージャ ("STATIC" or "DYNAMIC")
+        nlgeom: 幾何学非線形
+        unsymm: 非対称行列ソルバー
+        inc: 最大インクリメント数
+        time_params: プロシージャ依存の時間パラメータ
+            STATIC: (initial_inc, total_time, min_inc, max_inc)
+            DYNAMIC: (initial_dt, step_time, min_dt, max_dt)
+        boundaries: ステップ内の境界条件
+            [(node_or_nset, first_dof, last_dof, value), ...]
+        boundary_type: "DISPLACEMENT" or "VELOCITY"
+        output_requests: 出力要求リスト
+        animation: アニメーション出力（独自拡張）
+        contact: 接触定義（独自拡張）
+        cloads: 集中荷重 [(node_or_nset, dof, magnitude), ...]
+        dloads: 分布荷重 [(elset, load_type, magnitude), ...]
+    """
+
+    name: str | None = None
+    procedure: str = "STATIC"
+    nlgeom: bool = True
+    unsymm: bool = False
+    inc: int = 1000
+    time_params: tuple[float, ...] | None = None
+    boundaries: list[tuple[int | str, int, int, float]] = field(default_factory=list)
+    boundary_type: str = "DISPLACEMENT"
+    output_requests: list[InpOutputRequest] = field(default_factory=list)
+    animation: InpAnimationRequest | None = None
+    contact: InpContactDef | None = None
+    cloads: list[tuple[int | str, int, float]] = field(default_factory=list)
+    dloads: list[tuple[str, str, float]] = field(default_factory=list)
+
+
+# ====================================================================
+# .inp 書き出し — レガシー API（後方互換）
 # ====================================================================
 
 
@@ -1035,5 +1197,357 @@ def write_abaqus_inp(
     lines.append("*END STEP")
     lines.append("")
 
+    out.write_text("\n".join(lines), encoding="utf-8")
+    return out
+
+
+# ====================================================================
+# .inp 書き出し — Abaqus互換 API（model/step 分離）
+# ====================================================================
+
+
+def _write_step_block(step: InpStep, step_index: int) -> list[str]:
+    """1ステップ分の *STEP ～ *END STEP ブロックを生成する.
+
+    Args:
+        step: ステップ定義
+        step_index: ステップ番号（1始まり、ステップ名自動生成用）
+
+    Returns:
+        行のリスト
+    """
+    lines: list[str] = []
+
+    # --- *STEP キーワード ---
+    step_opts: list[str] = []
+    step_opts.append(f"INC={step.inc}")
+    if step.nlgeom:
+        step_opts.append("NLGEOM=YES")
+    if step.unsymm:
+        step_opts.append("UNSYMM=YES")
+    lines.append("*STEP, " + ", ".join(step_opts))
+
+    # ステップ名（*STEP の直後の行）
+    step_name = step.name if step.name else f"Step-{step_index}"
+    lines.append(step_name)
+
+    # --- プロシージャ ---
+    proc = step.procedure.upper()
+    if proc == "STATIC":
+        lines.append("*STATIC")
+        if step.time_params:
+            lines.append(", ".join(f"{v:.6g}" for v in step.time_params))
+    elif proc == "DYNAMIC":
+        lines.append("*DYNAMIC")
+        if step.time_params:
+            lines.append(", ".join(f"{v:.6g}" for v in step.time_params))
+        else:
+            # デフォルト: 0.01, 1.0, 1e-8, 1.0
+            lines.append("0.01, 1., 1e-08, 1.")
+    else:
+        lines.append(f"*{proc}")
+        if step.time_params:
+            lines.append(", ".join(f"{v:.6g}" for v in step.time_params))
+
+    # --- 接触定義（ステップ内差分指定のみ）---
+    # General Contact の主定義はモデルレベル（write_abaqus_model）で出力済み。
+    # ステップ内で接触ドメインを変更する場合のみここで差分出力する。
+    # （現在は差分指定未サポート — 将来拡張用のプレースホルダ）
+
+    # --- 境界条件 ---
+    if step.boundaries:
+        bc_type = step.boundary_type.upper()
+        if bc_type == "DISPLACEMENT":
+            lines.append("*BOUNDARY, TYPE=DISPLACEMENT")
+        elif bc_type == "VELOCITY":
+            lines.append("*BOUNDARY, TYPE=VELOCITY")
+        else:
+            lines.append("*BOUNDARY")
+        for entry in step.boundaries:
+            node_or_nset, first_dof, last_dof, value = entry
+            if value == 0.0:
+                lines.append(f"{node_or_nset}, {first_dof}, {last_dof}")
+            else:
+                lines.append(f"{node_or_nset}, {first_dof}, {last_dof}, {value:.10g}")
+
+    # --- 集中荷重 ---
+    if step.cloads:
+        lines.append("*CLOAD")
+        for node_or_nset, dof, magnitude in step.cloads:
+            lines.append(f"{node_or_nset}, {dof}, {magnitude:.10g}")
+
+    # --- 分布荷重 ---
+    if step.dloads:
+        lines.append("*DLOAD")
+        for elset, load_type, magnitude in step.dloads:
+            lines.append(f"{elset}, {load_type}, {magnitude:.10g}")
+
+    # --- 出力要求 ---
+    for out_req in step.output_requests:
+        domain = out_req.domain.upper()
+        if domain == "FIELD":
+            lines.append(f"*OUTPUT, FIELD, FREQUENCY={out_req.frequency}")
+            if out_req.variables:
+                # ノード変数とエネルギー変数を分類
+                node_vars = [
+                    v for v in out_req.variables if v in ("U", "V", "A", "RF", "CF", "COORD")
+                ]
+                elem_vars = [
+                    v for v in out_req.variables if v in ("S", "E", "PE", "SE", "SK", "SF")
+                ]
+                energy_vars = [
+                    v
+                    for v in out_req.variables
+                    if v in ("ETOTAL", "ALLKE", "ALLIE", "ALLSE", "ALLPD", "ALLAE")
+                ]
+                other_vars = [
+                    v for v in out_req.variables if v not in node_vars + elem_vars + energy_vars
+                ]
+                if node_vars:
+                    lines.append("*NODE OUTPUT")
+                    lines.append(", ".join(node_vars))
+                if elem_vars:
+                    lines.append("*ELEMENT OUTPUT")
+                    lines.append(", ".join(elem_vars))
+                if energy_vars:
+                    lines.append("*ENERGY OUTPUT")
+                    lines.append(", ".join(energy_vars))
+                if other_vars:
+                    lines.append("*NODE OUTPUT")
+                    lines.append(", ".join(other_vars))
+        elif domain == "HISTORY":
+            nset_part = f", NSET={out_req.nset}" if out_req.nset else ""
+            elset_part = f", ELSET={out_req.elset}" if out_req.elset else ""
+            lines.append(f"*OUTPUT, HISTORY, FREQUENCY={out_req.frequency}{nset_part}{elset_part}")
+            if out_req.variables:
+                lines.append(", ".join(out_req.variables))
+
+    # --- アニメーション（独自拡張）---
+    if step.animation is not None:
+        anim = step.animation
+        lines.append(f"*OUTPUT, FIELD ANIMATION, DIR={anim.output_dir}, FREQUENCY={anim.frequency}")
+        lines.append(", ".join(anim.views))
+
+    # --- *END STEP ---
+    lines.append("*END STEP")
+    return lines
+
+
+def write_abaqus_model(
+    filepath: str | Path,
+    node_coords: np.ndarray,
+    connectivity: np.ndarray,
+    *,
+    elem_type: str = "B31",
+    title: str = "xkep-cae export",
+    nsets: dict[str, list[int]] | None = None,
+    elsets: dict[str, list[int]] | None = None,
+    material_name: str = "STEEL",
+    E: float = 0.0,
+    nu: float = 0.0,
+    density: float = 0.0,
+    beam_section_type: str = "CIRC",
+    beam_section_dims: list[float] | None = None,
+    beam_section_direction: list[float] | None = None,
+    initial_conditions: list[InpInitialCondition] | None = None,
+    steps: list[InpStep] | None = None,
+) -> Path:
+    """Abaqus互換 .inp ファイルを書き出す（model/step 分離版）.
+
+    Abaqus のモデルレベル/ステップレベルを正しく分離して出力する。
+
+    モデルレベル（*STEP の前）:
+      *HEADING, *NODE, *ELEMENT, *NSET, *ELSET,
+      *MATERIAL (*ELASTIC, *DENSITY, *PLASTIC),
+      *BEAM SECTION, *INITIAL CONDITIONS
+
+    ステップレベル（*STEP ～ *END STEP の間）:
+      *STATIC / *DYNAMIC（プロシージャ）,
+      *BOUNDARY, *CLOAD, *DLOAD,
+      *OUTPUT, *ANIMATION, *CONTACT
+
+    Args:
+        filepath: 出力ファイルパス
+        node_coords: (n_nodes, 2 or 3) 節点座標
+        connectivity: (n_elems, nodes_per_elem) 要素接続（0始まり）
+        elem_type: 要素タイプ文字列
+        title: ヘッダータイトル
+        nsets: ノードセット {名前: [node_label, ...]}（1始まり）
+        elsets: 要素セット {名前: [elem_label, ...]}（1始まり）
+        material_name: 材料名
+        E: ヤング率（0 の場合 *MATERIAL を省略）
+        nu: ポアソン比
+        density: 密度（0 の場合 *DENSITY を省略）
+        beam_section_type: 梁断面タイプ
+        beam_section_dims: 梁断面寸法リスト
+        beam_section_direction: 梁断面方向ベクトル
+        initial_conditions: 初期条件リスト
+        steps: ステップ定義リスト
+
+    Returns:
+        書き出したファイルの Path
+    """
+    out = Path(filepath)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = []
+
+    # ============================================================
+    # MODEL LEVEL
+    # ============================================================
+
+    # --- Header ---
+    lines.append("*HEADING")
+    lines.append(f"** {title}")
+    lines.append("** Generated by xkep-cae")
+    lines.append("**")
+
+    # --- Nodes (1-based labels) ---
+    lines.append("*NODE")
+    ndim = node_coords.shape[1]
+    for i in range(node_coords.shape[0]):
+        label = i + 1
+        if ndim == 2:
+            lines.append(f"{label}, {node_coords[i, 0]:.10g}, {node_coords[i, 1]:.10g}")
+        else:
+            lines.append(
+                f"{label}, {node_coords[i, 0]:.10g}, "
+                f"{node_coords[i, 1]:.10g}, {node_coords[i, 2]:.10g}"
+            )
+
+    # --- Elements (1-based labels) ---
+    elset_all = "ALL_ELEMS"
+    lines.append(f"*ELEMENT, TYPE={elem_type}, ELSET={elset_all}")
+    for i in range(connectivity.shape[0]):
+        label = i + 1
+        node_labels = ", ".join(str(int(n) + 1) for n in connectivity[i])
+        lines.append(f"{label}, {node_labels}")
+
+    # --- Node sets ---
+    if nsets:
+        for name, labels in nsets.items():
+            lines.append(f"*NSET, NSET={name}")
+            for j in range(0, len(labels), 8):
+                chunk = labels[j : j + 8]
+                lines.append(", ".join(str(lb) for lb in chunk))
+
+    # --- Element sets ---
+    if elsets:
+        for name, labels in elsets.items():
+            lines.append(f"*ELSET, ELSET={name}")
+            for j in range(0, len(labels), 8):
+                chunk = labels[j : j + 8]
+                lines.append(", ".join(str(lb) for lb in chunk))
+
+    # --- Material ---
+    if E > 0:
+        lines.append(f"*MATERIAL, NAME={material_name}")
+        lines.append("*ELASTIC")
+        lines.append(f"{E:.6g}, {nu:.6g}")
+        if density > 0:
+            lines.append("*DENSITY")
+            lines.append(f"{density:.6g}")
+
+    # --- Beam section ---
+    if beam_section_dims is not None:
+        lines.append(
+            f"*BEAM SECTION, SECTION={beam_section_type}, "
+            f"ELSET={elset_all}, MATERIAL={material_name}"
+        )
+        lines.append(", ".join(f"{d:.6g}" for d in beam_section_dims))
+        if beam_section_direction is not None:
+            lines.append(", ".join(f"{d:.6g}" for d in beam_section_direction))
+
+    # --- Surface / Surface Interaction（接触定義のモデルレベル部分）---
+    # ステップの contact から surface/interaction 定義を収集
+    _written_surfaces: set[str] = set()
+    _written_interactions: set[str] = set()
+    if steps:
+        for step in steps:
+            if step.contact is not None:
+                for surf in step.contact.surfaces:
+                    if surf.name and surf.name not in _written_surfaces:
+                        _written_surfaces.add(surf.name)
+                        surf_type = surf.type.upper()
+                        lines.append(f"*SURFACE, TYPE={surf_type}, NAME={surf.name}")
+                        if surf_type == "ELEMENT" and surf.elset:
+                            lines.append(f"{surf.elset},")
+                        elif surf_type == "NODE" and surf.nset:
+                            lines.append(f"{surf.nset},")
+                for si in step.contact.surface_interactions:
+                    if si.name and si.name not in _written_interactions:
+                        _written_interactions.add(si.name)
+                        lines.append(f"*SURFACE INTERACTION, NAME={si.name}")
+                        # *SURFACE BEHAVIOR (PRESSURE-OVERCLOSURE)
+                        po = si.pressure_overclosure.upper()
+                        if po == "LINEAR" and si.k_pen > 0:
+                            lines.append(f"*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE={po}")
+                            lines.append(f"{si.k_pen:.6g}, 0.")
+                        else:
+                            lines.append(f"*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE={po}")
+                        # 摩擦
+                        if si.friction > 0:
+                            lines.append("*FRICTION")
+                            lines.append(f"{si.friction:.6g}")
+                        # xkep-cae 独自拡張: アルゴリズム・Mortar
+                        ext_opts: list[str] = []
+                        if si.algorithm:
+                            ext_opts.append(f"ALGORITHM={si.algorithm}")
+                        if si.mortar:
+                            ext_opts.append("MORTAR=YES")
+                        for k, v in si.options.items():
+                            ext_opts.append(f"{k}={v}")
+                        if ext_opts:
+                            lines.append("** XKEP-CAE: " + ", ".join(ext_opts))
+
+    # --- General Contact 宣言（モデルレベル、Abaqus/Standard 互換）---
+    _contact_written = False
+    if steps:
+        for step in steps:
+            if step.contact is not None and not _contact_written:
+                _contact_written = True
+                c = step.contact
+                lines.append("*CONTACT")
+                # *CONTACT INCLUSIONS
+                lines.append("*CONTACT INCLUSIONS")
+                if c.inclusions:
+                    for surf1, surf2 in c.inclusions:
+                        lines.append(f"{surf1}, {surf2}")
+                else:
+                    lines.append("ALLEXT, ALLEXT")
+                # *CONTACT PROPERTY ASSIGNMENT
+                lines.append("*CONTACT PROPERTY ASSIGNMENT")
+                if c.inclusions:
+                    for surf1, surf2 in c.inclusions:
+                        lines.append(f"{surf1}, {surf2}, {c.interaction}")
+                else:
+                    lines.append(f", , {c.interaction}")
+                # xkep-cae 独自拡張: 同層除外
+                if c.exclude_same_layer:
+                    lines.append("** XKEP-CAE: EXCLUDE_SAME_LAYER=YES")
+                break
+
+    # --- Initial conditions ---
+    if initial_conditions:
+        for ic in initial_conditions:
+            lines.append(f"*INITIAL CONDITIONS, TYPE={ic.type}")
+            for node_or_nset, dof, value in ic.data:
+                lines.append(f"{node_or_nset}, {dof}, {value:.10g}")
+
+    # ============================================================
+    # STEP LEVEL
+    # ============================================================
+
+    if steps:
+        for idx, step in enumerate(steps, start=1):
+            lines.extend(_write_step_block(step, idx))
+    else:
+        # ステップ未定義の場合: 空のステップを1つ生成（後方互換）
+        lines.append("*STEP, INC=1000, NLGEOM=YES")
+        lines.append("Step-1")
+        lines.append("*STATIC")
+        lines.append("*END STEP")
+
+    lines.append("")
     out.write_text("\n".join(lines), encoding="utf-8")
     return out

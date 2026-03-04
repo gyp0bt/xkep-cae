@@ -172,12 +172,137 @@ def _straight_points(n_points: int, length: float) -> np.ndarray:
     return coords
 
 
+def _count_layers(n_strands: int) -> int:
+    """撚線の層数を計算する.
+
+    Args:
+        n_strands: 素線本数
+
+    Returns:
+        層数（3本の場合は1、7本=1層、19本=2層、37本=3層、...）
+    """
+    if n_strands == 3:
+        return 1
+    remaining = n_strands - 1
+    layer = 0
+    while remaining > 0:
+        layer += 1
+        remaining -= 6 * layer
+    return layer
+
+
+def _compute_layer_structure(n_strands: int) -> list[int]:
+    """各層の素線数を計算する.
+
+    Args:
+        n_strands: 素線本数
+
+    Returns:
+        層ごとの素線数リスト（layer 0=中心を含む）
+    """
+    if n_strands == 3:
+        return [0, 3]  # 中心なし、第1層に3本
+
+    layers = [1]  # 中心1本
+    remaining = n_strands - 1
+    layer = 1
+    while remaining > 0:
+        n_in_layer = 6 * layer
+        actual = min(n_in_layer, remaining)
+        layers.append(actual)
+        remaining -= actual
+        layer += 1
+    return layers
+
+
+def minimum_strand_diameter(
+    n_strands: int,
+    wire_diameter: float,
+) -> float:
+    """指定本数・素線径での貫入なし最小撚線外径を計算する.
+
+    各層で以下の2つの制約を満たす最小配置半径を求め、
+    それらの最大包絡から最小撚線外径を返す。
+
+    制約:
+      (1) 層間非貫入: r_k - r_{k-1} >= d  (k >= 1)
+      (2) 層内非貫入: 2*r_k*sin(π/n_k) >= d  (n_k >= 2)
+
+    3本撚りの場合:
+      r_lay >= d / √3  (3本が互いに接する最小半径)
+      外径 = 2*(r_lay + r_wire)
+
+    Args:
+        n_strands: 素線本数
+        wire_diameter: 素線直径 [m]
+
+    Returns:
+        最小撚線外径 [m]
+    """
+    r_wire = wire_diameter / 2.0
+    d = wire_diameter
+
+    if n_strands == 1:
+        return wire_diameter
+
+    if n_strands == 3:
+        r_lay_min = d / math.sqrt(3.0)
+        return 2.0 * (r_lay_min + r_wire)
+
+    layer_counts = _compute_layer_structure(n_strands)
+    n_layers = len(layer_counts) - 1  # 中心を除いた層数
+
+    # 各層の最小配置半径を計算
+    r_lay = [0.0]  # layer 0 = 中心
+    for k in range(1, n_layers + 1):
+        n_k = layer_counts[k]
+        # 制約(1): 層間
+        r_min_radial = r_lay[k - 1] + d
+        # 制約(2): 層内（2本以上の場合）
+        if n_k >= 2:
+            r_min_circum = r_wire / math.sin(math.pi / n_k)
+        else:
+            r_min_circum = 0.0
+        r_lay.append(max(r_min_radial, r_min_circum))
+
+    r_envelope = r_lay[-1] + r_wire
+    return 2.0 * r_envelope
+
+
+def validate_strand_geometry(
+    n_strands: int,
+    wire_diameter: float,
+    strand_diameter: float,
+) -> None:
+    """撚線幾何の非貫入制約を検証する.
+
+    外径と素線径の組み合わせが幾何学的に実現可能かチェックし、
+    不可能な場合は ValueError を送出する。
+
+    Args:
+        n_strands: 素線本数
+        wire_diameter: 素線直径 [m]
+        strand_diameter: 撚線外径 [m]
+
+    Raises:
+        ValueError: 幾何学的に実現不可能な組み合わせ
+    """
+    min_d = minimum_strand_diameter(n_strands, wire_diameter)
+    if strand_diameter < min_d - 1e-15 * min_d:
+        raise ValueError(
+            f"撚線外径 {strand_diameter:.6f}m は {n_strands}本・素線径 "
+            f"{wire_diameter:.6f}m に対して小さすぎます。"
+            f"最小外径: {min_d:.6f}m"
+        )
+
+
 def make_strand_layout(
     n_strands: int,
     wire_radius: float,
     *,
     gap: float = 0.0,
     lay_direction: int = 1,
+    strand_diameter: float | None = None,
 ) -> list[StrandInfo]:
     """撚線素線配置を生成する.
 
@@ -190,23 +315,45 @@ def make_strand_layout(
     一般 n 本: n = 1 + 6 + 12 + 18 + ... = 1 + Σ 6k  (k=1,2,3,...)
     特殊: 3本は中心なし三つ撚り
 
+    == 配置半径の決定 ==
+
+    strand_diameter が指定された場合:
+      外径制約の元で非貫入を保証する配置半径を自動計算する。
+      gap 引数は無視される。
+
+    strand_diameter が未指定の場合:
+      従来の r_lay = layer * (d + gap) 方式。gap=0 で密着配置。
+
+    非貫入制約（全モードで検証）:
+      (1) 層間: r_k - r_{k-1} >= d  （隣接層の素線が貫入しない）
+      (2) 層内: 2*r_k*sin(π/n_k) >= d （同一層の隣接素線が貫入しない）
+
     Args:
         n_strands: 素線本数 (3, 7, 19, 37, ...)
         wire_radius: 素線断面半径
-        gap: 素線間の初期ギャップ（0 = 密着）
+        gap: 素線間の初期ギャップ（0 = 密着）。strand_diameter指定時は無視。
         lay_direction: 撚り方向 (+1=S, -1=Z)
+        strand_diameter: 撚線外径 [m]。指定時は非貫入制約の元で配置を自動計算。
 
     Returns:
         素線情報のリスト
+
+    Raises:
+        ValueError: strand_diameter が小さすぎて非貫入配置が不可能な場合
     """
     d = 2.0 * wire_radius
     infos: list[StrandInfo] = []
     sid = 0
 
     if n_strands == 3:
-        # 三つ撚り: 中心なし、3本が120°配置
-        # 配置半径 = d/√3（三角形の外接円半径、各素線が互いに接する）
-        r_lay = (d + gap) / math.sqrt(3.0)
+        if strand_diameter is not None:
+            validate_strand_geometry(n_strands, d, strand_diameter)
+            # 外径から配置半径を逆算
+            r_lay = strand_diameter / 2.0 - wire_radius
+        else:
+            # 三つ撚り: 中心なし、3本が120°配置
+            # 配置半径 = d/√3（三角形の外接円半径、各素線が互いに接する）
+            r_lay = (d + gap) / math.sqrt(3.0)
         for k in range(3):
             angle = 2.0 * math.pi * k / 3.0
             infos.append(
@@ -223,7 +370,6 @@ def make_strand_layout(
         return infos
 
     # 一般パターン: 中心1本 + 同心円層
-    # 層 k の素線数 = 6k, 配置半径 = k * (d + gap)
     if n_strands >= 1:
         # 中心素線（直線）
         infos.append(
@@ -240,27 +386,79 @@ def make_strand_layout(
 
     remaining = n_strands - 1
     layer = 1
-    while remaining > 0:
-        n_in_layer = 6 * layer
-        actual = min(n_in_layer, remaining)
-        r_lay = layer * (d + gap)
-        # 交互撚り: 奇数層=lay_direction, 偶数層=-lay_direction
-        layer_dir = lay_direction if (layer % 2 == 1) else -lay_direction
-        for k in range(actual):
-            angle = 2.0 * math.pi * k / n_in_layer
-            infos.append(
-                StrandInfo(
-                    strand_id=sid,
-                    layer=layer,
-                    angle_offset=angle,
-                    lay_radius=r_lay,
-                    wire_radius=wire_radius,
-                    lay_direction=layer_dir,
+
+    if strand_diameter is not None:
+        validate_strand_geometry(n_strands, d, strand_diameter)
+        outer_radius = strand_diameter / 2.0
+        layer_counts = _compute_layer_structure(n_strands)
+        n_layers = len(layer_counts) - 1
+
+        # 各層の最小配置半径を計算
+        r_min = [0.0]  # layer 0 = 中心
+        for k in range(1, n_layers + 1):
+            n_k = layer_counts[k]
+            r_min_radial = r_min[k - 1] + d
+            if n_k >= 2:
+                r_min_circum = wire_radius / math.sin(math.pi / n_k)
+            else:
+                r_min_circum = 0.0
+            r_min.append(max(r_min_radial, r_min_circum))
+
+        # 余剰スペースを按分して各層に均等配分
+        r_max_needed = r_min[-1]  # 最小配置での最外層半径
+        available = outer_radius - wire_radius  # 最外層の配置半径上限
+        surplus = available - r_max_needed
+        if surplus > 1e-15 and n_layers > 0:
+            # 余剰を各層に均等配分
+            delta = surplus / n_layers
+            lay_radii = [0.0] + [r_min[k] + k * delta for k in range(1, n_layers + 1)]
+        else:
+            lay_radii = r_min
+
+        for k in range(1, n_layers + 1):
+            n_in_layer = layer_counts[k]
+            r_lay = lay_radii[k]
+            layer_dir = lay_direction if (k % 2 == 1) else -lay_direction
+            for j in range(n_in_layer):
+                angle = (
+                    2.0 * math.pi * j / (6 * k)
+                    if n_in_layer == 6 * k
+                    else 2.0 * math.pi * j / n_in_layer
                 )
-            )
-            sid += 1
-        remaining -= actual
-        layer += 1
+                infos.append(
+                    StrandInfo(
+                        strand_id=sid,
+                        layer=k,
+                        angle_offset=angle,
+                        lay_radius=r_lay,
+                        wire_radius=wire_radius,
+                        lay_direction=layer_dir,
+                    )
+                )
+                sid += 1
+    else:
+        # 従来のモード: r_lay = layer * (d + gap)
+        while remaining > 0:
+            n_in_layer = 6 * layer
+            actual = min(n_in_layer, remaining)
+            r_lay = layer * (d + gap)
+            # 交互撚り: 奇数層=lay_direction, 偶数層=-lay_direction
+            layer_dir = lay_direction if (layer % 2 == 1) else -lay_direction
+            for k in range(actual):
+                angle = 2.0 * math.pi * k / n_in_layer
+                infos.append(
+                    StrandInfo(
+                        strand_id=sid,
+                        layer=layer,
+                        angle_offset=angle,
+                        lay_radius=r_lay,
+                        wire_radius=wire_radius,
+                        lay_direction=layer_dir,
+                    )
+                )
+                sid += 1
+            remaining -= actual
+            layer += 1
 
     return infos
 
@@ -275,11 +473,21 @@ def make_twisted_wire_mesh(
     gap: float = 0.0,
     lay_direction: int = 1,
     n_pitches: float | None = None,
+    strand_diameter: float | None = None,
 ) -> TwistedWireMesh:
     """撚線メッシュを生成するファクトリ関数.
 
     理想的なヘリカル配置に基づき、各素線の中心線を離散化して
     梁要素メッシュを構築する。
+
+    == 配置モード ==
+
+    strand_diameter 指定時:
+      撚線外径と素線径から、非貫入制約を満たす配置半径を自動計算。
+      gap 引数は無視される。外径が小さすぎる場合は ValueError。
+
+    strand_diameter 未指定時:
+      従来の r_lay = layer * (d + gap) 方式。gap=0 で密着配置。
 
     Args:
         n_strands: 素線本数 (3, 7, 19, 37, ...)
@@ -287,12 +495,16 @@ def make_twisted_wire_mesh(
         pitch: 撚ピッチ [m]（1回転あたりの軸方向長さ）
         length: モデル長さ [m]（軸方向）。n_pitchesが指定された場合は無視。
         n_elems_per_strand: 1素線あたりの要素分割数
-        gap: 素線間初期ギャップ [m]（0=密着）
+        gap: 素線間初期ギャップ [m]（0=密着）。strand_diameter指定時は無視。
         lay_direction: 撚り方向 (+1=S撚り, -1=Z撚り)
         n_pitches: モデル長さをピッチ数で指定（length を上書き）
+        strand_diameter: 撚線外径 [m]。指定時は非貫入配置を自動計算。
 
     Returns:
         TwistedWireMesh インスタンス
+
+    Raises:
+        ValueError: strand_diameter が非貫入配置に必要な最小値を下回る場合
     """
     wire_radius = wire_diameter / 2.0
 
@@ -305,6 +517,7 @@ def make_twisted_wire_mesh(
         wire_radius,
         gap=gap,
         lay_direction=lay_direction,
+        strand_diameter=strand_diameter,
     )
 
     n_nodes_per_strand = n_elems_per_strand + 1

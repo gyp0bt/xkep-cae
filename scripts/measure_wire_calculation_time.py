@@ -23,6 +23,7 @@ from pathlib import Path
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from xkep_cae.mesh.twisted_wire import minimum_strand_diameter
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
     print_benchmark_report,
@@ -67,8 +68,11 @@ def run_measurement() -> list[BendingOscillationResult]:
         print(f"{'#' * 80}")
 
         try:
+            # 非貫入配置: 最小外径を自動計算
+            sd = minimum_strand_diameter(n_strands, COMMON_PARAMS.get("wire_diameter", 0.002))
             result = run_bending_oscillation(
                 n_strands=n_strands,
+                strand_diameter=sd,
                 **COMMON_PARAMS,
             )
             results.append(result)

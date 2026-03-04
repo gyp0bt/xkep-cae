@@ -17,7 +17,7 @@
   python scripts/run_bending_oscillation.py export --strands 7,19
 
   # .inp から計算（結果出力フック付き）
-  python scripts/run_bending_oscillation.py solve --inpdir results/bending
+  python scripts/run_bending_oscillation.py solve --inpdir scripts/results/bending
 
   # 一気通貫
   python scripts/run_bending_oscillation.py all --strands 7,19,37,61,91
@@ -59,8 +59,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 
 from xkep_cae.contact.graph import save_contact_graph_gif
-from xkep_cae.io.abaqus_inp import write_abaqus_inp
-from xkep_cae.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
+from xkep_cae.io.abaqus_inp import (
+    InpContactDef,
+    InpOutputRequest,
+    InpStep,
+    InpSurfaceDef,
+    InpSurfaceInteraction,
+    write_abaqus_model,
+)
+from xkep_cae.mesh.twisted_wire import (
+    TwistedWireMesh,
+    make_twisted_wire_mesh,
+    minimum_strand_diameter,
+)
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
     export_bending_oscillation_gif,
@@ -81,6 +92,7 @@ DEFAULT_PARAMS = {
     "pitch": 0.040,
     "n_elems_per_strand": 4,
     "n_pitches": 0.5,
+    "strand_diameter": "auto",  # "auto" = minimum_strand_diameter で自動計算
     # 材料
     "E": 200e9,
     "nu": 0.3,
@@ -101,8 +113,8 @@ DEFAULT_PARAMS = {
     "mu": 0.0,
     "k_pen_scaling": "sqrt",
     "penalty_growth_factor": 4.0,
-    # NCP ソルバー
-    "use_ncp": False,
+    # NCP ソルバー（デフォルトで有効）
+    "use_ncp": True,
     "use_mortar": True,
     "n_gauss": 2,
     "ncp_k_pen": 0.0,
@@ -142,6 +154,15 @@ def export_bending_oscillation_inp(
     p = {**DEFAULT_PARAMS, **(params or {})}
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- 非貫入配置: strand_diameter 計算 ---
+    sd_param = p.get("strand_diameter")
+    if sd_param == "auto":
+        sd_value = minimum_strand_diameter(n_strands, p["wire_diameter"])
+    elif sd_param is not None and sd_param != 0:
+        sd_value = float(sd_param)
+    else:
+        sd_value = None
+
     # --- メッシュ生成 ---
     mesh = make_twisted_wire_mesh(
         n_strands,
@@ -150,6 +171,7 @@ def export_bending_oscillation_inp(
         length=0.0,
         n_elems_per_strand=p["n_elems_per_strand"],
         n_pitches=p["n_pitches"],
+        strand_diameter=sd_value,
     )
 
     # --- ノードセット: 素線ごと + 固定端 + 自由端 ---
@@ -172,22 +194,116 @@ def export_bending_oscillation_inp(
         elems = mesh.strand_elems(sid)
         elsets[f"STRAND_{sid}"] = [int(e) + 1 for e in elems]  # 1-based
 
-    # --- 境界条件: 固定端を全 DOF 拘束 ---
-    boundaries: list[tuple[int, int, int, float]] = []
-    for node_label in nsets["FIXED_END"]:
-        boundaries.append((node_label, 1, 6, 0.0))
-
     # --- 断面寸法 ---
     r = p["wire_diameter"] / 2.0
     beam_section_dims = [r]
 
+    # --- 接触定義（Abaqus General Contact 互換）---
+    contact_alg = "NCP" if p["use_ncp"] else "AL"
+
+    # サーフェス定義: 各素線を ELSET ベースのサーフェスとして定義
+    contact_surfaces: list[InpSurfaceDef] = []
+    for sid in range(mesh.n_strands):
+        contact_surfaces.append(
+            InpSurfaceDef(
+                name=f"SURF_STRAND_{sid}",
+                type="ELEMENT",
+                elset=f"STRAND_{sid}",
+            )
+        )
+
+    # サーフェスインタラクション定義
+    interaction_name = "CONTACT_PROP"
+    contact_interaction = InpSurfaceInteraction(
+        name=interaction_name,
+        pressure_overclosure="HARD",
+        k_pen=p.get("ncp_k_pen", 0.0),
+        friction=p.get("mu", 0.0),
+        algorithm=contact_alg,
+        mortar=p.get("use_mortar", True),
+    )
+
+    # 接触ペア: 異なる素線間のみ（同層除外は独自拡張で処理）
+    contact_def = InpContactDef(
+        interaction=interaction_name,
+        inclusions=[],  # 空 = ALLEXT, ALLEXT（全自己接触）
+        exclude_same_layer=True,
+        surfaces=contact_surfaces,
+        surface_interactions=[contact_interaction],
+    )
+
+    # --- Step 1: 曲げ（静解析）---
+    bending_bcs: list[tuple[int | str, int, int, float]] = []
+    for node_label in nsets["FIXED_END"]:
+        bending_bcs.append((node_label, 1, 6, 0.0))
+
+    step_bend = InpStep(
+        name="Bending",
+        procedure="STATIC",
+        nlgeom=True,
+        unsymm=True,
+        inc=1000,
+        time_params=(1.0 / p["n_bending_steps"], 1.0, 1e-8, 1.0),
+        boundaries=bending_bcs,
+        contact=contact_def,
+        output_requests=[
+            InpOutputRequest(
+                domain="FIELD",
+                frequency=1,
+                variables=["U", "RF", "S", "COORD"],
+            ),
+            InpOutputRequest(
+                domain="HISTORY",
+                frequency=1,
+                variables=["ALLKE", "ALLIE", "ETOTAL"],
+            ),
+        ],
+    )
+
+    # --- Step 2: 揺動（動解析）---
+    osc_bcs: list[tuple[int | str, int, int, float]] = []
+    for node_label in nsets["FIXED_END"]:
+        osc_bcs.append((node_label, 1, 6, 0.0))
+
+    n_quarter = p["n_steps_per_quarter"]
+    n_osc_steps = 4 * p["n_cycles"] * n_quarter
+    total_osc_time = float(n_osc_steps)
+    dt_osc = 1.0
+
+    step_osc = InpStep(
+        name="Oscillation",
+        procedure="DYNAMIC",
+        nlgeom=True,
+        unsymm=True,
+        inc=n_osc_steps * 10,
+        time_params=(dt_osc, total_osc_time, 1e-8, dt_osc),
+        boundaries=osc_bcs,
+        boundary_type="DISPLACEMENT",
+        contact=contact_def,
+        output_requests=[
+            InpOutputRequest(
+                domain="FIELD",
+                frequency=1,
+                variables=["U", "V", "A", "RF", "S", "COORD"],
+            ),
+            InpOutputRequest(
+                domain="HISTORY",
+                frequency=1,
+                variables=["ALLKE", "ALLIE", "ETOTAL"],
+            ),
+        ],
+    )
+
+    steps = [step_bend, step_osc]
+
     # --- xkep-cae メタデータ（ソルバー・荷重パラメータ）---
     metadata = {
-        "xkep_version": "1.0",
+        "xkep_version": "2.0",
         "problem_type": "bending_oscillation",
         "n_strands": n_strands,
         "wire_diameter": p["wire_diameter"],
         "pitch": p["pitch"],
+        "strand_diameter": sd_value,
         "n_elems_per_strand": p["n_elems_per_strand"],
         "n_pitches": p["n_pitches"],
         "bend_angle_deg": p["bend_angle_deg"],
@@ -217,8 +333,11 @@ def export_bending_oscillation_inp(
         "strand_elem_ranges": mesh.strand_elem_ranges,
     }
 
+    # --- 鋼線密度 ---
+    steel_density = 7850.0  # kg/m³
+
     # --- .inp 書き出し ---
-    inp_path = write_abaqus_inp(
+    inp_path = write_abaqus_model(
         out_dir / f"model_{n_strands}strand.inp",
         mesh.node_coords,
         mesh.connectivity,
@@ -226,13 +345,14 @@ def export_bending_oscillation_inp(
         title=f"xkep-cae bending oscillation {n_strands}-strand twisted wire",
         nsets=nsets,
         elsets=elsets,
-        boundaries=boundaries,
         material_name="STEEL",
         E=p["E"],
         nu=p["nu"],
+        density=steel_density,
         beam_section_type="CIRC",
         beam_section_dims=beam_section_dims,
         beam_section_direction=[0.0, 1.0, 0.0],
+        steps=steps,
     )
 
     # --- メタデータをファイル末尾に追記 ---
@@ -315,6 +435,7 @@ def solve_from_inp(
             pitch=meta["pitch"],
             n_elems_per_strand=meta["n_elems_per_strand"],
             n_pitches=meta["n_pitches"],
+            strand_diameter=meta.get("strand_diameter"),
             bend_angle_deg=meta["bend_angle_deg"],
             n_bending_steps=meta["n_bending_steps"],
             oscillation_amplitude_mm=meta["oscillation_amplitude_mm"],
@@ -362,6 +483,7 @@ def solve_from_inp(
         length=0.0,
         n_elems_per_strand=meta["n_elems_per_strand"],
         n_pitches=meta["n_pitches"],
+        strand_diameter=meta.get("strand_diameter"),
     )
 
     # --- エクスポートフック ---
@@ -626,9 +748,14 @@ def _print_summary(results: list[tuple[str, BendingOscillationResult | None]]):
 
 
 def _add_ncp_args(p):
-    """argparse サブパーサーに NCP ソルバーオプションを追加."""
+    """argparse サブパーサーに NCP ソルバー・非貫入配置オプションを追加."""
     g = p.add_argument_group("NCP ソルバーオプション")
-    g.add_argument("--ncp", action="store_true", default=False, help="NCP ソルバーを使用")
+    g.add_argument(
+        "--ncp", action="store_true", default=True, help="NCP ソルバーを使用（デフォルト: 有効）"
+    )
+    g.add_argument(
+        "--no-ncp", action="store_true", default=False, help="NCP を無効化し AL 法を使用"
+    )
     g.add_argument("--mortar", action="store_true", default=True, help="Mortar 積分")
     g.add_argument("--n-gauss", type=int, default=2, help="Gauss 積分点数")
     g.add_argument("--ncp-k-pen", type=float, default=0.0, help="NCP ペナルティ剛性（0=自動）")
@@ -636,12 +763,22 @@ def _add_ncp_args(p):
     g.add_argument("--modified-nr-threshold", type=int, default=5, help="修正NR法の閾値")
     g.add_argument("--k-pen-scaling", type=str, default="sqrt", help="k_pen スケーリング")
     g.add_argument("--penalty-growth", type=float, default=4.0, help="ペナルティ成長係数")
+    g2 = p.add_argument_group("非貫入配置オプション")
+    g2.add_argument(
+        "--strand-diameter",
+        type=str,
+        default="auto",
+        help="撚線外径 [m]（'auto'=最小外径自動計算, '0'=従来配置, 数値=指定値）",
+    )
 
 
 def _apply_ncp_params(args, params):
-    """CLI の NCP 引数を params 辞書に反映."""
-    if hasattr(args, "ncp") and args.ncp:
-        params["use_ncp"] = True
+    """CLI の NCP・非貫入配置引数を params 辞書に反映."""
+    # NCP: --no-ncp で明示無効化、それ以外はデフォルト（True）
+    if hasattr(args, "no_ncp") and args.no_ncp:
+        params["use_ncp"] = False
+    elif hasattr(args, "ncp"):
+        params["use_ncp"] = args.ncp
     if hasattr(args, "mortar"):
         params["use_mortar"] = args.mortar
     if hasattr(args, "n_gauss"):
@@ -656,6 +793,9 @@ def _apply_ncp_params(args, params):
         params["k_pen_scaling"] = args.k_pen_scaling
     if hasattr(args, "penalty_growth"):
         params["penalty_growth_factor"] = args.penalty_growth
+    # 非貫入配置
+    if hasattr(args, "strand_diameter"):
+        params["strand_diameter"] = args.strand_diameter
 
 
 def main():
@@ -672,7 +812,7 @@ def main():
         default=",".join(str(s) for s in STRAND_COUNTS_DEFAULT),
         help="素線数リスト（カンマ区切り）",
     )
-    p_export.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    p_export.add_argument("--outdir", type=str, default="scripts/results/bending", help="出力先")
     _add_ncp_args(p_export)
     p_export.set_defaults(func=cmd_export)
 
@@ -681,7 +821,7 @@ def main():
     p_solve.add_argument(
         "--inpdir",
         type=str,
-        default="results/bending",
+        default="scripts/results/bending",
         help=".inp 検索ディレクトリ",
     )
     p_solve.add_argument(
@@ -697,7 +837,7 @@ def main():
         default=",".join(str(s) for s in STRAND_COUNTS_DEFAULT),
         help="素線数リスト（カンマ区切り）",
     )
-    p_all.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    p_all.add_argument("--outdir", type=str, default="scripts/results/bending", help="出力先")
     _add_ncp_args(p_all)
     p_all.set_defaults(func=cmd_all)
 
@@ -707,7 +847,7 @@ def main():
         # デフォルトは all
         args.command = "all"
         args.strands = ",".join(str(s) for s in STRAND_COUNTS_DEFAULT)
-        args.outdir = "results/bending"
+        args.outdir = "scripts/results/bending"
         cmd_all(args)
     else:
         args.func(args)

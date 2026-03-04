@@ -432,6 +432,7 @@ def run_bending_oscillation(
     n_elems_per_pitch: int = 16,
     n_elems_per_strand: int | None = None,  # 後方互換: 指定時は n_elems_per_pitch を上書き
     n_pitches: float = 1.0,
+    strand_diameter: float | None = None,  # 撚線外径 [m]（非貫入配置）
     # 曲げパラメータ
     bend_angle_deg: float = 90.0,
     n_bending_steps: int = 45,
@@ -518,6 +519,7 @@ def run_bending_oscillation(
         length=0.0,
         n_elems_per_strand=_n_elems_per_strand,
         n_pitches=n_pitches,
+        strand_diameter=strand_diameter,
     )
     timing.record(0, 0, -1, "mesh_generation", time.perf_counter() - t0)
 
