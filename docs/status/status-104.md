@@ -80,6 +80,18 @@
 - 新規非貫入テスト: 43/43 パス
 - メッシュ全体: 224/224 パス
 
+### 5. スクリプトのデフォルト変更
+
+| スクリプト | 変更内容 |
+|-----------|---------|
+| `run_bending_oscillation.py` | `use_ncp=True`（NCP デフォルト有効）、`strand_diameter="auto"`（非貫入配置デフォルト） |
+| `measure_wire_calculation_time.py` | `minimum_strand_diameter` で自動非貫入配置 |
+| `wire_bending_benchmark.py` | `strand_diameter` 引数を追加 |
+
+CLIオプション:
+- `--no-ncp`: NCP を無効化し AL 法に切替
+- `--strand-diameter auto|0|数値`: 撚線外径指定（`auto`=最小外径自動計算、`0`=従来配置）
+
 ## 次の課題
 
 - [ ] 19本以上 NCP 収束のパラメータ最適化
