@@ -99,6 +99,19 @@ DEFAULT_PARAMS = {
     "auto_kpen": True,
     "use_friction": False,
     "mu": 0.0,
+    "k_pen_scaling": "sqrt",
+    "penalty_growth_factor": 4.0,
+    # NCP ソルバー
+    "use_ncp": False,
+    "use_mortar": True,
+    "n_gauss": 2,
+    "ncp_k_pen": 0.0,
+    "augmented_threshold": 20,
+    "saddle_regularization": 0.0,
+    "ncp_active_threshold": 0.0,
+    "lambda_relaxation": 1.0,
+    "max_step_cuts": 3,
+    "modified_nr_threshold": 5,
 }
 
 STRAND_COUNTS_DEFAULT = [7, 19, 37, 61, 91]
@@ -188,6 +201,18 @@ def export_bending_oscillation_inp(
         "auto_kpen": p["auto_kpen"],
         "use_friction": p["use_friction"],
         "mu": p["mu"],
+        "k_pen_scaling": p["k_pen_scaling"],
+        "penalty_growth_factor": p["penalty_growth_factor"],
+        "use_ncp": p["use_ncp"],
+        "use_mortar": p["use_mortar"],
+        "n_gauss": p["n_gauss"],
+        "ncp_k_pen": p["ncp_k_pen"],
+        "augmented_threshold": p["augmented_threshold"],
+        "saddle_regularization": p["saddle_regularization"],
+        "ncp_active_threshold": p["ncp_active_threshold"],
+        "lambda_relaxation": p["lambda_relaxation"],
+        "max_step_cuts": p["max_step_cuts"],
+        "modified_nr_threshold": p["modified_nr_threshold"],
         "strand_node_ranges": mesh.strand_node_ranges,
         "strand_elem_ranges": mesh.strand_elem_ranges,
     }
@@ -301,9 +326,22 @@ def solve_from_inp(
             auto_kpen=meta.get("auto_kpen", True),
             use_friction=meta.get("use_friction", False),
             mu=meta.get("mu", 0.0),
+            k_pen_scaling=meta.get("k_pen_scaling", "sqrt"),
+            penalty_growth_factor=meta.get("penalty_growth_factor", 4.0),
             show_progress=show_progress,
             gif_output_dir=None,
             gif_snapshot_interval=1,
+            # NCP ソルバーパラメータ
+            use_ncp=meta.get("use_ncp", False),
+            use_mortar=meta.get("use_mortar", True),
+            n_gauss=meta.get("n_gauss", 2),
+            ncp_k_pen=meta.get("ncp_k_pen", 0.0),
+            augmented_threshold=meta.get("augmented_threshold", 20),
+            saddle_regularization=meta.get("saddle_regularization", 0.0),
+            ncp_active_threshold=meta.get("ncp_active_threshold", 0.0),
+            lambda_relaxation=meta.get("lambda_relaxation", 1.0),
+            max_step_cuts=meta.get("max_step_cuts", 3),
+            modified_nr_threshold=meta.get("modified_nr_threshold", 5),
         )
     except Exception as e:
         print(f"\n  [ERROR] ソルバー失敗: {e}")
@@ -494,14 +532,18 @@ def cmd_export(args):
     """export サブコマンド: .inp 生成."""
     strand_counts = [int(s.strip()) for s in args.strands.split(",")]
     out_root = Path(args.outdir)
+    params = dict(DEFAULT_PARAMS)
+    _apply_ncp_params(args, params)
 
     print("== export モード: .inp 生成 ==")
     print(f"  素線数: {strand_counts}")
     print(f"  出力先: {out_root.resolve()}")
+    if params.get("use_ncp"):
+        print("  ソルバー: NCP")
 
     for n in strand_counts:
         out_dir = out_root / f"{n}strand"
-        inp_path = export_bending_oscillation_inp(n, out_dir)
+        inp_path = export_bending_oscillation_inp(n, out_dir, params=params)
         print(f"  [{n}本] {inp_path}")
 
 
@@ -537,10 +579,14 @@ def cmd_all(args):
     """all サブコマンド: export → solve 連続実行."""
     strand_counts = [int(s.strip()) for s in args.strands.split(",")]
     out_root = Path(args.outdir)
+    params = dict(DEFAULT_PARAMS)
+    _apply_ncp_params(args, params)
 
     print("== all モード: export → solve ==")
     print(f"  素線数: {strand_counts}")
     print(f"  出力先: {out_root.resolve()}")
+    if params.get("use_ncp"):
+        print("  ソルバー: NCP")
 
     results: list[tuple[str, BendingOscillationResult | None]] = []
     for n in strand_counts:
@@ -550,7 +596,7 @@ def cmd_all(args):
         print(f"\n{'#' * 70}")
         print(f"# {n}本撚線 — export")
         print(f"{'#' * 70}")
-        inp_path = export_bending_oscillation_inp(n, out_dir)
+        inp_path = export_bending_oscillation_inp(n, out_dir, params=params)
         print(f"  .inp: {inp_path}")
 
         # Phase 2: solve
@@ -579,6 +625,39 @@ def _print_summary(results: list[tuple[str, BendingOscillationResult | None]]):
         print(f"{name:<30} {r.n_elems:>6} {r.ndof:>8} {p1:>8} {p2:>8} {r.total_time_s:>10.1f}")
 
 
+def _add_ncp_args(p):
+    """argparse サブパーサーに NCP ソルバーオプションを追加."""
+    g = p.add_argument_group("NCP ソルバーオプション")
+    g.add_argument("--ncp", action="store_true", default=False, help="NCP ソルバーを使用")
+    g.add_argument("--mortar", action="store_true", default=True, help="Mortar 積分")
+    g.add_argument("--n-gauss", type=int, default=2, help="Gauss 積分点数")
+    g.add_argument("--ncp-k-pen", type=float, default=0.0, help="NCP ペナルティ剛性（0=自動）")
+    g.add_argument("--max-step-cuts", type=int, default=3, help="ステップ二分法の最大深度")
+    g.add_argument("--modified-nr-threshold", type=int, default=5, help="修正NR法の閾値")
+    g.add_argument("--k-pen-scaling", type=str, default="sqrt", help="k_pen スケーリング")
+    g.add_argument("--penalty-growth", type=float, default=4.0, help="ペナルティ成長係数")
+
+
+def _apply_ncp_params(args, params):
+    """CLI の NCP 引数を params 辞書に反映."""
+    if hasattr(args, "ncp") and args.ncp:
+        params["use_ncp"] = True
+    if hasattr(args, "mortar"):
+        params["use_mortar"] = args.mortar
+    if hasattr(args, "n_gauss"):
+        params["n_gauss"] = args.n_gauss
+    if hasattr(args, "ncp_k_pen"):
+        params["ncp_k_pen"] = args.ncp_k_pen
+    if hasattr(args, "max_step_cuts"):
+        params["max_step_cuts"] = args.max_step_cuts
+    if hasattr(args, "modified_nr_threshold"):
+        params["modified_nr_threshold"] = args.modified_nr_threshold
+    if hasattr(args, "k_pen_scaling"):
+        params["k_pen_scaling"] = args.k_pen_scaling
+    if hasattr(args, "penalty_growth"):
+        params["penalty_growth_factor"] = args.penalty_growth
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="撚線曲げ揺動 — プリ/ソルブ分離スクリプト",
@@ -594,6 +673,7 @@ def main():
         help="素線数リスト（カンマ区切り）",
     )
     p_export.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    _add_ncp_args(p_export)
     p_export.set_defaults(func=cmd_export)
 
     # --- solve ---
@@ -618,6 +698,7 @@ def main():
         help="素線数リスト（カンマ区切り）",
     )
     p_all.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    _add_ncp_args(p_all)
     p_all.set_defaults(func=cmd_all)
 
     args = parser.parse_args()
