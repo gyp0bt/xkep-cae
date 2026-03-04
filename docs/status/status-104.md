@@ -92,6 +92,26 @@ CLIオプション:
 - `--no-ncp`: NCP を無効化し AL 法に切替
 - `--strand-diameter auto|0|数値`: 撚線外径指定（`auto`=最小外径自動計算、`0`=従来配置）
 
+### 6. Abaqus互換 .inp ライター（`write_abaqus_model`）
+
+model/step レベルを正しく分離した新しい .inp ライターを追加。
+
+**Model レベル**: *HEADING, *NODE, *ELEMENT, *NSET, *ELSET, *MATERIAL (*ELASTIC, *DENSITY), *BEAM SECTION, *INITIAL CONDITIONS
+
+**Step レベル** (*STEP ～ *END STEP):
+- `*STEP, INC=N, NLGEOM=YES, UNSYMM=YES` + ステップ名
+- `*STATIC` / `*DYNAMIC` プロシージャ + 時間パラメータ
+- `*BOUNDARY, TYPE=DISPLACEMENT/VELOCITY`
+- `*CONTACT, ALGORITHM=NCP/AL`（独自拡張）
+- `*OUTPUT, FIELD/HISTORY` → `*NODE OUTPUT`, `*ELEMENT OUTPUT`, `*ENERGY OUTPUT`
+- `*ANIMATION`（独自拡張）
+- `*CLOAD`, `*DLOAD`
+
+データクラス: `InpStep`, `InpContactDef`, `InpOutputRequest`, `InpAnimationRequest`, `InpInitialCondition`
+
+スクリプト export は Bending(STATIC) + Oscillation(DYNAMIC) の2ステップで出力。
+密度 `*DENSITY 7850` を鋼線デフォルトとして追加。
+
 ## 次の課題
 
 - [ ] 19本以上 NCP 収束のパラメータ最適化
