@@ -962,27 +962,73 @@ class InpAnimationRequest:
 
 
 @dataclass
-class InpContactDef:
-    """接触定義（*CONTACT、独自拡張）.
+class InpSurfaceDef:
+    """サーフェス定義（*SURFACE）.
 
-    Abaqus の *CONTACT PAIR / *SURFACE INTERACTION に相当する
-    xkep-cae 独自の統合キーワード。
+    Abaqus の *SURFACE キーワードに対応。要素セットベースで
+    接触サーフェスを定義する。
 
     Attributes:
-        algorithm: "NCP" or "AL"（接触アルゴリズム）
-        k_pen: ペナルティ剛性（0=自動推定）
+        name: サーフェス名
+        type: サーフェスタイプ ("ELEMENT" or "NODE")
+        elset: 要素セット名（TYPE=ELEMENT の場合）
+        nset: ノードセット名（TYPE=NODE の場合）
+    """
+
+    name: str = ""
+    type: str = "ELEMENT"
+    elset: str | None = None
+    nset: str | None = None
+
+
+@dataclass
+class InpSurfaceInteraction:
+    """サーフェスインタラクション定義（*SURFACE INTERACTION + *SURFACE BEHAVIOR）.
+
+    Abaqus の *SURFACE INTERACTION キーワードと、そのサブキーワード
+    *SURFACE BEHAVIOR に対応。接触挙動（ペナルティ法/ハード接触）を定義する。
+
+    Attributes:
+        name: インタラクション名
+        pressure_overclosure: 圧力-貫入関係 ("HARD", "LINEAR", "EXPONENTIAL", "TABULAR")
+        k_pen: ペナルティ剛性（pressure_overclosure="LINEAR" 時の勾配、0=デフォルト）
         friction: 摩擦係数（0=摩擦なし）
-        mortar: Mortar 積分の有効化
-        exclude_same_layer: 同層除外
+        algorithm: 接触アルゴリズム ("NCP" or "AL"、xkep-cae 独自拡張)
+        mortar: Mortar 積分の有効化（xkep-cae 独自拡張）
         options: その他のキー=値オプション
     """
 
-    algorithm: str = "NCP"
+    name: str = "CONTACT_PROP"
+    pressure_overclosure: str = "HARD"
     k_pen: float = 0.0
     friction: float = 0.0
+    algorithm: str = "NCP"
     mortar: bool = True
-    exclude_same_layer: bool = True
     options: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class InpContactDef:
+    """接触定義（General Contact）.
+
+    Abaqus の General Contact に対応。ステップレベルで
+    *CONTACT / *CONTACT INCLUSIONS / *CONTACT PROPERTY ASSIGNMENT を出力する。
+    サーフェスとインタラクションはモデルレベルで事前定義される。
+
+    Attributes:
+        interaction: サーフェスインタラクション参照名
+        inclusions: 接触ペアリスト [("surf1", "surf2"), ...]
+            空リスト=全自己接触 (ALLEXT, ALLEXT)
+        exclude_same_layer: 同層除外（xkep-cae 独自拡張）
+        surfaces: サーフェス定義リスト（モデルレベルで出力される）
+        surface_interactions: インタラクション定義リスト（モデルレベルで出力される）
+    """
+
+    interaction: str = "CONTACT_PROP"
+    inclusions: list[tuple[str, str]] = field(default_factory=list)
+    exclude_same_layer: bool = True
+    surfaces: list[InpSurfaceDef] = field(default_factory=list)
+    surface_interactions: list[InpSurfaceInteraction] = field(default_factory=list)
 
 
 @dataclass
@@ -1203,21 +1249,10 @@ def _write_step_block(step: InpStep, step_index: int) -> list[str]:
         if step.time_params:
             lines.append(", ".join(f"{v:.6g}" for v in step.time_params))
 
-    # --- 接触定義（独自拡張: *CONTACT）---
-    if step.contact is not None:
-        c = step.contact
-        contact_opts = [f"ALGORITHM={c.algorithm}"]
-        if c.k_pen > 0:
-            contact_opts.append(f"K_PEN={c.k_pen:.6g}")
-        if c.friction > 0:
-            contact_opts.append(f"FRICTION={c.friction:.6g}")
-        if c.mortar:
-            contact_opts.append("MORTAR=YES")
-        if c.exclude_same_layer:
-            contact_opts.append("EXCLUDE_SAME_LAYER=YES")
-        for k, v in c.options.items():
-            contact_opts.append(f"{k}={v}")
-        lines.append("*CONTACT, " + ", ".join(contact_opts))
+    # --- 接触定義（ステップ内差分指定のみ）---
+    # General Contact の主定義はモデルレベル（write_abaqus_model）で出力済み。
+    # ステップ内で接触ドメインを変更する場合のみここで差分出力する。
+    # （現在は差分指定未サポート — 将来拡張用のプレースホルダ）
 
     # --- 境界条件 ---
     if step.boundaries:
@@ -1422,6 +1457,75 @@ def write_abaqus_model(
         lines.append(", ".join(f"{d:.6g}" for d in beam_section_dims))
         if beam_section_direction is not None:
             lines.append(", ".join(f"{d:.6g}" for d in beam_section_direction))
+
+    # --- Surface / Surface Interaction（接触定義のモデルレベル部分）---
+    # ステップの contact から surface/interaction 定義を収集
+    _written_surfaces: set[str] = set()
+    _written_interactions: set[str] = set()
+    if steps:
+        for step in steps:
+            if step.contact is not None:
+                for surf in step.contact.surfaces:
+                    if surf.name and surf.name not in _written_surfaces:
+                        _written_surfaces.add(surf.name)
+                        surf_type = surf.type.upper()
+                        lines.append(f"*SURFACE, TYPE={surf_type}, NAME={surf.name}")
+                        if surf_type == "ELEMENT" and surf.elset:
+                            lines.append(f"{surf.elset},")
+                        elif surf_type == "NODE" and surf.nset:
+                            lines.append(f"{surf.nset},")
+                for si in step.contact.surface_interactions:
+                    if si.name and si.name not in _written_interactions:
+                        _written_interactions.add(si.name)
+                        lines.append(f"*SURFACE INTERACTION, NAME={si.name}")
+                        # *SURFACE BEHAVIOR (PRESSURE-OVERCLOSURE)
+                        po = si.pressure_overclosure.upper()
+                        if po == "LINEAR" and si.k_pen > 0:
+                            lines.append(f"*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE={po}")
+                            lines.append(f"{si.k_pen:.6g}, 0.")
+                        else:
+                            lines.append(f"*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE={po}")
+                        # 摩擦
+                        if si.friction > 0:
+                            lines.append("*FRICTION")
+                            lines.append(f"{si.friction:.6g}")
+                        # xkep-cae 独自拡張: アルゴリズム・Mortar
+                        ext_opts: list[str] = []
+                        if si.algorithm:
+                            ext_opts.append(f"ALGORITHM={si.algorithm}")
+                        if si.mortar:
+                            ext_opts.append("MORTAR=YES")
+                        for k, v in si.options.items():
+                            ext_opts.append(f"{k}={v}")
+                        if ext_opts:
+                            lines.append("** XKEP-CAE: " + ", ".join(ext_opts))
+
+    # --- General Contact 宣言（モデルレベル、Abaqus/Standard 互換）---
+    _contact_written = False
+    if steps:
+        for step in steps:
+            if step.contact is not None and not _contact_written:
+                _contact_written = True
+                c = step.contact
+                lines.append("*CONTACT")
+                # *CONTACT INCLUSIONS
+                lines.append("*CONTACT INCLUSIONS")
+                if c.inclusions:
+                    for surf1, surf2 in c.inclusions:
+                        lines.append(f"{surf1}, {surf2}")
+                else:
+                    lines.append("ALLEXT, ALLEXT")
+                # *CONTACT PROPERTY ASSIGNMENT
+                lines.append("*CONTACT PROPERTY ASSIGNMENT")
+                if c.inclusions:
+                    for surf1, surf2 in c.inclusions:
+                        lines.append(f"{surf1}, {surf2}, {c.interaction}")
+                else:
+                    lines.append(f", , {c.interaction}")
+                # xkep-cae 独自拡張: 同層除外
+                if c.exclude_same_layer:
+                    lines.append("** XKEP-CAE: EXCLUDE_SAME_LAYER=YES")
+                break
 
     # --- Initial conditions ---
     if initial_conditions:

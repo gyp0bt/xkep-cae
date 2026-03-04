@@ -63,6 +63,8 @@ from xkep_cae.io.abaqus_inp import (
     InpContactDef,
     InpOutputRequest,
     InpStep,
+    InpSurfaceDef,
+    InpSurfaceInteraction,
     write_abaqus_model,
 )
 from xkep_cae.mesh.twisted_wire import (
@@ -196,14 +198,38 @@ def export_bending_oscillation_inp(
     r = p["wire_diameter"] / 2.0
     beam_section_dims = [r]
 
-    # --- 接触定義 ---
+    # --- 接触定義（Abaqus General Contact 互換）---
     contact_alg = "NCP" if p["use_ncp"] else "AL"
-    contact_def = InpContactDef(
-        algorithm=contact_alg,
+
+    # サーフェス定義: 各素線を ELSET ベースのサーフェスとして定義
+    contact_surfaces: list[InpSurfaceDef] = []
+    for sid in range(mesh.n_strands):
+        contact_surfaces.append(
+            InpSurfaceDef(
+                name=f"SURF_STRAND_{sid}",
+                type="ELEMENT",
+                elset=f"STRAND_{sid}",
+            )
+        )
+
+    # サーフェスインタラクション定義
+    interaction_name = "CONTACT_PROP"
+    contact_interaction = InpSurfaceInteraction(
+        name=interaction_name,
+        pressure_overclosure="HARD",
         k_pen=p.get("ncp_k_pen", 0.0),
         friction=p.get("mu", 0.0),
+        algorithm=contact_alg,
         mortar=p.get("use_mortar", True),
+    )
+
+    # 接触ペア: 異なる素線間のみ（同層除外は独自拡張で処理）
+    contact_def = InpContactDef(
+        interaction=interaction_name,
+        inclusions=[],  # 空 = ALLEXT, ALLEXT（全自己接触）
         exclude_same_layer=True,
+        surfaces=contact_surfaces,
+        surface_interactions=[contact_interaction],
     )
 
     # --- Step 1: 曲げ（静解析）---

@@ -96,18 +96,36 @@ CLIオプション:
 
 model/step レベルを正しく分離した新しい .inp ライターを追加。
 
-**Model レベル**: *HEADING, *NODE, *ELEMENT, *NSET, *ELSET, *MATERIAL (*ELASTIC, *DENSITY), *BEAM SECTION, *INITIAL CONDITIONS
+**Model レベル**:
+- `*HEADING`, `*NODE`, `*ELEMENT`, `*NSET`, `*ELSET`
+- `*MATERIAL` (`*ELASTIC`, `*DENSITY`)
+- `*BEAM SECTION`
+- `*SURFACE, TYPE=ELEMENT, NAME=...` — 各素線の接触サーフェス定義
+- `*SURFACE INTERACTION, NAME=...` — 接触挙動プロパティ定義
+- `*SURFACE BEHAVIOR, PRESSURE-OVERCLOSURE=HARD|LINEAR` — 法線接触挙動
+- `*FRICTION` — 摩擦係数（オプション）
+- `*CONTACT` — General Contact 宣言
+- `*CONTACT INCLUSIONS` — 接触ペア定義（ALLEXT, ALLEXT）
+- `*CONTACT PROPERTY ASSIGNMENT` — 接触プロパティ割当
+- `*INITIAL CONDITIONS`
 
 **Step レベル** (*STEP ～ *END STEP):
 - `*STEP, INC=N, NLGEOM=YES, UNSYMM=YES` + ステップ名
 - `*STATIC` / `*DYNAMIC` プロシージャ + 時間パラメータ
 - `*BOUNDARY, TYPE=DISPLACEMENT/VELOCITY`
-- `*CONTACT, ALGORITHM=NCP/AL`（独自拡張）
 - `*OUTPUT, FIELD/HISTORY` → `*NODE OUTPUT`, `*ELEMENT OUTPUT`, `*ENERGY OUTPUT`
 - `*ANIMATION`（独自拡張）
 - `*CLOAD`, `*DLOAD`
 
-データクラス: `InpStep`, `InpContactDef`, `InpOutputRequest`, `InpAnimationRequest`, `InpInitialCondition`
+**xkep-cae 独自拡張**（コメント形式で記録）:
+- `** XKEP-CAE: ALGORITHM=NCP|AL, MORTAR=YES` — `*SURFACE INTERACTION` 内
+- `** XKEP-CAE: EXCLUDE_SAME_LAYER=YES` — `*CONTACT` 内
+
+データクラス:
+- `InpSurfaceDef` — サーフェス定義
+- `InpSurfaceInteraction` — インタラクション+SURFACE BEHAVIOR
+- `InpContactDef` — General Contact（surfaces/interactions/inclusions）
+- `InpStep`, `InpOutputRequest`, `InpAnimationRequest`, `InpInitialCondition`
 
 スクリプト export は Bending(STATIC) + Oscillation(DYNAMIC) の2ステップで出力。
 密度 `*DENSITY 7850` を鋼線デフォルトとして追加。
@@ -118,9 +136,12 @@ model/step レベルを正しく分離した新しい .inp ライターを追加
 - [ ] k_pen 自動スケーリング（EA/L ベース）
 - [ ] 37/61/91本の段階的収束テスト
 - [ ] 被膜付き撚線での strand_diameter 対応（coating.thickness を考慮）
+- [ ] .inp リーダーでの新接触キーワードパース対応
 
 ## 確認事項
 
 - 被膜（CoatingModel）がある場合、現在の `strand_diameter` は素線の芯線径ベースで配置を計算。
   被膜厚さを含めた有効直径での非貫入制約は今後の課題。
 - 既存の呼び出し箇所（scripts/tests）は `strand_diameter` 未指定のため後方互換で影響なし。
+- 接触定義は Abaqus/Standard 互換のモデルレベル General Contact 構造に移行済み。
+  ステップ内での接触ドメイン差分指定は将来拡張予定。
