@@ -60,7 +60,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from xkep_cae.contact.graph import save_contact_graph_gif
 from xkep_cae.io.abaqus_inp import write_abaqus_inp
-from xkep_cae.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
+from xkep_cae.mesh.twisted_wire import (
+    TwistedWireMesh,
+    make_twisted_wire_mesh,
+    minimum_strand_diameter,
+)
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
     export_bending_oscillation_gif,
@@ -81,6 +85,7 @@ DEFAULT_PARAMS = {
     "pitch": 0.040,
     "n_elems_per_strand": 4,
     "n_pitches": 0.5,
+    "strand_diameter": "auto",  # "auto" = minimum_strand_diameter で自動計算
     # 材料
     "E": 200e9,
     "nu": 0.3,
@@ -101,8 +106,8 @@ DEFAULT_PARAMS = {
     "mu": 0.0,
     "k_pen_scaling": "sqrt",
     "penalty_growth_factor": 4.0,
-    # NCP ソルバー
-    "use_ncp": False,
+    # NCP ソルバー（デフォルトで有効）
+    "use_ncp": True,
     "use_mortar": True,
     "n_gauss": 2,
     "ncp_k_pen": 0.0,
@@ -142,6 +147,15 @@ def export_bending_oscillation_inp(
     p = {**DEFAULT_PARAMS, **(params or {})}
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- 非貫入配置: strand_diameter 計算 ---
+    sd_param = p.get("strand_diameter")
+    if sd_param == "auto":
+        sd_value = minimum_strand_diameter(n_strands, p["wire_diameter"])
+    elif sd_param is not None and sd_param != 0:
+        sd_value = float(sd_param)
+    else:
+        sd_value = None
+
     # --- メッシュ生成 ---
     mesh = make_twisted_wire_mesh(
         n_strands,
@@ -150,6 +164,7 @@ def export_bending_oscillation_inp(
         length=0.0,
         n_elems_per_strand=p["n_elems_per_strand"],
         n_pitches=p["n_pitches"],
+        strand_diameter=sd_value,
     )
 
     # --- ノードセット: 素線ごと + 固定端 + 自由端 ---
@@ -188,6 +203,7 @@ def export_bending_oscillation_inp(
         "n_strands": n_strands,
         "wire_diameter": p["wire_diameter"],
         "pitch": p["pitch"],
+        "strand_diameter": sd_value,
         "n_elems_per_strand": p["n_elems_per_strand"],
         "n_pitches": p["n_pitches"],
         "bend_angle_deg": p["bend_angle_deg"],
@@ -315,6 +331,7 @@ def solve_from_inp(
             pitch=meta["pitch"],
             n_elems_per_strand=meta["n_elems_per_strand"],
             n_pitches=meta["n_pitches"],
+            strand_diameter=meta.get("strand_diameter"),
             bend_angle_deg=meta["bend_angle_deg"],
             n_bending_steps=meta["n_bending_steps"],
             oscillation_amplitude_mm=meta["oscillation_amplitude_mm"],
@@ -362,6 +379,7 @@ def solve_from_inp(
         length=0.0,
         n_elems_per_strand=meta["n_elems_per_strand"],
         n_pitches=meta["n_pitches"],
+        strand_diameter=meta.get("strand_diameter"),
     )
 
     # --- エクスポートフック ---
@@ -626,9 +644,14 @@ def _print_summary(results: list[tuple[str, BendingOscillationResult | None]]):
 
 
 def _add_ncp_args(p):
-    """argparse サブパーサーに NCP ソルバーオプションを追加."""
+    """argparse サブパーサーに NCP ソルバー・非貫入配置オプションを追加."""
     g = p.add_argument_group("NCP ソルバーオプション")
-    g.add_argument("--ncp", action="store_true", default=False, help="NCP ソルバーを使用")
+    g.add_argument(
+        "--ncp", action="store_true", default=True, help="NCP ソルバーを使用（デフォルト: 有効）"
+    )
+    g.add_argument(
+        "--no-ncp", action="store_true", default=False, help="NCP を無効化し AL 法を使用"
+    )
     g.add_argument("--mortar", action="store_true", default=True, help="Mortar 積分")
     g.add_argument("--n-gauss", type=int, default=2, help="Gauss 積分点数")
     g.add_argument("--ncp-k-pen", type=float, default=0.0, help="NCP ペナルティ剛性（0=自動）")
@@ -636,12 +659,22 @@ def _add_ncp_args(p):
     g.add_argument("--modified-nr-threshold", type=int, default=5, help="修正NR法の閾値")
     g.add_argument("--k-pen-scaling", type=str, default="sqrt", help="k_pen スケーリング")
     g.add_argument("--penalty-growth", type=float, default=4.0, help="ペナルティ成長係数")
+    g2 = p.add_argument_group("非貫入配置オプション")
+    g2.add_argument(
+        "--strand-diameter",
+        type=str,
+        default="auto",
+        help="撚線外径 [m]（'auto'=最小外径自動計算, '0'=従来配置, 数値=指定値）",
+    )
 
 
 def _apply_ncp_params(args, params):
-    """CLI の NCP 引数を params 辞書に反映."""
-    if hasattr(args, "ncp") and args.ncp:
-        params["use_ncp"] = True
+    """CLI の NCP・非貫入配置引数を params 辞書に反映."""
+    # NCP: --no-ncp で明示無効化、それ以外はデフォルト（True）
+    if hasattr(args, "no_ncp") and args.no_ncp:
+        params["use_ncp"] = False
+    elif hasattr(args, "ncp"):
+        params["use_ncp"] = args.ncp
     if hasattr(args, "mortar"):
         params["use_mortar"] = args.mortar
     if hasattr(args, "n_gauss"):
@@ -656,6 +689,9 @@ def _apply_ncp_params(args, params):
         params["k_pen_scaling"] = args.k_pen_scaling
     if hasattr(args, "penalty_growth"):
         params["penalty_growth_factor"] = args.penalty_growth
+    # 非貫入配置
+    if hasattr(args, "strand_diameter"):
+        params["strand_diameter"] = args.strand_diameter
 
 
 def main():
