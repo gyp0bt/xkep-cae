@@ -46,12 +46,20 @@ from xkep_cae.sections.beam import BeamSection
 # 物理パラメータ（鋼線デフォルト）
 # ====================================================================
 
-_E = 200e9  # Pa
-_NU = 0.3
-_G = _E / (2.0 * (1.0 + _NU))
+_DEFAULT_E = 200e9  # Pa
+_DEFAULT_NU = 0.3
 _WIRE_D = 0.002  # 2 mm 直径
-_KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 _NDOF_PER_NODE = 6
+
+
+def _compute_G(E: float, nu: float) -> float:
+    """せん断弾性係数を計算."""
+    return E / (2.0 * (1.0 + nu))
+
+
+def _compute_kappa(nu: float) -> float:
+    """Cowper (1966) 円形断面のせん断補正係数を計算."""
+    return 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
 
 
 # ====================================================================
@@ -105,12 +113,13 @@ class BendingOscillationResult:
 # ====================================================================
 
 
-def _make_cr_assemblers(mesh: TwistedWireMesh, E: float, G: float, section: BeamSection):
+def _make_cr_assemblers(
+    mesh: TwistedWireMesh, E: float, G: float, section: BeamSection, kappa: float
+):
     """CR (corotational) 梁アセンブラを構築."""
     node_coords = mesh.node_coords
     connectivity = mesh.connectivity
     ndof_total = mesh.n_nodes * _NDOF_PER_NODE
-    kappa = _KAPPA
 
     def assemble_tangent(u):
         K_T, _ = assemble_cr_beam3d(
@@ -190,6 +199,7 @@ def _count_active_pairs(mgr: ContactManager) -> int:
 def _build_contact_manager(
     mesh: TwistedWireMesh,
     section: BeamSection,
+    E: float,
     *,
     n_outer_max: int = 5,
     auto_kpen: bool = True,
@@ -203,6 +213,19 @@ def _build_contact_manager(
     saddle_regularization: float = 0.0,
     ncp_active_threshold: float = 0.0,
     lambda_relaxation: float = 1.0,
+    # カテゴリD: 接触パラメータ（従来ハードコード）
+    k_t_ratio: float = 0.1,
+    g_on: float = 0.0,
+    g_off: float = 1e-5,
+    use_line_search: bool = True,
+    line_search_max_steps: int = 5,
+    use_geometric_stiffness: bool = True,
+    tol_penetration_ratio: float = 0.02,
+    k_pen_max: float = 1e12,
+    exclude_same_layer: bool = True,
+    midpoint_prescreening: bool = True,
+    linear_solver: str = "auto",
+    line_contact: bool = True,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -213,27 +236,27 @@ def _build_contact_manager(
         config=ContactConfig(
             k_pen_scale=kpen_scale,
             k_pen_mode=kpen_mode,
-            beam_E=_E if auto_kpen else 0.0,
+            beam_E=E if auto_kpen else 0.0,
             beam_I=section.Iy if auto_kpen else 0.0,
-            k_t_ratio=0.1,
+            k_t_ratio=k_t_ratio,
             mu=mu,
-            g_on=0.0,
-            g_off=1e-5,
+            g_on=g_on,
+            g_off=g_off,
             n_outer_max=n_outer_max,
             use_friction=use_friction,
-            use_line_search=True,
-            line_search_max_steps=5,
-            use_geometric_stiffness=True,
-            tol_penetration_ratio=0.02,
+            use_line_search=use_line_search,
+            line_search_max_steps=line_search_max_steps,
+            use_geometric_stiffness=use_geometric_stiffness,
+            tol_penetration_ratio=tol_penetration_ratio,
             penalty_growth_factor=penalty_growth_factor,
-            k_pen_max=1e12,
+            k_pen_max=k_pen_max,
             elem_layer_map=elem_layer_map,
-            exclude_same_layer=True,
-            midpoint_prescreening=True,
-            linear_solver="auto",
+            exclude_same_layer=exclude_same_layer,
+            midpoint_prescreening=midpoint_prescreening,
+            linear_solver=linear_solver,
             k_pen_scaling=k_pen_scaling,
             use_mortar=use_mortar,
-            line_contact=True,
+            line_contact=line_contact,
             n_gauss=n_gauss,
             augmented_threshold=augmented_threshold,
             saddle_regularization=saddle_regularization,
@@ -433,6 +456,9 @@ def run_bending_oscillation(
     n_elems_per_strand: int | None = None,  # 後方互換: 指定時は n_elems_per_pitch を上書き
     n_pitches: float = 1.0,
     strand_diameter: float | None = None,  # 撚線外径 [m]（非貫入配置）
+    # 材料パラメータ（カテゴリB+C: ハードコード除去）
+    E: float = _DEFAULT_E,
+    nu: float = _DEFAULT_NU,
     # 曲げパラメータ
     bend_angle_deg: float = 90.0,
     n_bending_steps: int = 45,
@@ -465,6 +491,21 @@ def run_bending_oscillation(
     lambda_relaxation: float = 1.0,
     max_step_cuts: int = 3,
     modified_nr_threshold: int = 5,
+    # カテゴリD: 接触パラメータ（従来ハードコード）
+    k_t_ratio: float = 0.1,
+    g_on: float = 0.0,
+    g_off: float = 1e-5,
+    use_line_search: bool = True,
+    line_search_max_steps: int = 5,
+    use_geometric_stiffness: bool = True,
+    tol_penetration_ratio: float = 0.02,
+    k_pen_max: float = 1e12,
+    exclude_same_layer: bool = True,
+    midpoint_prescreening: bool = True,
+    linear_solver: str = "auto",
+    line_contact: bool = True,
+    # カテゴリE: 数値パラメータ（従来ハードコード）
+    broadphase_margin: float = 0.01,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -480,6 +521,8 @@ def run_bending_oscillation(
         pitch: 撚ピッチ [m]
         n_elems_per_pitch: 1ピッチあたり要素数（n_pitchesでスケーリング）
         n_pitches: ピッチ数
+        E: ヤング率 [Pa]
+        nu: ポアソン比
         bend_angle_deg: 目標曲げ角度 [°]
         n_bending_steps: 曲げ荷重ステップ数
         oscillation_amplitude_mm: 揺動変位振幅 [mm]
@@ -494,6 +537,19 @@ def run_bending_oscillation(
         show_progress: 進捗表示
         gif_output_dir: GIF出力先ディレクトリ（None で GIF 無し）
         gif_snapshot_interval: GIF スナップショット間隔（1=全ステップ）
+        k_t_ratio: 接線/法線ペナルティ比
+        g_on: 接触活性化ギャップ [m]
+        g_off: 接触非活性化ギャップ [m]
+        use_line_search: ライン探索有効
+        line_search_max_steps: ライン探索最大ステップ
+        use_geometric_stiffness: 幾何学的剛性行列を使用
+        tol_penetration_ratio: 貫入比閾値
+        k_pen_max: ペナルティ剛性上限
+        exclude_same_layer: 同層除外
+        midpoint_prescreening: 中点プレスクリーニング
+        linear_solver: 線形ソルバー選択
+        line_contact: ライン接触
+        broadphase_margin: 広域探索マージン [m]
 
     Returns:
         BendingOscillationResult
@@ -539,10 +595,14 @@ def run_bending_oscillation(
         print(f"  揺動振幅:   ±{oscillation_amplitude_mm} mm, {n_cycles}周期")
 
     # ------------------------------------------------------------------
-    # 2. CR 梁アセンブラ構築
+    # 2. CR 梁アセンブラ構築（E, nu から G, kappa を導出）
     # ------------------------------------------------------------------
+    G = _compute_G(E, nu)
+    kappa = _compute_kappa(nu)
     t0 = time.perf_counter()
-    assemble_tangent, assemble_internal_force, ndof = _make_cr_assemblers(mesh, _E, _G, section)
+    assemble_tangent, assemble_internal_force, ndof = _make_cr_assemblers(
+        mesh, E, G, section, kappa
+    )
     timing.record(0, 0, -1, "assembler_setup", time.perf_counter() - t0)
 
     # ------------------------------------------------------------------
@@ -556,6 +616,7 @@ def run_bending_oscillation(
     mgr = _build_contact_manager(
         mesh,
         section,
+        E,
         n_outer_max=n_outer_max,
         auto_kpen=auto_kpen,
         use_friction=use_friction,
@@ -568,6 +629,18 @@ def run_bending_oscillation(
         saddle_regularization=saddle_regularization,
         ncp_active_threshold=ncp_active_threshold,
         lambda_relaxation=lambda_relaxation,
+        k_t_ratio=k_t_ratio,
+        g_on=g_on,
+        g_off=g_off,
+        use_line_search=use_line_search,
+        line_search_max_steps=line_search_max_steps,
+        use_geometric_stiffness=use_geometric_stiffness,
+        tol_penetration_ratio=tol_penetration_ratio,
+        k_pen_max=k_pen_max,
+        exclude_same_layer=exclude_same_layer,
+        midpoint_prescreening=midpoint_prescreening,
+        linear_solver=linear_solver,
+        line_contact=line_contact,
     )
 
     # ------------------------------------------------------------------
@@ -578,7 +651,7 @@ def run_bending_oscillation(
         mesh.node_coords,
         mesh.connectivity,
         mesh.radii,
-        margin=0.01,
+        margin=broadphase_margin,
     )
     n_initial_pen = mgr.store_initial_offsets(mesh.node_coords)
     timing.record(0, 0, -1, "initial_penetration_offset", time.perf_counter() - t0)
@@ -608,7 +681,7 @@ def run_bending_oscillation(
     # Phase 1: 曲げ
     # ------------------------------------------------------------------
     bend_angle_rad = np.deg2rad(bend_angle_deg)
-    M_per_strand = _E * section.Iy * bend_angle_rad / L
+    M_per_strand = E * section.Iy * bend_angle_rad / L
 
     f_ext_bend = np.zeros(ndof)
     rx_dofs_end: list[int] = []
@@ -646,8 +719,8 @@ def run_bending_oscillation(
             tol_force=tol_force,
             tol_ncp=tol_force,
             show_progress=show_progress,
-            broadphase_margin=0.01,
-            line_contact=True,
+            broadphase_margin=broadphase_margin,
+            line_contact=line_contact,
             use_mortar=use_mortar,
             n_gauss=n_gauss,
             k_pen=ncp_k_pen,
@@ -687,7 +760,7 @@ def run_bending_oscillation(
             max_iter=max_iter,
             tol_force=tol_force,
             show_progress=show_progress,
-            broadphase_margin=0.01,
+            broadphase_margin=broadphase_margin,
             timing=timing,
         )
 
@@ -768,8 +841,8 @@ def run_bending_oscillation(
                 tol_ncp=tol_force,
                 show_progress=False,
                 u0=u,
-                broadphase_margin=0.01,
-                line_contact=True,
+                broadphase_margin=broadphase_margin,
+                line_contact=line_contact,
                 use_mortar=use_mortar,
                 n_gauss=n_gauss,
                 k_pen=ncp_k_pen,
@@ -801,7 +874,7 @@ def run_bending_oscillation(
                 tol_force=tol_force,
                 show_progress=False,
                 u0=u,
-                broadphase_margin=0.01,
+                broadphase_margin=broadphase_margin,
                 timing=timing,
             )
 
