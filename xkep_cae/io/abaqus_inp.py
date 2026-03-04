@@ -154,6 +154,13 @@ class AbaqusMesh:
     boundaries: list[AbaqusBoundary] = field(default_factory=list)
     materials: list[AbaqusMaterial] = field(default_factory=list)
     field_animation: AbaqusFieldAnimation | None = None
+    # --- 拡張フィールド（inp parser 完全実装）---
+    heading: str = ""
+    steps: list = field(default_factory=list)  # list[InpStep]
+    initial_conditions: list = field(default_factory=list)  # list[InpInitialCondition]
+    surfaces: list = field(default_factory=list)  # list[InpSurfaceDef]
+    surface_interactions: list = field(default_factory=list)  # list[InpSurfaceInteraction]
+    contact_defs: list = field(default_factory=list)  # list[InpContactDef]
 
     def get_node_coord_array(self) -> list[dict[str, float]]:
         """節点座標をpymesh互換の辞書リストで返す.
@@ -295,79 +302,19 @@ def _parse_keyword_options(line: str) -> dict[str, str]:
 def read_abaqus_inp(filepath: str | Path) -> AbaqusMesh:
     """Abaqus .inp ファイルを読み込む.
 
+    OOP パーサーフレームワーク（``inp_parser.InpReader``）に委譲する。
+    *INCLUDE による再帰的ファイル読み込みや、*STEP/*CONTACT 等の
+    全キーワードに対応する。
+
     Args:
         filepath: .inp ファイルのパス
 
     Returns:
         AbaqusMesh オブジェクト
     """
-    filepath = Path(filepath)
-    if not filepath.exists():
-        raise FileNotFoundError(f"ファイルが見つかりません: {filepath}")
+    from xkep_cae.io.inp_parser import InpReader
 
-    mesh = AbaqusMesh()
-
-    with filepath.open("r", encoding="utf-8", errors="replace") as f:
-        lines = f.readlines()
-
-    idx = 0
-    n_lines = len(lines)
-
-    while idx < n_lines:
-        line = lines[idx].strip()
-
-        # 空行・コメント行をスキップ
-        if not line or line.startswith("**"):
-            idx += 1
-            continue
-
-        # キーワード行
-        if line.startswith("*"):
-            keyword = line.split(",")[0].strip().upper()
-
-            if keyword == "*NODE":
-                idx = _parse_node_section(lines, idx + 1, mesh)
-            elif keyword == "*ELEMENT":
-                opts = _parse_keyword_options(line)
-                idx = _parse_element_section(lines, idx + 1, opts, mesh)
-            elif keyword == "*NSET":
-                opts = _parse_keyword_options(line)
-                idx = _parse_nset_section(lines, idx + 1, opts, mesh)
-            elif keyword == "*ELSET":
-                opts = _parse_keyword_options(line)
-                idx = _parse_elset_section(lines, idx + 1, opts, mesh)
-            elif keyword in ("*BEAM SECTION", "*BEAMSECTION"):
-                opts = _parse_keyword_options(line)
-                idx = _parse_beam_section(lines, idx + 1, opts, mesh)
-            elif keyword in (
-                "*TRANSVERSE SHEAR STIFFNESS",
-                "*TRANSVERSESHEARSTIFFNESS",
-            ):
-                idx = _parse_transverse_shear_stiffness(lines, idx + 1, mesh)
-            elif keyword == "*BOUNDARY":
-                idx = _parse_boundary_section(lines, idx + 1, mesh)
-            elif keyword == "*MATERIAL":
-                opts = _parse_keyword_options(line)
-                idx = _parse_material_section(lines, idx + 1, opts, mesh)
-            elif keyword == "*ELASTIC":
-                idx = _parse_elastic_section(lines, idx + 1, mesh)
-            elif keyword == "*DENSITY":
-                idx = _parse_density_section(lines, idx + 1, mesh)
-            elif keyword == "*PLASTIC":
-                opts = _parse_keyword_options(line)
-                idx = _parse_plastic_section(lines, idx + 1, opts, mesh)
-            elif keyword == "*OUTPUT":
-                opts = _parse_keyword_options(line)
-                if "FIELD ANIMATION" in opts or "FIELD" in opts:
-                    idx = _parse_field_animation(lines, idx + 1, opts, mesh)
-                else:
-                    idx += 1
-            else:
-                idx += 1
-        else:
-            idx += 1
-
-    return mesh
+    return InpReader().read(filepath)
 
 
 def _parse_node_section(
