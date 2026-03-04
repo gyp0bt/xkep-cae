@@ -17,7 +17,7 @@
   python scripts/run_bending_oscillation.py export --strands 7,19
 
   # .inp から計算（結果出力フック付き）
-  python scripts/run_bending_oscillation.py solve --inpdir results/bending
+  python scripts/run_bending_oscillation.py solve --inpdir scripts/results/bending
 
   # 一気通貫
   python scripts/run_bending_oscillation.py all --strands 7,19,37,61,91
@@ -708,7 +708,7 @@ def main():
         default=",".join(str(s) for s in STRAND_COUNTS_DEFAULT),
         help="素線数リスト（カンマ区切り）",
     )
-    p_export.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    p_export.add_argument("--outdir", type=str, default="scripts/results/bending", help="出力先")
     _add_ncp_args(p_export)
     p_export.set_defaults(func=cmd_export)
 
@@ -717,7 +717,7 @@ def main():
     p_solve.add_argument(
         "--inpdir",
         type=str,
-        default="results/bending",
+        default="scripts/results/bending",
         help=".inp 検索ディレクトリ",
     )
     p_solve.add_argument(
@@ -733,7 +733,7 @@ def main():
         default=",".join(str(s) for s in STRAND_COUNTS_DEFAULT),
         help="素線数リスト（カンマ区切り）",
     )
-    p_all.add_argument("--outdir", type=str, default="results/bending", help="出力先")
+    p_all.add_argument("--outdir", type=str, default="scripts/results/bending", help="出力先")
     _add_ncp_args(p_all)
     p_all.set_defaults(func=cmd_all)
 
@@ -743,7 +743,7 @@ def main():
         # デフォルトは all
         args.command = "all"
         args.strands = ",".join(str(s) for s in STRAND_COUNTS_DEFAULT)
-        args.outdir = "results/bending"
+        args.outdir = "scripts/results/bending"
         cmd_all(args)
     else:
         args.func(args)

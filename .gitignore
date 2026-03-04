@@ -32,3 +32,4 @@ build/
 .pytest_cache/
 .venv
 examples/output/
+scripts/results/
