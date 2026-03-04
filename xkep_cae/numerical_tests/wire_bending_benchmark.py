@@ -238,6 +238,7 @@ def _build_contact_manager(
             k_pen_mode=kpen_mode,
             beam_E=E if auto_kpen else 0.0,
             beam_I=section.Iy if auto_kpen else 0.0,
+            beam_A=section.A if auto_kpen else 0.0,
             k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=g_on,

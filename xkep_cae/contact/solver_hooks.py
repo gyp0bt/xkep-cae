@@ -531,11 +531,8 @@ def newton_raphson_with_contact(
             # k_pen 未設定のペアを初期化 + 新規ペアの z_t_conv を追加
             for pair_idx, pair in enumerate(manager.pairs):
                 if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                    if manager.config.k_pen_mode == "beam_ei":
-                        # EI/L³ ベースの自動推定
-                        from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
-
-                        # 代表要素長さ: ペアのセグメント長の平均
+                    if manager.config.k_pen_mode in ("beam_ei", "ea_l"):
+                        # 自動推定: 代表要素長さを計算
                         xA0 = coords_def[pair.nodes_a[0]]
                         xA1 = coords_def[pair.nodes_a[1]]
                         xB0 = coords_def[pair.nodes_b[0]]
@@ -546,14 +543,28 @@ def newton_raphson_with_contact(
                         if L_avg < 1e-30:
                             L_avg = 1.0
 
-                        k_auto = auto_beam_penalty_stiffness(
-                            manager.config.beam_E,
-                            manager.config.beam_I,
-                            L_avg,
-                            n_contact_pairs=max(1, manager.n_active),
-                            scale=manager.config.k_pen_scale,
-                            scaling=k_pen_scaling_mode,
-                        )
+                        if manager.config.k_pen_mode == "beam_ei":
+                            # EI/L³ ベースの自動推定
+                            from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                            k_auto = auto_beam_penalty_stiffness(
+                                manager.config.beam_E,
+                                manager.config.beam_I,
+                                L_avg,
+                                n_contact_pairs=max(1, manager.n_active),
+                                scale=manager.config.k_pen_scale,
+                                scaling=k_pen_scaling_mode,
+                            )
+                        else:
+                            # EA/L ベースの自動推定
+                            from xkep_cae.contact.law_normal import auto_penalty_stiffness
+
+                            k_auto = auto_penalty_stiffness(
+                                manager.config.beam_E,
+                                manager.config.beam_A,
+                                L_avg,
+                                scale=manager.config.k_pen_scale,
+                            )
                         initialize_penalty_stiffness(
                             pair,
                             k_pen=k_auto,
@@ -1500,9 +1511,7 @@ def newton_raphson_block_contact(
             # k_pen 未設定のペアを初期化
             for pair_idx, pair in enumerate(manager.pairs):
                 if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                    if manager.config.k_pen_mode == "beam_ei":
-                        from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
-
+                    if manager.config.k_pen_mode in ("beam_ei", "ea_l"):
                         xA0 = coords_def[pair.nodes_a[0]]
                         xA1 = coords_def[pair.nodes_a[1]]
                         xB0 = coords_def[pair.nodes_b[0]]
@@ -1513,14 +1522,26 @@ def newton_raphson_block_contact(
                         if L_avg < 1e-30:
                             L_avg = 1.0
 
-                        k_auto = auto_beam_penalty_stiffness(
-                            manager.config.beam_E,
-                            manager.config.beam_I,
-                            L_avg,
-                            n_contact_pairs=max(1, manager.n_active),
-                            scale=manager.config.k_pen_scale,
-                            scaling=k_pen_scaling_mode,
-                        )
+                        if manager.config.k_pen_mode == "beam_ei":
+                            from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                            k_auto = auto_beam_penalty_stiffness(
+                                manager.config.beam_E,
+                                manager.config.beam_I,
+                                L_avg,
+                                n_contact_pairs=max(1, manager.n_active),
+                                scale=manager.config.k_pen_scale,
+                                scaling=k_pen_scaling_mode,
+                            )
+                        else:
+                            from xkep_cae.contact.law_normal import auto_penalty_stiffness
+
+                            k_auto = auto_penalty_stiffness(
+                                manager.config.beam_E,
+                                manager.config.beam_A,
+                                L_avg,
+                                scale=manager.config.k_pen_scale,
+                            )
                         initialize_penalty_stiffness(
                             pair,
                             k_pen=k_auto,
