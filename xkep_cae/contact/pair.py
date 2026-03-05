@@ -233,6 +233,8 @@ class ContactConfig:
     saddle_regularization: float = 0.0  # 鞍点系(2,2)ブロックの正則化δ（0=自動推定）
     ncp_active_threshold: float = 0.0  # NCP活性セットのヒステリシス閾値
     lambda_relaxation: float = 1.0  # λ更新の under-relaxation 係数
+    lambda_warmstart_neighbor: bool = False  # 近傍ペアからλ初期値を外挿（S3改良4）
+    chattering_window: int = 0  # Active set 履歴ウィンドウ幅（0=無効、S3改良5）
 
 
 @dataclass

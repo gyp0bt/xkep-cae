@@ -425,7 +425,10 @@ def _solve_linear_system(
             M = spla.LinearOperator(K.shape, ilu.solve)
         except RuntimeError:
             M = None
-        x, info = spla.gmres(K, rhs, M=M, atol=iterative_tol, maxiter=max(500, K.shape[0]))
+        _restart_k = min(max(30, K.shape[0] // 10), 200)
+        x, info = spla.gmres(
+            K, rhs, M=M, atol=iterative_tol, restart=_restart_k, maxiter=max(500, K.shape[0])
+        )
         if info != 0:
             x = spla.spsolve(K, rhs)
         return x
@@ -537,27 +540,37 @@ def _solve_saddle_point_gmres(
     G_A_bc_csr = G_A_csc.tocsr()
     G_A_bc_T = G_A_bc_csr.T.tocsr()
 
-    # --- ILU 前処理構築 ---
-    try:
-        ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=ilu_drop_tol)
-    except RuntimeError:
-        ilu = None
+    # --- ILU 前処理構築（適応 drop_tol） ---
+    ilu = None
+    _ilu_tol = ilu_drop_tol
+    for _ilu_attempt in range(4):
+        try:
+            ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=_ilu_tol)
+            break
+        except RuntimeError:
+            _ilu_tol *= 10.0  # drop_tol を緩和して再試行
 
     # --- Schur 補集合の対角近似: S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T ---
     # バッチ ILU ソルブで n_active 回のループを回避
-    s_diag = np.ones(n_active) * 1e-12
+    # Schur 対角近似の初期値（ILU成功時に上書きされる）
+    _schur_reg = 1e-12
+    s_diag = np.ones(n_active) * _schur_reg
     if ilu is not None:
         G_A_bc_dense = G_A_bc_csr.toarray()  # (n_active, ndof)
         try:
             # バッチソルブ: (ndof, n_active)
             V = ilu.solve(G_A_bc_dense.T)
-            s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V) + 1e-12
+            s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V)
+            # 対角成分が負または微小な場合の安全下限（最大値の1e-10）
+            _s_max = np.max(np.abs(s_diag)) if n_active > 0 else 1.0
+            _safe_floor = max(1e-12, _s_max * 1e-10)
+            s_diag = np.maximum(s_diag, _safe_floor)
         except Exception:
             # フォールバック: 行ごとのソルブ
             for i in range(n_active):
                 g_row = G_A_bc_dense[i, :]
                 v = ilu.solve(g_row)
-                s_diag[i] = g_row @ v + 1e-12
+                s_diag[i] = max(g_row @ v, 1e-12)
     else:
         # ILU が失敗した場合の粗い近似
         s_diag[:] = 1.0 / max(k_pen, 1e-12)
@@ -593,12 +606,15 @@ def _solve_saddle_point_gmres(
     rhs[:ndof] = rhs_u
     rhs[ndof:] = -g_active
 
-    # --- GMRES ---
+    # --- GMRES（restart 適応チューニング） ---
+    # restart: 小〜中規模は ndof/10、大規模でも最大200で打ち切り
+    _restart = min(max(30, n_total // 10), 200)
     x, info = spla.gmres(
         A_op,
         rhs,
         M=M,
         atol=iterative_tol,
+        restart=_restart,
         maxiter=max(500, n_total),
     )
 
@@ -701,8 +717,12 @@ def _solve_saddle_point_direct(
     G_A_dense = G_A.toarray()
     S = G_A_dense @ V
 
-    # 正則化（S が特異にならないよう保証）
-    S += 1e-12 * np.eye(n_active)
+    # 適応正則化（S の対角が微小な場合のみ補強）
+    S_diag = np.diag(S).copy()
+    _s_diag_max = np.max(np.abs(S_diag)) if n_active > 0 else 1.0
+    _reg_floor = max(1e-12, _s_diag_max * 1e-10)
+    reg_needed = np.maximum(_reg_floor - S_diag, 0.0)
+    S += np.diag(reg_needed + 1e-12)
 
     # Step 4: rhs_S = -g_active - G_A * v0
     rhs_S = -g_active - G_A_dense @ v0
@@ -1304,13 +1324,26 @@ def newton_raphson_contact_ncp(
         )
         manager.update_geometry(coords_def)
 
-        # ペア数拡張
+        # ペア数拡張（λウォームスタート対応）
         if len(lam_all) < manager.n_pairs:
+            old_n = len(lam_all)
             lam_new = np.zeros(manager.n_pairs)
-            lam_new[: len(lam_all)] = lam_all
-            lam_all = lam_new
+            lam_new[:old_n] = lam_all
             lam_t_new = np.zeros((manager.n_pairs, 2))
-            lam_t_new[: len(lam_t_all)] = lam_t_all
+            lam_t_new[:old_n] = lam_t_all
+
+            # 近傍ペアからλ初期推定（S3改良4）
+            if manager.config.lambda_warmstart_neighbor and old_n > 0:
+                # アクティブペアの平均λを新ペアの初期値にする
+                active_lams = lam_new[:old_n][lam_new[:old_n] > 0.0]
+                if len(active_lams) > 0:
+                    lam_init = float(np.median(active_lams))
+                    for idx in range(old_n, manager.n_pairs):
+                        pair = manager.pairs[idx]
+                        if pair.state.status != ContactStatus.INACTIVE and pair.state.gap < 0.0:
+                            lam_new[idx] = lam_init
+
+            lam_all = lam_new
             lam_t_all = lam_t_new
 
         K_T = None  # Modified NR 用: 接線凍結時に再利用
@@ -1318,6 +1351,10 @@ def newton_raphson_contact_ncp(
         # --- Active-set freeze 用の前回値 ---
         _frozen_ncp_active_mask: np.ndarray | None = None
         _frozen_ncp_mortar_active: np.ndarray | None = None
+
+        # --- Active-set チャタリング抑制（S3改良5: 時間方向畳み込み） ---
+        _chattering_window = manager.config.chattering_window
+        _active_history: list[np.ndarray] = []  # 直近N反復のNCP active mask履歴
 
         for it in range(max_iter):
             total_newton += 1
@@ -1379,7 +1416,23 @@ def newton_raphson_contact_ncp(
                 else:
                     ncp_mortar_active = np.array([], dtype=bool)
                 p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
-                ncp_active_mask = p_n_arr > 0.0
+                ncp_active_mask_raw = p_n_arr > 0.0
+
+                # チャタリング抑制: 直近N反復の過半数投票（S3改良5）
+                if _chattering_window > 1 and n_geom_active > 0:
+                    _active_history.append(ncp_active_mask_raw.copy())
+                    if len(_active_history) > _chattering_window:
+                        _active_history.pop(0)
+                    # 全履歴を同じ長さに揃える（ペア数変動対応）
+                    valid_hist = [h for h in _active_history if len(h) == n_geom_active]
+                    if len(valid_hist) >= 2:
+                        vote = np.mean(valid_hist, axis=0)
+                        ncp_active_mask = vote > 0.5
+                    else:
+                        ncp_active_mask = ncp_active_mask_raw
+                else:
+                    ncp_active_mask = ncp_active_mask_raw
+
                 _frozen_ncp_active_mask = ncp_active_mask.copy()
                 _frozen_ncp_mortar_active = (
                     ncp_mortar_active.copy() if len(ncp_mortar_active) > 0 else None
