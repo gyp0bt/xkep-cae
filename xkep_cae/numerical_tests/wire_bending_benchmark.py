@@ -490,7 +490,7 @@ def run_bending_oscillation(
     saddle_regularization: float = 0.0,
     ncp_active_threshold: float = 0.0,
     lambda_relaxation: float = 1.0,
-    max_step_cuts: int = 3,
+    adaptive_timestepping: bool = True,
     modified_nr_threshold: int = 5,
     # カテゴリD: 接触パラメータ（従来ハードコード）
     k_t_ratio: float = 0.1,
@@ -725,7 +725,7 @@ def run_bending_oscillation(
             use_mortar=use_mortar,
             n_gauss=n_gauss,
             k_pen=ncp_k_pen,
-            max_step_cuts=max_step_cuts,
+            adaptive_timestepping=adaptive_timestepping,
             modified_nr_threshold=modified_nr_threshold,
             prescribed_dofs=rx_dofs_end_arr,
             prescribed_values=prescribed_vals,

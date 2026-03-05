@@ -250,6 +250,11 @@ class ContactConfig:
     k_pen_continuation: bool = False  # k_penを段階的に増大（初期は低いk_penで開始）
     k_pen_continuation_start: float = 0.1  # 初期k_penスケール（k_pen * この値）
     k_pen_continuation_steps: int = 3  # 何ステップで目標k_penに到達するか
+    # --- S3改良10: 残差スケーリング（対角スケーリング前処理） ---
+    residual_scaling: bool = False  # 鞍点系の対角スケーリング前処理の有効化
+    # --- S3改良11: 接触力ランプ（ステップ内の段階的接触力増大） ---
+    contact_force_ramp: bool = False  # Newton反復初期の接触力ランプ有効化
+    contact_force_ramp_iters: int = 5  # ランプが1.0に達するまでの反復数
 
 
 @dataclass

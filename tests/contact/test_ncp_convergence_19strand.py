@@ -258,7 +258,7 @@ class TestNCP7Strand:
             tol_ncp=1e-6,
             broadphase_margin=0.01,
             show_progress=True,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             adaptive_omega=True,
             omega_init=0.5,
             omega_min=0.05,
@@ -266,7 +266,7 @@ class TestNCP7Strand:
         )
 
         print(
-            f"  7本 NCP (bisection): converged={result.converged}, "
+            f"  7本 NCP (adaptive dt): converged={result.converged}, "
             f"steps={result.n_load_steps}, "
             f"newton={result.total_newton_iterations}"
         )
@@ -320,7 +320,7 @@ class TestNCP19Strand:
             omega_max=0.8,
             omega_shrink=0.5,
             omega_growth=1.1,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -370,7 +370,7 @@ class TestNCP19Strand:
             omega_init=0.2,
             omega_min=0.05,
             omega_max=0.8,
-            bisection_max_depth=4,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -457,7 +457,7 @@ class TestNCP19Strand:
             omega_max=0.8,
             omega_shrink=0.5,
             omega_growth=1.1,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -724,7 +724,6 @@ class TestNCP19StrandS3Full:
             omega_max=0.8,
             omega_shrink=0.5,
             omega_growth=1.1,
-            bisection_max_depth=4,
             active_set_update_interval=5,
             du_norm_cap=5.0,
             adaptive_timestepping=True,
@@ -775,7 +774,6 @@ class TestNCP19StrandS3Full:
             omega_init=0.3,
             omega_min=0.05,
             omega_max=0.8,
-            bisection_max_depth=4,
             active_set_update_interval=10,
             du_norm_cap=5.0,
             adaptive_timestepping=True,
@@ -852,7 +850,7 @@ class TestNCP19StrandS3Full:
             omega_init=0.3,
             omega_min=0.05,
             omega_max=0.8,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )

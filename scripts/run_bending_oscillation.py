@@ -124,7 +124,7 @@ DEFAULT_PARAMS = {
     "saddle_regularization": 0.0,
     "ncp_active_threshold": 0.0,
     "lambda_relaxation": 1.0,
-    "max_step_cuts": 3,
+    "adaptive_timestepping": True,
     "modified_nr_threshold": 5,
     # カテゴリD: 接触パラメータ（従来ハードコード）
     "k_t_ratio": 0.1,
@@ -378,7 +378,7 @@ def export_bending_oscillation_inp(
         "saddle_regularization": p["saddle_regularization"],
         "ncp_active_threshold": p["ncp_active_threshold"],
         "lambda_relaxation": p["lambda_relaxation"],
-        "max_step_cuts": p["max_step_cuts"],
+        "adaptive_timestepping": p["adaptive_timestepping"],
         "modified_nr_threshold": p["modified_nr_threshold"],
         # カテゴリD: 接触パラメータ（従来ハードコード → メタデータ記録）
         "k_t_ratio": p["k_t_ratio"],
@@ -636,7 +636,7 @@ def solve_from_inp(
             saddle_regularization=meta.get("saddle_regularization", 0.0),
             ncp_active_threshold=meta.get("ncp_active_threshold", 0.0),
             lambda_relaxation=meta.get("lambda_relaxation", 1.0),
-            max_step_cuts=meta.get("max_step_cuts", 3),
+            adaptive_timestepping=meta.get("adaptive_timestepping", True),
             modified_nr_threshold=meta.get("modified_nr_threshold", 5),
             # カテゴリD: 接触パラメータ（メタデータから読み取り）
             k_t_ratio=meta.get("k_t_ratio", 0.1),
@@ -1012,8 +1012,8 @@ def _apply_ncp_params(args, params):
         params["n_gauss"] = args.n_gauss
     if hasattr(args, "ncp_k_pen"):
         params["ncp_k_pen"] = args.ncp_k_pen
-    if hasattr(args, "max_step_cuts"):
-        params["max_step_cuts"] = args.max_step_cuts
+    if hasattr(args, "adaptive_timestepping"):
+        params["adaptive_timestepping"] = args.adaptive_timestepping
     if hasattr(args, "modified_nr_threshold"):
         params["modified_nr_threshold"] = args.modified_nr_threshold
     if hasattr(args, "k_pen_scaling"):

@@ -691,7 +691,6 @@ class TestSlidingContactNCP:
             k_pen=k_pen,
             use_friction=use_friction,
             mu=mu if use_friction else None,
-            max_step_cuts=3,
             adaptive_timestepping=True,
         )
 

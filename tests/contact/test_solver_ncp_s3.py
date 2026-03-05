@@ -1,6 +1,6 @@
-"""S3 改良（ILU適応/Schur正則化/GMRES restart/λウォームスタート/チャタリング抑制/適応Δt/AMG/k_pen continuation）のテスト.
+"""S3 改良（ILU適応/Schur正則化/GMRES restart/λウォームスタート/チャタリング抑制/適応Δt/AMG/k_pen continuation/残差スケーリング/接触力ランプ）のテスト.
 
-Phase S3: 大規模NCP収束改善 — 8改良の単体テスト。
+Phase S3: 大規模NCP収束改善 — 11改良の単体テスト。
 """
 
 import numpy as np
@@ -298,11 +298,13 @@ class TestChatteringSuppression:
 # ==== 自動安定時間増分（ユーザー追加要求への対応確認） ====
 
 
-class TestStepBisection:
-    """ステップ二分法（自動安定時間増分の基礎機構）の動作確認."""
+class TestStepBisectionDeprecated:
+    """max_step_cuts/bisection_max_depth の非推奨化テスト."""
 
-    def test_step_bisection_with_max_step_cuts(self):
-        """max_step_cuts>0 でステップ二分法が機能すること."""
+    def test_max_step_cuts_triggers_deprecation_warning(self):
+        """max_step_cuts>0 で DeprecationWarning が発生し adaptive_dt に変換."""
+        import warnings
+
         setup = _make_crossing_beams_setup()
         config = ContactConfig(k_pen_scale=1e4)
         manager = ContactManager(config=config)
@@ -316,24 +318,29 @@ class TestStepBisection:
         def assemble_internal(u):
             return setup["K_T"] @ u
 
-        result = newton_raphson_contact_ncp(
-            f_ext,
-            setup["fixed_dofs"],
-            assemble_tangent,
-            assemble_internal,
-            manager,
-            setup["node_coords"],
-            setup["connectivity"],
-            setup["radii"],
-            n_load_steps=1,
-            max_iter=30,
-            tol_force=1e-4,
-            tol_ncp=1e-4,
-            show_progress=False,
-            k_pen=1e4,
-            max_step_cuts=2,
-        )
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = newton_raphson_contact_ncp(
+                f_ext,
+                setup["fixed_dofs"],
+                assemble_tangent,
+                assemble_internal,
+                manager,
+                setup["node_coords"],
+                setup["connectivity"],
+                setup["radii"],
+                n_load_steps=1,
+                max_iter=30,
+                tol_force=1e-4,
+                tol_ncp=1e-4,
+                show_progress=False,
+                k_pen=1e4,
+                max_step_cuts=2,
+            )
         assert np.all(np.isfinite(result.u))
+        # DeprecationWarning が発生していること
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) >= 1, "max_step_cuts で DeprecationWarning が出るべき"
 
 
 # ==== 改良6: 適応時間増分制御 ====
@@ -385,7 +392,6 @@ class TestAdaptiveTimestepping:
             show_progress=False,
             k_pen=1e4,
             adaptive_timestepping=True,
-            max_step_cuts=2,
         )
         assert np.all(np.isfinite(result.u))
 
@@ -428,8 +434,8 @@ class TestAdaptiveTimestepping:
         )
         assert np.all(np.isfinite(result.u))
 
-    def test_adaptive_dt_with_bisection(self):
-        """適応Δtとステップ二分法が共存できること."""
+    def test_adaptive_dt_failure_retry(self):
+        """適応Δtで不収束時にステップ縮小リトライが機能すること."""
         setup = _make_crossing_beams_setup()
         config = ContactConfig(
             k_pen_scale=1e4,
@@ -462,7 +468,6 @@ class TestAdaptiveTimestepping:
             show_progress=False,
             k_pen=1e4,
             adaptive_timestepping=True,
-            max_step_cuts=2,
         )
         assert np.all(np.isfinite(result.u))
 
@@ -688,5 +693,103 @@ class TestKPenContinuation:
             show_progress=False,
             k_pen=1e4,
             adaptive_timestepping=True,
+        )
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 改良10: 残差スケーリング ====
+
+
+class TestResidualScaling:
+    """残差スケーリング（S3改良10）のテスト."""
+
+    def test_residual_scaling_config_default(self):
+        """デフォルトで残差スケーリングが無効."""
+        config = ContactConfig()
+        assert config.residual_scaling is False
+
+    def test_residual_scaling_does_not_break(self):
+        """残差スケーリング有効でも基本問題がクラッシュしないこと."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            residual_scaling=True,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 改良11: 接触力ランプ ====
+
+
+class TestContactForceRamp:
+    """接触力ランプ（S3改良11）のテスト."""
+
+    def test_contact_force_ramp_config_default(self):
+        """デフォルトで接触力ランプが無効."""
+        config = ContactConfig()
+        assert config.contact_force_ramp is False
+        assert config.contact_force_ramp_iters == 5
+
+    def test_contact_force_ramp_does_not_break(self):
+        """接触力ランプ有効でも基本問題がクラッシュしないこと."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            contact_force_ramp=True,
+            contact_force_ramp_iters=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=50,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
         )
         assert np.all(np.isfinite(result.u))
