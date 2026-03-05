@@ -44,7 +44,8 @@ from xkep_cae.mesh.twisted_wire import (
 )
 from xkep_cae.sections.beam import BeamSection
 
-# DEPRECATED: newton_raphson_with_contact (ペナルティ/AL) は newton_raphson_contact_ncp (NCP) に
+# DEPRECATED: NCP版は test_coated_wire_integration_ncp.py を参照
+# newton_raphson_with_contact (ペナルティ/AL) は newton_raphson_contact_ncp (NCP) に
 # 置き換えられました。このテストは後方互換性のために残しますが、新規開発では使用しないでください。
 pytestmark = [pytest.mark.slow, pytest.mark.deprecated]
 
