@@ -16,7 +16,7 @@
 
 ## 現在地（2026-03-05）
 
-**2117テスト（fast: 1664 / slow: 309 + deprecated: 144）。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3収束改善9項目実装（適応Δt/AMG/k_pen continuation/自動推定）。**
+**2121テスト（fast: 1668 / slow: 309 + deprecated: 144）。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3収束改善11項目実装（適応Δt/AMG/k_pen continuation/自動推定/残差スケーリング/接触力ランプ）。ステップ二分法deprecated化。**
 
 ### 到達点
 
@@ -127,9 +127,12 @@
 | k_pen自動推定（NCP） | ✅ beam_ei/ea_l 自動推定をNCPソルバーに移植（status-109） |
 | omega回復メカニズム | ✅ 最小値張り付き脱出（status-109） |
 | スライドテスト修正 | ✅ 適応Δtで摩擦スライド不収束を解消（status-109） |
+| ステップ二分法deprecated化 | ✅ max_step_cuts→adaptive_timestepping統合（status-110） |
+| 残差スケーリング | ✅ 対角スケーリング前処理（status-110） |
+| 接触力ランプ | ✅ Newton初期の接触力段階的増大（status-110） |
 
 **TODO**:
-- [ ] NCPソルバーの19本収束達成（改良1-9有効化でのチューニング）
+- [ ] NCPソルバーの19本収束達成（改良1-11有効化でのチューニング）
 - [ ] 37/61/91本の段階的収束
 - [ ] NCPソルバー版S3ベンチマーク（AL法との比較）
 
