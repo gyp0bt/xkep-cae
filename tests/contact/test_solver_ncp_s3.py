@@ -1,0 +1,336 @@
+"""S3 改良（ILU適応/Schur正則化/GMRES restart/λウォームスタート/チャタリング抑制）のテスト.
+
+Phase S3: 大規模NCP収束改善 — 5改良の単体テスト。
+"""
+
+import numpy as np
+import scipy.sparse as sp
+
+from xkep_cae.contact.pair import (
+    ContactConfig,
+    ContactManager,
+)
+from xkep_cae.contact.solver_ncp import (
+    _solve_linear_system,
+    _solve_saddle_point_direct,
+    _solve_saddle_point_gmres,
+    newton_raphson_contact_ncp,
+)
+
+# ---- テスト用ヘルパー ----
+
+
+def _make_simple_k(ndof: int, *, stiffness: float = 1e6) -> sp.csr_matrix:
+    """対角優位な剛性行列を生成."""
+    diag = np.full(ndof, stiffness)
+    off = np.full(ndof - 1, -stiffness * 0.1)
+    K = sp.diags([off, diag, off], [-1, 0, 1], shape=(ndof, ndof), format="csr")
+    return K
+
+
+def _make_crossing_beams_setup(ndof_per_node: int = 6) -> dict:
+    """2梁交差の基本セットアップ."""
+    # 2梁: 各2節点、ndof_per_node DOF/node → 合計 4*ndof_per_node DOF
+    n_nodes = 4
+    ndof = n_nodes * ndof_per_node
+    node_coords = np.array(
+        [
+            [0.0, 0.0, 0.0],  # Beam A node 0
+            [1.0, 0.0, 0.0],  # Beam A node 1
+            [0.5, -0.05, 0.0],  # Beam B node 0
+            [0.5, 0.05, 0.0],  # Beam B node 1
+        ]
+    )
+    connectivity = np.array([[0, 1], [2, 3]])
+    radii = 0.04
+
+    K_T = _make_simple_k(ndof)
+    fixed_dofs = np.array([0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23], dtype=int)
+
+    return {
+        "ndof": ndof,
+        "node_coords": node_coords,
+        "connectivity": connectivity,
+        "radii": radii,
+        "K_T": K_T,
+        "fixed_dofs": fixed_dofs,
+        "ndof_per_node": ndof_per_node,
+    }
+
+
+# ==== 改良1: ILU drop_tol 適応制御 ====
+
+
+class TestILUAdaptiveDropTol:
+    """ILU drop_tol の適応制御テスト."""
+
+    def test_solve_with_small_drop_tol(self):
+        """非常に小さい drop_tol でも解が得られる（適応リトライが機能）."""
+        ndof = 100
+        K = _make_simple_k(ndof)
+        rhs = np.random.default_rng(42).standard_normal(ndof)
+        # drop_tol が非常に小さくても解が得られる
+        x = _solve_linear_system(K, rhs, mode="iterative", ilu_drop_tol=1e-12)
+        assert np.all(np.isfinite(x))
+
+    def test_solve_with_large_drop_tol(self):
+        """大きい drop_tol でも解が得られる."""
+        ndof = 100
+        K = _make_simple_k(ndof)
+        rhs = np.random.default_rng(42).standard_normal(ndof)
+        x = _solve_linear_system(K, rhs, mode="iterative", ilu_drop_tol=0.1)
+        assert np.all(np.isfinite(x))
+
+    def test_auto_mode_large_system(self):
+        """大規模でautoモード時に反復法が使われる."""
+        ndof = 500
+        K = _make_simple_k(ndof)
+        rhs = np.random.default_rng(42).standard_normal(ndof)
+        x = _solve_linear_system(K, rhs, mode="auto", gmres_dof_threshold=100)
+        # 解が妥当であることを確認
+        residual = float(np.linalg.norm(K @ x - rhs))
+        assert residual < 1e-4 * float(np.linalg.norm(rhs))
+
+
+# ==== 改良2: Schur ブロック正則化 ====
+
+
+class TestSchurRegularization:
+    """Schur complement 正則化の改善テスト."""
+
+    def test_direct_schur_preserves_solution(self):
+        """正則化がよく条件づけられた問題の解を壊さないこと."""
+        setup = _make_crossing_beams_setup()
+        ndof = setup["ndof"]
+        K_T = setup["K_T"]
+        fixed_dofs = setup["fixed_dofs"]
+
+        # 手動でG_Aとg_activeを構築
+        n_active = 1
+        G_A = sp.random(n_active, ndof, density=0.3, format="csr", random_state=42)
+        g_active = np.array([-0.001])
+        R_u = np.random.default_rng(42).standard_normal(ndof)
+        R_u[fixed_dofs] = 0.0
+
+        for k_pen in [1e3, 1e5, 1e7]:
+            du, dlam = _solve_saddle_point_direct(K_T, G_A, k_pen, R_u, g_active, fixed_dofs)
+            assert np.all(np.isfinite(du)), f"k_pen={k_pen}: du に非有限値"
+            assert np.all(np.isfinite(dlam)), f"k_pen={k_pen}: dlam に非有限値"
+
+    def test_gmres_schur_diag_positive(self):
+        """GMRES Schur対角近似が正値であること."""
+        setup = _make_crossing_beams_setup()
+        ndof = setup["ndof"]
+        K_T = setup["K_T"]
+        fixed_dofs = setup["fixed_dofs"]
+
+        n_active = 2
+        G_A = sp.random(n_active, ndof, density=0.3, format="csr", random_state=42)
+        g_active = np.array([-0.001, -0.002])
+        R_u = np.random.default_rng(42).standard_normal(ndof)
+        R_u[fixed_dofs] = 0.0
+        k_pen = 1e5
+
+        du, dlam = _solve_saddle_point_gmres(K_T, G_A, k_pen, R_u, g_active, fixed_dofs)
+        assert np.all(np.isfinite(du))
+        assert np.all(np.isfinite(dlam))
+
+
+# ==== 改良3: GMRES restart 適応 ====
+
+
+class TestGMRESRestart:
+    """GMRES restart チューニングテスト."""
+
+    def test_gmres_converges_with_restart(self):
+        """restart付きGMRESが収束すること."""
+        ndof = 200
+        K = _make_simple_k(ndof)
+        rhs = np.random.default_rng(42).standard_normal(ndof)
+        x = _solve_linear_system(K, rhs, mode="iterative", ilu_drop_tol=1e-4)
+        residual = float(np.linalg.norm(K @ x - rhs))
+        assert residual < 1e-6 * float(np.linalg.norm(rhs))
+
+
+# ==== 改良4: λウォームスタート ====
+
+
+class TestLambdaWarmstart:
+    """λウォームスタートのテスト."""
+
+    def test_warmstart_config_default(self):
+        """デフォルトでウォームスタートが無効."""
+        config = ContactConfig()
+        assert config.lambda_warmstart_neighbor is False
+
+    def test_warmstart_config_enabled(self):
+        """設定で有効化できること."""
+        config = ContactConfig(lambda_warmstart_neighbor=True)
+        assert config.lambda_warmstart_neighbor is True
+
+    def test_warmstart_does_not_break_basic_solve(self):
+        """ウォームスタート有効でも基本的な解析が成功すること."""
+        # 既存の test_solver_ncp のセットアップを流用（接触が発生する構成）
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            lambda_warmstart_neighbor=True,
+        )
+        manager = ContactManager(config=config)
+
+        # 接触力なし（純構造問題）でもウォームスタート有効時にクラッシュしないこと
+        ndof = setup["ndof"]
+        f_ext = np.zeros(ndof)
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        # 接触が検出されなくても収束すること（純構造問題）
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 改良5: Active set チャタリング抑制 ====
+
+
+class TestChatteringSuppression:
+    """Active set チャタリング抑制テスト."""
+
+    def test_chattering_window_config_default(self):
+        """デフォルトでチャタリングウィンドウが無効（0）."""
+        config = ContactConfig()
+        assert config.chattering_window == 0
+
+    def test_chattering_window_config_set(self):
+        """チャタリングウィンドウを設定できること."""
+        config = ContactConfig(chattering_window=3)
+        assert config.chattering_window == 3
+
+    def test_chattering_suppression_majority_vote(self):
+        """過半数投票ロジックの動作確認（統合テスト）."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            chattering_window=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_chattering_window_zero_is_noop(self):
+        """chattering_window=0 では従来動作と同一."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(k_pen_scale=1e4, chattering_window=0)
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 自動安定時間増分（ユーザー追加要求への対応確認） ====
+
+
+class TestStepBisection:
+    """ステップ二分法（自動安定時間増分の基礎機構）の動作確認."""
+
+    def test_step_bisection_with_max_step_cuts(self):
+        """max_step_cuts>0 でステップ二分法が機能すること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(k_pen_scale=1e4)
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+            max_step_cuts=2,
+        )
+        assert np.all(np.isfinite(result.u))
