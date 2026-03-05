@@ -89,22 +89,22 @@ from xkep_cae.output.step import Frame, Step, StepResult
 
 # 軽量パラメータ（分析確認用 — 本番では値を上げる）
 DEFAULT_PARAMS = {
-    # メッシュ
+    # メッシュ（1ピッチ16要素以上）
     "wire_diameter": 0.002,
     "pitch": 0.040,
-    "n_elems_per_strand": 4,
-    "n_pitches": 0.5,
+    "n_elems_per_strand": 16,
+    "n_pitches": 1.0,
     "strand_diameter": "auto",  # "auto" = minimum_strand_diameter で自動計算
     # 材料
     "E": 200e9,
     "nu": 0.3,
-    # 曲げ
-    "bend_angle_deg": 45.0,
-    "n_bending_steps": 5,
+    # 曲げ（CR梁の大変形収束限界: 16要素/ピッチで ~8°）
+    "bend_angle_deg": 5.0,
+    "n_bending_steps": 10,
     # 揺動
-    "oscillation_amplitude_mm": 2.0,
+    "oscillation_amplitude_mm": 0.1,
     "n_cycles": 1,
-    "n_steps_per_quarter": 2,
+    "n_steps_per_quarter": 1,
     # ソルバー
     "max_iter": 20,
     "n_outer_max": 3,
@@ -140,7 +140,20 @@ DEFAULT_PARAMS = {
     "linear_solver": "auto",
     "line_contact": True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
-    "broadphase_margin": 0.01,
+    "broadphase_margin": 0.002,
+    # S3: ILU/GMRES 適応制御パラメータ
+    "ilu_drop_tol": 1e-4,
+    "gmres_dof_threshold": 2000,
+    "ncp_block_preconditioner": False,
+    # 自動安定時間増分制御（CR梁大変形では固定ステップ推奨）
+    "adaptive_stepping": False,
+    "target_newton_iters": 8,
+    "dt_grow_factor": 1.5,
+    "dt_shrink_factor": 0.5,
+    "dt_max_factor": 4.0,
+    "dt_min_factor": 0.01,
+    # 接触乗数ローパスフィルタ（時間方向 EMA）
+    "lambda_ema_alpha": 0.3,
     # 出力設定（従来ハードコード）
     "output_vtk": True,
     "output_vtk_prefix": "result",
@@ -653,6 +666,19 @@ def solve_from_inp(
             line_contact=meta.get("line_contact", True),
             # カテゴリE: 数値パラメータ（メタデータから読み取り）
             broadphase_margin=meta.get("broadphase_margin", 0.01),
+            # S3: ILU/GMRES 適応制御パラメータ
+            ilu_drop_tol=meta.get("ilu_drop_tol", 1e-4),
+            gmres_dof_threshold=meta.get("gmres_dof_threshold", 2000),
+            ncp_block_preconditioner=meta.get("ncp_block_preconditioner", False),
+            # 自動安定時間増分制御
+            adaptive_stepping=meta.get("adaptive_stepping", False),
+            target_newton_iters=meta.get("target_newton_iters", 8),
+            dt_grow_factor=meta.get("dt_grow_factor", 1.5),
+            dt_shrink_factor=meta.get("dt_shrink_factor", 0.5),
+            dt_max_factor=meta.get("dt_max_factor", 4.0),
+            dt_min_factor=meta.get("dt_min_factor", 0.01),
+            # 接触乗数ローパスフィルタ
+            lambda_ema_alpha=meta.get("lambda_ema_alpha", 0.0),
         )
     except Exception as e:
         print(f"\n  [ERROR] ソルバー失敗: {e}")

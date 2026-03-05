@@ -226,6 +226,10 @@ def _build_contact_manager(
     midpoint_prescreening: bool = True,
     linear_solver: str = "auto",
     line_contact: bool = True,
+    # S3: ILU/GMRES 適応制御パラメータ
+    ilu_drop_tol: float = 1e-4,
+    gmres_dof_threshold: int = 2000,
+    ncp_block_preconditioner: bool = False,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -263,6 +267,9 @@ def _build_contact_manager(
             saddle_regularization=saddle_regularization,
             ncp_active_threshold=ncp_active_threshold,
             lambda_relaxation=lambda_relaxation,
+            ilu_drop_tol=ilu_drop_tol,
+            gmres_dof_threshold=gmres_dof_threshold,
+            ncp_block_preconditioner=ncp_block_preconditioner,
         ),
     )
 
@@ -507,6 +514,19 @@ def run_bending_oscillation(
     line_contact: bool = True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
     broadphase_margin: float = 0.01,
+    # S3: ILU/GMRES 適応制御パラメータ
+    ilu_drop_tol: float = 1e-4,
+    gmres_dof_threshold: int = 2000,
+    ncp_block_preconditioner: bool = False,
+    # 自動安定時間増分制御
+    adaptive_stepping: bool = False,
+    target_newton_iters: int = 8,
+    dt_grow_factor: float = 1.5,
+    dt_shrink_factor: float = 0.5,
+    dt_max_factor: float = 4.0,
+    dt_min_factor: float = 0.01,
+    # 接触乗数ローパスフィルタ（時間方向 EMA）
+    lambda_ema_alpha: float = 0.0,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -642,6 +662,9 @@ def run_bending_oscillation(
         midpoint_prescreening=midpoint_prescreening,
         linear_solver=linear_solver,
         line_contact=line_contact,
+        ilu_drop_tol=ilu_drop_tol,
+        gmres_dof_threshold=gmres_dof_threshold,
+        ncp_block_preconditioner=ncp_block_preconditioner,
     )
 
     # ------------------------------------------------------------------
@@ -729,6 +752,15 @@ def run_bending_oscillation(
             modified_nr_threshold=modified_nr_threshold,
             prescribed_dofs=rx_dofs_end_arr,
             prescribed_values=prescribed_vals,
+            # 自動安定時間増分制御
+            adaptive_stepping=adaptive_stepping,
+            target_newton_iters=target_newton_iters,
+            dt_grow_factor=dt_grow_factor,
+            dt_shrink_factor=dt_shrink_factor,
+            dt_max_factor=dt_max_factor,
+            dt_min_factor=dt_min_factor,
+            # 接触乗数ローパスフィルタ
+            lambda_ema_alpha=lambda_ema_alpha,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
@@ -847,6 +879,8 @@ def run_bending_oscillation(
                 use_mortar=use_mortar,
                 n_gauss=n_gauss,
                 k_pen=ncp_k_pen,
+                # 接触乗数ローパスフィルタ
+                lambda_ema_alpha=lambda_ema_alpha,
             )
             result_step = ContactSolveResult(
                 u=_ncp_step.u,

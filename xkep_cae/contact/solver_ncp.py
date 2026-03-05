@@ -419,13 +419,12 @@ def _solve_linear_system(
         return spla.spsolve(K, rhs)
 
     if mode == "iterative":
-        K_csc = K.tocsc()
-        try:
-            ilu = spla.spilu(K_csc, drop_tol=ilu_drop_tol)
-            M = spla.LinearOperator(K.shape, ilu.solve)
-        except RuntimeError:
-            M = None
-        x, info = spla.gmres(K, rhs, M=M, atol=iterative_tol, maxiter=max(500, K.shape[0]))
+        ilu = _build_ilu_preconditioner(K, ilu_drop_tol)
+        M = spla.LinearOperator(K.shape, ilu.solve) if ilu is not None else None
+        _restart = min(max(30, K.shape[0] // 10), K.shape[0], 200)
+        x, info = spla.gmres(
+            K, rhs, M=M, atol=iterative_tol, maxiter=max(500, K.shape[0]), restart=_restart
+        )
         if info != 0:
             x = spla.spsolve(K, rhs)
         return x
@@ -474,6 +473,66 @@ def _apply_bc_csr(K, rhs, fixed_dofs):
     from xkep_cae.contact.bc_utils import apply_bc_fast
 
     return apply_bc_fast(K, rhs, fixed_dofs)
+
+
+def _adaptive_ilu_drop_tol(base_tol: float, n_active: int) -> float:
+    """n_active に応じた ILU drop tolerance の適応制御.
+
+    n_active が大きいと K_eff = K_T + k_pen * G^T G の fill-in が増大し
+    ILU(0) が破綻する。n_active に応じて drop_tol を緩和して fill-in を制限する。
+
+    - n_active <= 20: base_tol そのまま（小規模は精度優先）
+    - n_active > 20: base_tol * (n_active / 20)（線形緩和）
+    - 上限 0.1（これ以上は前処理の意味がなくなる）
+    """
+    if n_active <= 20:
+        return base_tol
+    scale = n_active / 20.0
+    return min(base_tol * scale, 0.1)
+
+
+def _build_ilu_preconditioner(K_csr, drop_tol: float):
+    """ILU 前処理を構築する（失敗時は段階的に drop_tol を緩和してリトライ）."""
+    import scipy.sparse.linalg as spla
+
+    K_csc = K_csr.tocsc()
+    # 最大3回リトライ: drop_tol, drop_tol*5, drop_tol*25
+    for attempt in range(3):
+        tol = drop_tol * (5.0**attempt)
+        tol = min(tol, 0.1)
+        try:
+            return spla.spilu(K_csc, drop_tol=tol)
+        except RuntimeError:
+            continue
+    return None
+
+
+def _compute_schur_diagonal(ilu, G_A_bc_csr, n_active: int, k_pen: float):
+    """Schur 補集合の対角近似 S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T を計算."""
+    import numpy as np
+
+    s_diag = np.ones(n_active) * 1e-12
+    if ilu is not None:
+        G_A_bc_dense = G_A_bc_csr.toarray()  # (n_active, ndof)
+        try:
+            # バッチソルブ: (ndof, n_active)
+            V = ilu.solve(G_A_bc_dense.T)
+            s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V)
+            # 対角要素が非正になるケースを安全にクランプ
+            s_diag = np.maximum(s_diag, 1e-12)
+        except Exception:
+            # フォールバック: 行ごとのソルブ
+            for i in range(n_active):
+                g_row = G_A_bc_dense[i, :]
+                try:
+                    v = ilu.solve(g_row)
+                    s_diag[i] = max(g_row @ v, 1e-12)
+                except Exception:
+                    s_diag[i] = 1.0 / max(k_pen, 1e-12)
+    else:
+        # ILU が完全に失敗: K_eff ≈ k_pen * I の粗い近似
+        s_diag[:] = 1.0 / max(k_pen, 1e-12)
+    return s_diag
 
 
 def _solve_saddle_point_gmres(
@@ -537,30 +596,17 @@ def _solve_saddle_point_gmres(
     G_A_bc_csr = G_A_csc.tocsr()
     G_A_bc_T = G_A_bc_csr.T.tocsr()
 
-    # --- ILU 前処理構築 ---
-    try:
-        ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=ilu_drop_tol)
-    except RuntimeError:
-        ilu = None
+    # --- ILU 前処理構築（適応 drop_tol） ---
+    # n_active が大きいと K_eff の fill-in が増大し ILU が破綻するため、
+    # n_active に応じて drop_tol を緩和する（fill-in 制限）。
+    # 基本戦略: drop_tol_eff = base * max(1, n_active / 20)
+    # → 20 ペア以下は指定値のまま、それ以上は線形に緩和
+    ilu_drop_tol_eff = _adaptive_ilu_drop_tol(ilu_drop_tol, n_active)
+    ilu = _build_ilu_preconditioner(K_bc_csr, ilu_drop_tol_eff)
 
     # --- Schur 補集合の対角近似: S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T ---
     # バッチ ILU ソルブで n_active 回のループを回避
-    s_diag = np.ones(n_active) * 1e-12
-    if ilu is not None:
-        G_A_bc_dense = G_A_bc_csr.toarray()  # (n_active, ndof)
-        try:
-            # バッチソルブ: (ndof, n_active)
-            V = ilu.solve(G_A_bc_dense.T)
-            s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V) + 1e-12
-        except Exception:
-            # フォールバック: 行ごとのソルブ
-            for i in range(n_active):
-                g_row = G_A_bc_dense[i, :]
-                v = ilu.solve(g_row)
-                s_diag[i] = g_row @ v + 1e-12
-    else:
-        # ILU が失敗した場合の粗い近似
-        s_diag[:] = 1.0 / max(k_pen, 1e-12)
+    s_diag = _compute_schur_diagonal(ilu, G_A_bc_csr, n_active, k_pen)
 
     # --- 拡大系行列-ベクトル積 ---
     def matvec(x):
@@ -593,13 +639,17 @@ def _solve_saddle_point_gmres(
     rhs[:ndof] = rhs_u
     rhs[ndof:] = -g_active
 
-    # --- GMRES ---
+    # --- GMRES（適応 restart） ---
+    # restart を n_total に応じて調整。小規模では restart=n_total（完全GMRES）、
+    # 大規模では restart を制限してメモリ消費を抑える。
+    _restart = min(max(30, n_active + 10), n_total, 200)
     x, info = spla.gmres(
         A_op,
         rhs,
         M=M,
         atol=iterative_tol,
         maxiter=max(500, n_total),
+        restart=_restart,
     )
 
     if info != 0:
@@ -619,6 +669,48 @@ def _solve_saddle_point_gmres(
     du = x[:ndof]
     dlam_A = x[ndof:]
     return du, dlam_A
+
+
+def _regularize_schur(S: np.ndarray) -> np.ndarray:
+    """Schur 補集合行列を適応的に正則化する.
+
+    固定 1e-12 の代わりに、行列スケールに比例した正則化を適用:
+      δ = max(1e-12, ε_mach * ||S||_F)
+
+    さらにランク欠損を検出し、特異値が閾値以下の方向に
+    追加正則化を適用する（truncated SVD 的補正）。
+    """
+    n = S.shape[0]
+    if n == 0:
+        return S
+
+    # スケール依存の最小正則化
+    s_fro = np.linalg.norm(S, "fro")
+    delta_base = max(1e-12, np.finfo(float).eps * s_fro)
+
+    # 対角優位性チェック: 対角が非正の行に追加正則化
+    diag_s = np.diag(S).copy()
+    needs_strong_reg = diag_s <= delta_base
+
+    S_reg = S.copy()
+    S_reg += delta_base * np.eye(n)
+
+    if np.any(needs_strong_reg):
+        # 非正対角を正の値に修復する
+        # 目標: S_reg[i,i] >= delta_floor (正の最小対角)
+        diag_pos = diag_s[diag_s > delta_base]
+        delta_floor = (
+            float(np.min(diag_pos)) * 1e-3 if len(diag_pos) > 0 else max(1e-8, 1e-4 * s_fro)
+        )
+        delta_floor = max(delta_floor, 1e-8)
+        for i in range(n):
+            if needs_strong_reg[i]:
+                # 対角を delta_floor に引き上げる
+                deficit = delta_floor - S_reg[i, i]
+                if deficit > 0.0:
+                    S_reg[i, i] += deficit
+
+    return S_reg
 
 
 def _solve_saddle_point_direct(
@@ -701,14 +793,19 @@ def _solve_saddle_point_direct(
     G_A_dense = G_A.toarray()
     S = G_A_dense @ V
 
-    # 正則化（S が特異にならないよう保証）
-    S += 1e-12 * np.eye(n_active)
+    # 適応正則化（S が特異にならないよう保証）
+    # δ = max(1e-12, ε_mach * ||S||_F) でスケール依存の正則化
+    S = _regularize_schur(S)
 
     # Step 4: rhs_S = -g_active - G_A * v0
     rhs_S = -g_active - G_A_dense @ v0
 
     # Δλ_A を解く（n_active × n_active 密行列、通常は極めて小さい）
-    dlam_A = np.linalg.solve(S, rhs_S)
+    try:
+        dlam_A = np.linalg.solve(S, rhs_S)
+    except np.linalg.LinAlgError:
+        # 特異: 最小二乗解にフォールバック
+        dlam_A, _, _, _ = np.linalg.lstsq(S, rhs_S, rcond=None)
 
     # Step 5: Δu = v0 + V * Δλ_A
     du = v0 + V @ dlam_A
@@ -1100,6 +1197,15 @@ def newton_raphson_contact_ncp(
     modified_nr_threshold: int = 0,
     prescribed_dofs: np.ndarray | None = None,
     prescribed_values: np.ndarray | None = None,
+    # --- 自動安定時間増分制御 ---
+    adaptive_stepping: bool = False,
+    target_newton_iters: int = 8,
+    dt_grow_factor: float = 1.5,
+    dt_shrink_factor: float = 0.5,
+    dt_max_factor: float = 4.0,
+    dt_min_factor: float = 0.01,
+    # --- 接触乗数ローパスフィルタ（時間方向 EMA） ---
+    lambda_ema_alpha: float = 0.0,
     # --- レガシー互換パラメータ ---
     adaptive_omega: bool = False,
     omega_init: float = 1.0,
@@ -1169,6 +1275,17 @@ def newton_raphson_contact_ncp(
         prescribed_dofs: 処方変位DOFのインデックス配列（変位制御用）。
             各ステップで u[prescribed_dofs] = load_frac * prescribed_values を設定。
         prescribed_values: 処方変位の目標値（load_frac=1.0 での値）。
+        adaptive_stepping: 自動安定時間増分制御の有効化。True の場合、
+            Newton 反復数に基づいて荷重増分幅を自動調整する。
+        target_newton_iters: 目標 Newton 反復数。これより少なければ増分拡大、
+            多ければ縮小。
+        dt_grow_factor: 増分拡大係数（収束が容易な場合）。
+        dt_shrink_factor: 増分縮小係数（収束が困難な場合）。
+        dt_max_factor: 最大増分幅（base_delta の倍率）。
+        dt_min_factor: 最小増分幅（base_delta の倍率）。
+        lambda_ema_alpha: 接触乗数の時間方向 EMA フィルタ係数。
+            0.0 で無効。0 < α < 1 で有効（大きいほど平滑化が強い）。
+            高周波の接触チャタリングを抑制する。
         adaptive_omega: 適応的緩和係数の有効化（レガシー）
         bisection_max_depth: 荷重ステップ二分法の最大深さ（レガシー、max_step_cuts 推奨）
 
@@ -1248,14 +1365,28 @@ def newton_raphson_contact_ncp(
     # 摩擦用: 参照変位（前ステップ収束解）
     u_ref = u.copy()
 
-    # --- ステップ二分法サポート ---
+    # --- ステップ二分法 & 自動時間増分サポート ---
     from collections import deque
 
+    _base_delta = 1.0 / n_load_steps  # 基本荷重増分
+    _adaptive = adaptive_stepping
+    _dt_current = _base_delta  # 適応ステップの現在の増分幅
+    _dt_max = _base_delta * dt_max_factor
+    _dt_min = _base_delta * dt_min_factor
+
     step_queue: deque[float] = deque()
-    for _s in range(1, n_load_steps + 1):
-        step_queue.append(_s / n_load_steps)
+    if _adaptive:
+        # 適応モード: 最初の1ステップだけ入れ、収束後に次を動的追加
+        step_queue.append(_dt_current)
+    else:
+        for _s in range(1, n_load_steps + 1):
+            step_queue.append(_s / n_load_steps)
     load_frac_prev = 0.0
     step_display = 0  # 表示用ステップカウンタ
+
+    # λ EMA フィルタ用: 前ステップの平滑化乗数
+    _lam_ema: np.ndarray | None = None
+    _ema_alpha = lambda_ema_alpha
 
     # チェックポイント（二分法のロールバック用）
     u_ckpt = u.copy()
@@ -1264,8 +1395,9 @@ def newton_raphson_contact_ncp(
     lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
     u_ref_ckpt = u_ref.copy()
 
-    # 接線予測子用: 前ステップの変位増分を記録
+    # 接線予測子用: 前ステップの変位増分・λ増分を記録
     u_prev_converged = u.copy()
+    lam_prev_converged: np.ndarray | None = None  # λ 予測用（初回は None）
     delta_frac_prev = 0.0  # 前ステップの荷重分率増分
 
     while step_queue:
@@ -1274,13 +1406,17 @@ def newton_raphson_contact_ncp(
         f_ext = _f_ext_base + load_frac * f_ext_total
 
         step_converged = False
+        _disp_converged = False  # 変位収束フラグ（適応ステップ制御用）
         energy_ref = None  # エネルギー収束基準値
+        # 変位制御時: 各ステップの初回残差で基準を再設定
+        if _dynamic_ref:
+            f_ext_ref_norm = 1.0  # 初回反復まで暫定値（it==0 で更新される）
 
         # --- 適応的緩和係数の初期化 ---
         _omega = omega_init if adaptive_omega else 1.0
         _prev_merit = float("inf")
 
-        # --- 接線予測子（前ステップの変位増分から外挿） ---
+        # --- 接線予測子（前ステップの変位増分・λ増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
         if delta_frac_prev > 1e-30 and delta_frac > 1e-30:
             du_prev = u - u_prev_converged
@@ -1288,6 +1424,14 @@ def newton_raphson_contact_ncp(
             if du_prev_norm > 1e-30:
                 ratio = min(delta_frac / delta_frac_prev, 2.0)
                 u = u + ratio * du_prev
+            # λ の接線予測: λ_n(k+1) ≈ λ_n(k) + ratio * Δλ_n(k)
+            # ただし λ_n >= 0 を保証（非圧縮条件）
+            if lam_prev_converged is not None and len(lam_prev_converged) == len(lam_all):
+                dlam_prev = lam_all - lam_prev_converged
+                dlam_norm = float(np.linalg.norm(dlam_prev))
+                if dlam_norm > 1e-30:
+                    ratio_lam = min(delta_frac / delta_frac_prev, 2.0)
+                    lam_all = np.maximum(lam_all + ratio_lam * dlam_prev, 0.0)
 
         # --- 処方変位の適用 ---
         if has_prescribed:
@@ -1379,7 +1523,21 @@ def newton_raphson_contact_ncp(
                 else:
                     ncp_mortar_active = np.array([], dtype=bool)
                 p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
-                ncp_active_mask = p_n_arr > 0.0
+                # NCP ヒステリシス: 一度 active になったペアは p_n が
+                # -ncp_hysteresis_tol 以下にならないと inactive に戻らない
+                _ncp_hyst = manager.config.ncp_active_threshold
+                if (
+                    _ncp_hyst > 0.0
+                    and _frozen_ncp_active_mask is not None
+                    and len(_frozen_ncp_active_mask) == n_geom_active
+                ):
+                    # 新規活性化: p_n > 0
+                    new_active = p_n_arr > 0.0
+                    # 既存 active の維持: p_n > -hysteresis
+                    keep_active = _frozen_ncp_active_mask & (p_n_arr > -_ncp_hyst)
+                    ncp_active_mask = new_active | keep_active
+                else:
+                    ncp_active_mask = p_n_arr > 0.0
                 _frozen_ncp_active_mask = ncp_active_mask.copy()
                 _frozen_ncp_mortar_active = (
                     ncp_mortar_active.copy() if len(ncp_mortar_active) > 0 else None
@@ -1567,6 +1725,7 @@ def newton_raphson_contact_ncp(
             # 7. 収束判定
             res_u_norm = float(np.linalg.norm(R_u))
             # 変位制御時: 初回反復の残差を基準ノルムに設定
+            # 適応ステップでは各ステップの初回で基準を更新
             if _dynamic_ref and it == 0 and res_u_norm > 1e-30:
                 f_ext_ref_norm = res_u_norm
             if _use_mortar and len(C_mortar) > 0:
@@ -1827,6 +1986,7 @@ def newton_raphson_contact_ncp(
             du_norm_val = float(np.linalg.norm(du))
             if u_norm > 1e-30 and du_norm_val / u_norm < tol_disp and ncp_conv:
                 step_converged = True
+                _disp_converged = True  # 変位収束 → 適応ステップで据え置き判定に使用
                 if show_progress:
                     print(
                         f"  Step {step_display}/{n_load_steps}, iter {it}, "
@@ -1850,10 +2010,17 @@ def newton_raphson_contact_ncp(
                 break
 
         if not step_converged:
-            # --- ステップ二分法（チェックポイント方式） ---
+            # --- ステップ二分法 / 適応縮小（チェックポイント方式） ---
             delta = load_frac - load_frac_prev
-            min_delta = 1.0 / (n_load_steps * 2**_max_step_cuts) if _max_step_cuts > 0 else 0.0
-            if _max_step_cuts > 0 and delta > min_delta + 1e-15:
+            # 適応モードでは _dt_min を下限に、固定モードでは二分法深度で下限決定
+            if _adaptive:
+                min_delta = _dt_min
+                can_bisect = delta > min_delta + 1e-15
+            else:
+                min_delta = 1.0 / (n_load_steps * 2**_max_step_cuts) if _max_step_cuts > 0 else 0.0
+                can_bisect = _max_step_cuts > 0 and delta > min_delta + 1e-15
+
+            if can_bisect:
                 # 状態をチェックポイントに復元
                 u = u_ckpt.copy()
                 lam_all = lam_ckpt.copy()
@@ -1863,17 +2030,32 @@ def newton_raphson_contact_ncp(
                 u_ref = u_ref_ckpt.copy()
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
-                # 中間点を挿入
-                mid_frac = load_frac_prev + delta / 2.0
-                step_queue.appendleft(load_frac)  # 元のターゲットを戻す
-                step_queue.appendleft(mid_frac)  # 中間点を先頭に
-                step_display -= 1  # カウンタを巻き戻し
-                if show_progress:
-                    print(
-                        f"  Step bisection: frac {load_frac:.4f} → "
-                        f"sub-steps [{mid_frac:.4f}, {load_frac:.4f}] "
-                        f"(delta {delta:.4f} → {delta / 2:.4f})"
-                    )
+
+                if _adaptive:
+                    # 適応モード: 増分を半減して再投入（元のターゲットは破棄）
+                    _dt_current = delta * dt_shrink_factor
+                    _dt_current = max(_dt_current, _dt_min)
+                    new_frac = load_frac_prev + _dt_current
+                    step_queue.clear()
+                    step_queue.append(new_frac)
+                    step_display -= 1
+                    if show_progress:
+                        print(
+                            f"  [adaptive bisect] frac {load_frac:.4f} failed, "
+                            f"retry Δ={_dt_current:.4f} → {new_frac:.4f}"
+                        )
+                else:
+                    # 固定モード: 従来の二分法
+                    mid_frac = load_frac_prev + delta / 2.0
+                    step_queue.appendleft(load_frac)  # 元のターゲットを戻す
+                    step_queue.appendleft(mid_frac)  # 中間点を先頭に
+                    step_display -= 1
+                    if show_progress:
+                        print(
+                            f"  Step bisection: frac {load_frac:.4f} → "
+                            f"sub-steps [{mid_frac:.4f}, {load_frac:.4f}] "
+                            f"(delta {delta:.4f} → {delta / 2:.4f})"
+                        )
                 continue
             else:
                 if show_progress:
@@ -1895,15 +2077,56 @@ def newton_raphson_contact_ncp(
                 )
 
         # ステップ完了 — キューから消費 & チェックポイント保存
+        step_newton_iters = it + 1  # このステップの NR 反復数
         step_queue.popleft()
-        # 接線予測子用: 前ステップの変位増分と荷重増分を記録
+        # 接線予測子用: 前ステップの変位増分・λ増分と荷重増分を記録
         delta_frac_prev = load_frac - load_frac_prev
         u_prev_converged = u_ckpt.copy()  # チェックポイント = 前ステップ収束点
+        lam_prev_converged = lam_ckpt.copy()  # λ 予測用
         load_frac_prev = load_frac
+
+        # --- λ EMA ローパスフィルタ（時間方向、接触チャタリング抑制） ---
+        # α=0 で無効、α>0 で有効: λ̃ = α*λ̃_prev + (1-α)*λ_raw
+        if _ema_alpha > 0.0:
+            if _lam_ema is None:
+                _lam_ema = lam_all.copy()
+            else:
+                if len(_lam_ema) == len(lam_all):
+                    _lam_ema = _ema_alpha * _lam_ema + (1.0 - _ema_alpha) * lam_all
+                else:
+                    _lam_ema = lam_all.copy()
+            # フィルタ後の値を採用（ただし λ≥0 を保証）
+            lam_all = np.maximum(_lam_ema, 0.0)
+
         for i, pair in enumerate(manager.pairs):
             if i < len(lam_all):
                 pair.state.lambda_n = lam_all[i]
                 pair.state.p_n = max(0.0, lam_all[i] + k_pen * (-pair.state.gap))
+
+        # --- 自動安定時間増分制御（適応モード） ---
+        if _adaptive and load_frac < 1.0 - 1e-12:
+            # Newton 反復数に基づく増分幅調整
+            # 変位収束でパスした場合: 力残差は未収束でも変位は十分
+            # → 反復数を target//2 にクランプして拡大を促進
+            _effective_iters = step_newton_iters
+            if _disp_converged:
+                _effective_iters = min(_effective_iters, target_newton_iters // 2)
+
+            if _effective_iters <= target_newton_iters // 2:
+                # 簡単に収束 → 増分拡大
+                _dt_current = min(_dt_current * dt_grow_factor, _dt_max)
+            elif _effective_iters >= target_newton_iters:
+                # 難しい → 増分縮小
+                _dt_current = max(_dt_current * dt_shrink_factor, _dt_min)
+            # else: target 近辺 → 据え置き
+
+            next_frac = min(load_frac + _dt_current, 1.0)
+            step_queue.append(next_frac)
+            if show_progress:
+                print(
+                    f"  [adaptive] NR={step_newton_iters}, "
+                    f"Δfrac={_dt_current:.4f}, next={next_frac:.4f}"
+                )
 
         # --- Mortar 適応ペナルティ増大 ---
         # Mortar 重み付きギャップから最大貫入率を推定し、k_pen を自動増大
