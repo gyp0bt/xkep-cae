@@ -235,6 +235,21 @@ class ContactConfig:
     lambda_relaxation: float = 1.0  # λ更新の under-relaxation 係数
     lambda_warmstart_neighbor: bool = False  # 近傍ペアからλ初期値を外挿（S3改良4）
     chattering_window: int = 0  # Active set 履歴ウィンドウ幅（0=無効、S3改良5）
+    # --- S3改良6: 適応時間増分制御 ---
+    adaptive_timestepping: bool = False  # 適応Δt制御の有効化
+    dt_grow_factor: float = 1.5  # 収束良好時のステップ拡大係数
+    dt_shrink_factor: float = 0.5  # 収束不良時のステップ縮小係数
+    dt_grow_iter_threshold: int = 5  # この反復数以下で収束 → ステップ拡大
+    dt_shrink_iter_threshold: int = 15  # この反復数以上で収束 → ステップ縮小
+    dt_contact_change_threshold: float = 0.3  # active set変化率がこの閾値超 → ステップ縮小
+    dt_min_fraction: float = 0.0  # 最小ステップ分率（0=自動: 1/(n_load_steps*16)）
+    dt_max_fraction: float = 0.0  # 最大ステップ分率（0=自動: 4/n_load_steps）
+    # --- S3改良7: AMG前処理 ---
+    use_amg_preconditioner: bool = False  # PyAMG SA前処理の有効化（ILU代替）
+    # --- S3改良8: k_pen continuation ---
+    k_pen_continuation: bool = False  # k_penを段階的に増大（初期は低いk_penで開始）
+    k_pen_continuation_start: float = 0.1  # 初期k_penスケール（k_pen * この値）
+    k_pen_continuation_steps: int = 3  # 何ステップで目標k_penに到達するか
 
 
 @dataclass
