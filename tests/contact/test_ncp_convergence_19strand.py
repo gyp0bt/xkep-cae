@@ -124,6 +124,7 @@ def _build_contact_manager(mesh, *, k_pen_scale=0.1):
             linear_solver="auto",
             no_deactivation_within_step=True,
             preserve_inactive_lambda=True,
+            adjust_initial_penetration=True,
         ),
     )
 
@@ -147,7 +148,7 @@ class TestNCP7Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -188,7 +189,7 @@ class TestNCP7Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -234,7 +235,7 @@ class TestNCP7Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -290,7 +291,7 @@ class TestNCP19Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -342,7 +343,7 @@ class TestNCP19Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -396,7 +397,7 @@ class TestNCP19Strand:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -433,6 +434,7 @@ class TestNCP19Strand:
                 lambda_warmstart_neighbor=True,
                 # S3改良5: チャタリング抑制（ウィンドウ幅3）
                 chattering_window=3,
+                adjust_initial_penetration=True,
             ),
         )
 
@@ -488,7 +490,7 @@ class TestChatteringWindowTuning:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -521,6 +523,7 @@ class TestChatteringWindowTuning:
                 no_deactivation_within_step=True,
                 preserve_inactive_lambda=True,
                 chattering_window=window,
+                adjust_initial_penetration=True,
             ),
         )
 
@@ -565,7 +568,7 @@ class TestLambdaWarmstartEffect:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -598,6 +601,7 @@ class TestLambdaWarmstartEffect:
                 no_deactivation_within_step=True,
                 preserve_inactive_lambda=True,
                 lambda_warmstart_neighbor=warmstart,
+                adjust_initial_penetration=True,
             ),
         )
 
@@ -651,7 +655,7 @@ class TestNCP19StrandS3Full:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -700,6 +704,7 @@ class TestNCP19StrandS3Full:
                 k_pen_continuation=True,
                 k_pen_continuation_start=0.1,
                 k_pen_continuation_steps=5,
+                adjust_initial_penetration=True,
             ),
         )
 
@@ -746,7 +751,7 @@ class TestNCP19StrandS3Full:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -793,7 +798,7 @@ class TestNCP19StrandS3Full:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
         )
@@ -828,6 +833,7 @@ class TestNCP19StrandS3Full:
                 k_pen_continuation=True,
                 k_pen_continuation_start=0.1,
                 k_pen_continuation_steps=5,
+                adjust_initial_penetration=True,
             ),
         )
 

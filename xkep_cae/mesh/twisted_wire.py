@@ -511,6 +511,26 @@ def make_twisted_wire_mesh(
     if n_pitches is not None:
         length = n_pitches * pitch
 
+    # 要素密度チェック: 16要素/ピッチ以上を推奨
+    # ヘリカル素線の弦近似誤差を許容範囲に収めるため。
+    # θ_seg = 2π/n_per_pitch, 弦近似による最大貫入量 ≈ r*(1-cos(θ/2))
+    # 16要素/ピッチ → θ=22.5° → 貫入量 < ワイヤ直径の2%
+    _MIN_ELEMS_PER_PITCH = 16
+    if n_strands > 1 and length > 0 and pitch > 0:
+        n_per_pitch = n_elems_per_strand * pitch / length
+        if n_per_pitch < _MIN_ELEMS_PER_PITCH:
+            import warnings
+
+            warnings.warn(
+                f"要素密度が不足しています: {n_per_pitch:.1f}要素/ピッチ "
+                f"(推奨 {_MIN_ELEMS_PER_PITCH} 要素/ピッチ以上)。"
+                f"弦近似による初期貫入が発生し、接触解析の精度が低下します。"
+                f"n_elems_per_strand を {math.ceil(_MIN_ELEMS_PER_PITCH * length / pitch)} "
+                f"以上に設定してください。",
+                UserWarning,
+                stacklevel=2,
+            )
+
     # 素線配置を決定
     layout = make_strand_layout(
         n_strands,
