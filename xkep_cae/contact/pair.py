@@ -166,9 +166,10 @@ class ContactConfig:
     """
 
     k_pen_scale: float = 1.0
-    k_pen_mode: str = "manual"  # "manual" | "beam_ei" （自動推定モード）
-    beam_E: float = 0.0  # 梁ヤング率（beam_ei モード用）
+    k_pen_mode: str = "manual"  # "manual" | "beam_ei" | "ea_l" （自動推定モード）
+    beam_E: float = 0.0  # 梁ヤング率（beam_ei / ea_l モード用）
     beam_I: float = 0.0  # 梁代表断面二次モーメント（beam_ei モード用）
+    beam_A: float = 0.0  # 梁断面積（ea_l モード用）
     k_t_ratio: float = 0.5
     mu: float = 0.3
     g_on: float = 0.0

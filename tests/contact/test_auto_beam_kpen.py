@@ -1,14 +1,19 @@
 """梁要素用 k_pen 自動推定テスト.
 
-auto_beam_penalty_stiffness() の単体テスト。
-EI/L³ ベースのペナルティ剛性推定が妥当であることを検証する。
+auto_beam_penalty_stiffness() (EI/L³) と auto_penalty_stiffness() (EA/L) の
+単体テスト。ペナルティ剛性推定が妥当であることを検証する。
+
+[← README](../../README.md)
 """
 
 import math
 
 import pytest
 
-from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+from xkep_cae.contact.law_normal import (
+    auto_beam_penalty_stiffness,
+    auto_penalty_stiffness,
+)
 
 
 class TestAutoBeamPenaltyStiffness:
@@ -128,3 +133,51 @@ class TestAutoBeamPenaltyStiffness:
         k = auto_beam_penalty_stiffness(E, I_circ, L_elem, n_contact_pairs=120)
         # 過大（>1e8）でも過小（<1e3）でもないこと
         assert 1e3 < k < 1e8, f"k_pen = {k:.2e} は 1e3〜1e8 の範囲外"
+
+
+class TestAutoAxialPenaltyStiffness:
+    """auto_penalty_stiffness() (EA/L ベース) の単体テスト."""
+
+    _E = 200e9
+    _d = 0.002  # 直径 2mm
+    _A = math.pi * _d**2 / 4  # 断面積
+    _L = 0.0025  # 要素長 2.5mm
+
+    def test_basic_formula(self):
+        """EA/L の計算式が正しいこと."""
+        k = auto_penalty_stiffness(self._E, self._A, self._L, scale=1.0)
+        expected = self._E * self._A / self._L
+        assert abs(k - expected) / expected < 1e-10
+
+    def test_scale_factor(self):
+        """scale パラメータが線形に効くこと."""
+        k1 = auto_penalty_stiffness(self._E, self._A, self._L, scale=0.01)
+        k2 = auto_penalty_stiffness(self._E, self._A, self._L, scale=0.1)
+        assert abs(k2 / k1 - 10.0) < 1e-10
+
+    def test_positive_value(self):
+        """推定値は常に正."""
+        k = auto_penalty_stiffness(self._E, self._A, self._L)
+        assert k > 0.0
+
+    def test_longer_element_reduces_kpen(self):
+        """要素長が長いと k_pen が低下（L に反比例）."""
+        k_short = auto_penalty_stiffness(self._E, self._A, 0.001)
+        k_long = auto_penalty_stiffness(self._E, self._A, 0.010)
+        ratio = k_short / k_long
+        assert abs(ratio - 10.0) < 1e-10
+
+    def test_ea_vs_ei_comparison(self):
+        """EA/L は EI/L³ より大きくなるべき（同じスケール係数時）."""
+        I_circ = math.pi * self._d**4 / 64
+        k_ea = auto_penalty_stiffness(self._E, self._A, self._L, scale=0.1)
+        k_ei = auto_beam_penalty_stiffness(self._E, I_circ, self._L, scale=0.1)
+        # EA/L >> 12EI/L³ for typical beam elements
+        assert k_ea > k_ei, "EA/L should be larger than 12EI/L³ for typical beam"
+
+    def test_typical_steel_wire(self):
+        """鋼線（d=2mm）でのEA/L推定値が妥当な範囲."""
+        k = auto_penalty_stiffness(self._E, self._A, self._L, scale=0.01)
+        # EA/L ≈ 200e9 * pi*(0.001)^2 / 0.0025 ≈ 2.5e8
+        # scale=0.01 → k ≈ 2.5e6
+        assert 1e5 < k < 1e8, f"k_pen = {k:.2e}"
