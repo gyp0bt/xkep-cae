@@ -38,6 +38,7 @@ def _make_mesh(n_strands: int, n_elems: int = _N_ELEM):
         length=0.0,
         n_elems_per_strand=n_elems,
         n_pitches=1.0,
+        min_elems_per_pitch=0,
     )
 
 

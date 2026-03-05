@@ -151,6 +151,7 @@ class TestNCP7Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -192,6 +193,7 @@ class TestNCP7Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -238,6 +240,7 @@ class TestNCP7Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -294,6 +297,7 @@ class TestNCP19Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -346,6 +350,7 @@ class TestNCP19Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -400,6 +405,7 @@ class TestNCP19Strand:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -493,6 +499,7 @@ class TestChatteringWindowTuning:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -571,6 +578,7 @@ class TestLambdaWarmstartEffect:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -658,6 +666,7 @@ class TestNCP19StrandS3Full:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -754,6 +763,7 @@ class TestNCP19StrandS3Full:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -801,6 +811,7 @@ class TestNCP19StrandS3Full:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs(mesh)
@@ -926,6 +937,7 @@ class TestNCP19StrandRadialCompression:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0001,
+            min_elems_per_pitch=0,
         )
         at, ai, ndof = _build_assemblers(mesh)
         fd = _fixed_dofs_with_center(mesh)

@@ -355,6 +355,7 @@ def _solve_twisted_wire(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=n_pitches,
         gap=gap,
+        min_elems_per_pitch=0,
     )
 
     if assembler_type == "cr":
@@ -1104,6 +1105,7 @@ def _solve_twisted_wire_block(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=n_pitches,
         gap=gap,
+        min_elems_per_pitch=0,
     )
 
     if assembler_type == "cr":
@@ -1526,6 +1528,7 @@ class TestSevenStrandCyclic:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=self._GAP,
+            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)
@@ -1893,6 +1896,7 @@ class TestHysteresisLoopArea:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)
@@ -2014,6 +2018,7 @@ class TestHysteresisLoopArea:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)

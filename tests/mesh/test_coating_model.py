@@ -231,6 +231,7 @@ class TestCoatedRadius:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         coating = CoatingModel(thickness=0.05e-3, E=3.0e9, nu=0.35)
         radii = coated_radii(mesh, coating)
@@ -247,6 +248,7 @@ class TestCoatedRadius:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         coating = CoatingModel(thickness=0.1e-3, E=3.0e9, nu=0.35)
         r_coated = coated_radii(mesh, coating)

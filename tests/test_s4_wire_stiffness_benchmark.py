@@ -326,6 +326,7 @@ def _make_mesh():
         n_elems_per_strand=_N_ELEMS_PER_STRAND,
         n_pitches=_N_PITCHES,
         gap=0.0,
+        min_elems_per_pitch=0,
     )
 
 

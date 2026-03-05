@@ -38,6 +38,7 @@ def _make_mesh(n_strands: int, *, wire_radius: float = 0.5e-3, n_elems: int = 4)
         pitch=20.0e-3,
         length=20.0e-3,
         n_elems_per_strand=n_elems,
+        min_elems_per_pitch=0,
     )
 
 

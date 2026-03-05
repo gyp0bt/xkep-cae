@@ -176,6 +176,7 @@ def _solve_twisted_wire_ncp(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=n_pitches,
         gap=gap,
+        min_elems_per_pitch=0,
     )
 
     if assembler_type == "cr":

@@ -554,6 +554,7 @@ class TestSheathStiffnessConsistency:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         sheath = SheathModel(thickness=1.0e-3, E=E_STEEL, nu=NU_STEEL)
         stiff = sheath_equivalent_stiffness(mesh, sheath)
@@ -581,6 +582,7 @@ class TestSheathStiffnessConsistency:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         sheath = SheathModel(thickness=1.0e-3, E=E_STEEL, nu=NU_STEEL)
         stiff = sheath_equivalent_stiffness(mesh, sheath)
@@ -608,6 +610,7 @@ class TestSheathStiffnessConsistency:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         sheath = SheathModel(thickness=1.0e-3, E=E_STEEL, nu=NU_STEEL)
         stiff = sheath_equivalent_stiffness(mesh, sheath)
@@ -635,6 +638,7 @@ class TestSheathStiffnessConsistency:
             pitch=40.0e-3,
             length=40.0e-3,
             n_elems_per_strand=4,
+            min_elems_per_pitch=0,
         )
         sheath = SheathModel(thickness=1.0e-3, E=E_STEEL, nu=NU_STEEL)
         stiff = sheath_equivalent_stiffness(mesh, sheath)
