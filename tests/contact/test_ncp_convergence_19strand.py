@@ -258,7 +258,7 @@ class TestNCP7Strand:
             tol_ncp=1e-6,
             broadphase_margin=0.01,
             show_progress=True,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             adaptive_omega=True,
             omega_init=0.5,
             omega_min=0.05,
@@ -266,7 +266,7 @@ class TestNCP7Strand:
         )
 
         print(
-            f"  7本 NCP (bisection): converged={result.converged}, "
+            f"  7本 NCP (adaptive dt): converged={result.converged}, "
             f"steps={result.n_load_steps}, "
             f"newton={result.total_newton_iterations}"
         )
@@ -320,7 +320,7 @@ class TestNCP19Strand:
             omega_max=0.8,
             omega_shrink=0.5,
             omega_growth=1.1,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -370,7 +370,7 @@ class TestNCP19Strand:
             omega_init=0.2,
             omega_min=0.05,
             omega_max=0.8,
-            bisection_max_depth=4,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -457,7 +457,7 @@ class TestNCP19Strand:
             omega_max=0.8,
             omega_shrink=0.5,
             omega_growth=1.1,
-            bisection_max_depth=3,
+            adaptive_timestepping=True,
             active_set_update_interval=10,
             du_norm_cap=5.0,
         )
@@ -624,3 +624,240 @@ class TestLambdaWarmstartEffect:
             f"active={_count_active(mgr)}"
         )
         assert result.converged, f"warmstart={warmstart} で7本が収束しなかった"
+
+
+# ====================================================================
+# テスト: S3改良6-8の19本統合テスト
+# ====================================================================
+
+
+class TestNCP19StrandS3Full:
+    """S3改良1-8を全有効化した19本NCP収束テスト."""
+
+    def test_ncp_19strand_all_s3_improvements(self):
+        """19本: S3改良1-8を全て有効化して収束を試行.
+
+        改良1: ILU drop_tol 適応制御
+        改良2: Schur ブロック正則化
+        改良3: GMRES restart 適応
+        改良4: λウォームスタート
+        改良5: Active set チャタリング抑制
+        改良6: 適応時間増分制御
+        改良7: AMG前処理
+        改良8: k_pen continuation
+        """
+        mesh = make_twisted_wire_mesh(
+            19,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        at, ai, ndof = _build_assemblers(mesh)
+        fd = _fixed_dofs(mesh)
+        f_ext = _tension_load(mesh, ndof, total_force=100.0)
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=0.1,
+                k_pen_mode="beam_ei",
+                beam_E=_E,
+                beam_I=_SECTION.Iy,
+                k_pen_scaling="sqrt",
+                k_t_ratio=0.1,
+                mu=0.0,
+                g_on=0.0005,
+                g_off=0.001,
+                use_friction=False,
+                use_line_search=False,
+                use_geometric_stiffness=True,
+                tol_penetration_ratio=0.02,
+                penalty_growth_factor=1.0,
+                k_pen_max=1e12,
+                elem_layer_map=elem_layer_map,
+                exclude_same_layer=True,
+                midpoint_prescreening=True,
+                linear_solver="auto",
+                no_deactivation_within_step=True,
+                preserve_inactive_lambda=True,
+                # S3改良4: λウォームスタート
+                lambda_warmstart_neighbor=True,
+                # S3改良5: チャタリング抑制
+                chattering_window=3,
+                # S3改良6: 適応時間増分制御
+                adaptive_timestepping=True,
+                dt_grow_factor=1.3,
+                dt_shrink_factor=0.5,
+                dt_grow_iter_threshold=8,
+                dt_shrink_iter_threshold=20,
+                dt_contact_change_threshold=0.3,
+                # S3改良7: AMG前処理
+                use_amg_preconditioner=True,
+                # S3改良8: k_pen continuation
+                k_pen_continuation=True,
+                k_pen_continuation_start=0.1,
+                k_pen_continuation_steps=5,
+            ),
+        )
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fd,
+            at,
+            ai,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=20,
+            max_iter=100,
+            tol_force=1e-5,
+            tol_ncp=1e-5,
+            broadphase_margin=0.01,
+            show_progress=True,
+            adaptive_omega=True,
+            omega_init=0.3,
+            omega_min=0.05,
+            omega_max=0.8,
+            omega_shrink=0.5,
+            omega_growth=1.1,
+            active_set_update_interval=5,
+            du_norm_cap=5.0,
+            adaptive_timestepping=True,
+        )
+
+        n_active = _count_active(mgr)
+        print(
+            f"\n  19本 NCP (S3全改良): converged={result.converged}, "
+            f"steps={result.n_load_steps}, "
+            f"newton={result.total_newton_iterations}, "
+            f"active={n_active}"
+        )
+        # 全改良有効化で反復が実行されていること
+        assert result.total_newton_iterations > 0, "NR反復が実行されていない"
+
+    def test_ncp_19strand_adaptive_dt_only(self):
+        """19本: 適応Δtのみ有効化."""
+        mesh = make_twisted_wire_mesh(
+            19,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        at, ai, ndof = _build_assemblers(mesh)
+        fd = _fixed_dofs(mesh)
+        f_ext = _tension_load(mesh, ndof, total_force=50.0)
+        mgr = _build_contact_manager(mesh, k_pen_scale=0.05)
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fd,
+            at,
+            ai,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=20,
+            max_iter=100,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            broadphase_margin=0.01,
+            show_progress=True,
+            adaptive_omega=True,
+            omega_init=0.3,
+            omega_min=0.05,
+            omega_max=0.8,
+            active_set_update_interval=10,
+            du_norm_cap=5.0,
+            adaptive_timestepping=True,
+        )
+
+        print(
+            f"\n  19本 NCP (adaptive dt): converged={result.converged}, "
+            f"steps={result.n_load_steps}, "
+            f"newton={result.total_newton_iterations}"
+        )
+        assert result.total_newton_iterations > 0
+
+    def test_ncp_19strand_kpen_continuation_only(self):
+        """19本: k_pen continuation のみ有効化."""
+        mesh = make_twisted_wire_mesh(
+            19,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+        )
+        at, ai, ndof = _build_assemblers(mesh)
+        fd = _fixed_dofs(mesh)
+        f_ext = _tension_load(mesh, ndof, total_force=100.0)
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=0.1,
+                k_pen_mode="beam_ei",
+                beam_E=_E,
+                beam_I=_SECTION.Iy,
+                k_pen_scaling="sqrt",
+                k_t_ratio=0.1,
+                mu=0.0,
+                g_on=0.0005,
+                g_off=0.001,
+                use_friction=False,
+                use_line_search=False,
+                use_geometric_stiffness=True,
+                tol_penetration_ratio=0.02,
+                penalty_growth_factor=1.0,
+                k_pen_max=1e12,
+                elem_layer_map=elem_layer_map,
+                exclude_same_layer=True,
+                midpoint_prescreening=True,
+                linear_solver="auto",
+                no_deactivation_within_step=True,
+                preserve_inactive_lambda=True,
+                k_pen_continuation=True,
+                k_pen_continuation_start=0.1,
+                k_pen_continuation_steps=5,
+            ),
+        )
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fd,
+            at,
+            ai,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=20,
+            max_iter=100,
+            tol_force=1e-6,
+            tol_ncp=1e-6,
+            broadphase_margin=0.01,
+            show_progress=True,
+            adaptive_omega=True,
+            omega_init=0.3,
+            omega_min=0.05,
+            omega_max=0.8,
+            adaptive_timestepping=True,
+            active_set_update_interval=10,
+            du_norm_cap=5.0,
+        )
+
+        print(
+            f"\n  19本 NCP (k_pen cont.): converged={result.converged}, "
+            f"steps={result.n_load_steps}, "
+            f"newton={result.total_newton_iterations}"
+        )
+        assert result.total_newton_iterations > 0

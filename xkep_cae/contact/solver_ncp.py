@@ -489,6 +489,7 @@ def _solve_saddle_point_gmres(
     *,
     iterative_tol: float = 1e-10,
     ilu_drop_tol: float = 1e-4,
+    use_amg: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系をブロック前処理付き GMRES で解く.
 
@@ -540,26 +541,54 @@ def _solve_saddle_point_gmres(
     G_A_bc_csr = G_A_csc.tocsr()
     G_A_bc_T = G_A_bc_csr.T.tocsr()
 
-    # --- ILU 前処理構築（適応 drop_tol） ---
+    # --- 前処理構築（AMG or ILU） ---
     ilu = None
-    _ilu_tol = ilu_drop_tol
-    for _ilu_attempt in range(4):
+    amg_solver = None
+    if use_amg:
         try:
-            ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=_ilu_tol)
-            break
-        except RuntimeError:
-            _ilu_tol *= 10.0  # drop_tol を緩和して再試行
+            import pyamg
+
+            amg_solver = pyamg.smoothed_aggregation_solver(
+                K_bc_csr,
+                max_coarse=50,
+                max_levels=10,
+            )
+        except Exception:
+            pass  # AMG失敗時はILUにフォールバック
+
+    if amg_solver is None:
+        # ILU 前処理構築（適応 drop_tol）
+        _ilu_tol = ilu_drop_tol
+        for _ilu_attempt in range(4):
+            try:
+                ilu = spla.spilu(K_bc_csr.tocsc(), drop_tol=_ilu_tol)
+                break
+            except RuntimeError:
+                _ilu_tol *= 10.0  # drop_tol を緩和して再試行
+
+    # --- K_eff^{-1} の近似ソルバー ---
+    def _k_eff_solve(b):
+        """K_eff の近似逆行列適用（AMG or ILU）."""
+        if amg_solver is not None:
+            return amg_solver.solve(b, tol=1e-8, maxiter=20)
+        elif ilu is not None:
+            return ilu.solve(b)
+        else:
+            return b
 
     # --- Schur 補集合の対角近似: S_ii = G_A[i,:] * K_eff^{-1} * G_A[i,:]^T ---
-    # バッチ ILU ソルブで n_active 回のループを回避
-    # Schur 対角近似の初期値（ILU成功時に上書きされる）
     _schur_reg = 1e-12
     s_diag = np.ones(n_active) * _schur_reg
-    if ilu is not None:
+    if amg_solver is not None or ilu is not None:
         G_A_bc_dense = G_A_bc_csr.toarray()  # (n_active, ndof)
         try:
-            # バッチソルブ: (ndof, n_active)
-            V = ilu.solve(G_A_bc_dense.T)
+            if amg_solver is not None:
+                V = np.zeros((ndof, n_active))
+                for i in range(n_active):
+                    V[:, i] = amg_solver.solve(G_A_bc_dense[i, :], tol=1e-8, maxiter=20)
+            else:
+                # バッチソルブ: (ndof, n_active)
+                V = ilu.solve(G_A_bc_dense.T)
             s_diag = np.einsum("ij,ji->i", G_A_bc_dense, V)
             # 対角成分が負または微小な場合の安全下限（最大値の1e-10）
             _s_max = np.max(np.abs(s_diag)) if n_active > 0 else 1.0
@@ -569,10 +598,10 @@ def _solve_saddle_point_gmres(
             # フォールバック: 行ごとのソルブ
             for i in range(n_active):
                 g_row = G_A_bc_dense[i, :]
-                v = ilu.solve(g_row)
+                v = _k_eff_solve(g_row)
                 s_diag[i] = max(g_row @ v, 1e-12)
     else:
-        # ILU が失敗した場合の粗い近似
+        # 前処理なし: 粗い近似
         s_diag[:] = 1.0 / max(k_pen, 1e-12)
 
     # --- 拡大系行列-ベクトル積 ---
@@ -592,10 +621,7 @@ def _solve_saddle_point_gmres(
     # --- ブロック対角前処理演算子 ---
     def precond(x):
         y = np.zeros(n_total)
-        if ilu is not None:
-            y[:ndof] = ilu.solve(x[:ndof])
-        else:
-            y[:ndof] = x[:ndof]
+        y[:ndof] = _k_eff_solve(x[:ndof])
         y[ndof:] = x[ndof:] / s_diag
         return y
 
@@ -973,6 +999,8 @@ def _solve_saddle_point_contact(
     ilu_drop_tol: float = 1e-4,
     use_block_preconditioner: bool = False,
     gmres_dof_threshold: int = 2000,
+    use_amg: bool = False,
+    residual_scaling: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を解く（直接法 or ブロック前処理 GMRES）.
 
@@ -981,7 +1009,7 @@ def _solve_saddle_point_contact(
 
     use_block_preconditioner=True:
       ブロック対角前処理付き GMRES。n_active が大きい場合に効率的。
-      K_eff^{-1} を ILU で近似し、Schur 補集合の対角近似を前処理に使用。
+      K_eff^{-1} を ILU/AMG で近似し、Schur 補集合の対角近似を前処理に使用。
 
     linear_solver="auto" かつ ndof >= gmres_dof_threshold の場合、
     ブロック前処理 GMRES を自動選択する。
@@ -998,6 +1026,7 @@ def _solve_saddle_point_contact(
         ilu_drop_tol: ILU drop tolerance
         use_block_preconditioner: ブロック前処理 GMRES の使用（Phase C6-L4）
         gmres_dof_threshold: DOF 閾値。この値以上で自動的に反復法を選択
+        use_amg: PyAMG SA前処理を使用（S3改良7）
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
@@ -1020,8 +1049,20 @@ def _solve_saddle_point_contact(
         du = _solve_linear_system(K_bc_csr, rhs, **solve_kw)
         return du, np.array([])
 
+    # --- S3改良10: 対角スケーリング前処理 ---
+    D_scale = None
+    if residual_scaling and ndof > 0:
+        K_diag = np.abs(K_T.diagonal())
+        K_diag = np.maximum(K_diag, 1e-30)
+        D_scale = 1.0 / np.sqrt(K_diag)
+        # K̃ = D K D, R̃ = D R, G̃ = G D
+        D_sp = sp.diags(D_scale)
+        K_T = D_sp @ K_T @ D_sp
+        R_u = D_scale * R_u
+        G_A = G_A @ D_sp
+
     if use_block_preconditioner or auto_block:
-        return _solve_saddle_point_gmres(
+        du, dlam = _solve_saddle_point_gmres(
             K_T,
             G_A,
             k_pen,
@@ -1030,19 +1071,26 @@ def _solve_saddle_point_contact(
             fixed_dofs,
             iterative_tol=iterative_tol,
             ilu_drop_tol=ilu_drop_tol,
+            use_amg=use_amg,
+        )
+    else:
+        du, dlam = _solve_saddle_point_direct(
+            K_T,
+            G_A,
+            k_pen,
+            R_u,
+            g_active,
+            fixed_dofs,
+            linear_solver=linear_solver,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
         )
 
-    return _solve_saddle_point_direct(
-        K_T,
-        G_A,
-        k_pen,
-        R_u,
-        g_active,
-        fixed_dofs,
-        linear_solver=linear_solver,
-        iterative_tol=iterative_tol,
-        ilu_drop_tol=ilu_drop_tol,
-    )
+    # スケーリングの逆変換
+    if D_scale is not None:
+        du = D_scale * du
+
+    return du, dlam
 
 
 def _ncp_line_search(
@@ -1130,6 +1178,7 @@ def newton_raphson_contact_ncp(
     bisection_max_depth: int = 0,
     active_set_update_interval: int = 1,
     du_norm_cap: float = 0.0,
+    adaptive_timestepping: bool = False,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1183,14 +1232,15 @@ def newton_raphson_contact_ncp(
         n_gauss: Gauss 積分点数（None なら config.n_gauss）
         use_line_search: バックトラッキング line search の有効化
         line_search_max_steps: line search の最大ステップ数
-        max_step_cuts: ステップ二分法の最大回数（0=無効、3=1ステップを最大8分割）
+        max_step_cuts: [DEPRECATED] adaptive_timestepping を使用してください。
+            非ゼロ指定時は自動的に adaptive_timestepping=True に変換されます。
         modified_nr_threshold: Modified NR 切替閾値。N>0 の場合、
             N 反復後に接線剛性を凍結（CR梁の振動発散抑制）。0=常に Full NR。
         prescribed_dofs: 処方変位DOFのインデックス配列（変位制御用）。
             各ステップで u[prescribed_dofs] = load_frac * prescribed_values を設定。
         prescribed_values: 処方変位の目標値（load_frac=1.0 での値）。
         adaptive_omega: 適応的緩和係数の有効化（レガシー）
-        bisection_max_depth: 荷重ステップ二分法の最大深さ（レガシー、max_step_cuts 推奨）
+        bisection_max_depth: [DEPRECATED] adaptive_timestepping を使用してください。
 
     Returns:
         NCPSolveResult
@@ -1214,12 +1264,67 @@ def newton_raphson_contact_ncp(
     if has_prescribed:
         fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
 
-    # bisection_max_depth → max_step_cuts 統合（レガシー互換）
+    # bisection_max_depth / max_step_cuts → adaptive_timestepping へ統合
+    # DEPRECATED: ステップ二分法は適応時間増分制御に統合済み
     _max_step_cuts = max(max_step_cuts, bisection_max_depth)
+    if _max_step_cuts > 0 and not adaptive_timestepping:
+        import warnings
 
-    # k_pen の決定
+        warnings.warn(
+            "max_step_cuts/bisection_max_depth は非推奨です。"
+            "adaptive_timestepping=True を使用してください。"
+            "自動的に adaptive_timestepping を有効化します。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        adaptive_timestepping = True
+
+    # k_pen の決定（S3改良9: beam_ei/ea_l 自動推定をNCPソルバーに導入）
     if k_pen <= 0.0:
-        k_pen = manager.config.k_pen_scale
+        if manager.config.k_pen_mode in ("beam_ei", "ea_l"):
+            # 代表要素長の推定
+            _L_elems = []
+            for elem in connectivity:
+                n1, n2 = int(elem[0]), int(elem[1])
+                dxyz = node_coords_ref[n2] - node_coords_ref[n1]
+                _L_elems.append(float(np.linalg.norm(dxyz)))
+            _L_avg = float(np.mean(_L_elems)) if _L_elems else 1.0
+            _L_avg = max(_L_avg, 1e-30)
+
+            if manager.config.k_pen_mode == "beam_ei":
+                from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                k_pen = auto_beam_penalty_stiffness(
+                    manager.config.beam_E,
+                    manager.config.beam_I,
+                    _L_avg,
+                    n_contact_pairs=max(1, manager.n_pairs),
+                    scale=manager.config.k_pen_scale,
+                    scaling=manager.config.k_pen_scaling,
+                )
+            else:
+                from xkep_cae.contact.law_normal import auto_penalty_stiffness
+
+                k_pen = auto_penalty_stiffness(
+                    manager.config.beam_E,
+                    manager.config.beam_A,
+                    _L_avg,
+                    scale=manager.config.k_pen_scale,
+                )
+            if show_progress:
+                print(
+                    f"  NCP auto k_pen ({manager.config.k_pen_mode}): "
+                    f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
+                )
+        else:
+            k_pen = manager.config.k_pen_scale
+
+    # --- k_pen continuation（S3改良8）---
+    _k_pen_target = k_pen
+    _k_pen_cont = manager.config.k_pen_continuation
+    _k_pen_cont_steps = manager.config.k_pen_continuation_steps
+    if _k_pen_cont:
+        k_pen = _k_pen_target * manager.config.k_pen_continuation_start
 
     # 摩擦設定の解決
     _use_friction = use_friction or manager.config.use_friction
@@ -1268,16 +1373,42 @@ def newton_raphson_contact_ncp(
     # 摩擦用: 参照変位（前ステップ収束解）
     u_ref = u.copy()
 
-    # --- ステップ二分法サポート ---
     from collections import deque
 
+    # --- 適応時間増分制御（S3改良6） ---
+    _adaptive_dt = adaptive_timestepping or manager.config.adaptive_timestepping
+    _dt_grow = manager.config.dt_grow_factor
+    _dt_shrink = manager.config.dt_shrink_factor
+    _dt_grow_iter = manager.config.dt_grow_iter_threshold
+    _dt_shrink_iter = manager.config.dt_shrink_iter_threshold
+    _dt_contact_change_thr = manager.config.dt_contact_change_threshold
+    _dt_min_frac = manager.config.dt_min_fraction
+    _dt_max_frac = manager.config.dt_max_fraction
+    if _dt_min_frac <= 0.0:
+        _dt_min_frac = 1.0 / (n_load_steps * 16)
+    if _dt_max_frac <= 0.0:
+        _dt_max_frac = min(4.0 / n_load_steps, 1.0)
+
+    # --- S3改良10: 残差スケーリング ---
+    _residual_scaling = manager.config.residual_scaling
+
+    # --- S3改良11: 接触力ランプ ---
+    _contact_force_ramp = manager.config.contact_force_ramp
+    _contact_force_ramp_iters = manager.config.contact_force_ramp_iters
+
     step_queue: deque[float] = deque()
-    for _s in range(1, n_load_steps + 1):
-        step_queue.append(_s / n_load_steps)
+    if _adaptive_dt:
+        # 適応モード: 最初の目標分率のみ設定し、以降は動的に生成
+        _base_delta = 1.0 / n_load_steps
+        step_queue.append(min(_base_delta, 1.0))
+    else:
+        for _s in range(1, n_load_steps + 1):
+            step_queue.append(_s / n_load_steps)
     load_frac_prev = 0.0
     step_display = 0  # 表示用ステップカウンタ
+    _prev_n_active = 0  # 前ステップのactive set数（適応Δt用）
 
-    # チェックポイント（二分法のロールバック用）
+    # チェックポイント（適応時間増分の不収束時ロールバック用）
     u_ckpt = u.copy()
     lam_ckpt = lam_all.copy()
     lam_t_ckpt = lam_t_all.copy()
@@ -1299,6 +1430,7 @@ def newton_raphson_contact_ncp(
         # --- 適応的緩和係数の初期化 ---
         _omega = omega_init if adaptive_omega else 1.0
         _prev_merit = float("inf")
+        _omega_stall_count = 0  # omega回復メカニズム用カウンタ
 
         # --- 接線予測子（前ステップの変位増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
@@ -1515,6 +1647,11 @@ def newton_raphson_contact_ncp(
                                 )
                 f_c = f_c + f_friction
 
+            # 4c. 接触力ランプ（S3改良11）: 初期反復で接触力を段階的に増大
+            if _contact_force_ramp and it < _contact_force_ramp_iters:
+                ramp_factor = (it + 1) / _contact_force_ramp_iters
+                f_c = f_c * ramp_factor
+
             # 5. 力残差
             f_int = assemble_internal_force(u)
             R_u = f_int + f_c - f_ext
@@ -1718,6 +1855,8 @@ def newton_raphson_contact_ncp(
                     ilu_drop_tol=ilu_drop_tol_cfg,
                     use_block_preconditioner=use_block_preconditioner,
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
+                    use_amg=manager.config.use_amg_preconditioner,
+                    residual_scaling=_residual_scaling,
                 )
 
                 # 11m. Line search + Mortar 乗数更新
@@ -1827,6 +1966,8 @@ def newton_raphson_contact_ncp(
                     ilu_drop_tol=ilu_drop_tol_cfg,
                     use_block_preconditioner=use_block_preconditioner,
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
+                    use_amg=manager.config.use_amg_preconditioner,
+                    residual_scaling=_residual_scaling,
                 )
 
                 # 11. Line search + 更新
@@ -1875,6 +2016,16 @@ def newton_raphson_contact_ncp(
                     _omega = max(_omega * omega_shrink, omega_min)
                 _prev_merit = _merit
 
+                # omega回復メカニズム: 最小値に張り付いた場合の脱出
+                if _omega <= omega_min + 1e-15:
+                    _omega_stall_count += 1
+                    if _omega_stall_count >= 20:
+                        _omega = omega_init
+                        _prev_merit = float("inf")
+                        _omega_stall_count = 0
+                else:
+                    _omega_stall_count = 0
+
             # 変位ノルム判定
             u_norm = float(np.linalg.norm(u))
             du_norm_val = float(np.linalg.norm(du))
@@ -1903,10 +2054,9 @@ def newton_raphson_contact_ncp(
                 break
 
         if not step_converged:
-            # --- ステップ二分法（チェックポイント方式） ---
+            # --- 適応時間増分: 不収束時のステップ縮小リトライ ---
             delta = load_frac - load_frac_prev
-            min_delta = 1.0 / (n_load_steps * 2**_max_step_cuts) if _max_step_cuts > 0 else 0.0
-            if _max_step_cuts > 0 and delta > min_delta + 1e-15:
+            if _adaptive_dt and delta > _dt_min_frac + 1e-15:
                 # 状態をチェックポイントに復元
                 u = u_ckpt.copy()
                 lam_all = lam_ckpt.copy()
@@ -1916,16 +2066,16 @@ def newton_raphson_contact_ncp(
                 u_ref = u_ref_ckpt.copy()
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
-                # 中間点を挿入
-                mid_frac = load_frac_prev + delta / 2.0
+                # 中間点を挿入（適応縮小）
+                mid_frac = load_frac_prev + delta * _dt_shrink
                 step_queue.appendleft(load_frac)  # 元のターゲットを戻す
-                step_queue.appendleft(mid_frac)  # 中間点を先頭に
+                step_queue.appendleft(mid_frac)  # 縮小ステップを先頭に
                 step_display -= 1  # カウンタを巻き戻し
                 if show_progress:
                     print(
-                        f"  Step bisection: frac {load_frac:.4f} → "
+                        f"  Adaptive dt retry: frac {load_frac:.4f} → "
                         f"sub-steps [{mid_frac:.4f}, {load_frac:.4f}] "
-                        f"(delta {delta:.4f} → {delta / 2:.4f})"
+                        f"(delta {delta:.4f} → {delta * _dt_shrink:.4f})"
                     )
                 continue
             else:
@@ -1949,6 +2099,54 @@ def newton_raphson_contact_ncp(
 
         # ステップ完了 — キューから消費 & チェックポイント保存
         step_queue.popleft()
+
+        # --- 適応時間増分制御（S3改良6）: 次ステップ幅の動的決定 ---
+        if _adaptive_dt and load_frac < 1.0 - 1e-12:
+            current_delta = load_frac - load_frac_prev
+            next_delta = current_delta  # デフォルトは同じ幅
+
+            # (a) 収束反復数に基づく拡大/縮小
+            step_iters = it + 1  # このステップの反復数
+            if step_iters <= _dt_grow_iter:
+                next_delta = current_delta * _dt_grow
+            elif step_iters >= _dt_shrink_iter:
+                next_delta = current_delta * _dt_shrink
+
+            # (b) 接触状態変化率に基づく縮小
+            _current_n_active = manager.n_active
+            if _prev_n_active > 0:
+                change_rate = abs(_current_n_active - _prev_n_active) / max(_prev_n_active, 1)
+                if change_rate > _dt_contact_change_thr:
+                    next_delta = min(next_delta, current_delta * _dt_shrink)
+
+            # 分率制限
+            next_delta = max(next_delta, _dt_min_frac)
+            next_delta = min(next_delta, _dt_max_frac)
+
+            # 次のターゲット分率
+            next_frac = min(load_frac + next_delta, 1.0)
+            # 残り区間が小さすぎる場合は1.0に揃える
+            if 1.0 - next_frac < _dt_min_frac * 0.5:
+                next_frac = 1.0
+            step_queue.appendleft(next_frac)
+
+            if show_progress and abs(next_delta - current_delta) > 1e-10:
+                print(
+                    f"  Adaptive dt: delta {current_delta:.4f} → {next_delta:.4f} "
+                    f"(iters={step_iters}, n_active={_current_n_active})"
+                )
+
+        _prev_n_active = manager.n_active
+
+        # --- k_pen continuation（S3改良8）: ステップ進行で段階的にk_penを目標値に近づける ---
+        if _k_pen_cont and k_pen < _k_pen_target - 1e-30:
+            # 対数スケールで等分割
+            _k_pen_ratio = _k_pen_target / max(k_pen, 1e-30)
+            _k_pen_step_factor = _k_pen_ratio ** (1.0 / max(_k_pen_cont_steps, 1))
+            k_pen = min(k_pen * _k_pen_step_factor, _k_pen_target)
+            if show_progress:
+                print(f"  k_pen continuation: k_pen → {k_pen:.2e} (target={_k_pen_target:.2e})")
+
         # 接線予測子用: 前ステップの変位増分と荷重増分を記録
         delta_frac_prev = load_frac - load_frac_prev
         u_prev_converged = u_ckpt.copy()  # チェックポイント = 前ステップ収束点

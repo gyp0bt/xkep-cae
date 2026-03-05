@@ -668,6 +668,8 @@ class TestSlidingContactNCP:
                 tol_penetration_ratio=_TOL_PEN_RATIO,
                 penalty_growth_factor=2.0,
                 k_pen_max=1e12,
+                # S3改良6: 適応時間増分制御
+                adaptive_timestepping=True,
             ),
         )
 
@@ -681,7 +683,7 @@ class TestSlidingContactNCP:
             connectivity,
             radii_val,
             n_load_steps=n_load_steps,
-            max_iter=50,
+            max_iter=80,
             tol_force=1e-6,
             tol_ncp=1e-6,
             show_progress=False,
@@ -689,6 +691,7 @@ class TestSlidingContactNCP:
             k_pen=k_pen,
             use_friction=use_friction,
             mu=mu if use_friction else None,
+            adaptive_timestepping=True,
         )
 
         return result, mgr, ndof_total

@@ -1,6 +1,6 @@
-"""S3 改良（ILU適応/Schur正則化/GMRES restart/λウォームスタート/チャタリング抑制）のテスト.
+"""S3 改良（ILU適応/Schur正則化/GMRES restart/λウォームスタート/チャタリング抑制/適応Δt/AMG/k_pen continuation/残差スケーリング/接触力ランプ）のテスト.
 
-Phase S3: 大規模NCP収束改善 — 5改良の単体テスト。
+Phase S3: 大規模NCP収束改善 — 11改良の単体テスト。
 """
 
 import numpy as np
@@ -298,13 +298,73 @@ class TestChatteringSuppression:
 # ==== 自動安定時間増分（ユーザー追加要求への対応確認） ====
 
 
-class TestStepBisection:
-    """ステップ二分法（自動安定時間増分の基礎機構）の動作確認."""
+class TestStepBisectionDeprecated:
+    """max_step_cuts/bisection_max_depth の非推奨化テスト."""
 
-    def test_step_bisection_with_max_step_cuts(self):
-        """max_step_cuts>0 でステップ二分法が機能すること."""
+    def test_max_step_cuts_triggers_deprecation_warning(self):
+        """max_step_cuts>0 で DeprecationWarning が発生し adaptive_dt に変換."""
+        import warnings
+
         setup = _make_crossing_beams_setup()
         config = ContactConfig(k_pen_scale=1e4)
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = newton_raphson_contact_ncp(
+                f_ext,
+                setup["fixed_dofs"],
+                assemble_tangent,
+                assemble_internal,
+                manager,
+                setup["node_coords"],
+                setup["connectivity"],
+                setup["radii"],
+                n_load_steps=1,
+                max_iter=30,
+                tol_force=1e-4,
+                tol_ncp=1e-4,
+                show_progress=False,
+                k_pen=1e4,
+                max_step_cuts=2,
+            )
+        assert np.all(np.isfinite(result.u))
+        # DeprecationWarning が発生していること
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) >= 1, "max_step_cuts で DeprecationWarning が出るべき"
+
+
+# ==== 改良6: 適応時間増分制御 ====
+
+
+class TestAdaptiveTimestepping:
+    """適応時間増分制御（S3改良6）のテスト."""
+
+    def test_adaptive_dt_config_defaults(self):
+        """デフォルトで適応Δtが無効."""
+        config = ContactConfig()
+        assert config.adaptive_timestepping is False
+        assert config.dt_grow_factor == 1.5
+        assert config.dt_shrink_factor == 0.5
+        assert config.dt_grow_iter_threshold == 5
+        assert config.dt_shrink_iter_threshold == 15
+
+    def test_adaptive_dt_enabled_does_not_break(self):
+        """適応Δt有効でも基本問題がクラッシュしないこと."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            adaptive_timestepping=True,
+        )
         manager = ContactManager(config=config)
 
         f_ext = np.zeros(setup["ndof"])
@@ -325,12 +385,411 @@ class TestStepBisection:
             setup["node_coords"],
             setup["connectivity"],
             setup["radii"],
-            n_load_steps=1,
+            n_load_steps=4,
+            max_iter=50,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+            adaptive_timestepping=True,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_adaptive_dt_multiple_steps(self):
+        """複数ステップでも適応Δtが機能すること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            adaptive_timestepping=True,
+            dt_grow_iter_threshold=10,
+            dt_shrink_iter_threshold=20,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=3,
             max_iter=30,
             tol_force=1e-4,
             tol_ncp=1e-4,
             show_progress=False,
             k_pen=1e4,
-            max_step_cuts=2,
+            adaptive_timestepping=True,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_adaptive_dt_failure_retry(self):
+        """適応Δtで不収束時にステップ縮小リトライが機能すること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            adaptive_timestepping=True,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=2,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+            adaptive_timestepping=True,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_adaptive_dt_contact_change_shrink(self):
+        """接触状態変化率の閾値設定が機能すること."""
+        config = ContactConfig(
+            adaptive_timestepping=True,
+            dt_contact_change_threshold=0.2,
+        )
+        assert config.dt_contact_change_threshold == 0.2
+
+
+# ==== 改良7: AMG 前処理 ====
+
+
+class TestAMGPreconditioner:
+    """AMG 前処理（S3改良7）のテスト."""
+
+    def test_amg_config_default(self):
+        """デフォルトで AMG が無効."""
+        config = ContactConfig()
+        assert config.use_amg_preconditioner is False
+
+    def test_amg_gmres_solve(self):
+        """AMG前処理付きGMRESが有限な解を返すこと."""
+        setup = _make_crossing_beams_setup()
+        ndof = setup["ndof"]
+        K_T = setup["K_T"]
+        fixed_dofs = setup["fixed_dofs"]
+
+        n_active = 2
+        G_A = sp.random(n_active, ndof, density=0.3, format="csr", random_state=42)
+        g_active = np.array([-0.001, -0.002])
+        R_u = np.random.default_rng(42).standard_normal(ndof)
+        R_u[fixed_dofs] = 0.0
+        k_pen = 1e5
+
+        du, dlam = _solve_saddle_point_gmres(
+            K_T, G_A, k_pen, R_u, g_active, fixed_dofs, use_amg=True
+        )
+        assert np.all(np.isfinite(du))
+        assert np.all(np.isfinite(dlam))
+
+    def test_amg_fallback_to_ilu(self):
+        """AMG失敗時にILUフォールバックすること（小規模問題）."""
+        ndof = 10
+        K = _make_simple_k(ndof)
+        n_active = 1
+        G_A = sp.random(n_active, ndof, density=0.5, format="csr", random_state=42)
+        g_active = np.array([-0.001])
+        R_u = np.random.default_rng(42).standard_normal(ndof)
+        R_u[[0, ndof - 1]] = 0.0
+        k_pen = 1e5
+
+        du, dlam = _solve_saddle_point_gmres(
+            K, G_A, k_pen, R_u, g_active, np.array([0, ndof - 1]), use_amg=True
+        )
+        assert np.all(np.isfinite(du))
+
+
+# ==== 改良8: k_pen continuation ====
+
+
+class TestKPenContinuation:
+    """k_pen continuation（S3改良8）のテスト."""
+
+    def test_continuation_config_defaults(self):
+        """デフォルトでcontinuationが無効."""
+        config = ContactConfig()
+        assert config.k_pen_continuation is False
+        assert config.k_pen_continuation_start == 0.1
+        assert config.k_pen_continuation_steps == 3
+
+    def test_continuation_enabled_does_not_break(self):
+        """continuation有効でも基本問題が収束すること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            k_pen_continuation=True,
+            k_pen_continuation_start=0.1,
+            k_pen_continuation_steps=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_auto_kpen_beam_ei(self):
+        """beam_ei モードで k_pen が自動推定されること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=0.1,
+            k_pen_mode="beam_ei",
+            beam_E=200e9,
+            beam_I=1e-12,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        # k_pen=0 でも beam_ei で自動推定が走ることを確認
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=0.0,  # 0 → 自動推定
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_continuation_with_kpen_auto(self):
+        """continuation + beam_ei k_pen自動推定が共存できること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=0.1,
+            k_pen_mode="beam_ei",
+            beam_E=200e9,
+            beam_I=1e-12,
+            k_pen_continuation=True,
+            k_pen_continuation_start=0.1,
+            k_pen_continuation_steps=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_continuation_with_adaptive_dt(self):
+        """continuationと適応Δtが共存できること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            k_pen_continuation=True,
+            adaptive_timestepping=True,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=3,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+            adaptive_timestepping=True,
+        )
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 改良10: 残差スケーリング ====
+
+
+class TestResidualScaling:
+    """残差スケーリング（S3改良10）のテスト."""
+
+    def test_residual_scaling_config_default(self):
+        """デフォルトで残差スケーリングが無効."""
+        config = ContactConfig()
+        assert config.residual_scaling is False
+
+    def test_residual_scaling_does_not_break(self):
+        """残差スケーリング有効でも基本問題がクラッシュしないこと."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            residual_scaling=True,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
+        )
+        assert np.all(np.isfinite(result.u))
+
+
+# ==== 改良11: 接触力ランプ ====
+
+
+class TestContactForceRamp:
+    """接触力ランプ（S3改良11）のテスト."""
+
+    def test_contact_force_ramp_config_default(self):
+        """デフォルトで接触力ランプが無効."""
+        config = ContactConfig()
+        assert config.contact_force_ramp is False
+        assert config.contact_force_ramp_iters == 5
+
+    def test_contact_force_ramp_does_not_break(self):
+        """接触力ランプ有効でも基本問題がクラッシュしないこと."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=1e4,
+            contact_force_ramp=True,
+            contact_force_ramp_iters=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=50,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=1e4,
         )
         assert np.all(np.isfinite(result.u))
