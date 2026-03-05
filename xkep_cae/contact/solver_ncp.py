@@ -1247,9 +1247,45 @@ def newton_raphson_contact_ncp(
     # bisection_max_depth → max_step_cuts 統合（レガシー互換）
     _max_step_cuts = max(max_step_cuts, bisection_max_depth)
 
-    # k_pen の決定
+    # k_pen の決定（S3改良9: beam_ei/ea_l 自動推定をNCPソルバーに導入）
     if k_pen <= 0.0:
-        k_pen = manager.config.k_pen_scale
+        if manager.config.k_pen_mode in ("beam_ei", "ea_l"):
+            # 代表要素長の推定
+            _L_elems = []
+            for elem in connectivity:
+                n1, n2 = int(elem[0]), int(elem[1])
+                dxyz = node_coords_ref[n2] - node_coords_ref[n1]
+                _L_elems.append(float(np.linalg.norm(dxyz)))
+            _L_avg = float(np.mean(_L_elems)) if _L_elems else 1.0
+            _L_avg = max(_L_avg, 1e-30)
+
+            if manager.config.k_pen_mode == "beam_ei":
+                from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
+
+                k_pen = auto_beam_penalty_stiffness(
+                    manager.config.beam_E,
+                    manager.config.beam_I,
+                    _L_avg,
+                    n_contact_pairs=max(1, manager.n_pairs),
+                    scale=manager.config.k_pen_scale,
+                    scaling=manager.config.k_pen_scaling,
+                )
+            else:
+                from xkep_cae.contact.law_normal import auto_penalty_stiffness
+
+                k_pen = auto_penalty_stiffness(
+                    manager.config.beam_E,
+                    manager.config.beam_A,
+                    _L_avg,
+                    scale=manager.config.k_pen_scale,
+                )
+            if show_progress:
+                print(
+                    f"  NCP auto k_pen ({manager.config.k_pen_mode}): "
+                    f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
+                )
+        else:
+            k_pen = manager.config.k_pen_scale
 
     # --- k_pen continuation（S3改良8）---
     _k_pen_target = k_pen
@@ -1356,6 +1392,7 @@ def newton_raphson_contact_ncp(
         # --- 適応的緩和係数の初期化 ---
         _omega = omega_init if adaptive_omega else 1.0
         _prev_merit = float("inf")
+        _omega_stall_count = 0  # omega回復メカニズム用カウンタ
 
         # --- 接線予測子（前ステップの変位増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
@@ -1933,6 +1970,16 @@ def newton_raphson_contact_ncp(
                 else:
                     _omega = max(_omega * omega_shrink, omega_min)
                 _prev_merit = _merit
+
+                # omega回復メカニズム: 最小値に張り付いた場合の脱出
+                if _omega <= omega_min + 1e-15:
+                    _omega_stall_count += 1
+                    if _omega_stall_count >= 20:
+                        _omega = omega_init
+                        _prev_merit = float("inf")
+                        _omega_stall_count = 0
+                else:
+                    _omega_stall_count = 0
 
             # 変位ノルム判定
             u_norm = float(np.linalg.norm(u))

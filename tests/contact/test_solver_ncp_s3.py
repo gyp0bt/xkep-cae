@@ -574,6 +574,85 @@ class TestKPenContinuation:
         )
         assert np.all(np.isfinite(result.u))
 
+    def test_auto_kpen_beam_ei(self):
+        """beam_ei モードで k_pen が自動推定されること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=0.1,
+            k_pen_mode="beam_ei",
+            beam_E=200e9,
+            beam_I=1e-12,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        # k_pen=0 でも beam_ei で自動推定が走ることを確認
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=1,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+            k_pen=0.0,  # 0 → 自動推定
+        )
+        assert np.all(np.isfinite(result.u))
+
+    def test_continuation_with_kpen_auto(self):
+        """continuation + beam_ei k_pen自動推定が共存できること."""
+        setup = _make_crossing_beams_setup()
+        config = ContactConfig(
+            k_pen_scale=0.1,
+            k_pen_mode="beam_ei",
+            beam_E=200e9,
+            beam_I=1e-12,
+            k_pen_continuation=True,
+            k_pen_continuation_start=0.1,
+            k_pen_continuation_steps=3,
+        )
+        manager = ContactManager(config=config)
+
+        f_ext = np.zeros(setup["ndof"])
+        f_ext[7] = -1.0
+
+        def assemble_tangent(u):
+            return setup["K_T"].copy()
+
+        def assemble_internal(u):
+            return setup["K_T"] @ u
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            setup["fixed_dofs"],
+            assemble_tangent,
+            assemble_internal,
+            manager,
+            setup["node_coords"],
+            setup["connectivity"],
+            setup["radii"],
+            n_load_steps=4,
+            max_iter=30,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            show_progress=False,
+        )
+        assert np.all(np.isfinite(result.u))
+
     def test_continuation_with_adaptive_dt(self):
         """continuationと適応Δtが共存できること."""
         setup = _make_crossing_beams_setup()
