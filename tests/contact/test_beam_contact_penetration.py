@@ -37,7 +37,9 @@ from xkep_cae.contact.solver_hooks import (
     newton_raphson_with_contact,
 )
 
-pytestmark = pytest.mark.slow
+# DEPRECATED: newton_raphson_with_contact (ペナルティ/AL) は newton_raphson_contact_ncp (NCP) に
+# 置き換えられました。このテストは後方互換性のために残しますが、新規開発では使用しないでください。
+pytestmark = [pytest.mark.slow, pytest.mark.deprecated]
 
 # ====================================================================
 # ヘルパー: 交差梁モデル（貫入テスト用）
