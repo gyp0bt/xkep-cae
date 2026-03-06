@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2130テスト** — 2026-03-05時点
+**2154テスト** — 2026-03-06時点
 
 | 分野 | 内容 | 状態 |
 |------|------|------|
@@ -30,6 +30,7 @@
 | 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理 | 完了 |
 | GNN/PINN | 2D熱伝導サロゲートPoC（R²=0.995） | 完了 |
 | **大規模収束** | **19本NCP収束達成（径方向圧縮テスト）** | **37本以上へ拡張** |
+| **チューニング基盤** | TuningTaskスキーマ + 検証プロット5種 + JSON直列化 | AI自動チューニング |
 
 **推奨ソルバー構成**: NCP Semi-smooth Newton + Line contact + Mortar + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成リファレンス構成)）
 
@@ -38,8 +39,8 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全112件のstatus + テスト数推移 |
-| [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図15枚） |
+| [ステータス一覧](docs/status/status-index.md) | 全114件のstatus + テスト数推移 |
+| [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
 | [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
 | [使用例](docs/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
 
@@ -52,6 +53,7 @@
 | [contact/](xkep_cae/contact/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
 | [elements/](xkep_cae/elements/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
 | [mesh/](xkep_cae/mesh/README.md) | メッシュ生成 | 撚線/シース/被膜 |
+| [tuning/](xkep_cae/tuning/) | チューニングタスク | TuningTask/スケーリング/検証プロット |
 | [solver](xkep_cae/solver.py) | 非線形ソルバー | NR/弧長法 |
 
 ## インストール
