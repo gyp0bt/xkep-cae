@@ -2936,6 +2936,263 @@ def plot_dynamics_displacement_response():
 
 
 # =====================================================================
+# 撚線3D断面可視化 + 被膜/シース + 断面応力コンター
+# =====================================================================
+
+
+def plot_twisted_wire_3d_cross_section():
+    """撚線の3D断面可視化: ワイヤ断面 + 被膜 + シースの2D投影.
+
+    7本撚りメッシュの断面を z=0 と z=L/2 で切断し、
+    各素線の円形断面・被膜環・シース外筒を描画する。
+    さらに側面図（xz平面）でヘリカル中心線を描画。
+    """
+    plt = _setup_matplotlib()
+    from xkep_cae.mesh.twisted_wire import (
+        CoatingModel,
+        SheathModel,
+        compute_envelope_radius,
+        make_twisted_wire_mesh,
+        sheath_inner_radius,
+    )
+
+    # 7本撚りメッシュ
+    wire_d = 2.0e-3
+    pitch = 40.0e-3
+    length = pitch
+    n_elems = 32
+    mesh = make_twisted_wire_mesh(
+        n_strands=7,
+        wire_diameter=wire_d,
+        pitch=pitch,
+        length=length,
+        n_elems_per_strand=n_elems,
+    )
+    r_wire = wire_d / 2.0
+
+    # 被膜・シース
+    coating = CoatingModel(thickness=0.08e-3, E=3.0e9, nu=0.35, mu=0.2)
+    sheath = SheathModel(thickness=0.3e-3, E=70.0e9, nu=0.33, mu=0.15)
+    r_coat = r_wire + coating.thickness
+    r_env = compute_envelope_radius(mesh, coating=coating)
+    r_sheath_in = sheath_inner_radius(mesh, sheath, coating=coating)
+    r_sheath_out = r_sheath_in + sheath.thickness
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    theta_circ = np.linspace(0, 2 * np.pi, 64)
+
+    # --- 断面図 (z=0 と z=L/2) ---
+    for ax_idx, (z_cut, title) in enumerate(
+        [(0, "断面 z=0 (端部)"), (length / 2, "断面 z=L/2 (中央)")]
+    ):
+        ax = axes[ax_idx]
+        ax.set_aspect("equal")
+        ax.set_title(title, fontsize=11)
+
+        # 各素線の中心位置を z_cut で補間
+        for si in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[si]
+            coords = mesh.node_coords[ns:ne]
+            z_vals = coords[:, 2]
+            # z_cut に最も近い節点を見つけて補間
+            if z_cut <= z_vals[0]:
+                cx, cy = coords[0, 0], coords[0, 1]
+            elif z_cut >= z_vals[-1]:
+                cx, cy = coords[-1, 0], coords[-1, 1]
+            else:
+                idx = np.searchsorted(z_vals, z_cut) - 1
+                t_frac = (z_cut - z_vals[idx]) / (z_vals[idx + 1] - z_vals[idx])
+                cx = coords[idx, 0] + t_frac * (coords[idx + 1, 0] - coords[idx, 0])
+                cy = coords[idx, 1] + t_frac * (coords[idx + 1, 1] - coords[idx, 1])
+
+            # 素線芯（塗りつぶし）
+            ax.fill(
+                cx + r_wire * np.cos(theta_circ),
+                cy + r_wire * np.sin(theta_circ),
+                color="steelblue",
+                alpha=0.7,
+                edgecolor="navy",
+                linewidth=0.8,
+            )
+            # 被膜環
+            ax.plot(
+                cx + r_coat * np.cos(theta_circ),
+                cy + r_coat * np.sin(theta_circ),
+                color="orange",
+                linewidth=1.5,
+                label="被膜" if si == 0 else None,
+            )
+
+        # シース外筒
+        ax.plot(
+            r_sheath_in * np.cos(theta_circ),
+            r_sheath_in * np.sin(theta_circ),
+            "r--",
+            linewidth=1.5,
+            label="シース内面",
+        )
+        ax.plot(
+            r_sheath_out * np.cos(theta_circ),
+            r_sheath_out * np.sin(theta_circ),
+            "r-",
+            linewidth=2.0,
+            label="シース外面",
+        )
+
+        # エンベロープ
+        ax.plot(
+            r_env * np.cos(theta_circ),
+            r_env * np.sin(theta_circ),
+            "g:",
+            linewidth=1.0,
+            label="エンベロープ",
+        )
+
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        if ax_idx == 0:
+            ax.legend(fontsize=8, loc="upper right")
+
+    # --- 側面図（xz平面）: ヘリカル中心線 ---
+    ax = axes[2]
+    ax.set_title("側面図 (xz平面)", fontsize=11)
+    colors = plt.cm.Set1(np.linspace(0, 1, mesh.n_strands))
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        coords = mesh.node_coords[ns:ne]
+        label = f"#{si}" if si < 3 else (f"#{si}" if si == mesh.n_strands - 1 else None)
+        ax.plot(
+            coords[:, 2] * 1e3, coords[:, 0] * 1e3, color=colors[si], linewidth=1.0, label=label
+        )
+    ax.axhline(
+        y=r_sheath_out * 1e3, color="r", linestyle="-", linewidth=1.5, alpha=0.5, label="シース外面"
+    )
+    ax.axhline(y=-r_sheath_out * 1e3, color="r", linestyle="-", linewidth=1.5, alpha=0.5)
+    ax.set_xlabel("z [mm]")
+    ax.set_ylabel("x [mm]")
+    ax.legend(fontsize=7, loc="upper right", ncol=2)
+
+    fig.suptitle("7本撚線 断面構造: 素線 + 被膜 + シース", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "twisted_wire_cross_section.png")
+    plt.close(fig)
+    print("  -> twisted_wire_cross_section.png")
+
+
+def plot_fiber_stress_contour():
+    """円形断面のファイバー応力コンター図.
+
+    片持ち梁の固定端断面における繊維応力分布を可視化。
+    曲げにより上下で引張/圧縮の対称分布が現れることを確認。
+    """
+    plt = _setup_matplotlib()
+    from matplotlib.tri import Triangulation
+
+    from xkep_cae.elements.beam_timo3d import (
+        beam3d_section_forces,
+        timo_beam3d_ke_global,
+    )
+    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.fiber import FiberSection
+
+    # 片持ち梁パラメータ
+    n_elems = 10
+    L = 1.0
+    E = 200e9
+    nu = 0.3
+    G = E / (2.0 * (1.0 + nu))
+    d = 0.02  # 20mm直径
+    section = BeamSection.circle(d)
+    kappa = 5.0 / 6.0
+    P = 5000.0  # 先端荷重 [N]
+    R = d / 2.0
+
+    # 解を求める
+    n_nodes = n_elems + 1
+    ndof = n_nodes * 6
+    coords_all = np.zeros((n_nodes, 3))
+    coords_all[:, 2] = np.linspace(0, L, n_nodes)
+    connectivity = [(i, i + 1) for i in range(n_elems)]
+
+    K = np.zeros((ndof, ndof))
+    for n1, n2 in connectivity:
+        ec = coords_all[np.array([n1, n2])]
+        Ke = timo_beam3d_ke_global(
+            ec, E, G, section.A, section.Iy, section.Iz, section.J, kappa, kappa
+        )
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        K[np.ix_(edofs, edofs)] += Ke
+
+    f = np.zeros(ndof)
+    f[6 * (n_nodes - 1) + 1] = P  # y方向先端荷重
+
+    fixed = np.arange(6)
+    free = np.setdiff1d(np.arange(ndof), fixed)
+    u = np.zeros(ndof)
+    u[free] = np.linalg.solve(K[np.ix_(free, free)], f[free])
+
+    # 固定端要素(elem 0)と中央要素の断面力を取得
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # ファイバー断面を生成
+    fiber_sec = FiberSection.circle(d, nr=8, nt=16)
+
+    for ax_idx, (elem_idx, title_pos) in enumerate(
+        [
+            (0, "固定端 (z=0)"),
+            (n_elems // 2, f"中央 (z={L / 2:.1f})"),
+            (n_elems - 1, f"先端 (z={L:.1f})"),
+        ]
+    ):
+        n1, n2 = connectivity[elem_idx]
+        ec = coords_all[np.array([n1, n2])]
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        u_elem = u[edofs]
+        f1, f2 = beam3d_section_forces(
+            ec, u_elem, E, G, section.A, section.Iy, section.Iz, section.J, kappa, kappa
+        )
+
+        # 繊維応力 σ_i = N/A + My*z_i/Iy - Mz*y_i/Iz
+        # f1 は node1 側の断面力
+        sf = f1
+        sigma = (
+            sf.N / section.A + sf.My * fiber_sec.z / section.Iy - sf.Mz * fiber_sec.y / section.Iz
+        )
+
+        # Delaunay三角形分割
+        tri = Triangulation(fiber_sec.y * 1e3, fiber_sec.z * 1e3)
+
+        ax = axes[ax_idx]
+        vmax = max(abs(sigma.max()), abs(sigma.min()))
+        if vmax < 1e-6:
+            vmax = 1.0
+        contour = ax.tricontourf(
+            tri, sigma / 1e6, levels=20, cmap="RdBu_r", vmin=-vmax / 1e6, vmax=vmax / 1e6
+        )
+        ax.tricontour(tri, sigma / 1e6, levels=10, colors="k", linewidths=0.3, alpha=0.5)
+        ax.set_aspect("equal")
+        ax.set_title(f"{title_pos}\nN={sf.N:.0f}N, My={sf.My:.1f}Nm", fontsize=9)
+        ax.set_xlabel("y [mm]")
+        ax.set_ylabel("z [mm]")
+
+        # 断面外形
+        theta_c = np.linspace(0, 2 * np.pi, 64)
+        ax.plot(R * 1e3 * np.cos(theta_c), R * 1e3 * np.sin(theta_c), "k-", linewidth=1.5)
+
+        cb = fig.colorbar(contour, ax=ax, shrink=0.85)
+        cb.set_label("σ [MPa]")
+
+    fig.suptitle(
+        f"断面繊維応力分布 (片持ち梁 P={P / 1000:.0f}kN, L={L:.1f}m, d={d * 1e3:.0f}mm)",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "fiber_stress_cross_section.png")
+    plt.close(fig)
+    print("  -> fiber_stress_cross_section.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -2992,6 +3249,12 @@ def main():
 
     print("[Phase 5] 動的解析 — 変位応答")
     plot_dynamics_displacement_response()
+
+    print("[Phase 4.7] 撚線断面構造 — 被膜/シース")
+    plot_twisted_wire_3d_cross_section()
+
+    print("[Phase 4.7] 断面繊維応力コンター")
+    plot_fiber_stress_contour()
 
     print()
     print("Done. All verification plots generated.")
