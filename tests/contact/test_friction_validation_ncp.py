@@ -157,6 +157,7 @@ def _solve_ncp_friction_problem(
             use_line_search=True,
             line_search_max_steps=5,
             use_geometric_stiffness=True,
+            adjust_initial_penetration=True,
         ),
     )
 
@@ -178,6 +179,7 @@ def _solve_ncp_friction_problem(
         use_friction=True,
         mu=mu,
         mu_ramp_steps=mu_ramp_steps,
+        adaptive_timestepping=True,
     )
 
     return result, mgr, ndof_total, node_coords_ref

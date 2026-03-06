@@ -115,6 +115,7 @@ def _make_contact_manager(*, use_friction=False, mu=0.3):
             exclude_same_layer=False,
             midpoint_prescreening=True,
             linear_solver="auto",
+            adjust_initial_penetration=True,
         ),
     )
 
@@ -209,6 +210,7 @@ def _run_ncp_cyclic(
             f_ext_base=f_base,
             use_friction=mgr.config.use_friction,
             mu=mgr.config.mu,
+            adaptive_timestepping=True,
         )
 
         load_factors.append(target_lf)
