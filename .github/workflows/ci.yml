@@ -56,7 +56,7 @@ jobs:
 
       - name: Run fast tests (excluding slow)
         run: |
-          python -m pytest tests/ -v -m "not external and not slow" -x
+          python -m pytest tests/ -v -m "not external and not slow and not deprecated" -x
 
   # -------------------------------------------------------
   # slow テスト（接触・非線形・PINN・GNN比較）
