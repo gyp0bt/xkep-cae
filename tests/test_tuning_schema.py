@@ -227,6 +227,85 @@ class TestTuningResultAPI:
             assert loaded.runs[1].metrics["error"] == 0.002
 
 
+class TestTuningYAMLAPI:
+    """TuningTask / TuningResult の YAML 直列化テスト."""
+
+    def test_task_yaml_roundtrip(self):
+        """TuningTask の YAML 保存・復元が一致する."""
+        task = TuningTask(
+            name="yaml_test",
+            description="YAML往復テスト",
+            params=[
+                TuningParam("p1", 0.0, 1.0, default=0.5),
+                TuningParam("p2", 1.0, 10.0, default=5.0, log_scale=True),
+            ],
+            criteria=[
+                AcceptanceCriterion("converged", "eq", True, "収束確認"),
+            ],
+            fixed_params={"fixed_key": "fixed_val"},
+            tags=["test", "yaml"],
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "task.yaml"
+            task.save_yaml(path)
+            assert path.exists()
+
+            loaded = TuningTask.load_yaml(path)
+            assert loaded.name == "yaml_test"
+            assert loaded.param_names == ["p1", "p2"]
+            assert loaded.params[1].log_scale is True
+            assert loaded.criteria[0].op == "eq"
+            assert loaded.fixed_params["fixed_key"] == "fixed_val"
+            assert loaded.tags == ["test", "yaml"]
+
+    def test_result_yaml_roundtrip(self):
+        """TuningResult の YAML 保存・復元が一致する."""
+        task = TuningTask(
+            name="yaml_result_test",
+            description="test",
+            params=[TuningParam("p1", 0.0, 1.0, default=0.5)],
+            criteria=[AcceptanceCriterion("converged", "eq", True)],
+        )
+        result = TuningResult(task=task)
+        result.add_run(
+            TuningRun(
+                params={"p1": 0.3},
+                metrics={"converged": True, "error": 0.005},
+                time_series={"load_factor": [0.1, 0.5, 1.0]},
+            )
+        )
+        result.add_run(
+            TuningRun(
+                params={"p1": 0.7},
+                metrics={"converged": False, "error": 0.1},
+            )
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "result.yaml"
+            result.save_yaml(path)
+            assert path.exists()
+
+            loaded = TuningResult.load_yaml(path)
+            assert loaded.task.name == "yaml_result_test"
+            assert loaded.n_runs == 2
+            assert loaded.runs[0].params["p1"] == 0.3
+            assert loaded.runs[0].metrics["converged"] is True
+            assert loaded.runs[1].metrics["converged"] is False
+
+    def test_task_to_dict(self):
+        """TuningTask.to_dict の基本検証."""
+        task = TuningTask(
+            name="dict_test",
+            description="dict変換テスト",
+            params=[TuningParam("x", 0.0, 1.0)],
+            tags=["unit"],
+        )
+        d = task.to_dict()
+        assert d["name"] == "dict_test"
+        assert len(d["params"]) == 1
+        assert d["params"][0]["name"] == "x"
+
+
 class TestTuningPresetsAPI:
     """プリセットタスク定義のAPIテスト."""
 
@@ -262,8 +341,33 @@ class TestTuningExecutorAPI:
             execute_s3_benchmark,
             run_convergence_tuning,
             run_scaling_analysis,
+            run_sensitivity_analysis,
         )
 
         assert callable(execute_s3_benchmark)
         assert callable(run_scaling_analysis)
         assert callable(run_convergence_tuning)
+        assert callable(run_sensitivity_analysis)
+
+
+class TestOptunaTunerAPI:
+    """Optuna 連携の import/基本APIテスト."""
+
+    def test_import_optuna_tuner(self):
+        from xkep_cae.tuning.optuna_tuner import (
+            create_objective,
+            run_optuna_study,
+        )
+
+        assert callable(create_objective)
+        assert callable(run_optuna_study)
+
+    def test_create_objective_returns_callable(self):
+        """create_objective が呼び出し可能な関数を返す."""
+        from xkep_cae.tuning.optuna_tuner import create_objective
+        from xkep_cae.tuning.presets import s3_convergence_task
+
+        task = s3_convergence_task(7)
+        result = TuningResult(task=task)
+        obj = create_objective(task, result, n_strands=7)
+        assert callable(obj)
