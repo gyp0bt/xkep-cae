@@ -1,3 +1,5 @@
+# DEPRECATED: 旧ソルバー(run_contact_cyclic)使用。
+# NCP版ヒステリシステストを別途作成予定。
 """撚線ヒステリシス観測テスト.
 
 サイクリック荷重による撚線接触のヒステリシス挙動を確認する。
@@ -26,6 +28,8 @@ from xkep_cae.contact.solver_hooks import (
 from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 from xkep_cae.sections.beam import BeamSection
+
+pytestmark = [pytest.mark.deprecated]
 
 # === 共通パラメータ ===
 _E = 200e9

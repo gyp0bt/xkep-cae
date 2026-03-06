@@ -202,6 +202,7 @@ def export_bending_oscillation_inp(
         n_elems_per_strand=p["n_elems_per_strand"],
         n_pitches=p["n_pitches"],
         strand_diameter=sd_value,
+        min_elems_per_pitch=p.get("min_elems_per_pitch", 16),
     )
 
     # --- ノードセット: 素線ごと + 固定端 + 自由端 ---

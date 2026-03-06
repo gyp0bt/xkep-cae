@@ -16,7 +16,7 @@
 
 ## 現在地（2026-03-06）
 
-**2154テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装。19本NCP収束達成。TuningTaskスキーマ + 検証プロット5種 + 実行エンジン構築（CAE後処理AI基盤）。**
+**2170テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装。19本NCP収束達成。TuningTaskスキーマ + 検証プロット6種 + Optuna連携 + 旧ソルバーテストdeprecated化。**
 
 ### 到達点
 
@@ -135,6 +135,7 @@
 | チューニング実行エンジン | ✅ execute_s3_benchmark + グリッドサーチ + 感度分析（status-114,115） |
 | Optuna連携 | ✅ 自動チューニングループ基盤（create_objective/run_optuna_study）（status-115） |
 | 応力・曲率連続性テスト | ✅ 隣接要素間変化率チェック物理テスト11件（status-115） |
+| テスト失敗修正+deprecated追加 | ✅ block preconditioner修正、旧ソルバーテスト5ファイル+1クラス deprecated化（status-116） |
 
 **TODO**:
 - [ ] NCPソルバーの19本収束達成（改良1-11有効化でのチューニング）

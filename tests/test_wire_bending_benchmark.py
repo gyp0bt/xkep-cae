@@ -1,3 +1,5 @@
+# DEPRECATED: 旧ソルバー(newton_raphson_with_contact)使用の曲げ揺動ベンチマーク。
+# NCP版ベンチマークは xkep_cae/tuning/executor.py を参照。
 """曲げ揺動ベンチマーク テスト.
 
 少数素線（7本）で曲げ揺動ベンチマークの動作確認と速度計測を行う。
@@ -16,7 +18,7 @@ from xkep_cae.numerical_tests.wire_bending_benchmark import (
     run_bending_oscillation,
 )
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.deprecated]
 
 
 class TestBendingOscillationSmall:

@@ -507,6 +507,8 @@ def run_bending_oscillation(
     line_contact: bool = True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
     broadphase_margin: float = 0.01,
+    # メッシュ密度検査
+    min_elems_per_pitch: int = 16,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -577,6 +579,7 @@ def run_bending_oscillation(
         n_elems_per_strand=_n_elems_per_strand,
         n_pitches=n_pitches,
         strand_diameter=strand_diameter,
+        min_elems_per_pitch=min_elems_per_pitch,
     )
     timing.record(0, 0, -1, "mesh_generation", time.perf_counter() - t0)
 

@@ -9,6 +9,7 @@
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager
@@ -378,8 +379,13 @@ class TestNCPSolverConvergence:
         assert np.all(result.lambdas >= 0.0), "λ must be non-negative"
 
 
+@pytest.mark.deprecated
 class TestNCPSolverComparison:
-    """既存 AL ソルバーとの結果比較."""
+    """既存 AL ソルバーとの結果比較.
+
+    DEPRECATED: 旧ソルバー(newton_raphson_with_contact)との比較テスト。
+    NCP ソルバー単体テストは TestNCPSolverBasic / TestNCPSolverConvergence を参照。
+    """
 
     def test_displacement_consistency(self):
         """NCP と既存 AL ソルバーの変位が近いこと."""
