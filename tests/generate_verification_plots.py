@@ -1744,6 +1744,446 @@ def plot_contact_friction_stick_slip():
 
 
 # =====================================================================
+# Phase S3: チューニングタスク検証プロット
+# =====================================================================
+
+
+def _run_tuning_scaling():
+    """スケーリング分析データを生成（7本+19本）."""
+    from xkep_cae.tuning.executor import run_scaling_analysis
+
+    return run_scaling_analysis(
+        strand_counts=[7, 19],
+        auto_kpen=True,
+        lambda_n_max_factor=0.1,
+        al_relaxation=0.01,
+        k_pen_scaling="sqrt",
+        staged_activation=True,
+        g_on=0.0005,
+        g_off=0.001,
+        preserve_inactive_lambda=True,
+        no_deactivation_within_step=True,
+        penalty_growth_factor=1.0,
+        gap=0.0005,
+        use_block_solver=True,
+        adaptive_omega=True,
+        omega_min=0.01,
+        omega_max=0.3,
+        omega_growth=2.0,
+    )
+
+
+def plot_tuning_scaling_analysis(tuning_result=None):
+    """素線数スケーリング分析: DOF・計算時間・Newton反復数.
+
+    素線数増加に対するスケーリング挙動を3つのサブプロットで表示。
+    計算コストの支配項を特定するための基礎データ。
+    """
+    plt = _setup_matplotlib()
+
+    if tuning_result is None:
+        tuning_result = _run_tuning_scaling()
+
+    runs = tuning_result.runs
+    if not runs:
+        print("  -> スキップ（実行データなし）")
+        return tuning_result
+
+    n_strands_list = [r.metadata["n_strands"] for r in runs]
+    ndof_list = [r.metadata["ndof"] for r in runs]
+    time_list = [r.metrics["total_time_s"] for r in runs]
+    newton_list = [r.metrics["total_newton_iterations"] for r in runs]
+    converged_list = [r.metrics["converged"] for r in runs]
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig.suptitle("S3 チューニングタスク: スケーリング分析", fontsize=13)
+
+    # (a) DOF vs 素線数
+    ax = axes[0]
+    ax.plot(n_strands_list, ndof_list, "o-", color="steelblue", linewidth=2)
+    ax.set_xlabel("素線数")
+    ax.set_ylabel("自由度数 (DOF)")
+    ax.set_title("(a) DOF スケーリング")
+    for ns, nd in zip(n_strands_list, ndof_list, strict=True):
+        ax.annotate(
+            f"{nd}", (ns, nd), textcoords="offset points", xytext=(0, 10), ha="center", fontsize=8
+        )
+
+    # (b) 計算時間 vs 素線数
+    ax = axes[1]
+    colors = ["green" if c else "red" for c in converged_list]
+    ax.bar(range(len(n_strands_list)), time_list, color=colors, alpha=0.7)
+    ax.set_xticks(range(len(n_strands_list)))
+    ax.set_xticklabels([str(n) for n in n_strands_list])
+    ax.set_xlabel("素線数")
+    ax.set_ylabel("計算時間 (s)")
+    ax.set_title("(b) 計算時間 (緑=収束 / 赤=非収束)")
+
+    # (c) Newton反復数 vs 素線数
+    ax = axes[2]
+    ax.plot(n_strands_list, newton_list, "s-", color="darkorange", linewidth=2)
+    ax.set_xlabel("素線数")
+    ax.set_ylabel("合計Newton反復数")
+    ax.set_title("(c) Newton反復数")
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_scaling_analysis.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_scaling_analysis.png")
+    return tuning_result
+
+
+def plot_tuning_contact_topology(tuning_result=None):
+    """接触トポロジー進化: 活性ペア数・接触力・stick/slip比の時間推移.
+
+    荷重ステップに沿った接触状態の変遷を可視化。
+    接触の活性化パターンと安定性を評価する。
+    """
+    plt = _setup_matplotlib()
+
+    if tuning_result is None:
+        tuning_result = _run_tuning_scaling()
+
+    runs = tuning_result.runs
+    if not runs:
+        print("  -> スキップ（実行データなし）")
+        return tuning_result
+
+    n_plots = len(runs)
+    fig, axes = plt.subplots(n_plots, 3, figsize=(16, 5 * n_plots))
+    if n_plots == 1:
+        axes = axes.reshape(1, -1)
+    fig.suptitle("S3 チューニングタスク: 接触トポロジー進化", fontsize=13, y=1.02)
+
+    for row, run in enumerate(runs):
+        ns = run.metadata["n_strands"]
+        ts = run.time_series
+
+        # (a) 活性ペア数
+        ax = axes[row, 0]
+        if "active_pairs" in ts:
+            steps = list(range(len(ts["active_pairs"])))
+            ax.step(steps, ts["active_pairs"], where="mid", color="steelblue", linewidth=2)
+            ax.fill_between(steps, ts["active_pairs"], alpha=0.2, step="mid", color="steelblue")
+        ax.set_xlabel("荷重ステップ")
+        ax.set_ylabel("活性接触ペア数")
+        ax.set_title(f"({chr(97 + row * 3)}) {ns}本: 活性ペア")
+
+        # (b) 接触力
+        ax = axes[row, 1]
+        if "contact_force" in ts:
+            steps = list(range(len(ts["contact_force"])))
+            ax.plot(steps, ts["contact_force"], "o-", color="crimson", linewidth=1.5, markersize=4)
+        if "total_normal_force" in ts:
+            steps2 = list(range(len(ts["total_normal_force"])))
+            ax.plot(
+                steps2,
+                ts["total_normal_force"],
+                "^--",
+                color="darkorange",
+                linewidth=1.5,
+                markersize=4,
+                label="法線力合計",
+            )
+            ax.legend(fontsize=8)
+        ax.set_xlabel("荷重ステップ")
+        ax.set_ylabel("接触力")
+        ax.set_title(f"({chr(98 + row * 3)}) {ns}本: 接触力推移")
+
+        # (c) 荷重係数
+        ax = axes[row, 2]
+        if "load_factor" in ts:
+            steps = list(range(len(ts["load_factor"])))
+            ax.plot(steps, ts["load_factor"], "D-", color="forestgreen", linewidth=2, markersize=4)
+        ax.set_xlabel("荷重ステップ")
+        ax.set_ylabel("荷重係数")
+        ax.set_title(f"({chr(99 + row * 3)}) {ns}本: 荷重係数")
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_contact_topology.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_contact_topology.png")
+    return tuning_result
+
+
+def plot_tuning_timing_breakdown(tuning_result=None):
+    """工程別タイミング内訳: 各素線数の処理時間をスタックバーで表示.
+
+    ボトルネック工程の特定とスケーリング効率の分析に使用。
+    """
+    plt = _setup_matplotlib()
+
+    if tuning_result is None:
+        tuning_result = _run_tuning_scaling()
+
+    runs = tuning_result.runs
+    if not runs:
+        print("  -> スキップ（実行データなし）")
+        return tuning_result
+
+    # 工程名とカラーマップ
+    phase_keys = [
+        "time_broadphase",
+        "time_geometry_update",
+        "time_contact_force",
+        "time_contact_stiffness",
+        "time_structural_internal_force",
+        "time_structural_tangent",
+        "time_bc_apply",
+        "time_linear_solve",
+        "time_line_search",
+        "time_outer_convergence_check",
+    ]
+    phase_labels = [
+        "Broadphase",
+        "Geometry",
+        "Contact F",
+        "Contact K",
+        "Structural F",
+        "Structural K",
+        "BC Apply",
+        "Linear Solve",
+        "Line Search",
+        "Outer Check",
+    ]
+    colors = plt.cm.tab20(np.linspace(0, 1, len(phase_keys)))
+
+    n_strands_list = [r.metadata["n_strands"] for r in runs]
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig.suptitle("S3 チューニングタスク: 工程別タイミング内訳", fontsize=13)
+
+    # (a) 絶対時間スタックバー
+    ax = axes[0]
+    x = np.arange(len(runs))
+    bottoms = np.zeros(len(runs))
+    for pi, (pk, pl) in enumerate(zip(phase_keys, phase_labels, strict=True)):
+        vals = [r.metrics.get(pk, 0.0) for r in runs]
+        ax.bar(x, vals, bottom=bottoms, color=colors[pi], label=pl, width=0.6)
+        bottoms += np.array(vals)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{n}本" for n in n_strands_list])
+    ax.set_xlabel("素線数")
+    ax.set_ylabel("処理時間 (s)")
+    ax.set_title("(a) 絶対時間")
+    ax.legend(fontsize=7, ncol=2, loc="upper left")
+
+    # (b) 割合スタックバー
+    ax = axes[1]
+    bottoms = np.zeros(len(runs))
+    for pi, (pk, pl) in enumerate(zip(phase_keys, phase_labels, strict=True)):
+        vals = [r.metrics.get(pk, 0.0) for r in runs]
+        totals = [r.metrics.get("total_time_s", 1.0) for r in runs]
+        ratios = [v / t * 100 if t > 0 else 0 for v, t in zip(vals, totals, strict=True)]
+        ax.bar(x, ratios, bottom=bottoms, color=colors[pi], label=pl, width=0.6)
+        bottoms += np.array(ratios)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{n}本" for n in n_strands_list])
+    ax.set_xlabel("素線数")
+    ax.set_ylabel("割合 (%)")
+    ax.set_title("(b) 工程比率")
+    ax.set_ylim(0, 110)
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_timing_breakdown.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_timing_breakdown.png")
+    return tuning_result
+
+
+def plot_tuning_wire_cross_section(tuning_result=None):
+    """ワイヤ断面2D投影: 接触ペアを線で結んだ断面図.
+
+    撚線の幾何学的配置と接触パターンを直感的に可視化。
+    CAE後処理の「AI目視検査」の基礎。
+    """
+    plt = _setup_matplotlib()
+    from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
+
+    if tuning_result is None:
+        tuning_result = _run_tuning_scaling()
+
+    runs = tuning_result.runs
+    if not runs:
+        print("  -> スキップ（実行データなし）")
+        return tuning_result
+
+    n_plots = len(runs)
+    fig, axes = plt.subplots(1, n_plots, figsize=(7 * n_plots, 6))
+    if n_plots == 1:
+        axes = [axes]
+    fig.suptitle("S3 チューニングタスク: 断面接触マップ", fontsize=13)
+
+    wire_d = 0.002
+    pitch = 0.040
+
+    for idx, run in enumerate(runs):
+        ax = axes[idx]
+        ns = run.metadata["n_strands"]
+
+        mesh = make_twisted_wire_mesh(
+            ns,
+            wire_d,
+            pitch,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0005,
+            min_elems_per_pitch=0,
+        )
+
+        # 各素線の中点（z=pitch/2 付近）の断面位置
+        strand_centers = []
+        for sid in range(mesh.n_strands):
+            nodes = mesh.strand_nodes(sid)
+            mid_node = nodes[len(nodes) // 2]
+            pos = mesh.node_coords[mid_node]
+            strand_centers.append(pos[:2])  # x, y
+        strand_centers = np.array(strand_centers)
+
+        # 素線円を描画
+        layer_map = {}
+        for info in mesh.strand_infos:
+            layer_map[info.strand_id] = info.layer
+
+        layer_colors = plt.cm.Set2(np.linspace(0, 0.8, max(layer_map.values()) + 1))
+        for sid, (cx, cy) in enumerate(strand_centers):
+            layer = layer_map.get(sid, 0)
+            circle = plt.Circle(
+                (cx, cy), wire_d / 2, fill=False, color=layer_colors[layer], linewidth=1.5
+            )
+            ax.add_patch(circle)
+            ax.annotate(str(sid), (cx, cy), ha="center", va="center", fontsize=6)
+
+        # 接触ペアを線で表示（素線間を赤線で接続）
+        n_active = run.metrics.get("n_active_pairs", 0)
+        if n_active > 0:
+            # 素線間接触: 隣接層間の素線を接続
+            for si in range(ns):
+                for sj in range(si + 1, ns):
+                    li = layer_map.get(si, 0)
+                    lj = layer_map.get(sj, 0)
+                    if abs(li - lj) <= 1 and li != lj:
+                        # 隣接層間ペア → 接触線を描画
+                        ci = strand_centers[si]
+                        cj = strand_centers[sj]
+                        dist = np.linalg.norm(ci - cj)
+                        if dist < wire_d * 2.5:  # 近接ペアのみ
+                            ax.plot([ci[0], cj[0]], [ci[1], cj[1]], "r-", alpha=0.4, linewidth=0.8)
+
+        ax.set_aspect("equal")
+        margin = wire_d * 2
+        if len(strand_centers) > 0:
+            ax.set_xlim(strand_centers[:, 0].min() - margin, strand_centers[:, 0].max() + margin)
+            ax.set_ylim(strand_centers[:, 1].min() - margin, strand_centers[:, 1].max() + margin)
+        ax.set_xlabel("x (m)")
+        ax.set_ylabel("y (m)")
+        conv_str = "収束" if run.metrics["converged"] else "非収束"
+        ax.set_title(
+            f"{ns}本撚り ({conv_str})\n"
+            f"活性ペア={n_active}, 貫入比={run.metrics['max_penetration_ratio']:.3f}",
+            fontsize=10,
+        )
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_wire_cross_section.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_wire_cross_section.png")
+    return tuning_result
+
+
+def plot_tuning_acceptance_summary(tuning_result=None):
+    """合格判定サマリー: 各基準の達成状況をヒートマップで表示.
+
+    TuningTask の AcceptanceCriterion に対する各実行の合否を
+    一覧表示し、パラメータチューニングの進捗を俯瞰する。
+    """
+    plt = _setup_matplotlib()
+
+    if tuning_result is None:
+        tuning_result = _run_tuning_scaling()
+
+    runs = tuning_result.runs
+    task = tuning_result.task
+    if not runs or not task.criteria:
+        print("  -> スキップ（データ不足）")
+        return tuning_result
+
+    # 判定マトリクス: rows=runs, cols=criteria
+    criteria_names = [c.metric for c in task.criteria]
+    n_runs = len(runs)
+    n_criteria = len(criteria_names)
+    matrix = np.zeros((n_runs, n_criteria))
+
+    for ri, run in enumerate(runs):
+        verdicts = run.evaluate_criteria(task.criteria)
+        for ci, cname in enumerate(criteria_names):
+            matrix[ri, ci] = 1.0 if verdicts.get(cname, False) else 0.0
+
+    fig, ax = plt.subplots(figsize=(max(8, n_criteria * 2), max(4, n_runs * 1.5)))
+    fig.suptitle("S3 チューニングタスク: 合格判定サマリー", fontsize=13)
+
+    # ヒートマップ
+    from matplotlib.colors import ListedColormap
+
+    cmap = ListedColormap(["#ff6b6b", "#51cf66"])
+    ax.imshow(matrix, cmap=cmap, aspect="auto", vmin=0, vmax=1)
+
+    # ラベル
+    run_labels = [f"{r.metadata.get('n_strands', '?')}本" for r in runs]
+    ax.set_yticks(range(n_runs))
+    ax.set_yticklabels(run_labels)
+    ax.set_xticks(range(n_criteria))
+    ax.set_xticklabels(criteria_names, rotation=45, ha="right")
+
+    # セル内にPass/Fail表示
+    for ri in range(n_runs):
+        for ci in range(n_criteria):
+            cname = criteria_names[ci]
+            val = runs[ri].metrics.get(cname, "N/A")
+            label = "Pass" if matrix[ri, ci] > 0.5 else "Fail"
+            if isinstance(val, bool):
+                val_str = str(val)
+            elif isinstance(val, float):
+                val_str = f"{val:.4f}"
+            else:
+                val_str = str(val)
+            ax.text(
+                ci,
+                ri,
+                f"{label}\n({val_str})",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="white" if matrix[ri, ci] < 0.5 else "black",
+            )
+
+    # 基準の詳細をフッターに表示
+    footer_lines = []
+    for c in task.criteria:
+        footer_lines.append(f"  {c.metric}: {c.op} {c.target} — {c.description}")
+    fig.text(
+        0.02,
+        -0.02,
+        "\n".join(footer_lines),
+        fontsize=7,
+        verticalalignment="top",
+        family="monospace",
+    )
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_acceptance_summary.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_acceptance_summary.png")
+
+    # JSON保存
+    json_path = OUTPUT_DIR / "tuning_result.json"
+    tuning_result.save_json(json_path)
+    print(f"  -> {json_path.name}")
+    return tuning_result
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -1783,6 +2223,13 @@ def main():
     plot_contact_crossing_beam()
     plot_contact_penetration_control()
     plot_contact_friction_stick_slip()
+
+    print("[Phase S3] チューニングタスク検証")
+    tuning_result = plot_tuning_scaling_analysis()
+    plot_tuning_contact_topology(tuning_result)
+    plot_tuning_timing_breakdown(tuning_result)
+    plot_tuning_wire_cross_section(tuning_result)
+    plot_tuning_acceptance_summary(tuning_result)
 
     print()
     print("Done. All verification plots generated.")
