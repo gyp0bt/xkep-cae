@@ -28,6 +28,9 @@ from xkep_cae.numerical_tests.wire_bending_benchmark import (
     _compute_kappa,
 )
 
+# プログラムテスト: 粗いメッシュで密度チェックをスキップ
+_TEST_PARAMS = {"min_elems_per_pitch": 0}
+
 
 class TestMaterialParameterization:
     """カテゴリB+C: E/nu パラメータ化テスト."""
@@ -70,7 +73,7 @@ class TestMetadataExportImport:
         )
 
         out_dir = tmp_path / "test_roundtrip"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
 
         # 基本パラメータ
@@ -107,7 +110,7 @@ class TestMetadataExportImport:
             load_metadata_from_inp,
         )
 
-        custom_params = {"E": 70e9, "nu": 0.33}
+        custom_params = {"E": 70e9, "nu": 0.33, **_TEST_PARAMS}
         out_dir = tmp_path / "custom_mat"
         inp_path = export_bending_oscillation_inp(3, out_dir, params=custom_params)
         meta = load_metadata_from_inp(inp_path)
@@ -122,7 +125,7 @@ class TestMetadataExportImport:
         )
 
         out_dir = tmp_path / "cat_d"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
 
         assert meta["k_t_ratio"] == 0.1
@@ -150,7 +153,7 @@ class TestOutputSettingsMetadata:
         )
 
         out_dir = tmp_path / "output_rt"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
 
         # 全出力設定がメタデータに記録されている
@@ -181,6 +184,7 @@ class TestOutputSettingsMetadata:
             "output_gif_dpi": 150,
             "output_gif_duration": 500,
             "output_contact_graph_fps": 5,
+            **_TEST_PARAMS,
         }
         out_dir = tmp_path / "custom_output"
         inp_path = export_bending_oscillation_inp(3, out_dir, params=custom_params)
@@ -201,7 +205,7 @@ class TestOutputSettingsMetadata:
         from scripts.run_bending_oscillation import export_bending_oscillation_inp
 
         out_dir = tmp_path / "animation"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         content = inp_path.read_text()
         assert "*OUTPUT, FIELD ANIMATION" in content
 
@@ -218,7 +222,7 @@ class TestInpValidation:
         )
 
         out_dir = tmp_path / "consistent"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
         overrides = _validate_inp_vs_metadata(inp_path, meta)
 
@@ -235,7 +239,7 @@ class TestInpValidation:
         )
 
         out_dir = tmp_path / "mismatch_E"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
 
         # メタデータの E を書き換え（.inp の *ELASTIC は 200e9 のまま）
         meta = load_metadata_from_inp(inp_path)
@@ -254,7 +258,7 @@ class TestInpValidation:
         )
 
         out_dir = tmp_path / "mismatch_nu"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
         meta["nu"] = 0.4  # 意図的に不一致
 
@@ -271,7 +275,7 @@ class TestInpValidation:
         )
 
         out_dir = tmp_path / "nodes"
-        inp_path = export_bending_oscillation_inp(3, out_dir)
+        inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
         meta = load_metadata_from_inp(inp_path)
         overrides = _validate_inp_vs_metadata(inp_path, meta)
 
