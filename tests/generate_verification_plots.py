@@ -3193,6 +3193,302 @@ def plot_fiber_stress_contour():
 
 
 # =====================================================================
+# 3D梁表面レンダリング — 撚線パイプ形状 + 応力/曲率コンター
+# =====================================================================
+
+
+def _beam_surface_mesh(coords, radius, n_circ=12):
+    """梁中心線座標列から円管表面メッシュを生成.
+
+    Args:
+        coords: (n_pts, 3) 中心線座標
+        radius: パイプ半径
+        n_circ: 円周方向分割数
+
+    Returns:
+        X, Y, Z: (n_pts, n_circ) の表面座標
+    """
+    n_pts = len(coords)
+    theta = np.linspace(0, 2 * np.pi, n_circ, endpoint=False)
+
+    X = np.zeros((n_pts, n_circ))
+    Y = np.zeros((n_pts, n_circ))
+    Z = np.zeros((n_pts, n_circ))
+
+    for i in range(n_pts):
+        # 接線ベクトル
+        if i == 0:
+            tang = coords[1] - coords[0]
+        elif i == n_pts - 1:
+            tang = coords[-1] - coords[-2]
+        else:
+            tang = coords[i + 1] - coords[i - 1]
+        tang = tang / (np.linalg.norm(tang) + 1e-30)
+
+        # 法線・従法線（Frenet近似）
+        if abs(tang[2]) < 0.9:
+            up = np.array([0.0, 0.0, 1.0])
+        else:
+            up = np.array([1.0, 0.0, 0.0])
+        n1 = np.cross(tang, up)
+        n1 = n1 / (np.linalg.norm(n1) + 1e-30)
+        n2 = np.cross(tang, n1)
+
+        for j, th in enumerate(theta):
+            offset = radius * (np.cos(th) * n1 + np.sin(th) * n2)
+            X[i, j] = coords[i, 0] + offset[0]
+            Y[i, j] = coords[i, 1] + offset[1]
+            Z[i, j] = coords[i, 2] + offset[2]
+
+    return X, Y, Z
+
+
+def plot_twisted_wire_3d_surface():
+    """撚線の3D表面レンダリング（パイプ形状 + 曲率コンター）."""
+    plt = _setup_matplotlib()
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
+
+    wire_d = 2.0e-3
+    pitch = 40.0e-3
+    mesh = make_twisted_wire_mesh(
+        n_strands=7,
+        wire_diameter=wire_d,
+        pitch=pitch,
+        length=pitch,
+        n_elems_per_strand=32,
+    )
+    r_wire = wire_d / 2.0
+    n_circ = 12
+
+    fig = plt.figure(figsize=(16, 10))
+
+    # --- 1. 3D表面レンダリング（全体） ---
+    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+    colors_strand = plt.cm.Set2(np.linspace(0, 1, mesh.n_strands))
+
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        coords = mesh.node_coords[ns:ne]
+        Xs, Ys, Zs = _beam_surface_mesh(coords, r_wire, n_circ)
+
+        # Poly3DCollectionでサーフェスを描画
+        for i in range(len(coords) - 1):
+            for j in range(n_circ):
+                j_next = (j + 1) % n_circ
+                verts = [
+                    [Xs[i, j], Ys[i, j], Zs[i, j]],
+                    [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
+                    [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
+                    [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
+                ]
+                poly = Poly3DCollection(
+                    [verts],
+                    alpha=0.7,
+                    facecolor=colors_strand[si],
+                    edgecolor="none",
+                )
+                ax1.add_collection3d(poly)
+
+    # 軸範囲
+    all_coords = mesh.node_coords
+    margin = 3 * r_wire
+    ax1.set_xlim(all_coords[:, 0].min() - margin, all_coords[:, 0].max() + margin)
+    ax1.set_ylim(all_coords[:, 1].min() - margin, all_coords[:, 1].max() + margin)
+    ax1.set_zlim(all_coords[:, 2].min(), all_coords[:, 2].max())
+    ax1.set_xlabel("x [m]")
+    ax1.set_ylabel("y [m]")
+    ax1.set_zlabel("z [m]")
+    ax1.set_title("7本撚線 3Dパイプ表面", fontsize=11)
+    ax1.view_init(elev=25, azim=45)
+
+    # --- 2. 曲率コンター付き3D表面（中心素線のみ） ---
+    ax2 = fig.add_subplot(1, 2, 2, projection="3d")
+
+    # 全素線の曲率をカラーマップで表示
+    sm = plt.cm.ScalarMappable(cmap="coolwarm")
+    all_curvatures = []
+
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        coords = mesh.node_coords[ns:ne]
+
+        # 離散曲率: κ = |d²r/ds²| ≈ |Δt/Δs|
+        curvature = np.zeros(len(coords))
+        for k in range(1, len(coords) - 1):
+            t_prev = coords[k] - coords[k - 1]
+            t_next = coords[k + 1] - coords[k]
+            ds = (np.linalg.norm(t_prev) + np.linalg.norm(t_next)) / 2.0
+            if ds > 1e-15:
+                dt = t_next / (np.linalg.norm(t_next) + 1e-30) - t_prev / (
+                    np.linalg.norm(t_prev) + 1e-30
+                )
+                curvature[k] = np.linalg.norm(dt) / ds
+        curvature[0] = curvature[1]
+        curvature[-1] = curvature[-2]
+        all_curvatures.append(curvature)
+
+    kappa_max = max(c.max() for c in all_curvatures)
+    if kappa_max < 1e-15:
+        kappa_max = 1.0
+    sm.set_clim(0, kappa_max)
+
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        coords = mesh.node_coords[ns:ne]
+        curvature = all_curvatures[si]
+        Xs, Ys, Zs = _beam_surface_mesh(coords, r_wire, n_circ)
+
+        for i in range(len(coords) - 1):
+            kappa_avg = (curvature[i] + curvature[i + 1]) / 2.0
+            color = sm.to_rgba(kappa_avg)
+            for j in range(n_circ):
+                j_next = (j + 1) % n_circ
+                verts = [
+                    [Xs[i, j], Ys[i, j], Zs[i, j]],
+                    [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
+                    [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
+                    [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
+                ]
+                poly = Poly3DCollection([verts], alpha=0.8, facecolor=color, edgecolor="none")
+                ax2.add_collection3d(poly)
+
+    ax2.set_xlim(all_coords[:, 0].min() - margin, all_coords[:, 0].max() + margin)
+    ax2.set_ylim(all_coords[:, 1].min() - margin, all_coords[:, 1].max() + margin)
+    ax2.set_zlim(all_coords[:, 2].min(), all_coords[:, 2].max())
+    ax2.set_xlabel("x [m]")
+    ax2.set_ylabel("y [m]")
+    ax2.set_zlabel("z [m]")
+    ax2.set_title("曲率コンター κ [1/m]", fontsize=11)
+    ax2.view_init(elev=25, azim=45)
+
+    # カラーバー
+    cbar = fig.colorbar(sm, ax=ax2, shrink=0.6, pad=0.1)
+    cbar.set_label("κ [1/m]")
+
+    fig.suptitle("撚線3D梁表面レンダリング + 曲率コンター", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "twisted_wire_3d_surface.png")
+    plt.close(fig)
+    print("  -> twisted_wire_3d_surface.png")
+
+
+def plot_beam_3d_stress_contour():
+    """片持ち梁の3D表面に応力コンターを描画."""
+    plt = _setup_matplotlib()
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
+    from xkep_cae.sections.beam import BeamSection
+
+    L = 1.0
+    E = 200e9
+    nu = 0.3
+    G = E / (2.0 * (1.0 + nu))
+    d = 0.04
+    section = BeamSection.circle(d)
+    kappa = 5.0 / 6.0
+    P = 10000.0
+    n_elems = 20
+    n_nodes = n_elems + 1
+    ndof = n_nodes * 6
+    r = d / 2.0
+
+    # 節点座標（z軸方向）
+    coords_all = np.zeros((n_nodes, 3))
+    coords_all[:, 2] = np.linspace(0, L, n_nodes)
+    connectivity = [(i, i + 1) for i in range(n_elems)]
+
+    # 剛性行列アセンブリ
+    K = np.zeros((ndof, ndof))
+    for n1, n2 in connectivity:
+        ec = coords_all[np.array([n1, n2])]
+        Ke = timo_beam3d_ke_global(
+            ec, E, G, section.A, section.Iy, section.Iz, section.J, kappa, kappa
+        )
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        K[np.ix_(edofs, edofs)] += Ke
+
+    f = np.zeros(ndof)
+    f[6 * (n_nodes - 1) + 1] = P  # y方向先端荷重
+
+    fixed = np.arange(6)
+    free = np.setdiff1d(np.arange(ndof), fixed)
+    u = np.zeros(ndof)
+    u[free] = np.linalg.solve(K[np.ix_(free, free)], f[free])
+
+    # 変形後座標
+    deformed = coords_all.copy()
+    for i in range(n_nodes):
+        deformed[i] += u[6 * i : 6 * i + 3]
+
+    # 各要素の曲げ応力（最外縁）: σ = M*y/I, M ≈ P*(L-z)
+    sigma_nodes = np.zeros(n_nodes)
+    for i in range(n_nodes):
+        z_pos = coords_all[i, 2]
+        M = P * (L - z_pos)
+        sigma_nodes[i] = M * r / section.Iy  # 最大曲げ応力
+
+    # 3Dパイプ表面生成
+    n_circ = 16
+    Xs, Ys, Zs = _beam_surface_mesh(deformed, r, n_circ)
+
+    fig = plt.figure(figsize=(14, 8))
+    ax = fig.add_subplot(111, projection="3d")
+
+    sigma_max = sigma_nodes.max()
+    if sigma_max < 1e-6:
+        sigma_max = 1.0
+    sm = plt.cm.ScalarMappable(cmap="jet", norm=plt.Normalize(0, sigma_max / 1e6))
+
+    for i in range(n_nodes - 1):
+        sigma_avg = (sigma_nodes[i] + sigma_nodes[i + 1]) / 2.0
+        color = sm.to_rgba(sigma_avg / 1e6)
+        for j in range(n_circ):
+            j_next = (j + 1) % n_circ
+            verts = [
+                [Xs[i, j], Ys[i, j], Zs[i, j]],
+                [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
+                [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
+                [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
+            ]
+            poly = Poly3DCollection([verts], alpha=0.85, facecolor=color, edgecolor="none")
+            ax.add_collection3d(poly)
+
+    # 未変形形状を線で表示
+    ax.plot(
+        coords_all[:, 0],
+        coords_all[:, 1],
+        coords_all[:, 2],
+        "k--",
+        linewidth=1,
+        alpha=0.5,
+        label="未変形",
+    )
+
+    margin_3d = 2 * r
+    y_range = max(abs(deformed[:, 1].max()), abs(deformed[:, 1].min())) + margin_3d
+    ax.set_xlim(-y_range, y_range)
+    ax.set_ylim(-y_range, y_range)
+    ax.set_zlim(0, L)
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.set_zlabel("z [m]")
+    ax.set_title(f"片持ち梁3D応力コンター (P={P / 1000:.0f}kN, d={d * 1e3:.0f}mm)", fontsize=12)
+    ax.view_init(elev=20, azim=-60)
+    ax.legend(fontsize=9)
+
+    cbar = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.1)
+    cbar.set_label("σ_bending [MPa]")
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "beam_3d_stress_contour.png")
+    plt.close(fig)
+    print("  -> beam_3d_stress_contour.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -3255,6 +3551,12 @@ def main():
 
     print("[Phase 4.7] 断面繊維応力コンター")
     plot_fiber_stress_contour()
+
+    print("[3D] 撚線3D梁表面レンダリング + 曲率コンター")
+    plot_twisted_wire_3d_surface()
+
+    print("[3D] 片持ち梁3D応力コンター")
+    plot_beam_3d_stress_contour()
 
     print()
     print("Done. All verification plots generated.")

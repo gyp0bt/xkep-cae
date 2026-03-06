@@ -99,6 +99,37 @@ AI駆動開発でもこのプロセスを再現する:
 - 図は `tests/generate_verification_plots.py` で生成（matplotlib → PNG）
 - `pytest` 実行時にはプロットを生成しない（図生成は別スクリプト）
 
+### 3D可視化検証（必須）
+
+新しい要素・接触・撚線機能を実装した際は、以下の3Dレンダリング検証を**必ず**実施すること。
+
+1. **3D梁表面レンダリング**: `_beam_surface_mesh()` で梁中心線からパイプ形状を生成し、`Poly3DCollection` で3D表示。変形メッシュの滑らかさ・対称性を確認
+2. **応力/曲率コンター**: 梁表面に応力値・曲率をカラーマップで表示。隣接要素間の値変化が連続的であることを確認
+3. **接触力ベクトル**: 接触ペア間の法線力・摩擦力を矢印（quiver3D）で表示し、方向と大きさの妥当性を確認
+
+**実施ルール**:
+- 新機能追加時は `tests/generate_verification_plots.py` に対応する3Dプロット関数を追加
+- `docs/verification/` に出力PNGを保存し、statusファイルで結果を参照
+- 撚線テスト（7本以上）では必ず3D表面レンダリングで変形形状を確認
+- 物理テストの定量チェック（隣接要素間の値変化率、変形の滑らかさ指標）も併用
+
+**利用可能な3Dプロット**:
+- `plot_twisted_wire_3d_surface()`: 撚線3Dパイプ表面 + 曲率コンター
+- `plot_beam_3d_stress_contour()`: 片持ち梁3D応力コンター（変形形状付き）
+
+### NCP接触テストの推奨構成
+
+NCPソルバーを使う接触テストでは、以下のS3改良機能を**原則有効化**すること。
+
+| パラメータ | 推奨値 | 説明 |
+|-----------|-------|------|
+| `adaptive_timestepping` | `True` | 自動安定時間増分制御 |
+| `adjust_initial_penetration` | `True` | 初期貫入オフセット補正 |
+| `contact_force_ramp` | `True`（大規模問題） | 接触力ランプ |
+| `k_pen_continuation` | `True`（大規模問題） | ペナルティ剛性continuation |
+
+ばねモデルなど単純な接触問題でも `adaptive_timestepping=True` と `adjust_initial_penetration=True` は有効化する。
+
 ## プロジェクト構成
 
 ```
@@ -131,7 +162,7 @@ docs/
 
 ## 現在の状態
 
-**2251テスト（fast: 1690 / slow: 343 + deprecated: 218）** — 2026-03-06
+**2261テスト（fast: 1689 / slow: 354 + deprecated: 218）** — 2026-03-06
 
 FEM基盤（梁/平面/固体要素）、非線形（幾何学的/材料）、動的解析、梁–梁接触（NCP/Mortar/Line contact/摩擦）、撚線モデル（7本撚り収束/被膜/シース）、高速化基盤（COO/CSR/共有メモリ並列/ブロック前処理）、GNN/PINNサロゲートPoC — 全て完了。
 
