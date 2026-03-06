@@ -16,7 +16,7 @@
 
 ## 現在地（2026-03-06）
 
-**2170テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装。19本NCP収束達成。TuningTaskスキーマ + 検証プロット6種 + Optuna連携 + 旧ソルバーテストdeprecated化。**
+**2197テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装。19本NCP収束達成。TuningTaskスキーマ + 検証プロット6種 + Optuna連携 + 旧ソルバーテストdeprecated化 + 動的解析物理テスト + Generalized-α法。**
 
 ### 到達点
 
@@ -24,7 +24,7 @@
 |------|--------|------|
 | FEM要素 | 梁（EB/Timo/CR/Cosserat）+ 平面（Q4/TRI）+ 固体（HEX8） | 解析解一致 |
 | 非線形 | 幾何学的非線形（NR/弧長/CR/TL/UL）+ 弾塑性 + ファイバーモデル | Abaqus比較 |
-| 動的解析 | Newmark-β/HHT-α/陽解法/モーダル減衰 | 解析解一致 |
+| 動的解析 | Newmark-β/HHT-α/Generalized-α/陽解法/モーダル減衰 | 解析解一致 |
 | 接触 | NCP Semi-smooth Newton + Line contact + Mortar + Coulomb摩擦 | 7本撚り収束 |
 | 撚線 | 7本撚り曲げ揺動収束、被膜/シース、ヒステリシス観測 | 計測データあり |
 | 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理、修正NR法 | 91本まで計測 |
@@ -136,6 +136,9 @@
 | Optuna連携 | ✅ 自動チューニングループ基盤（create_objective/run_optuna_study）（status-115） |
 | 応力・曲率連続性テスト | ✅ 隣接要素間変化率チェック物理テスト11件（status-115） |
 | テスト失敗修正+deprecated追加 | ✅ block preconditioner修正、旧ソルバーテスト5ファイル+1クラス deprecated化（status-116） |
+| 動的解析物理テスト | ✅ エネルギー保存・大変形・対称性・周波数・安定性の13テスト（status-117） |
+| Generalized-α法 | ✅ Chung-Hulbert 1993ベースの時間離散化、14テスト（status-117） |
+| CR vs Cosserat比較 | ✅ 物理・収束性・計算コスト定量比較、段階的移行方針（status-117） |
 
 **TODO**:
 - [ ] NCPソルバーの19本収束達成（改良1-11有効化でのチューニング）
