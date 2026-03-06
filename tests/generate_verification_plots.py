@@ -2291,6 +2291,908 @@ def plot_tuning_sensitivity_heatmap(tuning_result=None):
 
 
 # =====================================================================
+# Phase 3+5: 幾何学非線形 — CR大変形の応力・曲率コンター + 変形メッシュ
+# =====================================================================
+
+
+def plot_cr_stress_curvature_contour():
+    """CR大変形カンチレバーの応力・曲率コンター＆変形メッシュの2D投影.
+
+    3つのサブプロット:
+      1. 変形メッシュ（初期形状との比較）
+      2. 要素モーメント分布（コンター）
+      3. 要素曲率分布（コンター）
+    """
+    plt = _setup_matplotlib()
+    from xkep_cae.elements.beam_timo3d import (
+        _beam3d_length_and_direction,
+        _build_local_axes,
+        _rotmat_to_rotvec,
+        _rotvec_to_rotmat,
+        assemble_cr_beam3d,
+        timo_beam3d_ke_local,
+    )
+    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.solver import newton_raphson
+
+    # --- 問題設定 ---
+    n_elems = 30
+    L = 1.0
+    E = 2.1e11
+    nu = 0.3
+    G = E / (2.0 * (1.0 + nu))
+    d = 0.02
+    sec = BeamSection.circle(d)
+    kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
+
+    nodes = np.zeros((n_elems + 1, 3))
+    nodes[:, 0] = np.linspace(0, L, n_elems + 1)
+    conn = np.array([[i, i + 1] for i in range(n_elems)])
+    n_nodes = n_elems + 1
+    ndof = 6 * n_nodes
+    fixed_dofs = np.arange(6)
+
+    # --- 3段階の荷重レベル ---
+    load_levels = [0.03, 0.10, 0.20]  # δ/L targets
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    for idx, delta_ratio in enumerate(load_levels):
+        delta_target = delta_ratio * L
+        P = 3.0 * E * sec.Iy * delta_target / L**3
+
+        f_ext = np.zeros(ndof)
+        f_ext[6 * n_elems + 1] = P
+
+        def assemble_tangent(u, _E=E, _G=G):
+            K, _ = assemble_cr_beam3d(
+                nodes,
+                conn,
+                u,
+                _E,
+                _G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                kappa,
+                kappa,
+                stiffness=True,
+                internal_force=False,
+                sparse=True,
+            )
+            return K
+
+        def assemble_fint(u, _E=E, _G=G):
+            _, f = assemble_cr_beam3d(
+                nodes,
+                conn,
+                u,
+                _E,
+                _G,
+                sec.A,
+                sec.Iy,
+                sec.Iz,
+                sec.J,
+                kappa,
+                kappa,
+                stiffness=False,
+                internal_force=True,
+                sparse=False,
+            )
+            return f
+
+        result = newton_raphson(
+            f_ext,
+            fixed_dofs,
+            assemble_tangent,
+            assemble_fint,
+            n_load_steps=max(5, int(delta_ratio * 50)),
+            tol_force=1e-5,
+            show_progress=False,
+        )
+        if not result.converged:
+            print(f"  WARNING: δ/L={delta_ratio} not converged, skipping")
+            continue
+
+        u = result.u
+
+        # 変形節点座標
+        deformed = np.zeros((n_nodes, 3))
+        for i in range(n_nodes):
+            deformed[i] = nodes[i] + u[6 * i : 6 * i + 3]
+
+        # CR断面力抽出
+        moments = np.zeros(n_elems)
+        curvatures = np.zeros(n_elems)
+        elem_centers = np.zeros(n_elems)
+        for ei, (n1, n2) in enumerate(conn):
+            coords = nodes[np.array([n1, n2])]
+            edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+            u_elem = u[edofs]
+
+            L_0, e_x_0 = _beam3d_length_and_direction(coords)
+            R_0 = _build_local_axes(e_x_0, None)
+            v_ref_stable = R_0[1, :]
+            x1_def = coords[0] + u_elem[0:3]
+            x2_def = coords[1] + u_elem[6:9]
+            coords_def = np.array([x1_def, x2_def])
+            L_def, e_x_def = _beam3d_length_and_direction(coords_def)
+            R_cr = _build_local_axes(e_x_def, v_ref_stable)
+            R_node1 = _rotvec_to_rotmat(u_elem[3:6])
+            R_node2 = _rotvec_to_rotmat(u_elem[9:12])
+            R_def1 = R_cr @ R_node1 @ R_0.T
+            R_def2 = R_cr @ R_node2 @ R_0.T
+            theta_def1 = _rotmat_to_rotvec(R_def1)
+            theta_def2 = _rotmat_to_rotvec(R_def2)
+            d_cr = np.zeros(12)
+            d_cr[3:6] = theta_def1
+            d_cr[6] = L_def - L_0
+            d_cr[9:12] = theta_def2
+            Ke_local = timo_beam3d_ke_local(E, G, sec.A, sec.Iy, sec.Iz, sec.J, L_0, kappa, kappa)
+            f_cr = Ke_local @ d_cr
+
+            moments[ei] = abs(f_cr[11])  # |Mz| at node 2
+            curvatures[ei] = abs(f_cr[11]) / (E * sec.Iz) if E * sec.Iz > 0 else 0
+            elem_centers[ei] = (deformed[n1, 0] + deformed[n2, 0]) / 2.0
+
+        # --- サブプロット1: 変形メッシュ ---
+        ax = axes[0, 0]
+        ax.plot(nodes[:, 0], nodes[:, 1], "b--", linewidth=1, alpha=0.5, label="Initial")
+        colors_load = ["#2196F3", "#FF9800", "#F44336"]
+        ax.plot(
+            deformed[:, 0],
+            deformed[:, 1],
+            "-o",
+            color=colors_load[idx],
+            markersize=2,
+            label=f"δ/L={delta_ratio:.0%}",
+        )
+
+        # --- サブプロット2: モーメントコンター ---
+        ax2 = axes[0, 1]
+        ax2.plot(
+            elem_centers,
+            moments,
+            "-o",
+            color=colors_load[idx],
+            markersize=3,
+            label=f"δ/L={delta_ratio:.0%}",
+        )
+
+        # --- サブプロット3: 曲率コンター ---
+        ax3 = axes[1, 0]
+        ax3.plot(
+            elem_centers,
+            curvatures,
+            "-o",
+            color=colors_load[idx],
+            markersize=3,
+            label=f"δ/L={delta_ratio:.0%}",
+        )
+
+    # 解析解（線形）
+    ax_ana = axes[1, 1]
+    x_ana = np.linspace(0, L, 200)
+    for idx, delta_ratio in enumerate(load_levels):
+        P = 3.0 * E * sec.Iy * delta_ratio * L / L**3
+        M_ana = P * (L - x_ana)
+        kappa_ana = M_ana / (E * sec.Iz)
+        ax_ana.plot(
+            x_ana,
+            kappa_ana,
+            "--",
+            color=colors_load[idx],
+            linewidth=1.5,
+            label=f"Linear δ/L={delta_ratio:.0%}",
+        )
+    ax_ana.set_xlabel("x [m]")
+    ax_ana.set_ylabel("κ [1/m] (analytical)")
+    ax_ana.set_title("Linear Analytical Curvature")
+    ax_ana.legend(fontsize=8)
+
+    axes[0, 0].set_xlabel("x [m]")
+    axes[0, 0].set_ylabel("y [m]")
+    axes[0, 0].set_title("Deformed Shape (CR Nonlinear)")
+    axes[0, 0].set_aspect("equal")
+    axes[0, 0].legend(fontsize=8)
+
+    axes[0, 1].set_xlabel("x [m]")
+    axes[0, 1].set_ylabel("|Mz| [N·m]")
+    axes[0, 1].set_title("Bending Moment Distribution (CR)")
+    axes[0, 1].legend(fontsize=8)
+
+    axes[1, 0].set_xlabel("x [m]")
+    axes[1, 0].set_ylabel("κ [1/m]")
+    axes[1, 0].set_title("Curvature Distribution (CR)")
+    axes[1, 0].legend(fontsize=8)
+
+    fig.suptitle(
+        f"CR Nonlinear Cantilever: L={L}m, d={d * 1000:.0f}mm, E={E / 1e9:.0f}GPa",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "cr_stress_curvature_contour.png")
+    plt.close(fig)
+    print("  -> cr_stress_curvature_contour.png")
+
+
+# =====================================================================
+# Phase 5: 動的解析 — エネルギー時刻歴 + 変位応答
+# =====================================================================
+
+
+def plot_dynamics_energy_history():
+    """動的解析のエネルギー保存検証プロット.
+
+    3つのサブプロット:
+      1. 線形梁の自由振動エネルギー（K, U, Total）
+      2. CR非線形梁のエネルギー
+      3. HHT-αのエネルギー散逸
+    """
+    plt = _setup_matplotlib()
+    from scipy.linalg import eigh as sp_eigh
+
+    from xkep_cae.dynamics import NonlinearTransientConfig, solve_nonlinear_transient
+    from xkep_cae.elements.beam_timo3d import (
+        assemble_cr_beam3d,
+        timo_beam3d_ke_global,
+    )
+
+    # --- 梁の構築 ---
+    n_elems, L, E, nu, rho, r = 10, 0.5, 2.1e11, 0.3, 7800.0, 0.005
+    G = E / (2.0 * (1.0 + nu))
+    A = np.pi * r**2
+    Iy = np.pi * r**4 / 4.0
+    Iz = Iy
+    J = 2.0 * Iy
+    kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
+
+    nodes_arr = np.zeros((n_elems + 1, 3))
+    nodes_arr[:, 0] = np.linspace(0, L, n_elems + 1)
+    conn_arr = np.array([[i, i + 1] for i in range(n_elems)])
+    n_nodes = n_elems + 1
+    ndof = 6 * n_nodes
+
+    K = np.zeros((ndof, ndof))
+    for e in range(n_elems):
+        n1, n2 = conn_arr[e]
+        coords = nodes_arr[np.array([n1, n2])]
+        ke = timo_beam3d_ke_global(coords, E, G, A, Iy, Iz, J, kappa, kappa)
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        K[np.ix_(edofs, edofs)] += ke
+
+    Le = L / n_elems
+    M = np.zeros((ndof, ndof))
+    for i in range(n_nodes):
+        m_i = rho * A * Le * (0.5 if (i == 0 or i == n_elems) else 1.0)
+        for dd in range(3):
+            M[6 * i + dd, 6 * i + dd] = m_i
+        I_rot = m_i * r**2 / 2.0
+        for dd in range(3, 6):
+            M[6 * i + dd, 6 * i + dd] = I_rot
+
+    fixed = np.arange(6)
+    free = np.setdiff1d(np.arange(ndof), fixed)
+    tip_dof = 6 * n_elems + 1
+
+    # 固有周期
+    eigvals, _ = sp_eigh(K[np.ix_(free, free)], M[np.ix_(free, free)])
+    omega1 = np.sqrt(max(eigvals[0], 0.0))
+    T1 = 2.0 * np.pi / omega1
+
+    # 初期変位
+    F0 = np.zeros(ndof)
+    F0[tip_dof] = -0.5
+    u0 = np.zeros(ndof)
+    u0[free] = np.linalg.solve(K[np.ix_(free, free)], F0[free])
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # --- 1. 線形自由振動 ---
+    def f_int_lin(u):
+        return K @ u
+
+    def K_T_lin(u):
+        return K
+
+    dt = T1 / 40.0
+    n_steps = int(5 * T1 / dt)
+    cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+    res = solve_nonlinear_transient(
+        M,
+        np.zeros(ndof),
+        u0,
+        np.zeros(ndof),
+        cfg,
+        f_int_lin,
+        K_T_lin,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+
+    kinetic = np.array([0.5 * res.velocity[i] @ M @ res.velocity[i] for i in range(n_steps + 1)])
+    strain = np.array(
+        [0.5 * res.displacement[i] @ K @ res.displacement[i] for i in range(n_steps + 1)]
+    )
+    total = kinetic + strain
+    t = res.time / T1
+
+    ax = axes[0]
+    ax.plot(t, kinetic, "r-", alpha=0.7, label="Kinetic")
+    ax.plot(t, strain, "b-", alpha=0.7, label="Strain")
+    ax.plot(t, total, "k-", linewidth=2, label="Total")
+    ax.set_xlabel("t / T₁")
+    ax.set_ylabel("Energy [J]")
+    ax.set_title(f"Linear Free Vibration\nΔE/E₀ = {abs(total[-1] - total[0]) / total[0]:.2e}")
+    ax.legend(fontsize=8)
+
+    # --- 2. CR非線形自由振動 ---
+    def f_int_cr(u):
+        _, f = assemble_cr_beam3d(
+            nodes_arr,
+            conn_arr,
+            u,
+            E,
+            G,
+            A,
+            Iy,
+            Iz,
+            J,
+            kappa,
+            kappa,
+            stiffness=False,
+            internal_force=True,
+            sparse=False,
+        )
+        return f
+
+    def K_T_cr(u):
+        Kt, _ = assemble_cr_beam3d(
+            nodes_arr,
+            conn_arr,
+            u,
+            E,
+            G,
+            A,
+            Iy,
+            Iz,
+            J,
+            kappa,
+            kappa,
+            stiffness=True,
+            internal_force=False,
+            sparse=False,
+        )
+        return Kt
+
+    n_steps_cr = int(3 * T1 / dt)
+    cfg_cr = NonlinearTransientConfig(dt=dt, n_steps=n_steps_cr, tol_force=1e-6)
+    res_cr = solve_nonlinear_transient(
+        M,
+        np.zeros(ndof),
+        u0,
+        np.zeros(ndof),
+        cfg_cr,
+        f_int_cr,
+        K_T_cr,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+
+    if res_cr.converged:
+        kinetic_cr = np.array(
+            [0.5 * res_cr.velocity[i] @ M @ res_cr.velocity[i] for i in range(n_steps_cr + 1)]
+        )
+        strain_cr = np.array(
+            [
+                0.5 * res_cr.displacement[i] @ f_int_cr(res_cr.displacement[i])
+                for i in range(n_steps_cr + 1)
+            ]
+        )
+        total_cr = kinetic_cr + strain_cr
+        t_cr = res_cr.time / T1
+
+        ax2 = axes[1]
+        ax2.plot(t_cr, kinetic_cr, "r-", alpha=0.7, label="Kinetic")
+        ax2.plot(t_cr, strain_cr, "b-", alpha=0.7, label="Strain")
+        ax2.plot(t_cr, total_cr, "k-", linewidth=2, label="Total")
+        ax2.set_xlabel("t / T₁")
+        ax2.set_ylabel("Energy [J]")
+        err_cr = np.max(np.abs(total_cr - total_cr[0])) / total_cr[0] if total_cr[0] > 0 else 0
+        ax2.set_title(f"CR Nonlinear Free Vibration\nmax|ΔE/E₀| = {err_cr:.2e}")
+        ax2.legend(fontsize=8)
+    else:
+        axes[1].text(0.5, 0.5, "CR not converged", transform=axes[1].transAxes, ha="center")
+
+    # --- 3. HHT-α散逸 ---
+    alpha_hht = -0.1
+    gamma_hht = 0.5 * (1.0 - 2.0 * alpha_hht)
+    beta_hht = 0.25 * (1.0 - alpha_hht) ** 2
+    n_steps_hht = int(10 * T1 / dt)
+    cfg_hht = NonlinearTransientConfig(
+        dt=dt,
+        n_steps=n_steps_hht,
+        tol_force=1e-12,
+        alpha_hht=alpha_hht,
+        gamma=gamma_hht,
+        beta=beta_hht,
+    )
+    res_hht = solve_nonlinear_transient(
+        M,
+        np.zeros(ndof),
+        u0,
+        np.zeros(ndof),
+        cfg_hht,
+        f_int_lin,
+        K_T_lin,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+
+    kinetic_h = np.array(
+        [0.5 * res_hht.velocity[i] @ M @ res_hht.velocity[i] for i in range(n_steps_hht + 1)]
+    )
+    strain_h = np.array(
+        [
+            0.5 * res_hht.displacement[i] @ K @ res_hht.displacement[i]
+            for i in range(n_steps_hht + 1)
+        ]
+    )
+    total_h = kinetic_h + strain_h
+    t_h = res_hht.time / T1
+
+    ax3 = axes[2]
+    ax3.plot(t_h, total_h / total_h[0], "k-", linewidth=2, label="Total / E₀")
+    ax3.axhline(y=1.0, color="gray", linestyle="--", alpha=0.5)
+    ax3.set_xlabel("t / T₁")
+    ax3.set_ylabel("E(t) / E(0)")
+    dissipation = (total_h[0] - total_h[-1]) / total_h[0]
+    ax3.set_title(f"HHT-α (α={alpha_hht}) Dissipation\nΔE/E₀ = {dissipation:.2%}")
+    ax3.legend(fontsize=8)
+
+    fig.suptitle("Dynamic Analysis Energy Conservation Verification", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "dynamics_energy_history.png")
+    plt.close(fig)
+    print("  -> dynamics_energy_history.png")
+
+
+# =====================================================================
+# Phase 3+5: 動的解析 — 変位応答時刻歴
+# =====================================================================
+
+
+def plot_dynamics_displacement_response():
+    """動的解析の変位応答を3パネルで可視化.
+
+    1. 自由振動の先端変位時刻歴
+    2. ランプ荷重に対する変位応答（動的 vs 静的）
+    3. 減衰ありの変位減衰
+    """
+    plt = _setup_matplotlib()
+    from scipy.linalg import eigh as sp_eigh
+
+    from xkep_cae.dynamics import NonlinearTransientConfig, solve_nonlinear_transient
+    from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
+
+    n_elems, L, E, nu, rho, r = 10, 0.5, 2.1e11, 0.3, 7800.0, 0.005
+    G = E / (2.0 * (1.0 + nu))
+    A = np.pi * r**2
+    Iy = np.pi * r**4 / 4.0
+    Iz = Iy
+    J = 2.0 * Iy
+    kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
+
+    nodes_arr = np.zeros((n_elems + 1, 3))
+    nodes_arr[:, 0] = np.linspace(0, L, n_elems + 1)
+    conn_arr = np.array([[i, i + 1] for i in range(n_elems)])
+    n_nodes = n_elems + 1
+    ndof = 6 * n_nodes
+
+    K = np.zeros((ndof, ndof))
+    for e in range(n_elems):
+        n1, n2 = conn_arr[e]
+        coords = nodes_arr[np.array([n1, n2])]
+        ke = timo_beam3d_ke_global(coords, E, G, A, Iy, Iz, J, kappa, kappa)
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        K[np.ix_(edofs, edofs)] += ke
+
+    Le = L / n_elems
+    M_mat = np.zeros((ndof, ndof))
+    for i in range(n_nodes):
+        m_i = rho * A * Le * (0.5 if (i == 0 or i == n_elems) else 1.0)
+        for dd in range(3):
+            M_mat[6 * i + dd, 6 * i + dd] = m_i
+        I_rot = m_i * r**2 / 2.0
+        for dd in range(3, 6):
+            M_mat[6 * i + dd, 6 * i + dd] = I_rot
+
+    fixed = np.arange(6)
+    free = np.setdiff1d(np.arange(ndof), fixed)
+    tip_dof = 6 * n_elems + 1
+
+    eigvals, _ = sp_eigh(K[np.ix_(free, free)], M_mat[np.ix_(free, free)])
+    omega1 = np.sqrt(max(eigvals[0], 0.0))
+    T1 = 2.0 * np.pi / omega1
+
+    def f_int_fn(u):
+        return K @ u
+
+    def K_T_fn(u):
+        return K
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # --- 1. 自由振動 ---
+    F0 = np.zeros(ndof)
+    F0[tip_dof] = -1.0
+    u0 = np.zeros(ndof)
+    u0[free] = np.linalg.solve(K[np.ix_(free, free)], F0[free])
+    delta_0 = u0[tip_dof]
+
+    dt = T1 / 40.0
+    n_steps = int(5 * T1 / dt)
+    cfg = NonlinearTransientConfig(dt=dt, n_steps=n_steps, tol_force=1e-12)
+    res = solve_nonlinear_transient(
+        M_mat,
+        np.zeros(ndof),
+        u0,
+        np.zeros(ndof),
+        cfg,
+        f_int_fn,
+        K_T_fn,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+    t = res.time / T1
+    tip = res.displacement[:, tip_dof] / abs(delta_0)
+
+    ax = axes[0]
+    ax.plot(t, tip, "b-", linewidth=1)
+    ax.axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("t / T₁")
+    ax.set_ylabel("δ_tip / δ₀")
+    ax.set_title("Free Vibration (Undamped)")
+    ax.set_ylim(-1.5, 1.5)
+
+    # --- 2. ランプ荷重 ---
+    P = 1.0
+    f_static = np.zeros(ndof)
+    f_static[tip_dof] = P
+    u_static = np.zeros(ndof)
+    u_static[free] = np.linalg.solve(K[np.ix_(free, free)], f_static[free])
+    delta_static = u_static[tip_dof]
+
+    ramp_time = 5.0 * T1
+
+    def get_ramp(t):
+        return f_static * min(t / ramp_time, 1.0)
+
+    n_steps_r = int(10 * T1 / dt)
+    cfg_r = NonlinearTransientConfig(dt=dt, n_steps=n_steps_r, tol_force=1e-12)
+    res_r = solve_nonlinear_transient(
+        M_mat,
+        get_ramp,
+        np.zeros(ndof),
+        np.zeros(ndof),
+        cfg_r,
+        f_int_fn,
+        K_T_fn,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+    t_r = res_r.time / T1
+    tip_r = res_r.displacement[:, tip_dof] / abs(delta_static)
+
+    ax2 = axes[1]
+    ax2.plot(t_r, tip_r, "b-", linewidth=1, label="Dynamic")
+    ax2.plot(
+        t_r, np.minimum(t_r * T1 / ramp_time, 1.0), "r--", linewidth=1.5, label="Static (ramp)"
+    )
+    ax2.set_xlabel("t / T₁")
+    ax2.set_ylabel("δ_tip / δ_static")
+    ax2.set_title("Ramp Loading Response")
+    ax2.legend(fontsize=8)
+
+    # --- 3. 減衰自由振動 ---
+    zeta = 0.05
+    alpha_R = 2.0 * zeta * omega1
+    C = alpha_R * M_mat
+
+    n_steps_d = int(15 * T1 / dt)
+    cfg_d = NonlinearTransientConfig(dt=dt, n_steps=n_steps_d, tol_force=1e-12)
+    res_d = solve_nonlinear_transient(
+        M_mat,
+        np.zeros(ndof),
+        u0,
+        np.zeros(ndof),
+        cfg_d,
+        f_int_fn,
+        K_T_fn,
+        C=C,
+        fixed_dofs=fixed,
+        show_progress=False,
+    )
+    t_d = res_d.time / T1
+    tip_d = res_d.displacement[:, tip_dof] / abs(delta_0)
+
+    # 理論的エンベロープ
+    envelope = np.exp(-zeta * omega1 * res_d.time)
+
+    ax3 = axes[2]
+    ax3.plot(t_d, tip_d, "b-", linewidth=1, label="Response")
+    ax3.plot(t_d, envelope, "r--", linewidth=1.5, label=f"Envelope (ζ={zeta})")
+    ax3.plot(t_d, -envelope, "r--", linewidth=1.5)
+    ax3.set_xlabel("t / T₁")
+    ax3.set_ylabel("δ_tip / δ₀")
+    ax3.set_title("Damped Free Vibration (ζ=5%)")
+    ax3.legend(fontsize=8)
+
+    fig.suptitle("Dynamic Analysis Verification: Cantilever Beam", fontsize=12)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "dynamics_displacement_response.png")
+    plt.close(fig)
+    print("  -> dynamics_displacement_response.png")
+
+
+# =====================================================================
+# 撚線3D断面可視化 + 被膜/シース + 断面応力コンター
+# =====================================================================
+
+
+def plot_twisted_wire_3d_cross_section():
+    """撚線の3D断面可視化: ワイヤ断面 + 被膜 + シースの2D投影.
+
+    7本撚りメッシュの断面を z=0 と z=L/2 で切断し、
+    各素線の円形断面・被膜環・シース外筒を描画する。
+    さらに側面図（xz平面）でヘリカル中心線を描画。
+    """
+    plt = _setup_matplotlib()
+    from xkep_cae.mesh.twisted_wire import (
+        CoatingModel,
+        SheathModel,
+        compute_envelope_radius,
+        make_twisted_wire_mesh,
+        sheath_inner_radius,
+    )
+
+    # 7本撚りメッシュ
+    wire_d = 2.0e-3
+    pitch = 40.0e-3
+    length = pitch
+    n_elems = 32
+    mesh = make_twisted_wire_mesh(
+        n_strands=7,
+        wire_diameter=wire_d,
+        pitch=pitch,
+        length=length,
+        n_elems_per_strand=n_elems,
+    )
+    r_wire = wire_d / 2.0
+
+    # 被膜・シース
+    coating = CoatingModel(thickness=0.08e-3, E=3.0e9, nu=0.35, mu=0.2)
+    sheath = SheathModel(thickness=0.3e-3, E=70.0e9, nu=0.33, mu=0.15)
+    r_coat = r_wire + coating.thickness
+    r_env = compute_envelope_radius(mesh, coating=coating)
+    r_sheath_in = sheath_inner_radius(mesh, sheath, coating=coating)
+    r_sheath_out = r_sheath_in + sheath.thickness
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    theta_circ = np.linspace(0, 2 * np.pi, 64)
+
+    # --- 断面図 (z=0 と z=L/2) ---
+    for ax_idx, (z_cut, title) in enumerate(
+        [(0, "断面 z=0 (端部)"), (length / 2, "断面 z=L/2 (中央)")]
+    ):
+        ax = axes[ax_idx]
+        ax.set_aspect("equal")
+        ax.set_title(title, fontsize=11)
+
+        # 各素線の中心位置を z_cut で補間
+        for si in range(mesh.n_strands):
+            ns, ne = mesh.strand_node_ranges[si]
+            coords = mesh.node_coords[ns:ne]
+            z_vals = coords[:, 2]
+            # z_cut に最も近い節点を見つけて補間
+            if z_cut <= z_vals[0]:
+                cx, cy = coords[0, 0], coords[0, 1]
+            elif z_cut >= z_vals[-1]:
+                cx, cy = coords[-1, 0], coords[-1, 1]
+            else:
+                idx = np.searchsorted(z_vals, z_cut) - 1
+                t_frac = (z_cut - z_vals[idx]) / (z_vals[idx + 1] - z_vals[idx])
+                cx = coords[idx, 0] + t_frac * (coords[idx + 1, 0] - coords[idx, 0])
+                cy = coords[idx, 1] + t_frac * (coords[idx + 1, 1] - coords[idx, 1])
+
+            # 素線芯（塗りつぶし）
+            ax.fill(
+                cx + r_wire * np.cos(theta_circ),
+                cy + r_wire * np.sin(theta_circ),
+                color="steelblue",
+                alpha=0.7,
+                edgecolor="navy",
+                linewidth=0.8,
+            )
+            # 被膜環
+            ax.plot(
+                cx + r_coat * np.cos(theta_circ),
+                cy + r_coat * np.sin(theta_circ),
+                color="orange",
+                linewidth=1.5,
+                label="被膜" if si == 0 else None,
+            )
+
+        # シース外筒
+        ax.plot(
+            r_sheath_in * np.cos(theta_circ),
+            r_sheath_in * np.sin(theta_circ),
+            "r--",
+            linewidth=1.5,
+            label="シース内面",
+        )
+        ax.plot(
+            r_sheath_out * np.cos(theta_circ),
+            r_sheath_out * np.sin(theta_circ),
+            "r-",
+            linewidth=2.0,
+            label="シース外面",
+        )
+
+        # エンベロープ
+        ax.plot(
+            r_env * np.cos(theta_circ),
+            r_env * np.sin(theta_circ),
+            "g:",
+            linewidth=1.0,
+            label="エンベロープ",
+        )
+
+        ax.set_xlabel("x [m]")
+        ax.set_ylabel("y [m]")
+        if ax_idx == 0:
+            ax.legend(fontsize=8, loc="upper right")
+
+    # --- 側面図（xz平面）: ヘリカル中心線 ---
+    ax = axes[2]
+    ax.set_title("側面図 (xz平面)", fontsize=11)
+    colors = plt.cm.Set1(np.linspace(0, 1, mesh.n_strands))
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        coords = mesh.node_coords[ns:ne]
+        label = f"#{si}" if si < 3 else (f"#{si}" if si == mesh.n_strands - 1 else None)
+        ax.plot(
+            coords[:, 2] * 1e3, coords[:, 0] * 1e3, color=colors[si], linewidth=1.0, label=label
+        )
+    ax.axhline(
+        y=r_sheath_out * 1e3, color="r", linestyle="-", linewidth=1.5, alpha=0.5, label="シース外面"
+    )
+    ax.axhline(y=-r_sheath_out * 1e3, color="r", linestyle="-", linewidth=1.5, alpha=0.5)
+    ax.set_xlabel("z [mm]")
+    ax.set_ylabel("x [mm]")
+    ax.legend(fontsize=7, loc="upper right", ncol=2)
+
+    fig.suptitle("7本撚線 断面構造: 素線 + 被膜 + シース", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "twisted_wire_cross_section.png")
+    plt.close(fig)
+    print("  -> twisted_wire_cross_section.png")
+
+
+def plot_fiber_stress_contour():
+    """円形断面のファイバー応力コンター図.
+
+    片持ち梁の固定端断面における繊維応力分布を可視化。
+    曲げにより上下で引張/圧縮の対称分布が現れることを確認。
+    """
+    plt = _setup_matplotlib()
+    from matplotlib.tri import Triangulation
+
+    from xkep_cae.elements.beam_timo3d import (
+        beam3d_section_forces,
+        timo_beam3d_ke_global,
+    )
+    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.fiber import FiberSection
+
+    # 片持ち梁パラメータ
+    n_elems = 10
+    L = 1.0
+    E = 200e9
+    nu = 0.3
+    G = E / (2.0 * (1.0 + nu))
+    d = 0.02  # 20mm直径
+    section = BeamSection.circle(d)
+    kappa = 5.0 / 6.0
+    P = 5000.0  # 先端荷重 [N]
+    R = d / 2.0
+
+    # 解を求める
+    n_nodes = n_elems + 1
+    ndof = n_nodes * 6
+    coords_all = np.zeros((n_nodes, 3))
+    coords_all[:, 2] = np.linspace(0, L, n_nodes)
+    connectivity = [(i, i + 1) for i in range(n_elems)]
+
+    K = np.zeros((ndof, ndof))
+    for n1, n2 in connectivity:
+        ec = coords_all[np.array([n1, n2])]
+        Ke = timo_beam3d_ke_global(
+            ec, E, G, section.A, section.Iy, section.Iz, section.J, kappa, kappa
+        )
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        K[np.ix_(edofs, edofs)] += Ke
+
+    f = np.zeros(ndof)
+    f[6 * (n_nodes - 1) + 1] = P  # y方向先端荷重
+
+    fixed = np.arange(6)
+    free = np.setdiff1d(np.arange(ndof), fixed)
+    u = np.zeros(ndof)
+    u[free] = np.linalg.solve(K[np.ix_(free, free)], f[free])
+
+    # 固定端要素(elem 0)と中央要素の断面力を取得
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+
+    # ファイバー断面を生成
+    fiber_sec = FiberSection.circle(d, nr=8, nt=16)
+
+    for ax_idx, (elem_idx, title_pos) in enumerate(
+        [
+            (0, "固定端 (z=0)"),
+            (n_elems // 2, f"中央 (z={L / 2:.1f})"),
+            (n_elems - 1, f"先端 (z={L:.1f})"),
+        ]
+    ):
+        n1, n2 = connectivity[elem_idx]
+        ec = coords_all[np.array([n1, n2])]
+        edofs = np.array([6 * n1 + dd for dd in range(6)] + [6 * n2 + dd for dd in range(6)])
+        u_elem = u[edofs]
+        f1, f2 = beam3d_section_forces(
+            ec, u_elem, E, G, section.A, section.Iy, section.Iz, section.J, kappa, kappa
+        )
+
+        # 繊維応力 σ_i = N/A + My*z_i/Iy - Mz*y_i/Iz
+        # f1 は node1 側の断面力
+        sf = f1
+        sigma = (
+            sf.N / section.A + sf.My * fiber_sec.z / section.Iy - sf.Mz * fiber_sec.y / section.Iz
+        )
+
+        # Delaunay三角形分割
+        tri = Triangulation(fiber_sec.y * 1e3, fiber_sec.z * 1e3)
+
+        ax = axes[ax_idx]
+        vmax = max(abs(sigma.max()), abs(sigma.min()))
+        if vmax < 1e-6:
+            vmax = 1.0
+        contour = ax.tricontourf(
+            tri, sigma / 1e6, levels=20, cmap="RdBu_r", vmin=-vmax / 1e6, vmax=vmax / 1e6
+        )
+        ax.tricontour(tri, sigma / 1e6, levels=10, colors="k", linewidths=0.3, alpha=0.5)
+        ax.set_aspect("equal")
+        ax.set_title(f"{title_pos}\nN={sf.N:.0f}N, My={sf.My:.1f}Nm", fontsize=9)
+        ax.set_xlabel("y [mm]")
+        ax.set_ylabel("z [mm]")
+
+        # 断面外形
+        theta_c = np.linspace(0, 2 * np.pi, 64)
+        ax.plot(R * 1e3 * np.cos(theta_c), R * 1e3 * np.sin(theta_c), "k-", linewidth=1.5)
+
+        cb = fig.colorbar(contour, ax=ax, shrink=0.85)
+        cb.set_label("σ [MPa]")
+
+    fig.suptitle(
+        f"断面繊維応力分布 (片持ち梁 P={P / 1000:.0f}kN, L={L:.1f}m, d={d * 1e3:.0f}mm)",
+        fontsize=12,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "fiber_stress_cross_section.png")
+    plt.close(fig)
+    print("  -> fiber_stress_cross_section.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -2338,6 +3240,21 @@ def main():
     plot_tuning_wire_cross_section(tuning_result)
     plot_tuning_acceptance_summary(tuning_result)
     plot_tuning_sensitivity_heatmap()
+
+    print("[Phase 3+5] 幾何学非線形 — CR応力/曲率コンター")
+    plot_cr_stress_curvature_contour()
+
+    print("[Phase 5] 動的解析 — エネルギー時刻歴")
+    plot_dynamics_energy_history()
+
+    print("[Phase 5] 動的解析 — 変位応答")
+    plot_dynamics_displacement_response()
+
+    print("[Phase 4.7] 撚線断面構造 — 被膜/シース")
+    plot_twisted_wire_3d_cross_section()
+
+    print("[Phase 4.7] 断面繊維応力コンター")
+    plot_fiber_stress_contour()
 
     print()
     print("Done. All verification plots generated.")
