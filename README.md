@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2170テスト** — 2026-03-06時点
+**2170テスト（fast: 1655 / slow: 297 / deprecated: 218）** — 2026-03-06時点
 
 | 分野 | 内容 | 状態 |
 |------|------|------|
@@ -39,7 +39,7 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全115件のstatus + テスト数推移 |
+| [ステータス一覧](docs/status/status-index.md) | 全116件のstatus + テスト数推移 |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
 | [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
 | [使用例](docs/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
