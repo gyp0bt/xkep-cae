@@ -70,7 +70,20 @@ CR定式化は **corotatedフレーム内で線形理論を使う** ため、要
 > CR定式化の誤差蓄積が結果を汚す可能性がある。
 > ただし、定量的にどの程度汚れるかは **実際に比較しないとわからない**。
 
-### シナリオC: Cosserat rodとしての直接的な接触定式化
+### シナリオC: ヘリカル形状の要素数削減（1000本目標との関連）
+
+| 条件 | 具体例 | xkep-cae関連度 |
+|------|--------|----------------|
+| ヘリカル形状の厳密表現 | IGA+Cosserat: 1セグメントで一定曲率ヘリックス表現可能 | ★★★ 高 |
+| メッシュ粗化による高速化 | CR: 16要素/ピッチ → Cosserat/IGA: 4-8要素/ピッチで同等精度の可能性 | ★★★ 高 |
+| 1000本計算のDOF削減 | 要素数半減 → DOF半減 → 計算時間大幅短縮 | ★★★ 高 |
+
+> **1000本6時間目標に対して最も実用的な動機**。CRでは各要素の局所回転を小さく保つため
+> ピッチあたり多数の要素が必要。Cosserat/IGAではヘリカル形状関数を用いて少ない要素で
+> 正確に表現できる（Zhang 2020, Weeger et al. 2019）。
+> ただし、少ない要素数で接触精度が維持できるかは別途検証が必要。
+
+### シナリオD: Cosserat rodとしての直接的な接触定式化
 
 | 条件 | 具体例 | xkep-cae関連度 |
 |------|--------|----------------|
@@ -81,7 +94,7 @@ CR定式化は **corotatedフレーム内で線形理論を使う** ため、要
 > Cosserat rodの断面回転を接触法線の定義に直接使うことで、
 > 接触フレームの連続性が自然に保証される。CRでは追加の並行移送が必要。
 
-### シナリオD: 数学的/ソフトウェア工学的利点
+### シナリオE: 数学的/ソフトウェア工学的利点
 
 | 利点 | 説明 | 影響 |
 |------|------|------|
@@ -89,7 +102,17 @@ CR定式化は **corotatedフレーム内で線形理論を使う** ため、要
 | 歪み量の直截性 | Γ, κ が構成則と直結 | コード可読性向上 |
 | 接線剛性の解析的導出 | B行列が構造的にクリーン | NR収束改善の鍵（現状は数値微分） |
 
-## 3. 結論: いつCosseratに切り替えるべきか
+## 3. CRベースの先行成功事例
+
+**Foti et al.** は撚線の曲げ振動にCR梁要素を適用し成功している:
+- マクロスケールで断面構成則（モーメント-曲率のヒステリシス則、ワイヤ間のstick-slip遷移）をCR梁に埋め込む手法
+- 単層撚線のグローバル応答（曲げ剛性・ヒステリシスループ）を実験と良好に一致
+
+> **含意**: CRベースでも撚線ヒステリシスの定量評価は可能。
+> ただしFotiモデルはマクロ断面構成則（個別ワイヤの接触を均質化済み）であり、
+> xkep-caeのようにワイヤ個別にモデル化+接触解析するアプローチとは異なる。
+
+## 4. 結論: いつCosseratに切り替えるべきか
 
 ### 切り替え不要（CRで十分）な場合
 
@@ -121,7 +144,7 @@ Phase 3（差が有意な場合のみ）: 接触パイプライン統合
   → broadphase/geometry/NCPの四元数対応
 ```
 
-## 4. 文献リスト
+## 5. 文献リスト
 
 ### CR定式化の限界に関する文献
 
@@ -142,6 +165,14 @@ Phase 3（差が有意な場合のみ）: 接触パイプライン統合
 
 - Costello, G.A. "Theory of Wire Rope" — 撚線理論の基礎
 - Foti, F. & Martinelli, L. (2016) "Hysteretic bending of spiral strands" — 撚線ヒステリシスの実験+理論
+- Foti, F. et al. "A corotational finite element to model bending vibrations of metallic strands" — CRベースの撚線曲げ振動（マクロ断面構成則）
+- Zhang, J. (2020) "High-Efficiency Dynamic Modeling of Helical Spring Based on GEB Theory", *Shock Vib.* — GEB（幾何学的厳密梁）によるヘリカル構造の高効率モデリング
+
+### CR定式化の精度に関する追加文献
+
+- Iura, M. et al. (2003) "Accuracy of corotational formulation for 3D Timoshenko beam", *Comput. Mech.* — CR精度の系統的評価
+- Wang, T. et al. (2025) "Efficient 3D corotational beam for nonlinear dynamics", *Comput. Struct.* — CR動的解析の最新高精度定式化
+- Meier, C. et al. (2017) "Kirchhoff-Love vs Simo-Reissner theory", *Arch. Comput. Methods Eng.* — 梁理論の体系的比較レビュー（MIT）
 
 ## 確認事項
 
