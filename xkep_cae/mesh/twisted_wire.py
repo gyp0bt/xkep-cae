@@ -474,6 +474,7 @@ def make_twisted_wire_mesh(
     lay_direction: int = 1,
     n_pitches: float | None = None,
     strand_diameter: float | None = None,
+    min_elems_per_pitch: int = 16,
 ) -> TwistedWireMesh:
     """撚線メッシュを生成するファクトリ関数.
 
@@ -499,17 +500,34 @@ def make_twisted_wire_mesh(
         lay_direction: 撚り方向 (+1=S撚り, -1=Z撚り)
         n_pitches: モデル長さをピッチ数で指定（length を上書き）
         strand_diameter: 撚線外径 [m]。指定時は非貫入配置を自動計算。
+        min_elems_per_pitch: 1ピッチあたりの最小要素数 (デフォルト 16)。
+            不足時に ValueError を発生させる。0 を指定すると検査をスキップ。
 
     Returns:
         TwistedWireMesh インスタンス
 
     Raises:
         ValueError: strand_diameter が非貫入配置に必要な最小値を下回る場合
+        ValueError: 要素密度が min_elems_per_pitch を下回る場合
     """
     wire_radius = wire_diameter / 2.0
 
     if n_pitches is not None:
         length = n_pitches * pitch
+
+    # 要素密度チェック: ヘリカル素線の弦近似誤差を許容範囲に収めるため。
+    # θ_seg = 2π/n_per_pitch, 弦近似による最大貫入量 ≈ r*(1-cos(θ/2))
+    # 16要素/ピッチ → θ=22.5° → 貫入量 < ワイヤ直径の2%
+    if min_elems_per_pitch > 0 and n_strands > 1 and length > 0 and pitch > 0:
+        n_per_pitch = n_elems_per_strand * pitch / length
+        if n_per_pitch < min_elems_per_pitch:
+            raise ValueError(
+                f"要素密度が不足しています: {n_per_pitch:.1f}要素/ピッチ "
+                f"(最小 {min_elems_per_pitch} 要素/ピッチ以上)。"
+                f"弦近似による初期貫入が発生し、接触解析の精度が低下します。"
+                f"n_elems_per_strand を {math.ceil(min_elems_per_pitch * length / pitch)} "
+                f"以上に設定するか、min_elems_per_pitch=0 で検査をスキップしてください。"
+            )
 
     # 素線配置を決定
     layout = make_strand_layout(

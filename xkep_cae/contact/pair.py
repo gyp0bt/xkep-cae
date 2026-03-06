@@ -255,6 +255,9 @@ class ContactConfig:
     # --- S3改良11: 接触力ランプ（ステップ内の段階的接触力増大） ---
     contact_force_ramp: bool = False  # Newton反復初期の接触力ランプ有効化
     contact_force_ramp_iters: int = 5  # ランプが1.0に達するまでの反復数
+    # --- S3改良12: 初期貫入補正（LS-DYNA IGNORE=1 相当） ---
+    adjust_initial_penetration: bool = True  # True: 初期貫入をオフセット補正、False: エラー
+    position_tolerance: float = 0.0  # 初期貫入の許容量 [m]。0=無制限（adjust時のみ有効）
 
 
 @dataclass
@@ -653,6 +656,91 @@ class ContactManager:
                 pair.gap_offset = 0.0
 
         return n_offset
+
+    def adjust_initial_positions(
+        self,
+        node_coords: np.ndarray,
+        position_tolerance: float = 0.0,
+        *,
+        max_iterations: int = 10,
+    ) -> tuple[np.ndarray, int, int]:
+        """初期節点座標を調整して貫入解消・ギャップ閉鎖を行う.
+
+        各接触ペアのギャップを検査し:
+          - gap < 0（貫入）: 節点を法線方向に離してgap = 0にする
+          - 0 <= gap < position_tolerance: 節点を法線方向に近づけてgap = 0にする
+
+        調整は反復的に行い、ペア間の干渉を解消する。
+
+        Args:
+            node_coords: 初期節点座標 (n_nodes, 3)。**破壊的に変更される**。
+            position_tolerance: ギャップ閉鎖の閾値 [m]。
+                gap < tolerance のペアをgap=0に調整する。
+            max_iterations: 調整反復の上限
+
+        Returns:
+            (adjusted_coords, n_penetration_fixed, n_gap_closed)
+        """
+        coords = np.asarray(node_coords, dtype=float)
+        n_pen_fixed = 0
+        n_gap_closed = 0
+
+        for _iteration in range(max_iterations):
+            # 各ノードの補正ベクトルを蓄積
+            corrections = np.zeros_like(coords)
+            correction_count = np.zeros(len(coords), dtype=int)
+            any_adjusted = False
+
+            for pair in self.pairs:
+                nA0, nA1 = int(pair.nodes_a[0]), int(pair.nodes_a[1])
+                nB0, nB1 = int(pair.nodes_b[0]), int(pair.nodes_b[1])
+                xA0, xA1 = coords[nA0], coords[nA1]
+                xB0, xB1 = coords[nB0], coords[nB1]
+
+                result = closest_point_segments(xA0, xA1, xB0, xB1)
+                gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
+
+                if gap >= position_tolerance:
+                    continue  # 調整不要
+
+                # 調整量: gap = 0 にするための移動量
+                # gap < 0: 貫入 → 離す（+方向に移動）
+                # 0 <= gap < tol: 近接 → 近づける（-方向に移動）
+                adjust_dist = -gap  # 正=離す、負=近づける
+                half_adjust = adjust_dist / 2.0
+
+                # 法線方向（AからBへ向かう方向）
+                normal = result.normal
+                if float(np.linalg.norm(normal)) < 1e-15:
+                    continue
+
+                # セグメントAを+法線方向に、Bを-法線方向に移動
+                # 各セグメントの2節点に均等配分
+                for nid in [nA0, nA1]:
+                    corrections[nid] -= half_adjust * normal
+                    correction_count[nid] += 1
+                for nid in [nB0, nB1]:
+                    corrections[nid] += half_adjust * normal
+                    correction_count[nid] += 1
+
+                any_adjusted = True
+                if gap < 0:
+                    n_pen_fixed += 1
+                else:
+                    n_gap_closed += 1
+
+            if not any_adjusted:
+                break
+
+            # 補正を適用（複数ペアから補正を受けるノードは平均化）
+            mask = correction_count > 0
+            coords[mask] += corrections[mask] / correction_count[mask, np.newaxis]
+
+        # gap_offset をリセット（物理的に調整済みなのでオフセット不要）
+        for pair in self.pairs:
+            pair.gap_offset = 0.0
+
+        return coords, n_pen_fixed, n_gap_closed
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

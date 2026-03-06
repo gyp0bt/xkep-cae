@@ -55,6 +55,7 @@ def mesh_7():
         pitch=20e-3,
         length=20e-3,
         n_elems_per_strand=10,
+        min_elems_per_pitch=0,
     )
 
 
@@ -67,6 +68,7 @@ def mesh_3():
         pitch=20e-3,
         length=20e-3,
         n_elems_per_strand=10,
+        min_elems_per_pitch=0,
     )
 
 
@@ -611,6 +613,7 @@ class TestSheathSheathContactManager:
             pitch=20e-3,
             length=20e-3,
             n_elems_per_strand=10,
+            min_elems_per_pitch=0,
         )
         # 2本目は横に1cm ずらす
         mesh2 = make_twisted_wire_mesh(
@@ -619,6 +622,7 @@ class TestSheathSheathContactManager:
             pitch=20e-3,
             length=20e-3,
             n_elems_per_strand=10,
+            min_elems_per_pitch=0,
         )
         # mesh2 の座標をx方向にオフセット
         offset = 3e-3  # シース外径より小さくして接触させる
@@ -640,6 +644,7 @@ class TestSheathSheathContactManager:
             pitch=20e-3,
             length=20e-3,
             n_elems_per_strand=5,
+            min_elems_per_pitch=0,
         )
         mesh2 = make_twisted_wire_mesh(
             n_strands=7,
@@ -647,6 +652,7 @@ class TestSheathSheathContactManager:
             pitch=20e-3,
             length=20e-3,
             n_elems_per_strand=5,
+            min_elems_per_pitch=0,
         )
         # 100mm 離す（接触しない距離）
         mesh2.node_coords[:, 0] += 100e-3
@@ -673,6 +679,7 @@ class TestSheathSheathContactManager:
                 pitch=20e-3,
                 length=20e-3,
                 n_elems_per_strand=5,
+                min_elems_per_pitch=0,
             )
             # 三角形配置
             angle = 2.0 * math.pi * i / 3

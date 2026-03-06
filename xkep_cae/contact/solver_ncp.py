@@ -1419,6 +1419,71 @@ def newton_raphson_contact_ncp(
     u_prev_converged = u.copy()
     delta_frac_prev = 0.0  # 前ステップの荷重分率増分
 
+    # --- 初期貫入チェック・位置調整 ---
+    # 参照座標で初回ペア検出し、初期貫入の有無を確認する。
+    manager.detect_candidates(
+        node_coords_ref,
+        connectivity,
+        radii,
+        margin=broadphase_margin,
+        cell_size=broadphase_cell_size,
+    )
+    _pos_tol = manager.config.position_tolerance
+    _adjust = manager.config.adjust_initial_penetration
+
+    # position_tolerance > 0: 小ギャップペアを接触位置に移動
+    if _adjust and _pos_tol > 0.0:
+        node_coords_ref, n_pen_fixed, n_gap_closed = manager.adjust_initial_positions(
+            node_coords_ref, _pos_tol
+        )
+        if show_progress and (n_pen_fixed + n_gap_closed) > 0:
+            print(
+                f"  初期位置調整(adjust=yes, tol={_pos_tol * 1000:.3f}mm): "
+                f"ギャップ閉鎖={n_gap_closed}ペア"
+            )
+        # 再検出
+        manager.detect_candidates(
+            node_coords_ref,
+            connectivity,
+            radii,
+            margin=broadphase_margin,
+            cell_size=broadphase_cell_size,
+        )
+
+    # 初期貫入チェック + gap_offset 計算
+    n_initial_pen = manager.store_initial_offsets(node_coords_ref)
+    if n_initial_pen > 0:
+        max_offset = min(p.gap_offset for p in manager.pairs if p.gap_offset < 0.0)
+        max_pen_abs = abs(max_offset)
+        r_repr = float(np.mean(np.asarray(radii, dtype=float).ravel()[:1]))
+        pen_ratio = max_pen_abs / r_repr if r_repr > 0 else float("inf")
+        if not _adjust:
+            # gap_offset をリセット（使用しない）
+            for pair in manager.pairs:
+                pair.gap_offset = 0.0
+            raise ValueError(
+                f"初期貫入が検出されました: {n_initial_pen}ペア, "
+                f"最大貫入量={max_pen_abs * 1000:.4f} mm "
+                f"(ワイヤ半径比 {pen_ratio:.1%})。"
+                f"adjust_initial_penetration=True で補正するか、"
+                f"メッシュの gap パラメータを増やしてください。"
+            )
+        # adjust=True: gap_offset を保持して弦近似による微小貫入を補正
+        if show_progress:
+            print(
+                f"  初期貫入オフセット補正(adjust=yes): {n_initial_pen}ペア"
+                f"（最大 {max_pen_abs * 1000:.4f} mm, "
+                f"ワイヤ半径比 {pen_ratio:.1%}）"
+            )
+    # λベクトルをペア数に合わせる
+    if len(lam_all) < manager.n_pairs:
+        lam_new = np.zeros(manager.n_pairs)
+        lam_new[: len(lam_all)] = lam_all
+        lam_all = lam_new
+        lam_t_new = np.zeros((manager.n_pairs, 2))
+        lam_t_new[: len(lam_t_all)] = lam_t_all
+        lam_t_all = lam_t_new
+
     while step_queue:
         step_display += 1
         load_frac = step_queue[0]

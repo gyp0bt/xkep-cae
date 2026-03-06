@@ -237,6 +237,7 @@ def _run_benchmark(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=1.0,
         gap=gap,
+        min_elems_per_pitch=0,
     )
     mesh_time = time.perf_counter() - t0_mesh
 

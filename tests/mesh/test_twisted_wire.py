@@ -146,7 +146,7 @@ class TestMakeTwistedWireMesh:
 
     def test_basic_3_strand(self):
         """3本撚り基本生成."""
-        mesh = make_twisted_wire_mesh(3, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(3, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         assert isinstance(mesh, TwistedWireMesh)
         assert mesh.n_strands == 3
         assert mesh.n_nodes == 3 * (_N_ELEM + 1)
@@ -156,20 +156,20 @@ class TestMakeTwistedWireMesh:
 
     def test_basic_7_strand(self):
         """7本撚り基本生成."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         assert mesh.n_strands == 7
         assert mesh.n_nodes == 7 * (_N_ELEM + 1)
         assert mesh.n_elems == 7 * _N_ELEM
 
     def test_basic_19_strand(self):
         """19本撚り基本生成."""
-        mesh = make_twisted_wire_mesh(19, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(19, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         assert mesh.n_strands == 19
         assert mesh.n_nodes == 19 * (_N_ELEM + 1)
 
     def test_center_strand_is_straight(self):
         """7本撚りの中心素線は直線（z軸上）."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         center_nodes = mesh.strand_nodes(0)
         coords = mesh.node_coords[center_nodes]
         # x, y が 0
@@ -181,7 +181,7 @@ class TestMakeTwistedWireMesh:
 
     def test_outer_strand_is_helix(self):
         """7本撚りの外層素線がヘリカル."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         # strand 1 (第1層)
         outer_nodes = mesh.strand_nodes(1)
         coords = mesh.node_coords[outer_nodes]
@@ -195,13 +195,13 @@ class TestMakeTwistedWireMesh:
 
     def test_connectivity_valid(self):
         """接続行列のインデックスが有効範囲内."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         assert np.all(mesh.connectivity >= 0)
         assert np.all(mesh.connectivity < mesh.n_nodes)
 
     def test_connectivity_sequential(self):
         """各素線の要素は連続する節点を結ぶ."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         for sid in range(mesh.n_strands):
             elems = mesh.strand_elems(sid)
             for eid in elems:
@@ -210,17 +210,19 @@ class TestMakeTwistedWireMesh:
 
     def test_radii_uniform(self):
         """全要素の断面半径が均一."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         assert np.allclose(mesh.radii, _WIRE_R)
 
     def test_n_pitches_parameter(self):
         """n_pitchesで長さ指定."""
-        mesh = make_twisted_wire_mesh(3, _WIRE_D, _PITCH, 0.0, _N_ELEM, n_pitches=2.5)
+        mesh = make_twisted_wire_mesh(
+            3, _WIRE_D, _PITCH, 0.0, _N_ELEM, n_pitches=2.5, min_elems_per_pitch=0
+        )
         assert abs(mesh.length - 2.5 * _PITCH) < 1e-15
 
     def test_strand_node_ranges_partition(self):
         """素線ごとの節点範囲が全体をカバーする."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         all_nodes = set()
         for start, end in mesh.strand_node_ranges:
             for n in range(start, end):
@@ -230,7 +232,7 @@ class TestMakeTwistedWireMesh:
 
     def test_strand_elem_ranges_partition(self):
         """素線ごとの要素範囲が全体をカバーする."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         all_elems = set()
         for start, end in mesh.strand_elem_ranges:
             for e in range(start, end):
@@ -240,7 +242,7 @@ class TestMakeTwistedWireMesh:
 
     def test_element_lengths_positive(self):
         """全要素の長さが正."""
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         for eid in range(mesh.n_elems):
             n1, n2 = mesh.connectivity[eid]
             diff = mesh.node_coords[n2] - mesh.node_coords[n1]
@@ -252,7 +254,7 @@ class TestMakeTwistedWireMesh:
 
         全素線ペアの各z位置での中心間距離が素線直径以上であることを確認。
         """
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         n_pts = _N_ELEM + 1
         for i in range(mesh.n_strands):
             nodes_i = mesh.strand_nodes(i)
@@ -328,14 +330,14 @@ class TestLargeScaleMesh:
 
     def test_61_strand_mesh(self):
         """61本（1+6+12+18+24）メッシュ生成."""
-        mesh = make_twisted_wire_mesh(61, _WIRE_D, _PITCH, _LENGTH, 10)
+        mesh = make_twisted_wire_mesh(61, _WIRE_D, _PITCH, _LENGTH, 10, min_elems_per_pitch=0)
         assert mesh.n_strands == 61
         assert mesh.n_nodes == 61 * 11
         assert mesh.n_elems == 61 * 10
 
     def test_91_strand_mesh(self):
         """91本（1+6+12+18+24+30）メッシュ生成."""
-        mesh = make_twisted_wire_mesh(91, _WIRE_D, _PITCH, _LENGTH, 10)
+        mesh = make_twisted_wire_mesh(91, _WIRE_D, _PITCH, _LENGTH, 10, min_elems_per_pitch=0)
         assert mesh.n_strands == 91
 
     def test_element_quality(self):
@@ -344,7 +346,7 @@ class TestLargeScaleMesh:
         ヘリカル素線は直線より長くなるが、
         要素分割の均一性を確認する。
         """
-        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, _LENGTH, _N_ELEM, min_elems_per_pitch=0)
         lengths = []
         for eid in range(mesh.n_elems):
             n1, n2 = mesh.connectivity[eid]

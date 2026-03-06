@@ -163,6 +163,7 @@ class TestStrandDiameterMesh:
             _LENGTH,
             _N_ELEM,
             strand_diameter=min_d * 1.1,
+            min_elems_per_pitch=0,
         )
         _check_no_penetration_mesh(mesh)
 
@@ -176,6 +177,7 @@ class TestStrandDiameterMesh:
             _LENGTH,
             _N_ELEM,
             strand_diameter=min_d,
+            min_elems_per_pitch=0,
         )
         _check_no_penetration_mesh(mesh)
 
@@ -189,6 +191,7 @@ class TestStrandDiameterMesh:
                 _LENGTH,
                 _N_ELEM,
                 strand_diameter=_WIRE_D * 2.0,
+                min_elems_per_pitch=0,
             )
 
 
@@ -213,3 +216,146 @@ class TestLegacyCompatibility:
         """gap > 0 でも非貫入."""
         layout = make_strand_layout(19, _WIRE_R, gap=0.001)
         _check_no_penetration_layout(layout, _WIRE_R)
+
+
+class TestMeshDensityValidation:
+    """要素密度バリデーションのテスト（恒久対策）.
+
+    粗すぎるメッシュは弦近似による初期貫入を引き起こすため、
+    デフォルトで ValueError を発生させる。
+    """
+
+    def test_coarse_mesh_raises_by_default(self):
+        """4要素/ピッチはデフォルトでValueError."""
+        with pytest.raises(ValueError, match="要素密度が不足"):
+            make_twisted_wire_mesh(7, _WIRE_D, _PITCH, 0.0, 4, n_pitches=1.0)
+
+    def test_adequate_mesh_passes(self):
+        """16要素/ピッチはデフォルトで通過."""
+        mesh = make_twisted_wire_mesh(7, _WIRE_D, _PITCH, 0.0, 16, n_pitches=1.0)
+        assert mesh.n_strands == 7
+
+    def test_explicit_opt_out(self):
+        """min_elems_per_pitch=0で検査スキップ."""
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            0.0,
+            4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
+        )
+        assert mesh.n_strands == 7
+
+    def test_custom_threshold(self):
+        """カスタム閾値: 8要素/ピッチ."""
+        # 8要素/ピッチで閾値8 → ちょうどOK
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            0.0,
+            8,
+            n_pitches=1.0,
+            min_elems_per_pitch=8,
+        )
+        assert mesh.n_strands == 7
+        # 7要素/ピッチで閾値8 → NG
+        with pytest.raises(ValueError):
+            make_twisted_wire_mesh(
+                7,
+                _WIRE_D,
+                _PITCH,
+                0.0,
+                7,
+                n_pitches=1.0,
+                min_elems_per_pitch=8,
+            )
+
+    def test_single_strand_no_check(self):
+        """1本撚り(中心線のみ)は密度チェック不要."""
+        mesh = make_twisted_wire_mesh(1, _WIRE_D, _PITCH, 0.0, 4, n_pitches=1.0)
+        assert mesh.n_strands == 1
+
+
+class TestChordApproximationPenetration:
+    """弦近似による初期貫入量の物理テスト.
+
+    16要素/ピッチ以上で初期貫入がワイヤ直径の2%以下であることを検証。
+    これはプログラムの正しさではなく、物理的に当然の性質の検証。
+    """
+
+    def test_penetration_below_2_percent_at_16_elems(self):
+        """16要素/ピッチで最大初期貫入 < 2% wire_diameter."""
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            0.0,
+            16,
+            n_pitches=1.0,
+        )
+        max_penetration = _max_chord_penetration(mesh)
+        assert max_penetration < 0.02 * _WIRE_D, (
+            f"初期貫入 {max_penetration:.2e} > 2% of d={_WIRE_D:.2e}"
+        )
+
+    def test_penetration_below_1_percent_at_32_elems(self):
+        """32要素/ピッチで最大初期貫入 < 1% wire_diameter."""
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            0.0,
+            32,
+            n_pitches=1.0,
+        )
+        max_penetration = _max_chord_penetration(mesh)
+        assert max_penetration < 0.01 * _WIRE_D, (
+            f"初期貫入 {max_penetration:.2e} > 1% of d={_WIRE_D:.2e}"
+        )
+
+    def test_coarse_mesh_has_large_penetration(self):
+        """4要素/ピッチでは大きな初期貫入が生じる（物理的に当然）."""
+        mesh = make_twisted_wire_mesh(
+            7,
+            _WIRE_D,
+            _PITCH,
+            0.0,
+            4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
+        )
+        max_penetration = _max_chord_penetration(mesh)
+        # 4要素/ピッチ → θ=90° → cos(45°)≈0.707 → 貫入≈29%*r_lay
+        # 物理的に意味のある貫入量（>5% wire_d）が存在するはず
+        assert max_penetration > 0.05 * _WIRE_D, (
+            f"粗メッシュなのに貫入量が小さい: {max_penetration:.2e}"
+        )
+
+
+def _max_chord_penetration(mesh, n_subdiv=10):
+    """メッシュの最大弦近似貫入量を計算.
+
+    弦近似誤差は要素の中間点で最大になる（節点はヘリカル曲線上にある）。
+    各要素を n_subdiv 分割して線形補間し、素線ペア間の最小距離と
+    理論上の最小距離(2*wire_radius)の差を求める。
+    """
+    d = 2.0 * mesh.wire_radius
+    max_pen = 0.0
+    n_elems = mesh.n_elems_per_strand
+    for i in range(mesh.n_strands):
+        ci = mesh.node_coords[mesh.strand_nodes(i)]
+        for j in range(i + 1, mesh.n_strands):
+            cj = mesh.node_coords[mesh.strand_nodes(j)]
+            for k in range(n_elems):
+                for s in range(1, n_subdiv):
+                    t = s / n_subdiv
+                    pi = ci[k] * (1 - t) + ci[k + 1] * t
+                    pj = cj[k] * (1 - t) + cj[k + 1] * t
+                    dist = np.linalg.norm(pi - pj)
+                    pen = max(0.0, d - dist)
+                    if pen > max_pen:
+                        max_pen = pen
+    return max_pen

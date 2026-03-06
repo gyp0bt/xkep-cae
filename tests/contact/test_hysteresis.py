@@ -143,6 +143,7 @@ def _build_cyclic_model(n_strands=3, load_type="tension"):
         n_elems_per_strand=_N_ELEM_PER_STRAND,
         n_pitches=1.0,
         gap=0.0,
+        min_elems_per_pitch=0,
     )
 
     assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)

@@ -231,7 +231,13 @@ class TestCoatedBeamIntegration:
     def test_coated_radii_array(self):
         """coated_radii がメッシュ全要素分の配列を返す."""
         mesh = make_twisted_wire_mesh(
-            3, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            3,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         radii = coated_radii(mesh, _COATING)
         assert radii.shape == (mesh.n_elems,)
@@ -268,7 +274,13 @@ class TestSheathGeometryIntegration:
     def test_envelope_radius_with_coating(self):
         """被膜込みエンベロープ半径 > 被膜なし."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         r_bare = compute_envelope_radius(mesh)
         r_coated = compute_envelope_radius(mesh, coating=_COATING)
@@ -278,7 +290,13 @@ class TestSheathGeometryIntegration:
     def test_sheath_inner_radius_with_coating(self):
         """シース内径は被膜込みエンベロープ + クリアランス."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         r_inner = sheath_inner_radius(mesh, _SHEATH, coating=_COATING)
         r_env = compute_envelope_radius(mesh, coating=_COATING)
@@ -287,7 +305,13 @@ class TestSheathGeometryIntegration:
     def test_sheath_section_properties_positive(self):
         """シース断面特性が全て正."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         sp_props = sheath_section_properties(mesh, _SHEATH, coating=_COATING)
         for key in ("A", "Iy", "Iz", "J"):
@@ -296,7 +320,13 @@ class TestSheathGeometryIntegration:
     def test_sheath_stiffness_positive(self):
         """シース等価剛性が全て正."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         stiff = sheath_equivalent_stiffness(mesh, _SHEATH, coating=_COATING)
         for key in ("EA", "EIy", "EIz", "GJ"):
@@ -305,7 +335,13 @@ class TestSheathGeometryIntegration:
     def test_radial_gap_positive_with_clearance(self):
         """初期クリアランス > 0 なら径方向ギャップは全て正."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         gaps = sheath_radial_gap(mesh, _SHEATH, coating=_COATING)
         assert np.all(gaps >= 0), f"初期ギャップに負値: min={gaps.min():.3e}"
@@ -313,7 +349,13 @@ class TestSheathGeometryIntegration:
     def test_outermost_strand_count(self):
         """7本撚りの最外層素線は6本."""
         mesh = make_twisted_wire_mesh(
-            7, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            7,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         outer_ids = outermost_strand_ids(mesh)
         assert len(outer_ids) == 6
@@ -353,6 +395,7 @@ class TestCoatedThreeStrandContact:
             n_elems_per_strand=_N_ELEM_PER_STRAND,
             n_pitches=1.0,
             gap=gap,
+            min_elems_per_pitch=0,
         )
 
         if with_coating:
@@ -444,7 +487,13 @@ class TestCoatedThreeStrandContact:
     def test_coating_changes_contact_radius(self):
         """被膜の有無で接触半径が変わる."""
         mesh = make_twisted_wire_mesh(
-            3, _WIRE_D, _PITCH, length=0.0, n_elems_per_strand=4, n_pitches=1.0
+            3,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         radii_bare = mesh.radii
         radii_coated = coated_radii(mesh, _COATING)
@@ -493,6 +542,7 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=4,
             n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         # 被膜込み半径
         radii = coated_radii(mesh, _COATING)
@@ -525,6 +575,7 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=8,
             n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         gaps = sheath_radial_gap(mesh, _SHEATH, coating=_COATING)
         # クリアランス > 0 なので全て非負
@@ -542,6 +593,7 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=4,
             n_pitches=1.0,
+            min_elems_per_pitch=0,
         )
         layer_map = mesh.build_elem_layer_map()
         max_lay = max(layer_map.values())
@@ -587,6 +639,7 @@ class TestCoatedSevenStrandIntegration:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0005,
+            min_elems_per_pitch=0,
         )
         at, af, ndof = _make_cr_assembler_bare(mesh)
         radii = coated_radii(mesh, _COATING)

@@ -139,6 +139,7 @@ class TestExtractKpenFeaturesFromMesh:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0,
+            min_elems_per_pitch=0,
         )
         feat = extract_kpen_features_from_mesh(
             mesh,
@@ -162,6 +163,7 @@ class TestExtractKpenFeaturesFromMesh:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0,
+            min_elems_per_pitch=0,
         )
         feat = extract_kpen_features_from_mesh(
             mesh,
@@ -184,6 +186,7 @@ class TestExtractKpenFeaturesFromMesh:
             n_elems_per_strand=4,
             n_pitches=1.0,
             gap=0.0,
+            min_elems_per_pitch=0,
         )
         n_nodes = len(mesh.node_coords)
         u = np.zeros(n_nodes * 6)

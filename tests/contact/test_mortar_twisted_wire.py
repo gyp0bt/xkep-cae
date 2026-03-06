@@ -137,6 +137,7 @@ def _solve_7strand_ncp_mortar(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=0.5,
         gap=0.0,
+        min_elems_per_pitch=0,
     )
 
     assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)

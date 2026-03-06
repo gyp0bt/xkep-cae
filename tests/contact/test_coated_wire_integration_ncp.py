@@ -184,6 +184,7 @@ def _solve_coated_3strand_ncp(
         n_elems_per_strand=_N_ELEM_PER_STRAND,
         n_pitches=1.0,
         gap=gap,
+        min_elems_per_pitch=0,
     )
 
     if with_coating:

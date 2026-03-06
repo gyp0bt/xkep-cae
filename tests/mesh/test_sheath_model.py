@@ -38,6 +38,7 @@ def _make_7wire_mesh(n_elems: int = 8) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
+        min_elems_per_pitch=0,
     )
 
 
@@ -49,6 +50,7 @@ def _make_3wire_mesh(n_elems: int = 8) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
+        min_elems_per_pitch=0,
     )
 
 
@@ -60,6 +62,7 @@ def _make_19wire_mesh(n_elems: int = 4) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
+        min_elems_per_pitch=0,
     )
 
 
