@@ -409,6 +409,7 @@ class TestAbaqusBend3pNLGEOM:
 
         return results
 
+    @pytest.mark.slow
     def test_nlgeom_converges_all_steps(self):
         """CR梁NLGEOMが全ステップで収束する（δ=-15mm, 20ステップ）."""
         results = self._solve_cr_displacement_control(self.model, delta_y=-15.0, n_steps=20)
