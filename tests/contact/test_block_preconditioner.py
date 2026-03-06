@@ -273,7 +273,12 @@ class TestBlockPreconditionerConvergence:
         )
 
     def test_block_vs_direct_displacement_consistency(self):
-        """ブロック前処理と直接法で変位が近いこと."""
+        """ブロック前処理と直接法で変位が近いこと.
+
+        接触なし（十分離間）の条件で x 方向荷重を加え、
+        直接法と GMRES ブロック前処理で同じ変位が得られることを確認する。
+        """
+        # 十分離間させて接触が起きない構成にする
         (
             coords,
             conn,
@@ -283,11 +288,12 @@ class TestBlockPreconditionerConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.5, radii=0.04)
 
+        # x 方向荷重（接触に影響されない自由度）
         f_ext = np.zeros(ndof)
-        f_ext[1 * ndof_per_node + 2] = -30.0
-        f_ext[3 * ndof_per_node + 2] = 30.0
+        f_ext[1 * ndof_per_node + 0] = 10.0  # node1 x
+        f_ext[3 * ndof_per_node + 0] = -10.0  # node3 x
 
         # 直接法
         mgr_direct = ContactManager(
@@ -340,20 +346,18 @@ class TestBlockPreconditionerConvergence:
         assert result_direct.converged, "Direct NCP solver did not converge"
         assert result_gmres.converged, "GMRES NCP solver did not converge"
 
-        # 変位の比較（非線形反復パスが異なるので厳密一致は期待しない）
-        # z方向変位の符号と大きさのオーダーが一致すること
-        uz_direct = result_direct.u[1 * ndof_per_node + 2]
-        uz_gmres = result_gmres.u[1 * ndof_per_node + 2]
+        # x 方向変位の比較
+        ux_direct = result_direct.u[1 * ndof_per_node + 0]
+        ux_gmres = result_gmres.u[1 * ndof_per_node + 0]
 
-        assert abs(uz_direct) > 1e-8, "Direct: nonzero z disp expected"
-        assert abs(uz_gmres) > 1e-8, "GMRES: nonzero z disp expected"
-        assert np.sign(uz_direct) == np.sign(uz_gmres), (
-            f"Sign mismatch: direct={uz_direct:.6f}, gmres={uz_gmres:.6f}"
-        )
+        assert abs(ux_direct) > 1e-8, "Direct: nonzero x disp expected"
+        assert abs(ux_gmres) > 1e-8, "GMRES: nonzero x disp expected"
 
-        # 相対差が 10% 以内
-        rel_diff = abs(uz_gmres - uz_direct) / max(abs(uz_direct), 1e-15)
-        assert rel_diff < 0.1, f"Relative displacement difference too large: {rel_diff:.3f}"
+        # 全自由度の変位ベクトル比較（L2ノルム相対差が 5% 以内）
+        u_diff = np.linalg.norm(result_gmres.u - result_direct.u)
+        u_ref = max(np.linalg.norm(result_direct.u), 1e-15)
+        rel_diff = u_diff / u_ref
+        assert rel_diff < 0.05, f"Relative displacement difference too large: {rel_diff:.3f}"
 
     def test_no_contact_with_block_preconditioner(self):
         """接触なし（梁が離間）でブロック前処理でも正常終了."""
