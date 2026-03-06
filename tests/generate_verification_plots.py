@@ -2026,10 +2026,9 @@ def plot_tuning_wire_cross_section(tuning_result=None):
             wire_d,
             pitch,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-            min_elems_per_pitch=0,
         )
 
         # 各素線の中点（z=pitch/2 付近）の断面位置
@@ -3614,7 +3613,6 @@ def _run_ncp_for_visualization(n_strands, *, layers=(1,), force_per_node=5.0):
         n_elems_per_strand=16,
         n_pitches=1.0,
         gap=0.0001,
-        min_elems_per_pitch=0,
     )
     nc = mesh.node_coords
     conn = mesh.connectivity

@@ -355,7 +355,6 @@ def _solve_twisted_wire(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=n_pitches,
         gap=gap,
-        min_elems_per_pitch=0,
     )
 
     if assembler_type == "cr":
@@ -1014,7 +1013,7 @@ class TestSevenStrandImprovedSolver:
         **_STABLE_7STRAND_PARAMS,
         "n_pitches": 1.0,
         "n_load_steps": 50,
-        "n_elems_per_strand": 4,
+        "n_elems_per_strand": 16,
         "assembler_type": "timo3d",
         "max_iter": 30,
         "contact_damping": 1.0,
@@ -1105,7 +1104,6 @@ def _solve_twisted_wire_block(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=n_pitches,
         gap=gap,
-        min_elems_per_pitch=0,
     )
 
     if assembler_type == "cr":
@@ -1217,7 +1215,7 @@ class TestBlockDecompositionBasic:
     _COMMON: dict = {
         **_STABLE_7STRAND_PARAMS,
         "n_pitches": 1.0,
-        "n_elems_per_strand": 4,
+        "n_elems_per_strand": 16,
         "assembler_type": "timo3d",
         "gap": 0.0005,
     }
@@ -1296,7 +1294,7 @@ class TestSevenStrandBlockSolver:
     _COMMON_KWARGS: dict = {
         **_STABLE_7STRAND_PARAMS,
         "n_pitches": 1.0,
-        "n_elems_per_strand": 4,
+        "n_elems_per_strand": 16,
         "assembler_type": "timo3d",
         "max_iter": 50,
     }
@@ -1380,7 +1378,7 @@ class TestAdaptiveOmega:
 
     _COMMON = dict(
         n_pitches=1.0,
-        n_elems_per_strand=4,
+        n_elems_per_strand=16,
         assembler_type="timo3d",
         auto_kpen=True,
         staged_activation=True,
@@ -1466,7 +1464,7 @@ class TestAdaptiveOmega:
             n_load_steps=15,
             max_iter=30,
             n_pitches=1.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             assembler_type="timo3d",
             auto_kpen=True,
             staged_activation=True,
@@ -1525,10 +1523,9 @@ class TestSevenStrandCyclic:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=self._GAP,
-            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)
@@ -1771,7 +1768,7 @@ class TestAdaptiveOmegaQuantitative:
 
     _BASE = dict(
         n_pitches=1.0,
-        n_elems_per_strand=4,
+        n_elems_per_strand=16,
         assembler_type="timo3d",
         auto_kpen=True,
         staged_activation=True,
@@ -1893,10 +1890,9 @@ class TestHysteresisLoopArea:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)
@@ -2015,10 +2011,9 @@ class TestHysteresisLoopArea:
             _WIRE_D,
             _PITCH,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-            min_elems_per_pitch=0,
         )
         assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)
         fixed_dofs = _fix_all_strand_starts(mesh)

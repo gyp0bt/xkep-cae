@@ -80,7 +80,7 @@ _SHEATH = SheathModel(
 
 # メッシュ設定
 _N_STRANDS = 7
-_N_ELEMS_PER_STRAND = 8
+_N_ELEMS_PER_STRAND = 16
 _N_PITCHES = 0.5
 
 
@@ -326,7 +326,6 @@ def _make_mesh():
         n_elems_per_strand=_N_ELEMS_PER_STRAND,
         n_pitches=_N_PITCHES,
         gap=0.0,
-        min_elems_per_pitch=0,
     )
 
 

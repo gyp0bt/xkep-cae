@@ -54,8 +54,7 @@ def mesh_7():
         wire_diameter=1e-3,
         pitch=20e-3,
         length=20e-3,
-        n_elems_per_strand=10,
-        min_elems_per_pitch=0,
+        n_elems_per_strand=16,
     )
 
 
@@ -67,8 +66,7 @@ def mesh_3():
         wire_diameter=1e-3,
         pitch=20e-3,
         length=20e-3,
-        n_elems_per_strand=10,
-        min_elems_per_pitch=0,
+        n_elems_per_strand=16,
     )
 
 
@@ -588,17 +586,17 @@ class TestSheathSheathMergedCoords:
 
     def test_two_meshes(self, mesh_7):
         coords, conn, noff, eoff = sheath_sheath_merged_coords([mesh_7, mesh_7])
-        # 中心素線は11ノード（10要素+1）× 2本
-        assert coords.shape[0] == 22
-        assert conn.shape[0] == 20
-        assert noff == [0, 11]
-        assert eoff == [0, 10]
+        # 中心素線は17ノード（16要素+1）× 2本
+        assert coords.shape[0] == 34
+        assert conn.shape[0] == 32
+        assert noff == [0, 17]
+        assert eoff == [0, 16]
 
     def test_three_meshes(self, mesh_3):
         """3本撚り（中心なし）の場合."""
         coords, conn, noff, eoff = sheath_sheath_merged_coords([mesh_3, mesh_3, mesh_3])
-        # 3本撚り: center_id=0, 11ノード × 3本
-        assert coords.shape[0] == 33
+        # 3本撚り: center_id=0, 17ノード × 3本
+        assert coords.shape[0] == 51
         assert len(noff) == 3
 
 
@@ -612,8 +610,7 @@ class TestSheathSheathContactManager:
             wire_diameter=1e-3,
             pitch=20e-3,
             length=20e-3,
-            n_elems_per_strand=10,
-            min_elems_per_pitch=0,
+            n_elems_per_strand=16,
         )
         # 2本目は横に1cm ずらす
         mesh2 = make_twisted_wire_mesh(
@@ -621,8 +618,7 @@ class TestSheathSheathContactManager:
             wire_diameter=1e-3,
             pitch=20e-3,
             length=20e-3,
-            n_elems_per_strand=10,
-            min_elems_per_pitch=0,
+            n_elems_per_strand=16,
         )
         # mesh2 の座標をx方向にオフセット
         offset = 3e-3  # シース外径より小さくして接触させる
@@ -643,16 +639,14 @@ class TestSheathSheathContactManager:
             wire_diameter=1e-3,
             pitch=20e-3,
             length=20e-3,
-            n_elems_per_strand=5,
-            min_elems_per_pitch=0,
+            n_elems_per_strand=16,
         )
         mesh2 = make_twisted_wire_mesh(
             n_strands=7,
             wire_diameter=1e-3,
             pitch=20e-3,
             length=20e-3,
-            n_elems_per_strand=5,
-            min_elems_per_pitch=0,
+            n_elems_per_strand=16,
         )
         # 100mm 離す（接触しない距離）
         mesh2.node_coords[:, 0] += 100e-3
@@ -678,8 +672,7 @@ class TestSheathSheathContactManager:
                 wire_diameter=1e-3,
                 pitch=20e-3,
                 length=20e-3,
-                n_elems_per_strand=5,
-                min_elems_per_pitch=0,
+                n_elems_per_strand=16,
             )
             # 三角形配置
             angle = 2.0 * math.pi * i / 3

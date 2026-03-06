@@ -63,7 +63,7 @@ _SECTION = BeamSection.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 
 _PITCH = 0.040  # 40mm ピッチ
-_N_ELEM_PER_STRAND = 8  # ベンチマーク用（軽量化）
+_N_ELEM_PER_STRAND = 16  # ベンチマーク用
 
 
 # ====================================================================
@@ -239,7 +239,6 @@ def _run_benchmark(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=1.0,
         gap=gap,
-        min_elems_per_pitch=0,
     )
     mesh_time = time.perf_counter() - t0_mesh
 
@@ -624,7 +623,7 @@ _TUNED_PARAMS = dict(
     penalty_growth_factor=1.0,
     gap=0.0005,
     use_block_solver=True,
-    n_elems_per_strand=4,
+    n_elems_per_strand=16,
     adaptive_omega=True,
     omega_min=0.01,
     omega_max=0.3,

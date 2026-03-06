@@ -32,14 +32,13 @@ from xkep_cae.mesh.twisted_wire import (
 )
 
 
-def _make_mesh(n_strands: int, n_elems: int = 4):
+def _make_mesh(n_strands: int, n_elems: int = 16):
     return make_twisted_wire_mesh(
         n_strands=n_strands,
         wire_diameter=2.0e-3,
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
-        min_elems_per_pitch=0,
     )
 
 

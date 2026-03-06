@@ -151,7 +151,7 @@ class TestExcludeSameLayerTwistedWire:
         中心1本(layer0) + 外層6本(layer1) の構成。
         外層同士の同層ペアが大半を占め、除外で大幅削減を期待。
         """
-        mesh = make_twisted_wire_mesh(7, 0.002, 0.04, 0.0, 4, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(7, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         coords = mesh.node_coords
 
@@ -186,7 +186,7 @@ class TestExcludeSameLayerTwistedWire:
         3本撚りは中心なし、全素線が layer=1。
         exclude_same_layer で全ペアが除外される。
         """
-        mesh = make_twisted_wire_mesh(3, 0.002, 0.04, 0.0, 4, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(3, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         coords = mesh.node_coords
 
@@ -201,7 +201,7 @@ class TestExcludeSameLayerTwistedWire:
 
     def test_19_strand_significant_reduction(self):
         """19本撚り（3層）で大幅なペア削減を検証."""
-        mesh = make_twisted_wire_mesh(19, 0.002, 0.04, 0.0, 4, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(19, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         coords = mesh.node_coords
 

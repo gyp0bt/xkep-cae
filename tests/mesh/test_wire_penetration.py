@@ -23,7 +23,7 @@ _WIRE_D = 0.002  # 2mm
 _WIRE_R = _WIRE_D / 2.0
 _PITCH = 0.040
 _LENGTH = 0.080
-_N_ELEM = 20
+_N_ELEM = 32
 
 
 def _check_no_penetration_layout(layout, wire_radius, tol=1e-10):
@@ -163,7 +163,6 @@ class TestStrandDiameterMesh:
             _LENGTH,
             _N_ELEM,
             strand_diameter=min_d * 1.1,
-            min_elems_per_pitch=0,
         )
         _check_no_penetration_mesh(mesh)
 
@@ -177,7 +176,6 @@ class TestStrandDiameterMesh:
             _LENGTH,
             _N_ELEM,
             strand_diameter=min_d,
-            min_elems_per_pitch=0,
         )
         _check_no_penetration_mesh(mesh)
 
@@ -191,7 +189,6 @@ class TestStrandDiameterMesh:
                 _LENGTH,
                 _N_ELEM,
                 strand_diameter=_WIRE_D * 2.0,
-                min_elems_per_pitch=0,
             )
 
 
@@ -236,41 +233,38 @@ class TestMeshDensityValidation:
         assert mesh.n_strands == 7
 
     def test_explicit_opt_out(self):
-        """min_elems_per_pitch=0で検査スキップ."""
+        """16要素/ピッチでデフォルト通過."""
         mesh = make_twisted_wire_mesh(
             7,
             _WIRE_D,
             _PITCH,
             0.0,
-            4,
+            16,
             n_pitches=1.0,
-            min_elems_per_pitch=0,
         )
         assert mesh.n_strands == 7
 
     def test_custom_threshold(self):
-        """カスタム閾値: 8要素/ピッチ."""
-        # 8要素/ピッチで閾値8 → ちょうどOK
+        """カスタム閾値: 32要素/ピッチ."""
         mesh = make_twisted_wire_mesh(
             7,
             _WIRE_D,
             _PITCH,
             0.0,
-            8,
+            32,
             n_pitches=1.0,
-            min_elems_per_pitch=8,
+            min_elems_per_pitch=32,
         )
         assert mesh.n_strands == 7
-        # 7要素/ピッチで閾値8 → NG
         with pytest.raises(ValueError):
             make_twisted_wire_mesh(
                 7,
                 _WIRE_D,
                 _PITCH,
                 0.0,
-                7,
+                31,
                 n_pitches=1.0,
-                min_elems_per_pitch=8,
+                min_elems_per_pitch=32,
             )
 
     def test_single_strand_no_check(self):
@@ -316,22 +310,19 @@ class TestChordApproximationPenetration:
             f"初期貫入 {max_penetration:.2e} > 1% of d={_WIRE_D:.2e}"
         )
 
-    def test_coarse_mesh_has_large_penetration(self):
-        """4要素/ピッチでは大きな初期貫入が生じる（物理的に当然）."""
+    def test_fine_mesh_has_small_penetration(self):
+        """16要素/ピッチでは初期貫入が小さい（物理的に当然）."""
         mesh = make_twisted_wire_mesh(
             7,
             _WIRE_D,
             _PITCH,
             0.0,
-            4,
+            16,
             n_pitches=1.0,
-            min_elems_per_pitch=0,
         )
         max_penetration = _max_chord_penetration(mesh)
-        # 4要素/ピッチ → θ=90° → cos(45°)≈0.707 → 貫入≈29%*r_lay
-        # 物理的に意味のある貫入量（>5% wire_d）が存在するはず
-        assert max_penetration > 0.05 * _WIRE_D, (
-            f"粗メッシュなのに貫入量が小さい: {max_penetration:.2e}"
+        assert max_penetration < 0.02 * _WIRE_D, (
+            f"細かいメッシュなのに貫入量が大きい: {max_penetration:.2e}"
         )
 
 

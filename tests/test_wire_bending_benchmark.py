@@ -28,7 +28,7 @@ class TestBendingOscillationSmall:
         """7本撚線の曲げ揺動（軽量版: 45°, 1周期）."""
         result = run_bending_oscillation(
             n_strands=7,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=45.0,
             n_bending_steps=5,
@@ -43,7 +43,7 @@ class TestBendingOscillationSmall:
 
         assert isinstance(result, BendingOscillationResult)
         assert result.n_strands == 7
-        assert result.n_elems == 7 * 4
+        assert result.n_elems == 7 * 16
         assert result.total_time_s > 0
 
         # Phase 2 結果が 1周期 = 4*2 = 8 ステップ
@@ -72,7 +72,7 @@ class TestBendingOscillationSmall:
         t0 = time.perf_counter()
         result = run_bending_oscillation(
             n_strands=7,
-            n_elems_per_strand=8,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             bend_angle_deg=90.0,
             n_bending_steps=10,
@@ -109,7 +109,7 @@ class TestBendingOscillationMedium:
         """19本撚線ベンチマーク（収束は保証しない）."""
         result = run_bending_oscillation(
             n_strands=19,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=30.0,
             n_bending_steps=5,
@@ -134,7 +134,7 @@ class TestBendingOscillationMedium:
         """37本撚線ベンチマーク（収束は保証しない）."""
         result = run_bending_oscillation(
             n_strands=37,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=20.0,
             n_bending_steps=5,
@@ -162,7 +162,7 @@ class TestBendingOscillationTiming:
         """タイミングの主要工程が記録されること."""
         result = run_bending_oscillation(
             n_strands=7,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=30.0,
             n_bending_steps=3,
@@ -193,7 +193,7 @@ class TestBendingOscillationTiming:
         """レポート文字列が正しい形式で出力されること."""
         result = run_bending_oscillation(
             n_strands=7,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=30.0,
             n_bending_steps=3,
@@ -220,7 +220,7 @@ class TestBendingOscillationGIF:
         """GIF出力が正しく生成されること."""
         result = run_bending_oscillation(
             n_strands=7,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=0.5,
             bend_angle_deg=30.0,
             n_bending_steps=3,
