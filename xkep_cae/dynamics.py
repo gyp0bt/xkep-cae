@@ -3,6 +3,7 @@
 暗黙的時間積分スキーマ:
   - Newmark-β法（平均加速度法がデフォルト: β=1/4, γ=1/2）
   - HHT-α法（数値減衰付き: α ∈ [-1/3, 0]）
+  - Generalized-α法（最適数値減衰: ρ∞ ∈ [0, 1]）
 
 陽的時間積分スキーマ:
   - Central Difference 法（条件付安定: Δt < Δt_cr = 2/ω_max）
@@ -13,6 +14,7 @@
 
 線形: M·ä + C·u̇ + K·u = f(t)          → solve_transient() / solve_central_difference()
 非線形: M·ä + C·u̇ + f_int(u) = f(t)   → solve_nonlinear_transient()
+                                           / solve_generalized_alpha()
 """
 
 from __future__ import annotations
@@ -931,6 +933,375 @@ def solve_central_difference(
         acceleration=a_hist,
         config=config,
         stable=stable,
+    )
+
+
+# ====================================================================
+# Generalized-α法
+# ====================================================================
+
+
+def generalized_alpha_params(rho_inf: float) -> dict[str, float]:
+    """スペクトル半径 ρ∞ から Generalized-α パラメータを計算する.
+
+    Chung & Hulbert (1993) の最適パラメータ:
+        α_m = (2ρ∞ - 1) / (ρ∞ + 1)
+        α_f = ρ∞ / (ρ∞ + 1)
+        γ   = 1/2 - α_m + α_f
+        β   = (1 - α_m + α_f)² / 4
+
+    特殊ケース:
+        ρ∞ = 1.0: Newmark 平均加速度法（数値減衰なし）
+        ρ∞ = 0.0: 最大数値減衰（高周波を1ステップで完全減衰）
+        α_f = -α_hht, α_m = 0 とすると HHT-α法と一致
+
+    Args:
+        rho_inf: 高周波でのスペクトル半径 ρ∞ ∈ [0, 1]
+
+    Returns:
+        dict: alpha_m, alpha_f, beta, gamma
+    """
+    if not (0.0 <= rho_inf <= 1.0):
+        raise ValueError(f"rho_inf は [0, 1]: {rho_inf}")
+
+    alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
+    alpha_f = rho_inf / (rho_inf + 1.0)
+    gamma = 0.5 - alpha_m + alpha_f
+    beta = 0.25 * (1.0 - alpha_m + alpha_f) ** 2
+
+    return {
+        "alpha_m": alpha_m,
+        "alpha_f": alpha_f,
+        "beta": beta,
+        "gamma": gamma,
+    }
+
+
+@dataclass
+class GeneralizedAlphaConfig:
+    """Generalized-α法の設定.
+
+    Chung & Hulbert (1993) に基づく最適数値減衰付き時間積分法。
+    HHT-αとNewmark-βの上位互換。
+
+    パラメータ関係:
+      - ρ∞ = 1.0: エネルギー保存（Newmark平均加速度法と等価）
+      - ρ∞ = 0.0: 最大減衰（高周波を即座に減衰）
+      - ρ∞ ∈ (0, 1): 高周波減衰 + 低周波保存のバランス
+
+    内部パラメータ（ρ∞から自動計算）:
+      α_m = (2ρ∞ - 1) / (ρ∞ + 1)
+      α_f = ρ∞ / (ρ∞ + 1)
+      γ = 1/2 - α_m + α_f
+      β = (1 - α_m + α_f)² / 4
+
+    Attributes:
+        dt: 時間刻み [s]
+        n_steps: 時間ステップ数
+        rho_inf: 高周波スペクトル半径 ρ∞ ∈ [0, 1]（デフォルト 0.9）
+        max_iter: Newton反復の最大回数
+        tol_force: 力残差の収束判定値
+    """
+
+    dt: float
+    n_steps: int
+    rho_inf: float = 0.9
+    max_iter: int = 30
+    tol_force: float = 1e-8
+
+    def __post_init__(self) -> None:
+        if self.dt <= 0:
+            raise ValueError(f"dt は正値: {self.dt}")
+        if self.n_steps < 1:
+            raise ValueError(f"n_steps は1以上: {self.n_steps}")
+        if not (0.0 <= self.rho_inf <= 1.0):
+            raise ValueError(f"rho_inf は [0, 1]: {self.rho_inf}")
+
+        params = generalized_alpha_params(self.rho_inf)
+        self.alpha_m: float = params["alpha_m"]
+        self.alpha_f: float = params["alpha_f"]
+        self.beta: float = params["beta"]
+        self.gamma: float = params["gamma"]
+
+
+@dataclass
+class GeneralizedAlphaResult:
+    """Generalized-α法の結果.
+
+    Attributes:
+        time: (n_steps+1,) 時刻配列
+        displacement: (n_steps+1, ndof) 変位履歴
+        velocity: (n_steps+1, ndof) 速度履歴
+        acceleration: (n_steps+1, ndof) 加速度履歴
+        config: 解析設定
+        converged: 全ステップ収束したか
+        iterations_per_step: 各ステップの NR 反復回数
+        failed_step: 非収束時の失敗ステップ番号
+    """
+
+    time: np.ndarray
+    displacement: np.ndarray
+    velocity: np.ndarray
+    acceleration: np.ndarray
+    config: GeneralizedAlphaConfig
+    converged: bool
+    iterations_per_step: list[int] = field(default_factory=list)
+    failed_step: int | None = None
+
+
+def solve_generalized_alpha(
+    M: np.ndarray | sp.spmatrix,
+    f_ext: Callable[[float], np.ndarray] | np.ndarray,
+    u0: np.ndarray,
+    v0: np.ndarray,
+    config: GeneralizedAlphaConfig,
+    assemble_internal_force: Callable[[np.ndarray], np.ndarray],
+    assemble_tangent: Callable[[np.ndarray], np.ndarray | sp.spmatrix],
+    *,
+    C: np.ndarray | sp.spmatrix | None = None,
+    fixed_dofs: np.ndarray | None = None,
+    show_progress: bool = True,
+) -> GeneralizedAlphaResult:
+    """Generalized-α法による非線形過渡応答解析.
+
+    Chung & Hulbert (1993) の定式化:
+
+    運動方程式を中間時刻で評価:
+        M·a_{n+1-α_m} + C·v_{n+1-α_f} + f_int(u_{n+1-α_f}) = f_ext(t_{n+1-α_f})
+
+    中間時刻の量:
+        u_{n+1-α_f} = (1-α_f)·u_{n+1} + α_f·u_n
+        v_{n+1-α_f} = (1-α_f)·v_{n+1} + α_f·v_n
+        a_{n+1-α_m} = (1-α_m)·a_{n+1} + α_m·a_n
+
+    Newmark更新則:
+        u_{n+1} = u_n + Δt·v_n + Δt²·[(0.5-β)·a_n + β·a_{n+1}]
+        v_{n+1} = v_n + Δt·[(1-γ)·a_n + γ·a_{n+1}]
+
+    残差:
+        R = f_ext(t_{n+1-α_f})
+          - M·[(1-α_m)·a_{n+1} + α_m·a_n]
+          - (1-α_f)·[f_int(u_{n+1}) + C·v_{n+1}]
+          - α_f·[f_int(u_n) + C·v_n]
+
+    有効接線:
+        K_eff = (1-α_m)·c0·M + (1-α_f)·c1·C + (1-α_f)·K_T
+
+    where c0 = 1/(β·Δt²), c1 = γ/(β·Δt)
+
+    HHT-αとの関係:
+        α_m=0, α_f=-α_hht → HHT-α法と同一
+
+    Newmarkとの関係:
+        α_m=0, α_f=0 → 標準Newmark-β法
+
+    Args:
+        M: 質量行列
+        f_ext: 外力関数 f(t) → (ndof,) または定数力ベクトル
+        u0: 初期変位
+        v0: 初期速度
+        config: GeneralizedAlphaConfig
+        assemble_internal_force: u → f_int(u)
+        assemble_tangent: u → K_T(u)
+        C: 減衰行列
+        fixed_dofs: 拘束DOF
+        show_progress: 進捗表示
+
+    Returns:
+        GeneralizedAlphaResult
+    """
+    dt = config.dt
+    beta = config.beta
+    gamma = config.gamma
+    alpha_m = config.alpha_m
+    alpha_f = config.alpha_f
+    n_steps = config.n_steps
+    max_iter = config.max_iter
+    tol = config.tol_force
+
+    ndof = len(u0)
+
+    # 外力関数
+    if callable(f_ext):
+        get_force = f_ext
+    else:
+        f_const = np.asarray(f_ext, dtype=float)
+
+        def get_force(t: float) -> np.ndarray:
+            return f_const
+
+    # 密行列化
+    M_d = _to_dense(M)
+    C_d = _to_dense(C) if C is not None else np.zeros((ndof, ndof), dtype=float)
+
+    # 拘束DOF
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        fixed = np.asarray(fixed_dofs, dtype=int)
+    else:
+        fixed = np.array([], dtype=int)
+
+    free_mask = np.ones(ndof, dtype=bool)
+    free_mask[fixed] = False
+    free = np.where(free_mask)[0]
+
+    # Newmark定数
+    c0 = 1.0 / (beta * dt**2)
+    c1 = gamma / (beta * dt)
+
+    # 初期加速度: M·a₀ = f(0) - f_int(u₀) - C·v₀
+    f0 = get_force(0.0)
+    f_int0 = assemble_internal_force(u0)
+    rhs0 = f0 - f_int0 - C_d @ v0
+
+    a0 = np.zeros(ndof, dtype=float)
+    if len(free) > 0:
+        M_ff = M_d[np.ix_(free, free)]
+        a0[free] = np.linalg.solve(M_ff, rhs0[free])
+
+    # 状態初期化
+    u = u0.copy()
+    v = v0.copy()
+    a = a0.copy()
+
+    # 結果配列
+    time_arr = np.linspace(0.0, dt * n_steps, n_steps + 1)
+    u_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+    v_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+    a_hist = np.zeros((n_steps + 1, ndof), dtype=float)
+    u_hist[0] = u.copy()
+    v_hist[0] = v.copy()
+    a_hist[0] = a.copy()
+
+    iter_per_step: list[int] = []
+
+    # 前ステップ保存値
+    f_int_prev = f_int0.copy()
+    f_prev = f0.copy()
+
+    progress_interval = max(1, n_steps // 20)
+
+    for n in range(n_steps):
+        t_next = time_arr[n + 1]
+        f_next = get_force(t_next)
+
+        # 中間時刻の外力
+        f_alpha = (1.0 - alpha_f) * f_next + alpha_f * f_prev
+
+        # Newmark予測子
+        u_pred = u + dt * v + 0.5 * dt**2 * (1.0 - 2.0 * beta) * a
+        v_pred = v + dt * (1.0 - gamma) * a
+
+        # 初期推定
+        u_new = u_pred.copy()
+        u_new[fixed] = 0.0
+
+        converged_step = False
+        res_norm = 0.0
+        ref_norm = 1.0
+
+        for k in range(max_iter):
+            # Newmark更新
+            a_new = c0 * (u_new - u_pred)
+            v_new = v_pred + dt * gamma * a_new
+
+            # 中間時刻の量
+            a_alpha = (1.0 - alpha_m) * a_new + alpha_m * a
+
+            # 内力（u_{n+1}での評価、中間時刻で線形結合）
+            f_int_new = assemble_internal_force(u_new)
+
+            # 残差
+            R = (
+                f_alpha
+                - M_d @ a_alpha
+                - (1.0 - alpha_f) * (f_int_new + C_d @ v_new)
+                - alpha_f * (f_int_prev + C_d @ v)
+            )
+
+            R[fixed] = 0.0
+            res_norm = float(np.linalg.norm(R))
+
+            # 参照ノルム
+            f_ext_norm = float(np.linalg.norm(f_alpha))
+            inertia_norm = float(np.linalg.norm(M_d @ a_alpha))
+            ref_norm = max(
+                f_ext_norm,
+                inertia_norm,
+                float(np.linalg.norm(f_int_new)),
+                1.0,
+            )
+
+            if res_norm / ref_norm < tol:
+                converged_step = True
+                iter_per_step.append(k + 1)
+                if show_progress and (n + 1) % progress_interval == 0:
+                    print(
+                        f"  Step {n + 1}/{n_steps}, t={t_next:.4e}, "
+                        f"iter={k + 1}, ||R||/ref={res_norm / ref_norm:.3e}"
+                    )
+                break
+
+            # 接線剛性
+            K_T = assemble_tangent(u_new)
+            K_T_d = _to_dense(K_T)
+
+            # 有効接線剛性
+            K_eff = (
+                (1.0 - alpha_m) * c0 * M_d + (1.0 - alpha_f) * c1 * C_d + (1.0 - alpha_f) * K_T_d
+            )
+
+            # 境界条件
+            for dof in fixed:
+                K_eff[dof, :] = 0.0
+                K_eff[:, dof] = 0.0
+                K_eff[dof, dof] = 1.0
+
+            du = np.linalg.solve(K_eff, R)
+            u_new = u_new + du
+            u_new[fixed] = 0.0
+
+        if not converged_step:
+            if show_progress:
+                print(
+                    f"  Step {n + 1}: 非収束 (iter={max_iter}, ||R||/ref={res_norm / ref_norm:.3e})"
+                )
+            iter_per_step.append(max_iter)
+            return GeneralizedAlphaResult(
+                time=time_arr[: n + 2],
+                displacement=u_hist[: n + 2],
+                velocity=v_hist[: n + 2],
+                acceleration=a_hist[: n + 2],
+                config=config,
+                converged=False,
+                iterations_per_step=iter_per_step,
+                failed_step=n + 1,
+            )
+
+        # 最終更新
+        a_new = c0 * (u_new - u_pred)
+        v_new = v_pred + dt * gamma * a_new
+
+        # 保存
+        f_int_prev = assemble_internal_force(u_new)
+        f_prev = f_next.copy()
+
+        # 状態更新
+        u = u_new.copy()
+        v = v_new.copy()
+        a = a_new.copy()
+
+        u_hist[n + 1] = u
+        v_hist[n + 1] = v
+        a_hist[n + 1] = a
+
+    return GeneralizedAlphaResult(
+        time=time_arr,
+        displacement=u_hist,
+        velocity=v_hist,
+        acceleration=a_hist,
+        config=config,
+        converged=True,
+        iterations_per_step=iter_per_step,
     )
 
 
