@@ -338,3 +338,49 @@ def run_convergence_tuning(
             result.add_run(run)
 
     return result
+
+
+def run_sensitivity_analysis(
+    n_strands: int = 7,
+    param1_name: str = "omega_max",
+    param1_values: list[float] | None = None,
+    param2_name: str = "al_relaxation",
+    param2_values: list[float] | None = None,
+    **base_params,
+) -> TuningResult:
+    """2パラメータの感度分析を実行（グリッドサーチ）.
+
+    omega_max × al_relaxation 等のパラメータ組合せに対して
+    ソルバーを実行し、収束性・貫入比・Newton反復数を収集する。
+
+    Args:
+        n_strands: 素線数
+        param1_name: 第1パラメータ名
+        param1_values: 第1パラメータの探索値リスト
+        param2_name: 第2パラメータ名
+        param2_values: 第2パラメータの探索値リスト
+        **base_params: ソルバーのベースパラメータ
+
+    Returns:
+        TuningResult: 各組合せの実行結果を集約
+    """
+    import itertools
+
+    from xkep_cae.tuning.presets import s3_convergence_task
+
+    if param1_values is None:
+        param1_values = [0.1, 0.3, 0.5, 0.8]
+    if param2_values is None:
+        param2_values = [0.001, 0.01, 0.05, 0.1]
+
+    task = s3_convergence_task(n_strands)
+    result = TuningResult(task=task)
+
+    for v1, v2 in itertools.product(param1_values, param2_values):
+        params = dict(base_params)
+        params[param1_name] = v1
+        params[param2_name] = v2
+        run = execute_s3_benchmark(n_strands, **params)
+        result.add_run(run)
+
+    return result

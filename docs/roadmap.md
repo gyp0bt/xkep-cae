@@ -130,9 +130,11 @@
 | ステップ二分法deprecated化 | ✅ max_step_cuts→adaptive_timestepping統合（status-110） |
 | 残差スケーリング | ✅ 対角スケーリング前処理（status-110） |
 | 接触力ランプ | ✅ Newton初期の接触力段階的増大（status-110） |
-| チューニングタスクスキーマ | ✅ TuningTask/Param/Criterion/Run/Result + JSON直列化（status-114） |
-| 検証プロット5種 | ✅ スケーリング・接触トポロジー・タイミング内訳・断面マップ・合格判定（status-114） |
-| チューニング実行エンジン | ✅ execute_s3_benchmark + グリッドサーチ対応（status-114） |
+| チューニングタスクスキーマ | ✅ TuningTask/Param/Criterion/Run/Result + JSON/YAML直列化（status-114,115） |
+| 検証プロット6種 | ✅ スケーリング・接触トポロジー・タイミング内訳・断面マップ・合格判定・感度ヒートマップ（status-114,115） |
+| チューニング実行エンジン | ✅ execute_s3_benchmark + グリッドサーチ + 感度分析（status-114,115） |
+| Optuna連携 | ✅ 自動チューニングループ基盤（create_objective/run_optuna_study）（status-115） |
+| 応力・曲率連続性テスト | ✅ 隣接要素間変化率チェック物理テスト11件（status-115） |
 
 **TODO**:
 - [ ] NCPソルバーの19本収束達成（改良1-11有効化でのチューニング）

@@ -2183,6 +2183,113 @@ def plot_tuning_acceptance_summary(tuning_result=None):
     return tuning_result
 
 
+def plot_tuning_sensitivity_heatmap(tuning_result=None):
+    """パラメータ感度分析: omega_max × al_relaxation のヒートマップ.
+
+    2パラメータの組合せに対する収束性・Newton反復数・貫入比を
+    ヒートマップで可視化し、パラメータ感度を直感的に把握する。
+    """
+    plt = _setup_matplotlib()
+    from xkep_cae.tuning.executor import run_sensitivity_analysis
+
+    if tuning_result is None:
+        tuning_result = run_sensitivity_analysis(
+            n_strands=7,
+            param1_name="omega_max",
+            param1_values=[0.1, 0.3, 0.5],
+            param2_name="al_relaxation",
+            param2_values=[0.005, 0.01, 0.05],
+            auto_kpen=True,
+            lambda_n_max_factor=0.1,
+            k_pen_scaling="sqrt",
+            staged_activation=True,
+            g_on=0.0005,
+            g_off=0.001,
+            preserve_inactive_lambda=True,
+            no_deactivation_within_step=True,
+            penalty_growth_factor=1.0,
+            gap=0.0005,
+            use_block_solver=True,
+            adaptive_omega=True,
+            omega_min=0.01,
+            omega_growth=2.0,
+        )
+
+    runs = tuning_result.runs
+    if not runs:
+        print("  -> スキップ（実行データなし）")
+        return tuning_result
+
+    # パラメータ値の抽出
+    p1_vals = sorted({r.params.get("omega_max", 0.3) for r in runs})
+    p2_vals = sorted({r.params.get("al_relaxation", 0.01) for r in runs})
+    n1, n2 = len(p1_vals), len(p2_vals)
+
+    if n1 < 2 or n2 < 2:
+        print("  -> スキップ（グリッドが小さすぎる）")
+        return tuning_result
+
+    # ルックアップ用辞書
+    run_map = {}
+    for r in runs:
+        key = (r.params.get("omega_max", 0.3), r.params.get("al_relaxation", 0.01))
+        run_map[key] = r
+
+    # メトリクスの3種ヒートマップ
+    metrics_info = [
+        ("converged", "Convergence", "RdYlGn", False),
+        ("total_newton_iterations", "Newton Iterations", "YlOrRd", True),
+        ("max_penetration_ratio", "Max Penetration Ratio", "YlOrRd", True),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(
+        "Parameter Sensitivity: omega_max x al_relaxation (7-strand)",
+        fontsize=13,
+    )
+
+    for ax, (metric, title, cmap_name, _) in zip(axes, metrics_info, strict=True):
+        matrix = np.full((n2, n1), np.nan)
+        for i1, v1 in enumerate(p1_vals):
+            for i2, v2 in enumerate(p2_vals):
+                r = run_map.get((v1, v2))
+                if r is not None and metric in r.metrics:
+                    val = r.metrics[metric]
+                    matrix[i2, i1] = (
+                        float(val) if not isinstance(val, bool) else (1.0 if val else 0.0)
+                    )
+
+        im = ax.imshow(matrix, cmap=cmap_name, aspect="auto", origin="lower")
+        ax.set_xticks(range(n1))
+        ax.set_xticklabels([f"{v:.2f}" for v in p1_vals])
+        ax.set_yticks(range(n2))
+        ax.set_yticklabels([f"{v:.3f}" for v in p2_vals])
+        ax.set_xlabel("omega_max")
+        ax.set_ylabel("al_relaxation")
+        ax.set_title(title)
+        fig.colorbar(im, ax=ax, shrink=0.8)
+
+        # セル内に値を表示
+        for i1 in range(n1):
+            for i2 in range(n2):
+                val = matrix[i2, i1]
+                if np.isnan(val):
+                    continue
+                if metric == "converged":
+                    txt = "Yes" if val > 0.5 else "No"
+                elif metric == "max_penetration_ratio":
+                    txt = f"{val:.3f}"
+                else:
+                    txt = f"{int(val)}"
+                ax.text(i1, i2, txt, ha="center", va="center", fontsize=7, color="black")
+
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "tuning_sensitivity_heatmap.png", bbox_inches="tight")
+    plt.close(fig)
+    print("  -> tuning_sensitivity_heatmap.png")
+    return tuning_result
+
+
 # =====================================================================
 # メイン
 # =====================================================================
@@ -2230,6 +2337,7 @@ def main():
     plot_tuning_timing_breakdown(tuning_result)
     plot_tuning_wire_cross_section(tuning_result)
     plot_tuning_acceptance_summary(tuning_result)
+    plot_tuning_sensitivity_heatmap()
 
     print()
     print("Done. All verification plots generated.")

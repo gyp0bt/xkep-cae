@@ -146,6 +146,55 @@ class TuningTask:
                 d[p.name] = p.default
         return d
 
+    def to_dict(self) -> dict[str, Any]:
+        """辞書に変換（YAML/JSON直列化用）."""
+        return {
+            "name": self.name,
+            "description": self.description,
+            "params": [asdict(p) for p in self.params],
+            "criteria": [asdict(c) for c in self.criteria],
+            "fixed_params": self.fixed_params,
+            "tags": self.tags,
+        }
+
+    def save_yaml(self, path: Path | str) -> None:
+        """タスク定義をYAMLファイルに保存."""
+        try:
+            import yaml
+        except ImportError as e:
+            raise ImportError("YAML保存には PyYAML が必要です: pip install pyyaml") from e
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                self.to_dict(),
+                f,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
+            )
+
+    @classmethod
+    def load_yaml(cls, path: Path | str) -> TuningTask:
+        """YAMLファイルからタスク定義を復元."""
+        try:
+            import yaml
+        except ImportError as e:
+            raise ImportError("YAML読込には PyYAML が必要です: pip install pyyaml") from e
+
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+
+        return cls(
+            name=data["name"],
+            description=data["description"],
+            params=[TuningParam(**p) for p in data.get("params", [])],
+            criteria=[AcceptanceCriterion(**c) for c in data.get("criteria", [])],
+            fixed_params=data.get("fixed_params", {}),
+            tags=data.get("tags", []),
+        )
+
 
 @dataclass
 class TuningResult:
@@ -228,7 +277,11 @@ class TuningResult:
         """JSONファイルから結果を復元."""
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
+        return cls._from_dict(data)
 
+    @classmethod
+    def _from_dict(cls, data: dict[str, Any]) -> TuningResult:
+        """辞書からTuningResultを復元（JSON/YAML共通）."""
         task_data = data["task"]
         task = TuningTask(
             name=task_data["name"],
@@ -251,3 +304,36 @@ class TuningResult:
             )
 
         return cls(task=task, runs=runs)
+
+    def save_yaml(self, path: Path | str) -> None:
+        """結果をYAMLファイルに保存.
+
+        PyYAML が利用可能な場合のみ動作する。
+        """
+        try:
+            import yaml
+        except ImportError as e:
+            raise ImportError("YAML保存には PyYAML が必要です: pip install pyyaml") from e
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.dump(
+                self.to_dict(),
+                f,
+                allow_unicode=True,
+                default_flow_style=False,
+                sort_keys=False,
+            )
+
+    @classmethod
+    def load_yaml(cls, path: Path | str) -> TuningResult:
+        """YAMLファイルから結果を復元."""
+        try:
+            import yaml
+        except ImportError as e:
+            raise ImportError("YAML読込には PyYAML が必要です: pip install pyyaml") from e
+
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return cls._from_dict(data)
