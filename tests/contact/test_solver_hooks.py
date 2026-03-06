@@ -1,3 +1,5 @@
+# DEPRECATED: 旧ソルバー(newton_raphson_with_contact)使用。
+# NCP版は test_solver_ncp.py / test_block_preconditioner.py を参照。
 """接触付き Newton-Raphson ソルバーのテスト.
 
 Phase C2: solver_hooks.py の統合テスト。
@@ -8,6 +10,7 @@ Phase C4: merit line search + Outer 運用強化の統合テスト。
 """
 
 import numpy as np
+import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import (
@@ -19,6 +22,8 @@ from xkep_cae.contact.solver_hooks import (
     _deformed_coords,
     newton_raphson_with_contact,
 )
+
+pytestmark = [pytest.mark.deprecated]
 
 # ====================================================================
 # ヘルパー: 簡易ばねモデル（接触検証用）

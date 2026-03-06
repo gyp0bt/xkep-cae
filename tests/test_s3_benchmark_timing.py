@@ -1,3 +1,5 @@
+# DEPRECATED: 旧ソルバー(newton_raphson_with_contact/block_contact)使用。
+# NCP版ベンチマークは xkep_cae/tuning/executor.py を参照。
 """Phase S3: 撚線接触NR収束ベンチマーク + 工程別処理時間計測.
 
 撚線モデル（7→19→37→61→91本）に対して接触NRソルバーを実行し、
@@ -44,7 +46,7 @@ from xkep_cae.mesh.twisted_wire import (
 )
 from xkep_cae.sections.beam import BeamSection
 
-pytestmark = pytest.mark.slow
+pytestmark = [pytest.mark.slow, pytest.mark.deprecated]
 
 # ====================================================================
 # 共通パラメータ
