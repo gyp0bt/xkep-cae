@@ -18,13 +18,13 @@
 
 ## 現在の状態
 
-**2170テスト（fast: 1655 / slow: 297 / deprecated: 218）** — 2026-03-06時点
+**2197テスト（fast: 1682 / slow: 297 / deprecated: 218）** — 2026-03-06時点
 
 | 分野 | 内容 | 状態 |
 |------|------|------|
 | FEM基盤 | 梁要素（EB/Timo/Cosserat/CR）、平面要素（Q4/TRI）、固体要素（HEX8）| 完了 |
 | 非線形 | 幾何学的非線形（NR/弧長/CR/TL/UL）、弾塑性、ファイバーモデル | 完了 |
-| 動的解析 | Newmark-β/HHT-α/陽解法/モーダル減衰 | 完了 |
+| 動的解析 | Newmark-β/HHT-α/Generalized-α/陽解法/モーダル減衰 | 完了 |
 | 接触 | 梁–梁接触（NCP+Mortar+Line contact+摩擦）| 完了 |
 | 撚線モデル | 7本撚り収束、被膜/シース、ヒステリシス観測 | 完了 |
 | 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理 | 完了 |
@@ -39,7 +39,7 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全116件のstatus + テスト数推移 |
+| [ステータス一覧](docs/status/status-index.md) | 全117件のstatus + テスト数推移 |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
 | [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
 | [使用例](docs/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
