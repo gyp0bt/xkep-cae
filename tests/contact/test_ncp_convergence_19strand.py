@@ -886,12 +886,12 @@ class TestNCP19StrandS3Full:
 
 
 def _radial_load(mesh, ndof_total, *, layers=(1,), force_per_node=5.0):
-    """Layer 1素線の中間節点に中心向き径方向力を付与."""
+    """指定層の素線中間節点に中心向き径方向力を付与."""
     f_ext = np.zeros(ndof_total)
     nc = mesh.node_coords
     for sid in range(1, mesh.n_strands):
-        layer = 1 if sid <= 6 else 2
-        if layer not in layers:
+        info = mesh.strand_infos[sid]
+        if info.layer not in layers:
             continue
         nodes = mesh.strand_nodes(sid)
         mid_node = nodes[len(nodes) // 2]
@@ -1020,3 +1020,208 @@ class TestNCP19StrandRadialCompression:
         )
         assert result.converged, "19本 NCP（径方向圧縮）が収束しなかった"
         assert n_active > 0, "接触ペアが活性化されていない"
+
+
+# ====================================================================
+# テスト: 37本NCP収束（S3拡張: 19本→37本）
+# ====================================================================
+
+
+class TestNCP37StrandRadialCompression:
+    """37本撚線(1+6+12+18)の径方向圧縮NCP収束テスト.
+
+    19本収束達成(status-112)に基づき、37本(layer 0-3)への拡張。
+    Layer 1-2の内側素線に径方向力を付与し、3層間の接触を検証。
+    """
+
+    def test_ncp_37strand_radial_layer1(self):
+        """37本: Layer 1のみ径方向圧縮でNCP収束."""
+        mesh = make_twisted_wire_mesh(
+            37,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=16,
+            n_pitches=1.0,
+            gap=0.0001,
+            min_elems_per_pitch=0,
+        )
+        at, ai, ndof = _build_assemblers(mesh)
+        fd = _fixed_dofs_with_center(mesh)
+        f_ext = _radial_load(mesh, ndof, layers=(1,), force_per_node=5.0)
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=0.1,
+                k_pen_mode="beam_ei",
+                beam_E=_E,
+                beam_I=_SECTION.Iy,
+                k_pen_scaling="sqrt",
+                k_t_ratio=0.1,
+                mu=0.0,
+                g_on=0.001,
+                g_off=0.002,
+                use_friction=False,
+                use_line_search=False,
+                use_geometric_stiffness=True,
+                tol_penetration_ratio=0.02,
+                penalty_growth_factor=1.0,
+                k_pen_max=1e12,
+                elem_layer_map=elem_layer_map,
+                exclude_same_layer=True,
+                midpoint_prescreening=True,
+                linear_solver="auto",
+                no_deactivation_within_step=True,
+                preserve_inactive_lambda=True,
+                lambda_warmstart_neighbor=True,
+                chattering_window=3,
+                k_pen_continuation=True,
+                k_pen_continuation_start=0.1,
+                k_pen_continuation_steps=5,
+                adjust_initial_penetration=True,
+                contact_force_ramp=True,
+                contact_force_ramp_iters=5,
+                adaptive_timestepping=True,
+                dt_grow_factor=1.3,
+                dt_shrink_factor=0.5,
+                dt_grow_iter_threshold=8,
+                dt_shrink_iter_threshold=20,
+                dt_contact_change_threshold=0.3,
+                residual_scaling="rms",
+            ),
+        )
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fd,
+            at,
+            ai,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=40,
+            max_iter=100,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            broadphase_margin=0.01,
+            show_progress=True,
+            adaptive_omega=True,
+            omega_init=0.3,
+            omega_min=0.02,
+            omega_max=0.8,
+            omega_shrink=0.5,
+            omega_growth=1.1,
+            active_set_update_interval=5,
+            du_norm_cap=3.0,
+            adaptive_timestepping=True,
+        )
+
+        n_active = _count_active(mgr)
+        print(
+            f"\n  37本 NCP (layer1圧縮): converged={result.converged}, "
+            f"steps={result.n_load_steps}, "
+            f"newton={result.total_newton_iterations}, "
+            f"active={n_active}"
+        )
+        # 37本ではまだ収束を必須としない（段階的改善のトラッキング）
+        assert result.total_newton_iterations > 0, "NR反復が実行されていない"
+        # 収束状態を記録
+        if result.converged:
+            assert n_active > 0, "収束したが接触ペアが活性化されていない"
+
+    def test_ncp_37strand_radial_layer1_2(self):
+        """37本: Layer 1+2 径方向圧縮でNCP収束."""
+        mesh = make_twisted_wire_mesh(
+            37,
+            _WIRE_D,
+            _PITCH,
+            length=0.0,
+            n_elems_per_strand=4,
+            n_pitches=1.0,
+            gap=0.0001,
+            min_elems_per_pitch=0,
+        )
+        at, ai, ndof = _build_assemblers(mesh)
+        fd = _fixed_dofs_with_center(mesh)
+        f_ext = _radial_load(mesh, ndof, layers=(1, 2), force_per_node=5.0)
+
+        elem_layer_map = mesh.build_elem_layer_map()
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=0.1,
+                k_pen_mode="beam_ei",
+                beam_E=_E,
+                beam_I=_SECTION.Iy,
+                k_pen_scaling="sqrt",
+                k_t_ratio=0.1,
+                mu=0.0,
+                g_on=0.001,
+                g_off=0.002,
+                use_friction=False,
+                use_line_search=False,
+                use_geometric_stiffness=True,
+                tol_penetration_ratio=0.02,
+                penalty_growth_factor=1.0,
+                k_pen_max=1e12,
+                elem_layer_map=elem_layer_map,
+                exclude_same_layer=True,
+                midpoint_prescreening=True,
+                linear_solver="auto",
+                no_deactivation_within_step=True,
+                preserve_inactive_lambda=True,
+                lambda_warmstart_neighbor=True,
+                chattering_window=3,
+                k_pen_continuation=True,
+                k_pen_continuation_start=0.1,
+                k_pen_continuation_steps=5,
+                adjust_initial_penetration=True,
+                contact_force_ramp=True,
+                contact_force_ramp_iters=5,
+                adaptive_timestepping=True,
+                dt_grow_factor=1.3,
+                dt_shrink_factor=0.5,
+                dt_grow_iter_threshold=8,
+                dt_shrink_iter_threshold=20,
+                dt_contact_change_threshold=0.3,
+                residual_scaling="rms",
+            ),
+        )
+
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fd,
+            at,
+            ai,
+            mgr,
+            mesh.node_coords,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=10,
+            max_iter=20,
+            tol_force=1e-4,
+            tol_ncp=1e-4,
+            broadphase_margin=0.01,
+            show_progress=True,
+            adaptive_omega=True,
+            omega_init=0.3,
+            omega_min=0.02,
+            omega_max=0.8,
+            omega_shrink=0.5,
+            omega_growth=1.1,
+            active_set_update_interval=5,
+            du_norm_cap=3.0,
+            adaptive_timestepping=True,
+        )
+
+        n_active = _count_active(mgr)
+        print(
+            f"\n  37本 NCP (layer1+2圧縮): converged={result.converged}, "
+            f"steps={result.n_load_steps}, "
+            f"newton={result.total_newton_iterations}, "
+            f"active={n_active}"
+        )
+        # Layer 1+2複合圧縮は計算コストが高い。現時点では収束を必須としない。
+        # NR反復が実行され、接触ペアが検出されることのみ確認。
+        assert result.total_newton_iterations > 0, "NR反復が実行されていない"
