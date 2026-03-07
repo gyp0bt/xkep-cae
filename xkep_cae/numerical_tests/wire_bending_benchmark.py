@@ -25,6 +25,7 @@ GIF出力:
 from __future__ import annotations
 
 import io
+import math
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -593,8 +594,6 @@ def run_bending_oscillation(
     # 0. n_bending_steps 自動推定
     # ------------------------------------------------------------------
     if n_bending_steps is None:
-        import math
-
         n_bending_steps = max(1, math.ceil(bend_angle_deg / max_angle_per_step_deg))
 
     # ------------------------------------------------------------------
@@ -905,45 +904,71 @@ def run_bending_oscillation(
             f"{n_cycles}周期, {total_osc_steps} steps, 変位制御）---"
         )
 
-    for osc_step in range(total_osc_steps):
-        # 正弦波変位: sin(2π * step / (4 * n_steps_per_quarter))
-        phase_frac = (osc_step + 1) / (4 * n_steps_per_quarter)
-        delta_z = amplitude_m * np.sin(2.0 * np.pi * phase_frac)
+    # --- Phase 2: NCP prescribed_dofs + adaptive_timestepping 方式 ---
+    # 各四半周期をNCP内部の荷重ステッピングで処理（特異行列回避）
+    if use_ncp and use_updated_lagrangian and ul_asm is not None:
+        # UL+NCP統合方式: 各四半周期の目標z変位をprescribed_valuesで処方
+        # prescribed_dofs = z_dofs_end + rx_dofs_end (曲げ角維持)
+        osc_prescribed_dofs = np.concatenate([z_dofs_end_arr, rx_dofs_end_arr])
+        n_z = len(z_dofs_end_arr)
+        n_rx = len(rx_dofs_end_arr)
 
-        # 自由端 z-DOF に変位を処方
-        u[z_dofs_end_arr] = z_base + delta_z
+        # 四半周期ごとのウェイポイント生成
+        waypoints: list[float] = []
+        for osc_step in range(total_osc_steps):
+            phase_frac = (osc_step + 1) / (4 * n_steps_per_quarter)
+            delta_z = amplitude_m * np.sin(2.0 * np.pi * phase_frac)
+            waypoints.append(delta_z)
 
-        # NR ソルバー実行（n_load_steps=1, 曲げ維持）
-        # NCP変位制御: 外力0、rx DOFで曲げ角維持
-        # AL力制御: f_ext_bend で曲げモーメント維持
-        if use_ncp:
-            # UL使用時はul_asm.coords_refを参照座標として使う
-            _phase2_node_coords = (
-                ul_asm.coords_ref
-                if (use_updated_lagrangian and ul_asm is not None)
-                else mesh.node_coords
-            )
+        # Phase2 初期時間増分の推定:
+        # Phase1 と同等のスケールを適用。Phase1 で 3° あたり 1 ステップが目安なので、
+        # 揺動の各ステップにおける incr_z / L の大きさを Phase1 の 1 ステップあたり
+        # 角度増分 (max_angle_per_step_deg / bend_angle_deg) と比較して初期分割数を決定。
+        _phase1_frac_per_step = max_angle_per_step_deg / max(bend_angle_deg, 1.0)
+
+        prev_delta_z = 0.0
+        for osc_step in range(total_osc_steps):
+            delta_z = waypoints[osc_step]
+            # 増分: 前ステップからの差分
+            incr_z = delta_z - prev_delta_z
+
+            # 初期 n_load_steps の自動推定（曲げ 3° 相当の等価増分）
+            # incr_z / amplitude を荷重分率とみなし、Phase1 と同等のΔtで分割
+            _osc_frac = abs(incr_z) / max(amplitude_m, 1e-15)
+            _n_init = max(1, math.ceil(_osc_frac / _phase1_frac_per_step))
+
+            # prescribed_values: [z_dofs の増分, rx_dofs は 0（曲げ角維持）]
+            prescribed_vals = np.zeros(n_z + n_rx)
+            prescribed_vals[:n_z] = incr_z  # z方向増分変位
+
+            # UL参照の一時チェックポイント
+            ul_asm.checkpoint()
+
             _ncp_step = newton_raphson_contact_ncp(
                 np.zeros(ndof),
-                fixed_dofs_phase2,
+                fixed_dofs_base,  # z=0端のみ固定（prescribed_dofsで残りを制御）
                 assemble_tangent,
                 assemble_internal_force,
                 mgr,
-                _phase2_node_coords,
+                ul_asm.coords_ref,
                 mesh.connectivity,
                 mesh.radii,
-                n_load_steps=1,
+                n_load_steps=_n_init,  # 物理ベース初期推定、adaptive で自動制御
                 max_iter=max_iter,
                 tol_force=tol_force,
                 tol_ncp=tol_force,
-                show_progress=False,
-                u0=u,
+                show_progress=show_progress,
                 broadphase_margin=broadphase_margin,
                 line_contact=line_contact,
                 use_mortar=use_mortar,
                 n_gauss=n_gauss,
                 k_pen=ncp_k_pen,
+                prescribed_dofs=osc_prescribed_dofs,
+                prescribed_values=prescribed_vals,
+                adaptive_timestepping=adaptive_timestepping,
+                ul_assembler=ul_asm,
             )
+
             result_step = ContactSolveResult(
                 u=_ncp_step.u,
                 converged=_ncp_step.converged,
@@ -956,58 +981,131 @@ def run_bending_oscillation(
                 contact_force_history=_ncp_step.contact_force_history,
                 graph_history=_ncp_step.graph_history,
             )
-        else:
-            result_step = newton_raphson_with_contact(
-                f_ext_bend,
-                fixed_dofs_phase2,
-                assemble_tangent,
-                assemble_internal_force,
-                mgr,
-                mesh.node_coords,
-                mesh.connectivity,
-                mesh.radii,
-                n_load_steps=1,
-                max_iter=max_iter,
-                tol_force=tol_force,
-                show_progress=False,
-                u0=u,
-                broadphase_margin=broadphase_margin,
-                timing=timing,
-            )
 
-        u = result_step.u.copy()
-        phase2_results.append(result_step)
+            # UL更新は NCP 内部で実施済み → u=0（リセット済み）
+            u = np.zeros(ndof)
+            phase2_results.append(result_step)
 
-        if not result_step.converged:
-            phase2_all_converged = False
+            if not result_step.converged:
+                phase2_all_converged = False
+                if show_progress:
+                    print(f"  揺動 step {osc_step + 1}/{total_osc_steps}: 不収束, break")
+                break
 
-        # スナップショット（UL時は総変位を使用）
-        cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
-        quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
-        _snap_u = (u_after_bend + u) if (use_updated_lagrangian and ul_asm is not None) else u
-        _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+            prev_delta_z = delta_z
 
-        if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
-            tip_node = mesh.strand_nodes(0)[-1]
-            tip_dz = u[_NDOF_PER_NODE * tip_node + 2]
-            tip_dz_ref = mesh.node_coords[tip_node, 2]
-            print(
-                f"  揺動 step {osc_step + 1}/{total_osc_steps}: "
-                f"Δz={delta_z * 1000:.2f} mm, "
-                f"tip_z={tip_dz * 1000:.2f} mm (ref={tip_dz_ref * 1000:.1f} mm), "
-                f"conv={result_step.converged}, "
-                f"NR={result_step.total_newton_iterations}"
-            )
+            # スナップショット（UL時はaccum変位を使用）
+            cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
+            quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
+            _snap_u = ul_asm.get_total_displacement(np.zeros(ndof))
+            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+
+            if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
+                print(
+                    f"  揺動 step {osc_step + 1}/{total_osc_steps}: "
+                    f"Δz={delta_z * 1000:.2f} mm, "
+                    f"conv={result_step.converged}, "
+                    f"NR={result_step.total_newton_iterations}"
+                )
+
+    else:
+        # --- 従来方式: 個別NRステップ ---
+        for osc_step in range(total_osc_steps):
+            phase_frac = (osc_step + 1) / (4 * n_steps_per_quarter)
+            delta_z = amplitude_m * np.sin(2.0 * np.pi * phase_frac)
+
+            u[z_dofs_end_arr] = z_base + delta_z
+
+            if use_ncp:
+                _phase2_node_coords = (
+                    ul_asm.coords_ref
+                    if (use_updated_lagrangian and ul_asm is not None)
+                    else mesh.node_coords
+                )
+                _ncp_step = newton_raphson_contact_ncp(
+                    np.zeros(ndof),
+                    fixed_dofs_phase2,
+                    assemble_tangent,
+                    assemble_internal_force,
+                    mgr,
+                    _phase2_node_coords,
+                    mesh.connectivity,
+                    mesh.radii,
+                    n_load_steps=1,
+                    max_iter=max_iter,
+                    tol_force=tol_force,
+                    tol_ncp=tol_force,
+                    show_progress=False,
+                    u0=u,
+                    broadphase_margin=broadphase_margin,
+                    line_contact=line_contact,
+                    use_mortar=use_mortar,
+                    n_gauss=n_gauss,
+                    k_pen=ncp_k_pen,
+                )
+                result_step = ContactSolveResult(
+                    u=_ncp_step.u,
+                    converged=_ncp_step.converged,
+                    n_load_steps=_ncp_step.n_load_steps,
+                    total_newton_iterations=_ncp_step.total_newton_iterations,
+                    total_outer_iterations=0,
+                    n_active_final=_ncp_step.n_active_final,
+                    load_history=_ncp_step.load_history,
+                    displacement_history=_ncp_step.displacement_history,
+                    contact_force_history=_ncp_step.contact_force_history,
+                    graph_history=_ncp_step.graph_history,
+                )
+            else:
+                result_step = newton_raphson_with_contact(
+                    f_ext_bend,
+                    fixed_dofs_phase2,
+                    assemble_tangent,
+                    assemble_internal_force,
+                    mgr,
+                    mesh.node_coords,
+                    mesh.connectivity,
+                    mesh.radii,
+                    n_load_steps=1,
+                    max_iter=max_iter,
+                    tol_force=tol_force,
+                    show_progress=False,
+                    u0=u,
+                    broadphase_margin=broadphase_margin,
+                    timing=timing,
+                )
+
+            u = result_step.u.copy()
+            phase2_results.append(result_step)
+
+            if not result_step.converged:
+                phase2_all_converged = False
+
+            cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
+            quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
+            _snap_u = (u_after_bend + u) if (use_updated_lagrangian and ul_asm is not None) else u
+            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+
+            if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
+                tip_node = mesh.strand_nodes(0)[-1]
+                tip_dz = u[_NDOF_PER_NODE * tip_node + 2]
+                tip_dz_ref = mesh.node_coords[tip_node, 2]
+                print(
+                    f"  揺動 step {osc_step + 1}/{total_osc_steps}: "
+                    f"Δz={delta_z * 1000:.2f} mm, "
+                    f"tip_z={tip_dz * 1000:.2f} mm (ref={tip_dz_ref * 1000:.1f} mm), "
+                    f"conv={result_step.converged}, "
+                    f"NR={result_step.total_newton_iterations}"
+                )
 
     # ------------------------------------------------------------------
     # 結果集約
     # ------------------------------------------------------------------
     total_time = time.perf_counter() - t_total_start
 
-    # UL使用時: Phase 2のuは更新済み参照からの増分なので、総変位は Phase1 + Phase2
+    # UL使用時: 累積変位はul_asm.get_total_displacement()で取得
     tip_node = mesh.strand_nodes(0)[-1]
     if use_updated_lagrangian and ul_asm is not None:
-        u_total_final = u_after_bend + u
+        u_total_final = ul_asm.get_total_displacement(np.zeros(ndof))
         tip_disp = u_total_final[_NDOF_PER_NODE * tip_node : _NDOF_PER_NODE * tip_node + 3]
     else:
         tip_disp = u[_NDOF_PER_NODE * tip_node : _NDOF_PER_NODE * tip_node + 3]
