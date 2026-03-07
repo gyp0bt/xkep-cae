@@ -715,7 +715,7 @@ def run_bending_oscillation(
             snap_labels.append(label)
 
     # 初期状態
-    _record_snapshot(np.zeros(ndof), "初期")
+    _record_snapshot(np.zeros(ndof), "initial")
 
     # ------------------------------------------------------------------
     # Phase 1: 曲げ
@@ -857,7 +857,7 @@ def run_bending_oscillation(
         )
 
     u_after_bend = result_bend.u.copy()
-    _record_snapshot(u_after_bend, f"曲げ完了 ({bend_angle_deg}°)")
+    _record_snapshot(u_after_bend, f"bend done ({bend_angle_deg}deg)")
 
     if show_progress:
         tip_node = mesh.strand_nodes(0)[-1]
