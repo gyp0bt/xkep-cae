@@ -971,6 +971,52 @@ def _rotmat_to_rotvec(R: np.ndarray) -> np.ndarray:
     return quat_to_rotvec(q)
 
 
+def _rodrigues_rotation(e_from: np.ndarray, e_to: np.ndarray) -> np.ndarray:
+    """最小回転行列を計算: e_from → e_to に回す回転行列を返す.
+
+    Rodrigues の公式を使い、e_from と e_to の間の最小角度回転を計算する。
+    Gram-Schmidt と異なり、回転角に対して C∞ 滑らかな依存性を持つ。
+
+    Args:
+        e_from: (3,) 回転元の単位ベクトル
+        e_to: (3,) 回転先の単位ベクトル
+
+    Returns:
+        R: (3, 3) 回転行列（e_from を e_to に回す）
+    """
+    v = np.cross(e_from, e_to)
+    s = np.linalg.norm(v)  # sin(angle)
+    c = np.dot(e_from, e_to)  # cos(angle)
+
+    if s < 1e-14:
+        # ほぼ同じ方向 or 反対方向
+        if c > 0:
+            return np.eye(3)
+        else:
+            # 180° 回転: e_from に直交する任意軸で回転
+            abs_ef = np.abs(e_from)
+            if abs_ef[0] <= abs_ef[1] and abs_ef[0] <= abs_ef[2]:
+                perp = np.array([1.0, 0.0, 0.0])
+            elif abs_ef[1] <= abs_ef[2]:
+                perp = np.array([0.0, 1.0, 0.0])
+            else:
+                perp = np.array([0.0, 0.0, 1.0])
+            axis = np.cross(e_from, perp)
+            axis = axis / np.linalg.norm(axis)
+            # R = 2 * axis ⊗ axis - I
+            return 2.0 * np.outer(axis, axis) - np.eye(3)
+
+    # Rodrigues 公式: R = I + [v]_x + [v]_x^2 * (1-c)/s^2
+    vx = np.array(
+        [
+            [0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0],
+        ]
+    )
+    return np.eye(3) + vx + (vx @ vx) * (1.0 - c) / (s * s)
+
+
 def timo_beam3d_cr_internal_force(
     coords_init: np.ndarray,
     u_elem: np.ndarray,
@@ -990,6 +1036,11 @@ def timo_beam3d_cr_internal_force(
     線形梁剛性を corotated フレームで使い、幾何学的非線形性を捕捉する。
     メッシュ細分化（要素あたりの回転が小さい）条件で正確。
 
+    corotated フレーム R_cr の計算:
+      Rodrigues 回転を使い、初期フレーム R_0 を変形後の弦方向に最小回転で追従させる。
+      これにより Gram-Schmidt の不連続性を回避し、ヘリカル形状要素の
+      大回転時にも滑らかな接線剛性を保証する。
+
     Args:
         coords_init: (2, 3) 初期節点座標
         u_elem: (12,) 全体座標系の変位ベクトル
@@ -1007,15 +1058,20 @@ def timo_beam3d_cr_internal_force(
     # --- 初期形状 ---
     L_0, e_x_0 = _beam3d_length_and_direction(coords_init)
     R_0 = _build_local_axes(e_x_0, v_ref)
-    # 初期ローカル y 軸を v_ref として固定（corotated フレームとの一貫性を保証）
-    v_ref_stable = R_0[1, :]
 
     # --- 変形後の形状 ---
     x1_def = coords_init[0] + u_elem[0:3]
     x2_def = coords_init[1] + u_elem[6:9]
     coords_def = np.array([x1_def, x2_def])
     L_def, e_x_def = _beam3d_length_and_direction(coords_def)
-    R_cr = _build_local_axes(e_x_def, v_ref_stable)
+
+    # --- Rodrigues 回転による corotated フレーム ---
+    # R_cr = R_rodrigues(e_x_0 → e_x_def) @ R_0
+    # 初期弦方向から変形後弦方向への最小回転で初期フレームを追従させる
+    # R_0 の行ベクトルが局所軸: R_0[i,:] を R_rod で回転させて R_cr を得る
+    # R_cr[i,:] = R_rod @ R_0[i,:] → R_cr = R_0 @ R_rod^T
+    R_rod = _rodrigues_rotation(e_x_0, e_x_def)
+    R_cr = R_0 @ R_rod.T
 
     # --- 剛体回転を除去して自然変形回転を抽出 ---
     # R_def_i = R_cr @ R_node_i @ R_0^T
@@ -1300,13 +1356,16 @@ def _cr_extract_deformations(
     """
     L_0, e_x_0 = _beam3d_length_and_direction(coords_init)
     R_0 = _build_local_axes(e_x_0, v_ref)
-    v_ref_stable = R_0[1, :]
 
     x1_def = coords_init[0] + u_elem[0:3]
     x2_def = coords_init[1] + u_elem[6:9]
     coords_def = np.array([x1_def, x2_def])
     L_def, e_x_def = _beam3d_length_and_direction(coords_def)
-    R_cr = _build_local_axes(e_x_def, v_ref_stable)
+
+    # Rodrigues 回転による corotated フレーム
+    # R_0 の行ベクトルが局所軸: R_cr[i,:] = R_rod @ R_0[i,:] → R_cr = R_0 @ R_rod^T
+    R_rod = _rodrigues_rotation(e_x_0, e_x_def)
+    R_cr = R_0 @ R_rod.T
 
     R_node1 = _rotvec_to_rotmat(u_elem[3:6])
     R_node2 = _rotvec_to_rotmat(u_elem[9:12])
@@ -1318,8 +1377,9 @@ def _cr_extract_deformations(
 
     d_cr = np.zeros(12, dtype=float)
     d_cr[3:6] = theta_def1
-    d_cr[6] = L_def - L_0
     d_cr[9:12] = theta_def2
+
+    d_cr[6] = L_def - L_0
 
     return d_cr, R_cr, L_0
 
