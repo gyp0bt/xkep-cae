@@ -129,7 +129,19 @@ Phase 1 完了: converged=True, NR=86, 10 steps
 
 ## TODO
 
-- [ ] UL Phase 2（揺動）の特異行列問題調査・修正（status-130 から継続）
+### 次の優先: ボトルネック分析・高速化・収束安定化（S3復帰前に完了すべき）
+
+- [ ] **ボトルネック調査**: NCP ソルバーの計算プロファイリング（7本/19本で hotspot 特定）
+- [ ] **高速化対策**: プロファイリング結果に基づく最適化実装
+- [ ] **収束安定化**: adaptive_timestepping + UL の安定性向上
+  - adaptive_timestepping の角度上限パラメータ化（現在は adaptive が自動発見、~5°）
+  - UL Phase 2（揺動）の特異行列問題調査・修正（status-130 から継続）
+
+### S3 復帰後
+
 - [ ] 19本撚線の90° UL曲げ収束テスト追加
-- [ ] adaptive_timestepping の角度上限パラメータ化（現在は adaptive が自動発見、~5°）
 - [ ] 解析的接線剛性のB行列修正（Rodrigues drill spin成分の反映）
+
+### 運用改善
+
+- [ ] CLAUDE.md にログ tee 必須化ルール追加済み
