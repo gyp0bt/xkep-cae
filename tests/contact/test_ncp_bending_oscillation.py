@@ -112,7 +112,6 @@ class TestNCP7StrandBendingOscillation:
             f"time={result.total_time_s:.1f}s"
         )
 
-    @pytest.mark.xfail(reason="UL Phase2（揺動）の参照配置統合が未完了 (status-130)", strict=False)
     def test_ncp_7strand_bending_oscillation_full(self):
         """7本: 90度曲げ + 揺動1周期（S3ベンチマーク）.
 

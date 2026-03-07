@@ -1918,7 +1918,7 @@ class ULCRBeamAssembler:
             scf=self.scf,
             stiffness=True,
             internal_force=False,
-            analytical_tangent=False,  # 数値微分（安全）
+            analytical_tangent=True,  # 解析的接線剛性（24x高速化）
         )
         return K_T
 

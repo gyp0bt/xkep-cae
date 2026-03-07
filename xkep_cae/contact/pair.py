@@ -15,8 +15,9 @@ import numpy as np
 
 from xkep_cae.contact.broadphase import broadphase_aabb
 from xkep_cae.contact.geometry import (
-    build_contact_frame,
+    build_contact_frame_batch,
     closest_point_segments,
+    closest_point_segments_batch,
     compute_gap,
 )
 
@@ -454,41 +455,56 @@ class ContactManager:
                 Inner NR 内のモノリシック幾何更新用。
         """
         coords = np.asarray(node_coords, dtype=float)
+        n_pairs = len(self.pairs)
 
-        for pair in self.pairs:
-            # セグメント端点を取得
-            xA0 = coords[pair.nodes_a[0]]
-            xA1 = coords[pair.nodes_a[1]]
-            xB0 = coords[pair.nodes_b[0]]
-            xB1 = coords[pair.nodes_b[1]]
+        if n_pairs == 0:
+            return
 
-            # 最近接点計算
-            result = closest_point_segments(xA0, xA1, xB0, xB1)
+        # --- バッチ版: 全ペアの端点を一括取得 ---
+        nodes_a0 = np.array([p.nodes_a[0] for p in self.pairs], dtype=int)
+        nodes_a1 = np.array([p.nodes_a[1] for p in self.pairs], dtype=int)
+        nodes_b0 = np.array([p.nodes_b[0] for p in self.pairs], dtype=int)
+        nodes_b1 = np.array([p.nodes_b[1] for p in self.pairs], dtype=int)
 
-            # ギャップ計算（初期貫入オフセット適用）
-            gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
-            gap -= pair.gap_offset
+        xA0 = coords[nodes_a0]  # (N, 3)
+        xA1 = coords[nodes_a1]  # (N, 3)
+        xB0 = coords[nodes_b0]  # (N, 3)
+        xB1 = coords[nodes_b1]  # (N, 3)
 
-            # 接触フレーム更新（法線履歴 + 平行輸送で連続性を保持）
-            prev_t1 = pair.state.tangent1
-            prev_n = pair.state.normal
-            has_prev = float(np.linalg.norm(prev_t1)) > 1e-10
-            has_prev_n = float(np.linalg.norm(prev_n)) > 1e-10
-            n, t1, t2 = build_contact_frame(
-                result.normal,
-                prev_tangent1=prev_t1 if has_prev else None,
-                prev_normal=prev_n if has_prev_n else None,
-            )
+        # --- バッチ最近接点計算 ---
+        s_all, t_all, _, _, dist_all, normal_all, _ = closest_point_segments_batch(
+            xA0, xA1, xB0, xB1
+        )
 
-            # 状態を更新
-            pair.state.s = result.s
-            pair.state.t = result.t
-            pair.state.gap = gap
-            pair.state.normal = n
-            pair.state.tangent1 = t1
-            pair.state.tangent2 = t2
+        # --- ギャップ計算 ---
+        radii_a = np.array([p.radius_a for p in self.pairs])
+        radii_b = np.array([p.radius_b for p in self.pairs])
+        offsets = np.array([p.gap_offset for p in self.pairs])
+        gap_all = dist_all - (radii_a + radii_b) - offsets
 
-            # Active-set ヒステリシス更新
+        # --- バッチ接触フレーム計算 ---
+        prev_t1_all = np.array([p.state.tangent1 for p in self.pairs])  # (N, 3)
+        prev_n_all = np.array([p.state.normal for p in self.pairs])  # (N, 3)
+        has_prev = np.sqrt(np.einsum("ij,ij->i", prev_t1_all, prev_t1_all)) > 1e-10
+        has_prev_n = np.sqrt(np.einsum("ij,ij->i", prev_n_all, prev_n_all)) > 1e-10
+
+        n_all, t1_all, t2_all = build_contact_frame_batch(
+            normal_all,
+            prev_tangent1s=prev_t1_all,
+            prev_normals=prev_n_all,
+            has_prev_mask=has_prev,
+            has_prev_n_mask=has_prev_n,
+        )
+
+        # --- 結果を各ペアに書き戻し ---
+        for i, pair in enumerate(self.pairs):
+            pair.state.s = float(s_all[i])
+            pair.state.t = float(t_all[i])
+            pair.state.gap = float(gap_all[i])
+            pair.state.normal = n_all[i]
+            pair.state.tangent1 = t1_all[i]
+            pair.state.tangent2 = t2_all[i]
+
             if not freeze_active_set:
                 self._update_active_set(pair, allow_deactivation=allow_deactivation)
 
