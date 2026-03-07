@@ -920,22 +920,14 @@ def run_bending_oscillation(
             delta_z = amplitude_m * np.sin(2.0 * np.pi * phase_frac)
             waypoints.append(delta_z)
 
-        # Phase2 初期時間増分の推定:
-        # Phase1 と同等のスケールを適用。Phase1 で 3° あたり 1 ステップが目安なので、
-        # 揺動の各ステップにおける incr_z / L の大きさを Phase1 の 1 ステップあたり
-        # 角度増分 (max_angle_per_step_deg / bend_angle_deg) と比較して初期分割数を決定。
-        _phase1_frac_per_step = max_angle_per_step_deg / max(bend_angle_deg, 1.0)
+        # 初期時間増分の引き継ぎ: 前ステップの実効ステップ数を次の初期値に使用
+        _osc_n_load_steps = max(2, n_bending_steps // 10)  # Phase1の1/10が初期目安
 
         prev_delta_z = 0.0
         for osc_step in range(total_osc_steps):
             delta_z = waypoints[osc_step]
             # 増分: 前ステップからの差分
             incr_z = delta_z - prev_delta_z
-
-            # 初期 n_load_steps の自動推定（曲げ 3° 相当の等価増分）
-            # incr_z / amplitude を荷重分率とみなし、Phase1 と同等のΔtで分割
-            _osc_frac = abs(incr_z) / max(amplitude_m, 1e-15)
-            _n_init = max(1, math.ceil(_osc_frac / _phase1_frac_per_step))
 
             # prescribed_values: [z_dofs の増分, rx_dofs は 0（曲げ角維持）]
             prescribed_vals = np.zeros(n_z + n_rx)
@@ -953,7 +945,7 @@ def run_bending_oscillation(
                 ul_asm.coords_ref,
                 mesh.connectivity,
                 mesh.radii,
-                n_load_steps=_n_init,  # 物理ベース初期推定、adaptive で自動制御
+                n_load_steps=_osc_n_load_steps,  # adaptive制御 + 前ステップからの引き継ぎ
                 max_iter=max_iter,
                 tol_force=tol_force,
                 tol_ncp=tol_force,
@@ -968,6 +960,9 @@ def run_bending_oscillation(
                 adaptive_timestepping=adaptive_timestepping,
                 ul_assembler=ul_asm,
             )
+
+            # 前ステップの実効ステップ数を次の初期値に引き継ぎ
+            _osc_n_load_steps = max(2, _ncp_step.n_load_steps)
 
             result_step = ContactSolveResult(
                 u=_ncp_step.u,
