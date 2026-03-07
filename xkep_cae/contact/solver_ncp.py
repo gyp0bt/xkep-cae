@@ -173,6 +173,111 @@ class ConvergenceDiagnostics:
 
 
 @dataclass
+class NCPSolverInput:
+    """NCP ベース接触解析の入力パラメータ.
+
+    newton_raphson_contact_ncp の入力を構造化するデータクラス。
+    全てのフィールドを明示的に設定するか、solver_input.to_kwargs() で
+    既存の関数シグネチャに変換して使用する。
+
+    用語:
+        - increment: 荷重増分（adaptive_timestepping で自動制御）
+        - iteration: Newton 反復（各 increment 内での非線形反復）
+
+    Attributes:
+        f_ext_total: (ndof,) 最終外荷重ベクトル
+        fixed_dofs: 拘束DOFのインデックス配列
+        assemble_tangent: u → K_T(u) コールバック
+        assemble_internal_force: u → f_int(u) コールバック
+        manager: 接触マネージャ
+        node_coords_ref: (n_nodes, 3) 参照節点座標
+        connectivity: (n_elems, 2) 要素接続
+        radii: 断面半径（スカラーまたは配列）
+        max_iter: Newton 最大反復数
+        tol_force: 力ノルム収束判定
+        tol_disp: 変位ノルム収束判定
+        tol_ncp: NCP 残差の収束判定
+        dt_initial_fraction: 初期荷重増分の分率（0=自動, >0 で明示指定）
+        ul_assembler: Updated Lagrangian アセンブラ（大回転問題用）
+    """
+
+    f_ext_total: np.ndarray
+    fixed_dofs: np.ndarray
+    assemble_tangent: Callable
+    assemble_internal_force: Callable
+    manager: ContactManager
+    node_coords_ref: np.ndarray
+    connectivity: np.ndarray
+    radii: np.ndarray | float
+    max_iter: int = 50
+    tol_force: float = 1e-8
+    tol_disp: float = 1e-8
+    tol_ncp: float = 1e-8
+    dt_initial_fraction: float = 0.0
+    show_progress: bool = True
+    u0: np.ndarray | None = None
+    ndof_per_node: int = 6
+    broadphase_margin: float = 0.0
+    broadphase_cell_size: float | None = None
+    ncp_type: str = "fb"
+    ncp_reg: float = 1e-12
+    k_pen: float = 0.0
+    f_ext_base: np.ndarray | None = None
+    use_friction: bool = False
+    mu: float | None = None
+    mu_ramp_steps: int | None = None
+    line_contact: bool = False
+    n_gauss: int | None = None
+    use_mortar: bool = False
+    use_line_search: bool = True
+    line_search_max_steps: int = 5
+    modified_nr_threshold: int = 0
+    prescribed_dofs: np.ndarray | None = None
+    prescribed_values: np.ndarray | None = None
+    adaptive_omega: bool = False
+    omega_init: float = 1.0
+    omega_min: float = 0.05
+    omega_max: float = 1.0
+    omega_shrink: float = 0.5
+    omega_growth: float = 1.2
+    du_norm_cap: float = 0.0
+    dt_grow_iter_threshold: int = 0
+    ul_assembler: object | None = None
+
+    def solve(self) -> NCPSolveResult:
+        """このパラメータで NCP ソルバーを実行する."""
+        return newton_raphson_contact_ncp(**self.to_kwargs())
+
+    def to_kwargs(self) -> dict:
+        """既存の newton_raphson_contact_ncp 関数に渡す kwargs 辞書を生成."""
+        import dataclasses
+
+        kw = dataclasses.asdict(self)
+        # Callable はシリアル化できないので直接設定
+        kw["assemble_tangent"] = self.assemble_tangent
+        kw["assemble_internal_force"] = self.assemble_internal_force
+        kw["manager"] = self.manager
+        kw["ul_assembler"] = self.ul_assembler
+        kw["u0"] = self.u0
+        kw["prescribed_dofs"] = self.prescribed_dofs
+        kw["prescribed_values"] = self.prescribed_values
+        kw["f_ext_base"] = self.f_ext_base
+        kw["broadphase_cell_size"] = self.broadphase_cell_size
+        kw["mu"] = self.mu
+        kw["mu_ramp_steps"] = self.mu_ramp_steps
+        kw["n_gauss"] = self.n_gauss
+        # adaptive_timestepping は常に True（ソルバー統一後のデフォルト）
+        kw["adaptive_timestepping"] = True
+        # n_load_steps は deprecated だが内部計算用に 1 をセット
+        kw["n_load_steps"] = None
+        # deprecated params
+        kw["max_step_cuts"] = 0
+        kw["bisection_max_depth"] = 0
+        kw["active_set_update_interval"] = 1
+        return kw
+
+
+@dataclass
 class NCPSolveResult:
     """NCP ベース接触解析の結果.
 
@@ -180,12 +285,12 @@ class NCPSolveResult:
         u: (ndof,) 最終変位ベクトル
         lambdas: (n_pairs,) ラグランジュ乗数（全ペア、非活性は 0）
         converged: 収束したかどうか
-        n_load_steps: 荷重増分ステップ数
-        total_newton_iterations: 全ステップの合計 Newton 反復回数
+        n_increments: 解析に使用された荷重増分数
+        total_newton_iterations: 全増分の合計 Newton 反復回数
         n_active_final: 最終的な ACTIVE ペア数
-        load_history: 各ステップの荷重係数
-        displacement_history: 各ステップの変位
-        contact_force_history: 各ステップの接触力ノルム
+        load_history: 各増分の荷重係数
+        displacement_history: 各増分の変位
+        contact_force_history: 各増分の接触力ノルム
         graph_history: 接触グラフの時系列
         diagnostics: 収束失敗時の診断情報（収束時はNone）
     """
@@ -193,7 +298,7 @@ class NCPSolveResult:
     u: np.ndarray
     lambdas: np.ndarray
     converged: bool
-    n_load_steps: int
+    n_increments: int
     total_newton_iterations: int
     n_active_final: int
     load_history: list[float] = field(default_factory=list)
@@ -201,6 +306,11 @@ class NCPSolveResult:
     contact_force_history: list[float] = field(default_factory=list)
     graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
     diagnostics: ConvergenceDiagnostics | None = None
+
+    @property
+    def n_load_steps(self) -> int:
+        """後方互換性のためのエイリアス。n_increments を参照。"""
+        return self.n_increments
 
 
 def _deformed_coords(
@@ -1279,7 +1389,7 @@ def newton_raphson_contact_ncp(
     connectivity: np.ndarray,
     radii: np.ndarray | float,
     *,
-    n_load_steps: int = 10,
+    n_load_steps: int | None = None,
     max_iter: int = 50,
     tol_force: float = 1e-8,
     tol_disp: float = 1e-8,
@@ -1316,7 +1426,7 @@ def newton_raphson_contact_ncp(
     bisection_max_depth: int = 0,
     active_set_update_interval: int = 1,
     du_norm_cap: float = 0.0,
-    adaptive_timestepping: bool = False,
+    adaptive_timestepping: bool = True,
     dt_initial_fraction: float = 0.0,
     dt_grow_iter_threshold: int = 0,
     # --- Updated Lagrangian 統合 ---
@@ -1352,7 +1462,8 @@ def newton_raphson_contact_ncp(
         node_coords_ref: (n_nodes, 3) 参照節点座標
         connectivity: (n_elems, 2) 要素接続
         radii: 断面半径
-        n_load_steps: 荷重増分数
+        n_load_steps: [DEPRECATED] dt_initial_fraction を使用。
+            指定時は dt_initial_fraction = 1/n_load_steps に自動変換される。
         max_iter: Newton 最大反復数
         tol_force: 力ノルム収束判定
         tol_disp: 変位ノルム収束判定
@@ -1390,6 +1501,23 @@ def newton_raphson_contact_ncp(
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+
+    # --- n_load_steps → dt_initial_fraction 自動変換 ---
+    # n_load_steps は deprecated。adaptive_timestepping の初期増分として変換する。
+    if n_load_steps is not None:
+        import warnings
+
+        warnings.warn(
+            "n_load_steps は非推奨です。"
+            "dt_initial_fraction を使用してください。"
+            "n_load_steps は dt_initial_fraction = 1.0 / n_load_steps に自動変換されます。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if dt_initial_fraction <= 0.0 and n_load_steps > 0:
+            dt_initial_fraction = 1.0 / n_load_steps
+    else:
+        n_load_steps = 1  # 内部計算用のデフォルト
 
     # 処方変位の設定
     _prescribed_dofs = (
@@ -1689,7 +1817,9 @@ def newton_raphson_contact_ncp(
 
         # --- 段階的接触アクティベーション ---
         if manager.config.staged_activation_steps > 0:
-            max_layer = manager.compute_active_layer_for_step(step_display, n_load_steps)
+            # n_load_steps は adaptive では不定のため、推定値を使用
+            _est_total = max(n_load_steps, int(1.0 / max(_dt_min_frac, 0.01)))
+            max_layer = manager.compute_active_layer_for_step(step_display, _est_total)
             manager.filter_pairs_by_layer(max_layer)
 
         manager.update_geometry(coords_def)
@@ -2030,7 +2160,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     msg = (
-                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
+                        f"  Incr {step_display} (frac={load_frac:.4f}), iter {it}, "
                         f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                         f"||C_n|| = {ncp_norm:.3e}"
                     )
@@ -2042,7 +2172,7 @@ def newton_raphson_contact_ncp(
 
             if show_progress and it % 5 == 0:
                 msg = (
-                    f"  Step {step_display}/{n_load_steps}, iter {it}, "
+                    f"  Incr {step_display} (frac={load_frac:.4f}), iter {it}, "
                     f"||R_u||/||f|| = {res_u_norm / f_ext_ref_norm:.3e}, "
                     f"||C_n|| = {ncp_norm:.3e}"
                 )
@@ -2291,7 +2421,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     print(
-                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
+                        f"  Incr {step_display} (frac={load_frac:.4f}), iter {it}, "
                         f"||du||/||u|| = {du_norm_val / u_norm:.3e} "
                         f"(disp converged, {n_ncp_active} active)"
                     )
@@ -2305,7 +2435,7 @@ def newton_raphson_contact_ncp(
                 step_converged = True
                 if show_progress:
                     print(
-                        f"  Step {step_display}/{n_load_steps}, iter {it}, "
+                        f"  Incr {step_display} (frac={load_frac:.4f}), iter {it}, "
                         f"energy = {energy:.3e} "
                         f"(energy converged, {n_ncp_active} active)"
                     )
@@ -2353,7 +2483,7 @@ def newton_raphson_contact_ncp(
                     u=_u_fail,
                     lambdas=lam_all,
                     converged=False,
-                    n_load_steps=step_display,
+                    n_increments=step_display,
                     total_newton_iterations=total_newton,
                     n_active_final=manager.n_active,
                     load_history=load_history,
@@ -2510,7 +2640,7 @@ def newton_raphson_contact_ncp(
         u=_u_out,
         lambdas=lam_all,
         converged=True,
-        n_load_steps=step_display,
+        n_increments=step_display,
         total_newton_iterations=total_newton,
         n_active_final=manager.n_active,
         load_history=load_history,
