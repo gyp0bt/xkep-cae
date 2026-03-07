@@ -237,7 +237,6 @@ class TestCoatedBeamIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         radii = coated_radii(mesh, _COATING)
         assert radii.shape == (mesh.n_elems,)
@@ -280,7 +279,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         r_bare = compute_envelope_radius(mesh)
         r_coated = compute_envelope_radius(mesh, coating=_COATING)
@@ -296,7 +294,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         r_inner = sheath_inner_radius(mesh, _SHEATH, coating=_COATING)
         r_env = compute_envelope_radius(mesh, coating=_COATING)
@@ -311,7 +308,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         sp_props = sheath_section_properties(mesh, _SHEATH, coating=_COATING)
         for key in ("A", "Iy", "Iz", "J"):
@@ -326,7 +322,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         stiff = sheath_equivalent_stiffness(mesh, _SHEATH, coating=_COATING)
         for key in ("EA", "EIy", "EIz", "GJ"):
@@ -341,7 +336,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         gaps = sheath_radial_gap(mesh, _SHEATH, coating=_COATING)
         assert np.all(gaps >= 0), f"初期ギャップに負値: min={gaps.min():.3e}"
@@ -355,7 +349,6 @@ class TestSheathGeometryIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         outer_ids = outermost_strand_ids(mesh)
         assert len(outer_ids) == 6
@@ -395,7 +388,6 @@ class TestCoatedThreeStrandContact:
             n_elems_per_strand=_N_ELEM_PER_STRAND,
             n_pitches=1.0,
             gap=gap,
-
         )
 
         if with_coating:
@@ -493,7 +485,6 @@ class TestCoatedThreeStrandContact:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         radii_bare = mesh.radii
         radii_coated = coated_radii(mesh, _COATING)
@@ -542,7 +533,6 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         # 被膜込み半径
         radii = coated_radii(mesh, _COATING)
@@ -575,7 +565,6 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         gaps = sheath_radial_gap(mesh, _SHEATH, coating=_COATING)
         # クリアランス > 0 なので全て非負
@@ -593,7 +582,6 @@ class TestCoatedSevenStrandIntegration:
             length=0.0,
             n_elems_per_strand=16,
             n_pitches=1.0,
-
         )
         layer_map = mesh.build_elem_layer_map()
         max_lay = max(layer_map.values())
@@ -639,7 +627,6 @@ class TestCoatedSevenStrandIntegration:
             n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-
         )
         at, af, ndof = _make_cr_assembler_bare(mesh)
         radii = coated_radii(mesh, _COATING)

@@ -3336,9 +3336,13 @@ def _beam_surface_mesh(coords, radius, n_circ=12):
 
 
 def plot_twisted_wire_3d_surface():
-    """撚線の3D表面レンダリング（パイプ形状 + 曲率コンター）."""
+    """撚線の2D投影表面レンダリング（パイプ形状 + 曲率コンター）.
+
+    mplot3dのアスペクト比問題を回避するため、四元数ベースの
+    3D→2D投影方式を使用（status-126で置換）。
+    """
     plt = _setup_matplotlib()
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+    from matplotlib.collections import PolyCollection
 
     from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
@@ -3353,60 +3357,41 @@ def plot_twisted_wire_3d_surface():
     )
     r_wire = wire_d / 2.0
     n_circ = 12
+    elev, azim = 25.0, 45.0
 
-    fig = plt.figure(figsize=(16, 10))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 10))
 
-    # --- 1. 3D表面レンダリング（全体） ---
-    ax1 = fig.add_subplot(1, 2, 1, projection="3d")
+    # --- 1. 2D投影表面レンダリング（全体） ---
     colors_strand = plt.cm.Set2(np.linspace(0, 1, mesh.n_strands))
 
+    all_polys = []
+    all_depths = []
+    all_colors = []
     for si in range(mesh.n_strands):
         ns, ne = mesh.strand_node_ranges[si]
         coords = mesh.node_coords[ns:ne]
-        Xs, Ys, Zs = _beam_surface_mesh(coords, r_wire, n_circ)
+        polys, depths = _beam_surface_polys_2d(coords, r_wire, n_circ, elev, azim)
+        all_polys.extend(polys)
+        all_depths.extend(depths)
+        all_colors.extend([colors_strand[si]] * len(polys))
 
-        # Poly3DCollectionでサーフェスを描画
-        for i in range(len(coords) - 1):
-            for j in range(n_circ):
-                j_next = (j + 1) % n_circ
-                verts = [
-                    [Xs[i, j], Ys[i, j], Zs[i, j]],
-                    [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
-                    [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
-                    [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
-                ]
-                poly = Poly3DCollection(
-                    [verts],
-                    alpha=0.7,
-                    facecolor=colors_strand[si],
-                    edgecolor="none",
-                )
-                ax1.add_collection3d(poly)
+    # 深度ソート（奥→手前の順に描画）
+    order = np.argsort(all_depths)
+    sorted_polys = [all_polys[i] for i in order]
+    sorted_colors = [all_colors[i] for i in order]
 
-    # 軸範囲
-    all_coords = mesh.node_coords
-    margin = 3 * r_wire
-    ax1.set_xlim(all_coords[:, 0].min() - margin, all_coords[:, 0].max() + margin)
-    ax1.set_ylim(all_coords[:, 1].min() - margin, all_coords[:, 1].max() + margin)
-    ax1.set_zlim(all_coords[:, 2].min(), all_coords[:, 2].max())
-    ax1.set_xlabel("x [m]")
-    ax1.set_ylabel("y [m]")
-    ax1.set_zlabel("z [m]")
-    ax1.set_title("7本撚線 3Dパイプ表面", fontsize=11)
-    ax1.view_init(elev=25, azim=45)
+    pc = PolyCollection(sorted_polys, facecolors=sorted_colors, edgecolors="none", alpha=0.7)
+    ax1.add_collection(pc)
+    _setup_2d_projected_ax(ax1, mesh.node_coords, elev, azim)
+    ax1.set_title("7本撚線 2D投影パイプ表面", fontsize=11)
 
-    # --- 2. 曲率コンター付き3D表面（中心素線のみ） ---
-    ax2 = fig.add_subplot(1, 2, 2, projection="3d")
-
-    # 全素線の曲率をカラーマップで表示
+    # --- 2. 曲率コンター付き2D投影表面 ---
     sm = plt.cm.ScalarMappable(cmap="coolwarm")
     all_curvatures = []
 
     for si in range(mesh.n_strands):
         ns, ne = mesh.strand_node_ranges[si]
         coords = mesh.node_coords[ns:ne]
-
-        # 離散曲率: κ = |d²r/ds²| ≈ |Δt/Δs|
         curvature = np.zeros(len(coords))
         for k in range(1, len(coords) - 1):
             t_prev = coords[k] - coords[k - 1]
@@ -3426,40 +3411,39 @@ def plot_twisted_wire_3d_surface():
         kappa_max = 1.0
     sm.set_clim(0, kappa_max)
 
+    all_polys2 = []
+    all_depths2 = []
+    all_colors2 = []
     for si in range(mesh.n_strands):
         ns, ne = mesh.strand_node_ranges[si]
         coords = mesh.node_coords[ns:ne]
         curvature = all_curvatures[si]
-        Xs, Ys, Zs = _beam_surface_mesh(coords, r_wire, n_circ)
+        polys, depths = _beam_surface_polys_2d(coords, r_wire, n_circ, elev, azim)
+        n_pts = len(coords)
+        for pi, (poly, dep) in enumerate(zip(polys, depths, strict=True)):
+            # ポリゴン→要素番号から曲率を取得
+            elem_idx = pi // n_circ
+            if elem_idx < n_pts - 1:
+                kappa_avg = (curvature[elem_idx] + curvature[elem_idx + 1]) / 2.0
+            else:
+                kappa_avg = curvature[-1]
+            all_polys2.append(poly)
+            all_depths2.append(dep)
+            all_colors2.append(sm.to_rgba(kappa_avg))
 
-        for i in range(len(coords) - 1):
-            kappa_avg = (curvature[i] + curvature[i + 1]) / 2.0
-            color = sm.to_rgba(kappa_avg)
-            for j in range(n_circ):
-                j_next = (j + 1) % n_circ
-                verts = [
-                    [Xs[i, j], Ys[i, j], Zs[i, j]],
-                    [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
-                    [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
-                    [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
-                ]
-                poly = Poly3DCollection([verts], alpha=0.8, facecolor=color, edgecolor="none")
-                ax2.add_collection3d(poly)
+    order2 = np.argsort(all_depths2)
+    sorted_polys2 = [all_polys2[i] for i in order2]
+    sorted_colors2 = [all_colors2[i] for i in order2]
 
-    ax2.set_xlim(all_coords[:, 0].min() - margin, all_coords[:, 0].max() + margin)
-    ax2.set_ylim(all_coords[:, 1].min() - margin, all_coords[:, 1].max() + margin)
-    ax2.set_zlim(all_coords[:, 2].min(), all_coords[:, 2].max())
-    ax2.set_xlabel("x [m]")
-    ax2.set_ylabel("y [m]")
-    ax2.set_zlabel("z [m]")
+    pc2 = PolyCollection(sorted_polys2, facecolors=sorted_colors2, edgecolors="none", alpha=0.8)
+    ax2.add_collection(pc2)
+    _setup_2d_projected_ax(ax2, mesh.node_coords, elev, azim)
     ax2.set_title("曲率コンター κ [1/m]", fontsize=11)
-    ax2.view_init(elev=25, azim=45)
 
-    # カラーバー
-    cbar = fig.colorbar(sm, ax=ax2, shrink=0.6, pad=0.1)
+    cbar = fig.colorbar(sm, ax=ax2, shrink=0.8)
     cbar.set_label("κ [1/m]")
 
-    fig.suptitle("撚線3D梁表面レンダリング + 曲率コンター", fontsize=13)
+    fig.suptitle("撚線2D投影 梁表面レンダリング + 曲率コンター", fontsize=13)
     fig.tight_layout()
     fig.savefig(OUTPUT_DIR / "twisted_wire_3d_surface.png")
     plt.close(fig)
@@ -3467,9 +3451,13 @@ def plot_twisted_wire_3d_surface():
 
 
 def plot_beam_3d_stress_contour():
-    """片持ち梁の3D表面に応力コンターを描画."""
+    """片持ち梁の2D投影表面に応力コンターを描画.
+
+    mplot3dのアスペクト比問題を回避するため、四元数ベースの
+    3D→2D投影方式を使用（status-126で置換）。
+    """
     plt = _setup_matplotlib()
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+    from matplotlib.collections import PolyCollection
 
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
     from xkep_cae.sections.beam import BeamSection
@@ -3520,58 +3508,52 @@ def plot_beam_3d_stress_contour():
     for i in range(n_nodes):
         z_pos = coords_all[i, 2]
         M = P * (L - z_pos)
-        sigma_nodes[i] = M * r / section.Iy  # 最大曲げ応力
+        sigma_nodes[i] = M * r / section.Iy
 
-    # 3Dパイプ表面生成
+    # 2D投影表面生成
     n_circ = 16
-    Xs, Ys, Zs = _beam_surface_mesh(deformed, r, n_circ)
-
-    fig = plt.figure(figsize=(14, 8))
-    ax = fig.add_subplot(111, projection="3d")
+    elev, azim = 20.0, -60.0
 
     sigma_max = sigma_nodes.max()
     if sigma_max < 1e-6:
         sigma_max = 1.0
     sm = plt.cm.ScalarMappable(cmap="jet", norm=plt.Normalize(0, sigma_max / 1e6))
 
-    for i in range(n_nodes - 1):
-        sigma_avg = (sigma_nodes[i] + sigma_nodes[i + 1]) / 2.0
-        color = sm.to_rgba(sigma_avg / 1e6)
-        for j in range(n_circ):
-            j_next = (j + 1) % n_circ
-            verts = [
-                [Xs[i, j], Ys[i, j], Zs[i, j]],
-                [Xs[i, j_next], Ys[i, j_next], Zs[i, j_next]],
-                [Xs[i + 1, j_next], Ys[i + 1, j_next], Zs[i + 1, j_next]],
-                [Xs[i + 1, j], Ys[i + 1, j], Zs[i + 1, j]],
-            ]
-            poly = Poly3DCollection([verts], alpha=0.85, facecolor=color, edgecolor="none")
-            ax.add_collection3d(poly)
+    # 変形後のパイプ表面2Dポリゴン
+    polys_def, depths_def = _beam_surface_polys_2d(deformed, r, n_circ, elev, azim)
+
+    # 各ポリゴンの応力色
+    colors_stress = []
+    for pi in range(len(polys_def)):
+        elem_idx = pi // n_circ
+        if elem_idx < n_nodes - 1:
+            sigma_avg = (sigma_nodes[elem_idx] + sigma_nodes[elem_idx + 1]) / 2.0
+        else:
+            sigma_avg = sigma_nodes[-1]
+        colors_stress.append(sm.to_rgba(sigma_avg / 1e6))
+
+    # 深度ソート
+    order = np.argsort(depths_def)
+    sorted_polys = [polys_def[i] for i in order]
+    sorted_colors = [colors_stress[i] for i in order]
+
+    fig, ax = plt.subplots(1, 1, figsize=(14, 8))
+
+    pc = PolyCollection(sorted_polys, facecolors=sorted_colors, edgecolors="none", alpha=0.85)
+    ax.add_collection(pc)
 
     # 未変形形状を線で表示
-    ax.plot(
-        coords_all[:, 0],
-        coords_all[:, 1],
-        coords_all[:, 2],
-        "k--",
-        linewidth=1,
-        alpha=0.5,
-        label="未変形",
-    )
+    undef_2d, _ = _project_3d_to_2d(coords_all, elev, azim)
+    ax.plot(undef_2d[:, 0], undef_2d[:, 1], "k--", linewidth=1, alpha=0.5, label="未変形")
 
-    margin_3d = 2 * r
-    y_range = max(abs(deformed[:, 1].max()), abs(deformed[:, 1].min())) + margin_3d
-    ax.set_xlim(-y_range, y_range)
-    ax.set_ylim(-y_range, y_range)
-    ax.set_zlim(0, L)
-    ax.set_xlabel("x [m]")
-    ax.set_ylabel("y [m]")
-    ax.set_zlabel("z [m]")
-    ax.set_title(f"片持ち梁3D応力コンター (P={P / 1000:.0f}kN, d={d * 1e3:.0f}mm)", fontsize=12)
-    ax.view_init(elev=20, azim=-60)
+    _setup_2d_projected_ax(ax, deformed, elev, azim)
+    ax.set_title(
+        f"片持ち梁2D投影応力コンター (P={P / 1000:.0f}kN, d={d * 1e3:.0f}mm)",
+        fontsize=12,
+    )
     ax.legend(fontsize=9)
 
-    cbar = fig.colorbar(sm, ax=ax, shrink=0.6, pad=0.1)
+    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
     cbar.set_label("σ_bending [MPa]")
 
     fig.tight_layout()
