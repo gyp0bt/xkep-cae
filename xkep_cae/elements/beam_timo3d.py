@@ -106,7 +106,18 @@ def _build_local_axes(
     e_z = np.cross(e_x, v_ref)
     norm_ez = np.linalg.norm(e_z)
     if norm_ez < 1e-10:
-        raise ValueError(f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}")
+        # v_ref が梁軸と平行 → 梁軸に最も直交する座標軸にフォールバック
+        abs_ex = np.abs(e_x)
+        if abs_ex[0] <= abs_ex[1] and abs_ex[0] <= abs_ex[2]:
+            v_ref = np.array([1.0, 0.0, 0.0])
+        elif abs_ex[1] <= abs_ex[2]:
+            v_ref = np.array([0.0, 1.0, 0.0])
+        else:
+            v_ref = np.array([0.0, 0.0, 1.0])
+        e_z = np.cross(e_x, v_ref)
+        norm_ez = np.linalg.norm(e_z)
+        if norm_ez < 1e-10:
+            raise ValueError(f"参照ベクトルが梁軸と平行です。v_ref={v_ref}, e_x={e_x}")
     e_z = e_z / norm_ez
     e_y = np.cross(e_z, e_x)
 

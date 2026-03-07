@@ -256,12 +256,17 @@ class TestLocalAxes:
         # e_y = [0,-1,0] × [1,0,0] = [-1·0-0·0, 0·1-0·0, 0·0-(-1)·1] = [0,0,1]
         assert np.allclose(R[1], [0.0, 0.0, 1.0], atol=1e-12)
 
-    def test_parallel_reference_raises(self):
-        """参照ベクトルが梁軸と平行な場合にValueError."""
+    def test_parallel_reference_fallback(self):
+        """参照ベクトルが梁軸と平行な場合にフォールバックで自動選択."""
         e_x = np.array([1.0, 0.0, 0.0])
         v_ref = np.array([1.0, 0.0, 0.0])
-        with pytest.raises(ValueError, match="平行"):
-            _build_local_axes(e_x, v_ref)
+        # v_ref が平行 → 梁軸に直交する座標軸に自動フォールバック
+        R = _build_local_axes(e_x, v_ref)
+        assert R.shape == (3, 3)
+        # R[0,:] == e_x（梁軸方向）
+        np.testing.assert_allclose(R[0, :], e_x, atol=1e-10)
+        # 直交性チェック
+        np.testing.assert_allclose(R @ R.T, np.eye(3), atol=1e-10)
 
 
 class TestTransformationMatrix:

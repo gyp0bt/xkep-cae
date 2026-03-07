@@ -1815,7 +1815,7 @@ def newton_raphson_contact_ncp(
                         # 正則化: J_t_t の固有値は 1（q̂方向）と 1-ratio（垂直方向）
                         # ratio > 1 で負固有値→行列特異化を防ぐため正則化項を追加
                         if ratio > 1.0:
-                            reg_eps = (ratio - 1.0) + 1e-4
+                            reg_eps = (ratio - 1.0) + 1e-3
                             J_t_t_local += reg_eps * I2
 
                         # J_t_n = -μ * q̂  (∂f_fric/∂λ_n coupling!)

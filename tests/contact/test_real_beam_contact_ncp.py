@@ -434,7 +434,7 @@ class TestRealBeamFrictionContactNCP:
         assert result.converged, "Timo3D摩擦付き接触が収束しなかった"
 
     @pytest.mark.xfail(
-        reason="CR梁の摩擦接触で収束未達 (status-128)",
+        reason="CR梁の摩擦接触で全μ範囲で不収束: 数値微分K_Tと摩擦NCPの結合不安定 (status-129)",
         strict=False,
     )
     def test_cr_friction_converges(self):
