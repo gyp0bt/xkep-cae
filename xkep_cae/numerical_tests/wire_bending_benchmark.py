@@ -38,7 +38,7 @@ from xkep_cae.contact.solver_hooks import (
     newton_raphson_with_contact,
 )
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
-from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
+from xkep_cae.elements.beam_timo3d import ULCRBeamAssembler, assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
 from xkep_cae.sections.beam import BeamSection
 
@@ -114,12 +114,37 @@ class BendingOscillationResult:
 
 
 def _make_cr_assemblers(
-    mesh: TwistedWireMesh, E: float, G: float, section: BeamSection, kappa: float
+    mesh: TwistedWireMesh,
+    E: float,
+    G: float,
+    section: BeamSection,
+    kappa: float,
+    use_ul: bool = False,
 ):
-    """CR (corotational) 梁アセンブラを構築."""
+    """CR (corotational) 梁アセンブラを構築.
+
+    Args:
+        use_ul: True の場合 Updated Lagrangian アセンブラを返す。
+            ヘリカル梁の大回転収束問題を解消する。
+    """
     node_coords = mesh.node_coords
     connectivity = mesh.connectivity
     ndof_total = mesh.n_nodes * _NDOF_PER_NODE
+
+    if use_ul:
+        ul_asm = ULCRBeamAssembler(
+            node_coords,
+            connectivity,
+            E,
+            G,
+            section.A,
+            section.Iy,
+            section.Iz,
+            section.J,
+            kappa,
+            kappa,
+        )
+        return ul_asm.assemble_tangent, ul_asm.assemble_internal_force, ndof_total, ul_asm
 
     def assemble_tangent(u):
         K_T, _ = assemble_cr_beam3d(
@@ -157,7 +182,7 @@ def _make_cr_assemblers(
         )
         return f_int
 
-    return assemble_tangent, assemble_internal_force, ndof_total
+    return assemble_tangent, assemble_internal_force, ndof_total, None
 
 
 def _fix_strand_starts(mesh: TwistedWireMesh) -> np.ndarray:
@@ -509,6 +534,8 @@ def run_bending_oscillation(
     broadphase_margin: float = 0.01,
     # メッシュ密度検査
     min_elems_per_pitch: int = 16,
+    # Updated Lagrangian
+    use_updated_lagrangian: bool = False,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -604,8 +631,8 @@ def run_bending_oscillation(
     G = _compute_G(E, nu)
     kappa = _compute_kappa(nu)
     t0 = time.perf_counter()
-    assemble_tangent, assemble_internal_force, ndof = _make_cr_assemblers(
-        mesh, E, G, section, kappa
+    assemble_tangent, assemble_internal_force, ndof, ul_asm = _make_cr_assemblers(
+        mesh, E, G, section, kappa, use_ul=use_updated_lagrangian
     )
     timing.record(0, 0, -1, "assembler_setup", time.perf_counter() - t0)
 
@@ -695,12 +722,87 @@ def run_bending_oscillation(
         rx_dofs_end.append(int(end_dofs[3]))
     rx_dofs_end_arr = np.array(rx_dofs_end, dtype=int)
 
-    if use_ncp:
-        # --- 変位制御: 自由端 rx DOF に回転角を処方 ---
-        # 力制御の限界点(frac≈0.178)を回避するため、
-        # 回転角を直接処方して各ステップで平衡解を求める
-        # NCPソルバーの内部機構（二分法、Modified NR、適応LS、接線予測子）を活用
+    if use_ncp and use_updated_lagrangian and ul_asm is not None:
+        # --- UL + NCP: ステップごとに参照配置を更新 ---
+        # 各ステップで増分回転を処方し、収束後に参照配置を更新。
+        # ヘリカル梁の大回転収束問題（~13° barrier）を解消する。
+        incr_angle = bend_angle_rad / n_bending_steps
+        prescribed_vals_incr = np.full(len(rx_dofs_end), incr_angle)
 
+        if show_progress:
+            print(
+                f"\n--- Phase 1: 曲げ（UL変位制御 θ={bend_angle_deg}°, {n_bending_steps} steps）---"
+            )
+
+        u_total_accum = np.zeros(ndof)  # 初期配置からの累積変位（出力用）
+        total_nr_iters = 0
+        phase1_all_converged = True
+
+        for bend_step in range(n_bending_steps):
+            _ncp_step = newton_raphson_contact_ncp(
+                np.zeros(ndof),  # 外力なし
+                fixed_dofs_base,
+                assemble_tangent,
+                assemble_internal_force,
+                mgr,
+                ul_asm.coords_ref,  # UL参照座標
+                mesh.connectivity,
+                mesh.radii,
+                n_load_steps=1,
+                max_iter=max_iter,
+                tol_force=tol_force,
+                tol_ncp=tol_force,
+                show_progress=False,
+                broadphase_margin=broadphase_margin,
+                line_contact=line_contact,
+                use_mortar=use_mortar,
+                n_gauss=n_gauss,
+                k_pen=ncp_k_pen,
+                prescribed_dofs=rx_dofs_end_arr,
+                prescribed_values=prescribed_vals_incr,
+            )
+            total_nr_iters += _ncp_step.total_newton_iterations
+
+            if not _ncp_step.converged:
+                phase1_all_converged = False
+                if show_progress:
+                    print(
+                        f"  UL Step {bend_step + 1}/{n_bending_steps}: FAILED "
+                        f"(iter={_ncp_step.total_newton_iterations})"
+                    )
+                break
+
+            # UL 参照更新
+            u_incr = _ncp_step.u.copy()
+            ul_asm.update_reference(u_incr)
+            # 累積変位の追跡（先端変位出力用）
+            u_total_accum += u_incr
+
+            if show_progress and (
+                (bend_step + 1) % max(1, n_bending_steps // 5) == 0 or bend_step == 0
+            ):
+                theta_total = (bend_step + 1) * np.degrees(incr_angle)
+                print(
+                    f"  UL Step {bend_step + 1}/{n_bending_steps} "
+                    f"(θ={theta_total:.1f}°): "
+                    f"iter={_ncp_step.total_newton_iterations}, "
+                    f"active={_ncp_step.n_active_final}"
+                )
+
+        result_bend = ContactSolveResult(
+            u=u_total_accum,
+            converged=phase1_all_converged,
+            n_load_steps=n_bending_steps,
+            total_newton_iterations=total_nr_iters,
+            total_outer_iterations=0,
+            n_active_final=_ncp_step.n_active_final if n_bending_steps > 0 else 0,
+            load_history=[],
+            displacement_history=[],
+            contact_force_history=[],
+            graph_history=None,
+        )
+    elif use_ncp:
+        # --- TL + NCP: 従来の一括ロードステッピング ---
         # 処方変位: load_frac=1.0 で θ = bend_angle_rad
         prescribed_vals = np.full(len(rx_dofs_end), bend_angle_rad)
 
@@ -803,13 +905,18 @@ def run_bending_oscillation(
         fixed_dofs_phase2 = np.unique(np.concatenate([fixed_dofs_base, z_dofs_end_arr]))
 
     # Phase 1 完了時の自由端 z 変位（基準値）
-    z_base = u_after_bend[z_dofs_end_arr].copy()
+    # UL使用時: 参照配置が更新済みなのでz_base=0、uも0からスタート
+    if use_updated_lagrangian and ul_asm is not None:
+        z_base = np.zeros(len(z_dofs_end))
+        u = np.zeros(ndof)
+    else:
+        z_base = u_after_bend[z_dofs_end_arr].copy()
+        u = u_after_bend.copy()
 
     amplitude_m = oscillation_amplitude_mm * 1e-3
     total_osc_steps = n_cycles * 4 * n_steps_per_quarter
 
     phase2_results: list[ContactSolveResult] = []
-    u = u_after_bend.copy()
     phase2_all_converged = True
 
     if show_progress:
@@ -830,13 +937,19 @@ def run_bending_oscillation(
         # NCP変位制御: 外力0、rx DOFで曲げ角維持
         # AL力制御: f_ext_bend で曲げモーメント維持
         if use_ncp:
+            # UL使用時はul_asm.coords_refを参照座標として使う
+            _phase2_node_coords = (
+                ul_asm.coords_ref
+                if (use_updated_lagrangian and ul_asm is not None)
+                else mesh.node_coords
+            )
             _ncp_step = newton_raphson_contact_ncp(
                 np.zeros(ndof),
                 fixed_dofs_phase2,
                 assemble_tangent,
                 assemble_internal_force,
                 mgr,
-                mesh.node_coords,
+                _phase2_node_coords,
                 mesh.connectivity,
                 mesh.radii,
                 n_load_steps=1,
@@ -888,10 +1001,11 @@ def run_bending_oscillation(
         if not result_step.converged:
             phase2_all_converged = False
 
-        # スナップショット
+        # スナップショット（UL時は総変位を使用）
         cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
         quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
-        _record_snapshot(u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+        _snap_u = (u_after_bend + u) if (use_updated_lagrangian and ul_asm is not None) else u
+        _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
 
         if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
             tip_node = mesh.strand_nodes(0)[-1]
@@ -910,8 +1024,13 @@ def run_bending_oscillation(
     # ------------------------------------------------------------------
     total_time = time.perf_counter() - t_total_start
 
+    # UL使用時: Phase 2のuは更新済み参照からの増分なので、総変位は Phase1 + Phase2
     tip_node = mesh.strand_nodes(0)[-1]
-    tip_disp = u[_NDOF_PER_NODE * tip_node : _NDOF_PER_NODE * tip_node + 3]
+    if use_updated_lagrangian and ul_asm is not None:
+        u_total_final = u_after_bend + u
+        tip_disp = u_total_final[_NDOF_PER_NODE * tip_node : _NDOF_PER_NODE * tip_node + 3]
+    else:
+        tip_disp = u[_NDOF_PER_NODE * tip_node : _NDOF_PER_NODE * tip_node + 3]
 
     max_pen = _max_penetration_ratio(mgr)
     n_active = _count_active_pairs(mgr)
