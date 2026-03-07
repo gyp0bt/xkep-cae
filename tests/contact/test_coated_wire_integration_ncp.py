@@ -216,12 +216,19 @@ def _solve_coated_3strand_ncp(
 
     elem_layer_map = mesh.build_elem_layer_map()
 
+    # 被膜込みの場合は等価断面二次モーメントを使用
+    if with_coating:
+        _eq = coated_beam_section(_WIRE_R, _E, _NU, _COATING)
+        _beam_I = _eq["EIy"] / _E
+    else:
+        _beam_I = _SECTION.Iy
+
     mgr = ContactManager(
         config=ContactConfig(
             k_pen_scale=0.1,
             k_pen_mode="beam_ei",
             beam_E=_E,
-            beam_I=_SECTION.Iy,
+            beam_I=_beam_I,
             k_pen_scaling="sqrt",
             k_t_ratio=0.01 if use_friction else 0.1,
             mu=mu,

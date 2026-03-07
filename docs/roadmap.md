@@ -150,9 +150,12 @@
 | NCPソルバー段階的活性化 | ✅ solver_ncp.pyにstaged_activation移植（status-126） |
 | NCP曲げ揺動テスト | ✅ 7本/19本CR梁曲げ揺動テスト8件追加（status-126） |
 | 3Dプロット2D投影置換 | ✅ mplot3d→四元数2D投影に完全移行（status-126） |
+| NCP摩擦接触の行列特異化修正 | ✅ J_t_t正則化でTimo3D摩擦収束達成（status-128） |
 
 **TODO**:
 - [x] 7本NCP曲げ揺動のCI確認（slowテスト）→ xfailで安定化（status-127）
+- [x] NCP摩擦接触の行列特異化修正（status-128）
+- [ ] CR梁の摩擦接触不収束の原因調査
 - [ ] CI test-slow全パス確認（xfail解消）
 - [ ] 37本Layer1+2圧縮の段階的活性化による収束改善確認
 - [ ] 19本以上での曲げ揺動収束達成
