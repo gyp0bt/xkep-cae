@@ -923,7 +923,18 @@ def _solve_augmented_friction_system(
 
     # 拡大行列を構築
     if n_n == 0 and n_t == 0:
-        du = spla.spsolve(K_eff_bc, rhs_u)
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", spla.MatrixRankWarning)
+            try:
+                du = spla.spsolve(K_eff_bc, rhs_u)
+            except spla.MatrixRankWarning:
+                # 行列特異時: 対角正則化を追加
+                K_reg = K_eff_bc + 1e-10 * sp.eye(K_eff_bc.shape[0], format="csc")
+                du = spla.spsolve(K_reg, rhs_u)
+        if not np.all(np.isfinite(du)):
+            du = np.zeros(ndof)
         return du, np.array([]), np.array([])
 
     blocks = [[K_eff_bc, None, None], [None, None, None], [None, None, None]]
@@ -970,7 +981,16 @@ def _solve_augmented_friction_system(
     rhs = np.concatenate(rhs_parts)
 
     # 解く
-    x = spla.spsolve(A, rhs)
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", spla.MatrixRankWarning)
+        try:
+            x = spla.spsolve(A, rhs)
+        except spla.MatrixRankWarning:
+            # 行列特異時: 対角正則化を追加してリトライ
+            A_reg = A + 1e-8 * sp.eye(A.shape[0], format="csc")
+            x = spla.spsolve(A_reg, rhs)
     if not np.all(np.isfinite(x)):
         # フォールバック: GMRES
         x_gm, info = spla.gmres(A.tocsr(), rhs, atol=1e-10, maxiter=max(500, n_total))
@@ -1792,6 +1812,11 @@ def newton_raphson_contact_ncp(
                         ratio = mu_eff * p_n_j / lam_t_hat_norm
                         I2 = np.eye(2)
                         J_t_t_local = I2 - ratio * (I2 - np.outer(q_hat, q_hat))
+                        # 正則化: J_t_t の固有値は 1（q̂方向）と 1-ratio（垂直方向）
+                        # ratio > 1 で負固有値→行列特異化を防ぐため正則化項を追加
+                        if ratio > 1.0:
+                            reg_eps = (ratio - 1.0) + 1e-4
+                            J_t_t_local += reg_eps * I2
 
                         # J_t_n = -μ * q̂  (∂f_fric/∂λ_n coupling!)
                         J_t_n_local = -mu_eff * q_hat
