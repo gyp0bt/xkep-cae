@@ -95,6 +95,7 @@ from xkep_cae.contact.solver_hooks import (
     run_contact_cyclic,
 )
 from xkep_cae.contact.solver_ncp import (
+    ConvergenceDiagnostics,
     NCPSolveResult,
     _solve_saddle_point_direct,
     _solve_saddle_point_gmres,
@@ -103,6 +104,7 @@ from xkep_cae.contact.solver_ncp import (
 
 __all__ = [
     "BenchmarkTimingCollector",
+    "ConvergenceDiagnostics",
     "ContactConfig",
     "ContactEdge",
     "ContactGraph",

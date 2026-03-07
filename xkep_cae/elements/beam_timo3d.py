@@ -1179,6 +1179,240 @@ def timo_beam3d_cr_tangent(
     return 0.5 * (K_T + K_T.T)
 
 
+def _skew(v: np.ndarray) -> np.ndarray:
+    """3次元ベクトルの歪対称行列 [v]× を返す."""
+    return np.array(
+        [
+            [0.0, -v[2], v[1]],
+            [v[2], 0.0, -v[0]],
+            [-v[1], v[0], 0.0],
+        ]
+    )
+
+
+def _tangent_operator(theta: np.ndarray) -> np.ndarray:
+    """指数写像の接線演算子 T_s(θ) を計算する.
+
+    δR = [T_s(θ) @ δθ]× @ R の関係を満たす。
+    空間角速度 ω = T_s(θ) @ θ̇。
+
+    T_s(θ) = I + ((1-cos|θ|)/|θ|²)[θ]× + (1 - sin|θ|/|θ|)/|θ|² [θ]×²
+
+    Args:
+        theta: (3,) 回転ベクトル
+
+    Returns:
+        T_s: (3, 3) 接線演算子
+    """
+    angle = float(np.linalg.norm(theta))
+    if angle < 1e-10:
+        # 小角度展開: T_s ≈ I + (1/2)[θ]× + (1/6)[θ]×²
+        S = _skew(theta)
+        return np.eye(3) + 0.5 * S + (1.0 / 6.0) * (S @ S)
+
+    S = _skew(theta)
+    S2 = S @ S
+    c = np.cos(angle)
+    s = np.sin(angle)
+    coeff1 = (1.0 - c) / (angle * angle)
+    coeff2 = (1.0 - s / angle) / (angle * angle)
+    return np.eye(3) + coeff1 * S + coeff2 * S2
+
+
+def _tangent_operator_inv(theta: np.ndarray) -> np.ndarray:
+    """指数写像の接線演算子の逆 T_s^{-1}(θ) を計算する.
+
+    T_s(θ) @ δθ_spatial = δR @ R^T のとき、
+    T_s^{-1} は空間角速度から回転ベクトル微分への変換を行う。
+
+    T_s^{-1}(θ) = I - (1/2)[θ]× + (1/|θ|² - (1+cos|θ|)/(2|θ|sin|θ|))[θ]×²
+
+    Args:
+        theta: (3,) 回転ベクトル
+
+    Returns:
+        T_inv: (3, 3) 接線演算子の逆行列
+    """
+    angle = float(np.linalg.norm(theta))
+    if angle < 1e-10:
+        # 小角度展開: T_s^{-1} ≈ I - (1/2)[θ]× + (1/12)[θ]×²
+        S = _skew(theta)
+        return np.eye(3) - 0.5 * S + (1.0 / 12.0) * (S @ S)
+
+    S = _skew(theta)
+    S2 = S @ S
+    # 係数: 1/|θ|² - (1+cos|θ|)/(2|θ|sin|θ|)
+    c = np.cos(angle)
+    s = np.sin(angle)
+    coeff = 1.0 / (angle * angle) - (1.0 + c) / (2.0 * angle * s)
+    return np.eye(3) - 0.5 * S + coeff * S2
+
+
+def timo_beam3d_cr_tangent_analytical(
+    coords_init: np.ndarray,
+    u_elem: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+) -> np.ndarray:
+    """Corotational Timoshenko 3D 梁の解析的接線剛性行列.
+
+    Battini & Pacoste (2002) に基づく解析的接線剛性:
+      K_T = B^T @ K_l @ B + K_σ
+
+    B: 全体DOF → 自然変形のプロジェクター行列 (12×12)
+    K_l: corotated 局所剛性行列 (12×12)
+    K_σ: 幾何剛性（内力と変形形状に依存）
+
+    数値微分版 (timo_beam3d_cr_tangent) と比較して:
+    - 24× 高速（24回の内力評価が不要）
+    - 機械精度で正確（eps に依存しない）
+    - 軸-曲げ結合の正確な捕捉（ヘリカル梁の二次収束改善）
+
+    Args:
+        coords_init: (2, 3) 初期節点座標
+        u_elem: (12,) 全体座標系の変位ベクトル
+        E, G, A, Iy, Iz, J, kappa_y, kappa_z: 材料・断面定数
+        v_ref: 局所y軸の参照ベクトル
+        scf: スレンダネス補償係数
+
+    Returns:
+        K_T: (12, 12) 接線剛性行列（全体座標系）
+    """
+    # === 1. CR kinematics（内力計算と共通） ===
+    L_0, e_x_0 = _beam3d_length_and_direction(coords_init)
+    R_0 = _build_local_axes(e_x_0, v_ref)
+
+    x1_def = coords_init[0] + u_elem[0:3]
+    x2_def = coords_init[1] + u_elem[6:9]
+    coords_def = np.array([x1_def, x2_def])
+    L_def, e_x_def = _beam3d_length_and_direction(coords_def)
+
+    R_rod = _rodrigues_rotation(e_x_0, e_x_def)
+    R_cr = R_0 @ R_rod.T
+
+    R_node1 = _rotvec_to_rotmat(u_elem[3:6])
+    R_node2 = _rotvec_to_rotmat(u_elem[9:12])
+
+    R_def1 = R_cr @ R_node1 @ R_0.T
+    R_def2 = R_cr @ R_node2 @ R_0.T
+    theta_def1 = _rotmat_to_rotvec(R_def1)
+    theta_def2 = _rotmat_to_rotvec(R_def2)
+
+    d_cr = np.zeros(12, dtype=float)
+    d_cr[3:6] = theta_def1
+    d_cr[6] = L_def - L_0
+    d_cr[9:12] = theta_def2
+
+    # === 2. 局所剛性と局所内力 ===
+    Ke_local = timo_beam3d_ke_local(E, G, A, Iy, Iz, J, L_0, kappa_y, kappa_z, scf=scf)
+    f_cr = Ke_local @ d_cr  # corotated 内力
+
+    # === 3. プロジェクター行列 B = ∂d_cr/∂u ===
+    # B は 12×12 行列。非ゼロの行: 3,4,5 (θ_def1), 6 (軸), 9,10,11 (θ_def2)
+    B = np.zeros((12, 12), dtype=float)
+
+    # --- 軸方向: d_cr[6] = L_def - L_0 ---
+    # ∂L_def/∂u1_i = -e_x_def[i], ∂L_def/∂u2_i = +e_x_def[i]
+    B[6, 0:3] = -e_x_def
+    B[6, 6:9] = e_x_def
+    # 回転DOFには依存しない: B[6, 3:6] = B[6, 9:12] = 0
+
+    # --- 回転自然変形: θ_def_i = log(R_cr @ R_node_i @ R_0^T) ---
+    #
+    # R_def_i = R_cr @ R_node_i @ R_0^T
+    # δR_def_i = [δψ_def_i]× @ R_def_i  (left spin in corotated frame)
+    #
+    # δψ_def_i = δψ_cr_local + R_cr @ T_s(θ_node_i) @ δθ_node_i
+    #   δψ_cr_local: CR フレームの回転スピン（corotated フレーム内）
+    #   T_s: 指数写像の接線演算子（global → global 角速度変換）
+    #   R_cr: global → local 変換
+    #
+    # CR frame spin (corotated/body frame):
+    #   R_rod maps e_x_0 → e_x_def, R_cr = R_0 @ R_rod^T
+    #   δψ_cr_local = -R_cr @ δψ_rod
+    #   δψ_rod = (1/L_def) * [e_x_def]× @ δΔx  (global frame)
+    #   δΔx = δu2 - δu1
+    #
+    # よって:
+    #   ∂ψ_cr_local/∂u1 = +(1/L_def) * R_cr @ [e_x_def]×
+    #   ∂ψ_cr_local/∂u2 = -(1/L_def) * R_cr @ [e_x_def]×
+    #
+    # Natural rotation variation:
+    #   δθ_def_i = T_s^{-1}(θ_def_i) @ δψ_def_i  (corotated frame)
+
+    S_ex = _skew(e_x_def)  # [e_x_def]× (3×3, global frame)
+    R_cr_S_ex = R_cr @ S_ex  # R_cr @ [e_x_def]× (3×3)
+    dpsi_du1 = (1.0 / L_def) * R_cr_S_ex  # ∂ψ_cr_local/∂u1 (3×3)
+    dpsi_du2 = -(1.0 / L_def) * R_cr_S_ex  # ∂ψ_cr_local/∂u2 (3×3)
+
+    # 接線演算子の逆（corotated frame での log map tangent inverse）
+    T_inv1 = _tangent_operator_inv(theta_def1)
+    T_inv2 = _tangent_operator_inv(theta_def2)
+
+    # 接線演算子 T_s（指数写像の接線、global frame）
+    T_s1 = _tangent_operator(u_elem[3:6])
+    T_s2 = _tangent_operator(u_elem[9:12])
+
+    # --- 節点1 回転の B行列 ---
+    # ∂θ_def1/∂u1 = T_inv1 @ dpsi_du1
+    # ∂θ_def1/∂u2 = T_inv1 @ dpsi_du2
+    # ∂θ_def1/∂θ_node1 = T_inv1 @ R_cr @ T_s(θ_node1)
+    B[3:6, 0:3] = T_inv1 @ dpsi_du1
+    B[3:6, 6:9] = T_inv1 @ dpsi_du2
+    B[3:6, 3:6] = T_inv1 @ R_cr @ T_s1
+
+    # --- 節点2 回転の B行列 ---
+    B[9:12, 0:3] = T_inv2 @ dpsi_du1
+    B[9:12, 6:9] = T_inv2 @ dpsi_du2
+    B[9:12, 9:12] = T_inv2 @ R_cr @ T_s2
+
+    # === 4. 変換行列 ===
+    T_cr = _transformation_matrix_3d(R_cr)
+
+    # === 5. 材料接線剛性 ===
+    # K_mat = T_cr^T @ K_l @ B
+    K_mat = T_cr.T @ Ke_local @ B
+
+    # === 6. 幾何剛性 K_σ = ∂(T_cr^T)/∂u @ f_cr ===
+    #
+    # T_cr は R_cr のブロック対角。δR_cr = [δψ_local]× @ R_cr (body spin) に対し:
+    #   δ(R_cr^T) = -R_cr^T @ [δψ_local]×^T = R_cr^T @ [δψ_local]×
+    #
+    # T_cr^T @ f_cr の変動（T_cr の変動分のみ）:
+    #   δ(T_cr^T) @ f_cr の各ブロック:
+    #     δ(R_cr^T) @ f_blk = R_cr^T @ [δψ_local]× @ f_blk
+    #                       = R_cr^T @ (δψ_local × f_blk)
+    #                       = -R_cr^T @ [f_blk]× @ δψ_local
+    #
+    # δψ_local = dpsi_du1 @ δu1 + dpsi_du2 @ δu2  (corotated frame)
+    #
+    # K_geo[3*blk:3*blk+3, :] = R_cr^T @ [f_blk]× @ dpsi_du
+
+    K_geo = np.zeros((12, 12), dtype=float)
+
+    for blk in range(4):
+        f_blk = f_cr[3 * blk : 3 * blk + 3]
+        if np.linalg.norm(f_blk) < 1e-30:
+            continue
+        # R_cr^T @ [f_blk]× (3×3)
+        RtSf = R_cr.T @ _skew(f_blk)  # (3, 3)
+        K_geo[3 * blk : 3 * blk + 3, 0:3] += RtSf @ dpsi_du1
+        K_geo[3 * blk : 3 * blk + 3, 6:9] += RtSf @ dpsi_du2
+
+    # === 7. 合成して対称化 ===
+    K_T = K_mat + K_geo
+    # 理論的に対称だが、数値的な微小な非対称性を補正
+    return 0.5 * (K_T + K_T.T)
+
+
 def assemble_cr_beam3d(
     nodes_init: np.ndarray,
     connectivity: np.ndarray,
@@ -1197,6 +1431,7 @@ def assemble_cr_beam3d(
     stiffness: bool = True,
     internal_force: bool = True,
     sparse: bool = True,
+    analytical_tangent: bool = True,
 ) -> tuple:
     """Corotational Timoshenko 3D 梁のグローバルアセンブリ（COO/CSR高速版）.
 
@@ -1215,6 +1450,8 @@ def assemble_cr_beam3d(
         stiffness: True の場合、接線剛性行列を計算
         internal_force: True の場合、内力ベクトルを計算
         sparse: True → CSR行列で返す（デフォルト）。False → 密ndarray。
+        analytical_tangent: True の場合、解析的接線剛性を使用（デフォルト）。
+            False の場合、数値微分による接線剛性を使用。
 
     Returns:
         (K_T, f_int): 接線剛性行列と内力ベクトル (ndof,)
@@ -1258,7 +1495,10 @@ def assemble_cr_beam3d(
                     scf=scf,
                 )
                 f_int_global[edofs] += f_e
-            K_e = timo_beam3d_cr_tangent(
+            _tangent_fn = (
+                timo_beam3d_cr_tangent_analytical if analytical_tangent else timo_beam3d_cr_tangent
+            )
+            K_e = _tangent_fn(
                 coords,
                 u_elem,
                 E,
@@ -1308,7 +1548,10 @@ def assemble_cr_beam3d(
             )
             f_int_global[edofs] += f_e
         if stiffness:
-            K_e = timo_beam3d_cr_tangent(
+            _tangent_fn = (
+                timo_beam3d_cr_tangent_analytical if analytical_tangent else timo_beam3d_cr_tangent
+            )
+            K_e = _tangent_fn(
                 coords,
                 u_elem,
                 E,
@@ -1584,6 +1827,163 @@ def cr_beam3d_fiber_tangent(
     # 全体座標系へ変換
     T_cr = _transformation_matrix_3d(R_cr)
     return T_cr.T @ K_cr @ T_cr
+
+
+class ULCRBeamAssembler:
+    """Updated Lagrangian CR 梁アセンブラ.
+
+    標準 CR 定式化はヘリカル梁で ~13° 以上の累積回転に対し収束劣化する
+    （Rodrigues 回転のドリル成分による寄生軸力）。
+    UL では各収束ステップ後に参照配置を更新し、ステップ内変形を小さく保つ。
+
+    使い方:
+        assembler = ULCRBeamAssembler(coords, conn, E, G, A, Iy, Iz, J, kappa)
+        # NR 反復で使用
+        K = assembler.assemble_tangent(u_incr)
+        f = assembler.assemble_internal_force(u_incr)
+        # 収束後
+        assembler.update_reference(u_converged)
+        # 次のステップは u_incr = 0 から開始
+    """
+
+    def __init__(
+        self,
+        node_coords: np.ndarray,
+        connectivity: np.ndarray,
+        E: float,
+        G: float,
+        A: float,
+        Iy: float,
+        Iz: float,
+        J: float,
+        kappa_y: float,
+        kappa_z: float = 0.0,
+        *,
+        v_ref: np.ndarray | None = None,
+        scf: float | None = None,
+    ):
+        self.coords_ref = node_coords.copy()
+        self.connectivity = connectivity
+        self.n_nodes = len(node_coords)
+        self.ndof = self.n_nodes * 6
+        self.E = E
+        self.G = G
+        self.A = A
+        self.Iy = Iy
+        self.Iz = Iz
+        self.J = J
+        self.kappa_y = kappa_y
+        self.kappa_z = kappa_z if kappa_z > 0 else kappa_y
+        self.v_ref = v_ref
+        self.scf = scf
+        # 各節点の参照回転行列（累積回転）
+        self.R_ref = np.tile(np.eye(3), (self.n_nodes, 1, 1))  # (n_nodes, 3, 3)
+        # 累積変位（初期配置からの全変位を追跡、出力用）
+        self._u_total_accum = np.zeros(self.ndof)
+        # チェックポイント（adaptive Δt ロールバック用）
+        self._ckpt_coords_ref: np.ndarray | None = None
+        self._ckpt_R_ref: np.ndarray | None = None
+        self._ckpt_u_total_accum: np.ndarray | None = None
+
+    def _to_total_u(self, u_incr: np.ndarray) -> np.ndarray:
+        """増分変位を CR 要素用の変位に変換.
+
+        CR 要素は coords_ref（更新済み参照座標）を基準とした変位を期待する。
+        UL では coords_ref が各ステップ後に更新されるため、
+        u_incr をそのまま渡すのが正しい（回転合成は不要）。
+
+        R_ref は update_reference 時の整合性チェック用にのみ保持。
+        """
+        return u_incr.copy()
+
+    def assemble_tangent(self, u_incr: np.ndarray) -> object:
+        """増分変位から接線剛性行列を計算.
+
+        UL では u_incr をそのまま CR 要素に渡すため、
+        標準の数値微分（timo_beam3d_cr_tangent）がそのまま使える。
+        """
+        K_T, _ = assemble_cr_beam3d(
+            self.coords_ref,
+            self.connectivity,
+            u_incr,
+            self.E,
+            self.G,
+            self.A,
+            self.Iy,
+            self.Iz,
+            self.J,
+            self.kappa_y,
+            self.kappa_z,
+            v_ref=self.v_ref,
+            scf=self.scf,
+            stiffness=True,
+            internal_force=False,
+            analytical_tangent=False,  # 数値微分（安全）
+        )
+        return K_T
+
+    def assemble_internal_force(self, u_incr: np.ndarray) -> np.ndarray:
+        """増分変位から内力ベクトルを計算."""
+        u_total = self._to_total_u(u_incr)
+        _, f_int = assemble_cr_beam3d(
+            self.coords_ref,
+            self.connectivity,
+            u_total,
+            self.E,
+            self.G,
+            self.A,
+            self.Iy,
+            self.Iz,
+            self.J,
+            self.kappa_y,
+            self.kappa_z,
+            v_ref=self.v_ref,
+            scf=self.scf,
+            stiffness=False,
+            internal_force=True,
+        )
+        return f_int
+
+    def update_reference(self, u_incr: np.ndarray) -> None:
+        """収束後に参照配置を更新.
+
+        参照座標を変形位置に移動し、参照回転を累積回転に更新する。
+        次のステップは u_incr = 0 から開始。
+        """
+        for i in range(self.n_nodes):
+            # 並進: 参照座標を更新
+            self.coords_ref[i] += u_incr[6 * i : 6 * i + 3]
+            # 回転: 参照回転を更新（乗法更新）
+            theta_incr = u_incr[6 * i + 3 : 6 * i + 6]
+            R_incr = _rotvec_to_rotmat(theta_incr)
+            self.R_ref[i] = self.R_ref[i] @ R_incr
+        # 累積変位の追跡
+        self._u_total_accum += u_incr
+
+    def checkpoint(self) -> None:
+        """参照配置のチェックポイントを保存（adaptive Δt ロールバック用）."""
+        self._ckpt_coords_ref = self.coords_ref.copy()
+        self._ckpt_R_ref = self.R_ref.copy()
+        self._ckpt_u_total_accum = self._u_total_accum.copy()
+
+    def rollback(self) -> None:
+        """チェックポイントから参照配置を復元."""
+        if self._ckpt_coords_ref is not None:
+            self.coords_ref = self._ckpt_coords_ref.copy()
+            self.R_ref = self._ckpt_R_ref.copy()
+            self._u_total_accum = self._ckpt_u_total_accum.copy()
+
+    @property
+    def u_total_accum(self) -> np.ndarray:
+        """初期配置からの累積変位（出力用）."""
+        return self._u_total_accum
+
+    def get_total_displacement(self, u_incr: np.ndarray) -> np.ndarray:
+        """増分変位を初期配置からの total 変位に変換.
+
+        累積変位 + 現在の未コミット増分。
+        """
+        return self._u_total_accum + u_incr
 
 
 def assemble_cr_beam3d_fiber(

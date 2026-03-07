@@ -14,6 +14,7 @@ import scipy.sparse as sp
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.contact.solver_ncp import (
+    ConvergenceDiagnostics,
     NCPSolveResult,
     _build_constraint_jacobian,
     _compute_contact_force_from_lambdas,
@@ -598,3 +599,117 @@ class TestConstraintJacobianAndForce:
         lam_all = np.array([0.0])
         f_c = _compute_contact_force_from_lambdas(mgr, lam_all, 24, ndof_per_node=6)
         np.testing.assert_allclose(f_c, 0.0, atol=1e-15)
+
+
+class TestConvergenceDiagnostics:
+    """ConvergenceDiagnostics の単体テスト."""
+
+    def test_format_report_basic(self):
+        """基本的なレポート生成ができること."""
+        diag = ConvergenceDiagnostics(step=3, load_frac=0.75)
+        diag.res_history = [1.0, 0.5, 0.3, 0.2]
+        diag.ncp_history = [0.1, 0.05, 0.02, 0.01]
+        diag.ncp_t_history = [0.0, 0.0, 0.0, 0.0]
+        diag.n_active_history = [5, 5, 5, 5]
+        diag.du_norm_history = [0.01, 0.005, 0.003, 0.002]
+        diag.max_du_dof_history = [3, 3, 7, 7]
+
+        report = diag.format_report(max_iter=50)
+        assert "Step: 3" in report
+        assert "Load fraction: 0.75" in report
+        assert "Iterations: 4 / 50" in report
+        assert "||R||/||f||" in report
+
+    def test_format_report_empty(self):
+        """空の診断データでもレポート生成できること."""
+        diag = ConvergenceDiagnostics()
+        report = diag.format_report()
+        assert "Step: 0" in report
+        assert "Iterations: 0 / 50" in report
+
+    def test_divergence_warning(self):
+        """残差増大時に警告が出ること."""
+        diag = ConvergenceDiagnostics(step=1, load_frac=0.5)
+        diag.res_history = [0.1, 5.0, 100.0]
+        diag.ncp_history = [0.0, 0.0, 0.0]
+        diag.ncp_t_history = [0.0, 0.0, 0.0]
+        diag.n_active_history = [0, 0, 0]
+        diag.du_norm_history = [0.01, 0.5, 10.0]
+        diag.max_du_dof_history = [0, 0, 0]
+
+        report = diag.format_report()
+        assert "residual growth" in report.lower() or "divergence" in report.lower()
+
+    def test_chattering_warning(self):
+        """アクティブセットが頻繁に変動する場合に警告が出ること."""
+        diag = ConvergenceDiagnostics(step=1, load_frac=0.5)
+        diag.res_history = [0.1] * 10
+        diag.ncp_history = [0.01] * 10
+        diag.ncp_t_history = [0.0] * 10
+        # 毎反復アクティブセットが変動
+        diag.n_active_history = [5, 3, 5, 3, 5, 3, 5, 3, 5, 3]
+        diag.du_norm_history = [0.01] * 10
+        diag.max_du_dof_history = [0] * 10
+
+        report = diag.format_report()
+        assert "chattering" in report.lower()
+
+    def test_convergence_order(self):
+        """収束次数が推定されること."""
+        diag = ConvergenceDiagnostics(step=1, load_frac=1.0)
+        # 線形収束: 各反復で半分に
+        diag.res_history = [1.0, 0.5, 0.25, 0.125, 0.0625]
+        diag.ncp_history = [0.0] * 5
+        diag.ncp_t_history = [0.0] * 5
+        diag.n_active_history = [0] * 5
+        diag.du_norm_history = [0.01] * 5
+        diag.max_du_dof_history = [0] * 5
+
+        report = diag.format_report()
+        assert "Convergence order" in report
+
+    def test_ncp_solver_returns_diagnostics_on_failure(self):
+        """収束失敗時にNCPSolveResultにdiagnosticsが付与されること."""
+        (
+            coords,
+            conn,
+            radii,
+            ndof,
+            ndof_per_node,
+            K_fn,
+            f_int_fn,
+            fixed_dofs,
+        ) = _make_spring_system(z_sep=0.035, radii=0.04, k_spring=1e4)
+
+        mgr = ContactManager(
+            config=ContactConfig(
+                k_pen_scale=1e5,
+                g_on=0.01,
+                g_off=0.02,
+            ),
+        )
+
+        f_ext = np.zeros(ndof)
+        f_ext[1 * ndof_per_node + 2] = -50.0
+
+        # max_iter=1 で収束しないことを保証
+        result = newton_raphson_contact_ncp(
+            f_ext,
+            fixed_dofs,
+            K_fn,
+            f_int_fn,
+            mgr,
+            coords,
+            conn,
+            radii,
+            n_load_steps=1,
+            max_iter=1,
+            tol_force=1e-15,
+            show_progress=False,
+            broadphase_margin=0.05,
+        )
+
+        if not result.converged:
+            assert result.diagnostics is not None
+            assert len(result.diagnostics.res_history) > 0
+            assert result.diagnostics.step > 0
