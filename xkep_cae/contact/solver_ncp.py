@@ -1519,6 +1519,12 @@ def newton_raphson_contact_ncp(
             margin=broadphase_margin,
             cell_size=broadphase_cell_size,
         )
+
+        # --- 段階的接触アクティベーション ---
+        if manager.config.staged_activation_steps > 0:
+            max_layer = manager.compute_active_layer_for_step(step_display, n_load_steps)
+            manager.filter_pairs_by_layer(max_layer)
+
         manager.update_geometry(coords_def)
 
         # ペア数拡張（λウォームスタート対応）

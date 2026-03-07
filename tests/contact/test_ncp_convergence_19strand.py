@@ -1121,12 +1121,12 @@ class TestNCP37StrandRadialCompression:
     def test_ncp_37strand_radial_layer1_2(self):
         """37本: Layer 1+2 径方向圧縮でNCP収束.
 
-        改良点（status-123）:
+        改良点（status-126）:
+        - staged_activation_steps=20 で層別段階的活性化（一斉活性化抑制）
         - k_pen_continuation_start=0.01, steps=10で漸進的ペナルティ上昇
         - contact_force_ramp_iters=10で接触力を緩やかに導入
         - force_per_node=2.0に低減（段階的荷重）
         - omega_init=0.1, omega_min=0.01で慎重なNR更新
-        - n_elems_per_strand=8（粗すぎないメッシュ）
         """
         mesh = make_twisted_wire_mesh(
             37,
@@ -1180,6 +1180,8 @@ class TestNCP37StrandRadialCompression:
                 dt_shrink_iter_threshold=15,
                 dt_contact_change_threshold=0.2,
                 residual_scaling="rms",
+                # S3改良: 段階的活性化（層別に接触ペアを段階的投入）
+                staged_activation_steps=20,
             ),
         )
 
@@ -1285,6 +1287,8 @@ class TestNCP61StrandRadialCompression:
                 dt_shrink_iter_threshold=15,
                 dt_contact_change_threshold=0.2,
                 residual_scaling="rms",
+                # S3改良: 段階的活性化
+                staged_activation_steps=25,
             ),
         )
 
@@ -1385,6 +1389,8 @@ class TestNCP91StrandRadialCompression:
                 dt_shrink_iter_threshold=15,
                 dt_contact_change_threshold=0.2,
                 residual_scaling="rms",
+                # S3改良: 段階的活性化
+                staged_activation_steps=30,
             ),
         )
 
