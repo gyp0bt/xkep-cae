@@ -215,9 +215,7 @@ class TestMakeTwistedWireMesh:
 
     def test_n_pitches_parameter(self):
         """n_pitchesで長さ指定."""
-        mesh = make_twisted_wire_mesh(
-            3, _WIRE_D, _PITCH, 0.0, 40, n_pitches=2.5
-        )
+        mesh = make_twisted_wire_mesh(3, _WIRE_D, _PITCH, 0.0, 40, n_pitches=2.5)
         assert abs(mesh.length - 2.5 * _PITCH) < 1e-15
 
     def test_strand_node_ranges_partition(self):
