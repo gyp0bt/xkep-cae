@@ -1701,6 +1701,7 @@ def newton_raphson_contact_ncp(
     lam_ckpt = lam_all.copy()
     lam_t_ckpt = lam_t_all.copy()
     lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
+    mortar_nodes_ckpt = list(mortar_nodes)
     u_ref_ckpt = u_ref.copy()
     _ul_frac_base_ckpt = _ul_frac_base
     if _ul:
@@ -2451,6 +2452,7 @@ def newton_raphson_contact_ncp(
                 lam_t_all = lam_t_ckpt.copy()
                 if lam_mortar_ckpt is not None:
                     lam_mortar = lam_mortar_ckpt.copy()
+                mortar_nodes = list(mortar_nodes_ckpt)
                 u_ref = u_ref_ckpt.copy()
                 _ul_frac_base = _ul_frac_base_ckpt
                 if _ul:
@@ -2617,6 +2619,7 @@ def newton_raphson_contact_ncp(
         lam_ckpt = lam_all.copy()
         lam_t_ckpt = lam_t_all.copy()
         lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
+        mortar_nodes_ckpt = list(mortar_nodes)
         u_ref_ckpt = u_ref.copy()
         _ul_frac_base_ckpt = _ul_frac_base
         if _ul:
