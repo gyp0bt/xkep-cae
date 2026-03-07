@@ -1317,6 +1317,8 @@ def newton_raphson_contact_ncp(
     active_set_update_interval: int = 1,
     du_norm_cap: float = 0.0,
     adaptive_timestepping: bool = False,
+    dt_initial_fraction: float = 0.0,
+    dt_grow_iter_threshold: int = 0,
     # --- Updated Lagrangian 統合 ---
     ul_assembler: object | None = None,
 ) -> NCPSolveResult:
@@ -1519,15 +1521,25 @@ def newton_raphson_contact_ncp(
     _adaptive_dt = adaptive_timestepping or manager.config.adaptive_timestepping
     _dt_grow = manager.config.dt_grow_factor
     _dt_shrink = manager.config.dt_shrink_factor
-    _dt_grow_iter = manager.config.dt_grow_iter_threshold
+    _dt_grow_iter = (
+        dt_grow_iter_threshold
+        if dt_grow_iter_threshold > 0
+        else manager.config.dt_grow_iter_threshold
+    )
     _dt_shrink_iter = manager.config.dt_shrink_iter_threshold
     _dt_contact_change_thr = manager.config.dt_contact_change_threshold
     _dt_min_frac = manager.config.dt_min_fraction
     _dt_max_frac = manager.config.dt_max_fraction
+
+    # dt_initial_fraction: 初期ステップ幅の明示指定（n_load_steps=1 + adaptive の場合に有用）
+    _dt_initial = dt_initial_fraction if dt_initial_fraction > 0.0 else 0.0
+
+    # dt_min/max の自動計算: dt_initial_fraction 指定時はそれをベースにする
+    _effective_n = max(n_load_steps, int(1.0 / _dt_initial) if _dt_initial > 0 else n_load_steps)
     if _dt_min_frac <= 0.0:
-        _dt_min_frac = 1.0 / (n_load_steps * 16)
+        _dt_min_frac = 1.0 / (_effective_n * 32)
     if _dt_max_frac <= 0.0:
-        _dt_max_frac = min(4.0 / n_load_steps, 1.0)
+        _dt_max_frac = min(8.0 / _effective_n, 1.0)
 
     # --- S3改良10: 残差スケーリング ---
     _residual_scaling = manager.config.residual_scaling
@@ -1539,7 +1551,10 @@ def newton_raphson_contact_ncp(
     step_queue: deque[float] = deque()
     if _adaptive_dt:
         # 適応モード: 最初の目標分率のみ設定し、以降は動的に生成
-        _base_delta = 1.0 / n_load_steps
+        if _dt_initial > 0.0:
+            _base_delta = _dt_initial
+        else:
+            _base_delta = 1.0 / n_load_steps
         step_queue.append(min(_base_delta, 1.0))
     else:
         for _s in range(1, n_load_steps + 1):
@@ -1547,6 +1562,7 @@ def newton_raphson_contact_ncp(
     load_frac_prev = 0.0
     step_display = 0  # 表示用ステップカウンタ
     _prev_n_active = 0  # 前ステップのactive set数（適応Δt用）
+    _consecutive_good = 0  # 連続良好ステップ数（安定化検出用）
 
     # --- Updated Lagrangian 統合 ---
     _ul = ul_assembler is not None
@@ -2312,6 +2328,7 @@ def newton_raphson_contact_ncp(
                     node_coords_ref = ul_assembler.coords_ref
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
+                _consecutive_good = 0  # カットバック発生→積極成長モードに復帰
                 # 中間点を挿入（適応縮小）
                 mid_frac = load_frac_prev + delta * _dt_shrink
                 step_queue.appendleft(load_frac)  # 元のターゲットを戻す
@@ -2363,12 +2380,23 @@ def newton_raphson_contact_ncp(
             current_delta = load_frac - load_frac_prev
             next_delta = current_delta  # デフォルトは同じ幅
 
-            # (a) 収束反復数に基づく拡大/縮小
+            # (a) 収束反復数に基づく拡大/縮小（安定化検出付き成長戦略）
             step_iters = it + 1  # このステップの反復数
             if step_iters <= _dt_grow_iter:
-                next_delta = current_delta * _dt_grow
+                _consecutive_good += 1
+                if _consecutive_good <= 2:
+                    # 成長フェーズ（初期 or カットバック後の回復）
+                    next_delta = current_delta * _dt_grow
+                else:
+                    # 安定フェーズ: 増加率を漸減（オーバーシュート防止）
+                    _damp = max(0.1, 1.0 / _consecutive_good)
+                    next_delta = current_delta * (1.0 + (_dt_grow - 1.0) * _damp)
             elif step_iters >= _dt_shrink_iter:
                 next_delta = current_delta * _dt_shrink
+                _consecutive_good = 0
+            else:
+                # 中間: 変更なし
+                _consecutive_good = 0
 
             # (b) 接触状態変化率に基づく縮小
             _current_n_active = manager.n_active

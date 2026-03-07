@@ -157,6 +157,7 @@
 | NCP 6x高速化（解析的接線+バッチ接触） | ✅ 49.6秒→8.3秒、7本90°曲げ+揺動130秒（status-132） |
 | Phase2揺動収束達成 | ✅ prescribed_dofs+adaptive方式、7本90°+揺動1周期収束（status-132） |
 | 初期時間増分の物理ベース推定 | ✅ 曲げ3°相当の等価増分でPhase2初期Δt自動決定（status-132） |
+| n_load_steps=1対応 + 安定化成長戦略 | ✅ dt_initial_fraction物理ベース初期Δt、TCP類似安定化成長、Phase1 1.37x高速化（status-133） |
 
 **TODO**:
 - [x] 7本NCP曲げ揺動のCI確認（slowテスト）→ xfailで安定化（status-127）
@@ -166,6 +167,7 @@
 - [x] UL+NCP統合: adaptive_timesteppingとUL参照更新の一体化（status-131）
 - [x] UL Phase 2（揺動）の特異行列問題修正（status-132）
 - [x] NCP 6x高速化: 解析的接線剛性+バッチ接触幾何（status-132）
+- [ ] 非線形接触動解析ソルバーモジュール完全一本化（n_load_steps廃止、入出力データクラス化、step/increment用語整理）
 - [ ] 19本撚線の曲げ揺動収束確認
 - [ ] 要素ループのベクトル化（残り46%ボトルネック）
 - [ ] 19本→37本のスケールアップ
@@ -192,6 +194,7 @@
 
 - [ ] 接触プリスクリーニングGNN（Step 2-5）
 - [ ] k_pen推定ML v2（Step 2-7）
+- [ ] graphベースMLによる時間増分スキーマ最適化（接触グラフ+収束履歴→最適Δt予測）
 - [ ] ハイブリッドGNN+PINN組み合わせ
 
 ### S6: 1000本撚線

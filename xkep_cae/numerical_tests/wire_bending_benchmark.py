@@ -737,10 +737,16 @@ def run_bending_oscillation(
         # adaptive_timestepping が自然に UL と連動（不収束時に角度増分を自動縮小）。
         prescribed_vals_total = np.full(len(rx_dofs_end), bend_angle_rad)
 
+        # 適応時間増分: 物理ベースの初期Δt推定
+        # n_load_steps=1 でも max_angle_per_step_deg から適切な初期増分を計算
+        _physics_n_steps = max(1, math.ceil(bend_angle_deg / max_angle_per_step_deg))
+        _dt_init_frac = 1.0 / _physics_n_steps if adaptive_timestepping else 0.0
+
         if show_progress:
             print(
                 f"\n--- Phase 1: 曲げ（UL+NCP統合 θ={bend_angle_deg}°, "
-                f"{n_bending_steps} steps, adaptive={adaptive_timestepping}）---"
+                f"{n_bending_steps} steps, adaptive={adaptive_timestepping}"
+                f"{f', dt_init={_dt_init_frac:.4f}' if _dt_init_frac > 0 else ''}）---"
             )
 
         _ncp_result = newton_raphson_contact_ncp(
@@ -765,6 +771,8 @@ def run_bending_oscillation(
             prescribed_dofs=rx_dofs_end_arr,
             prescribed_values=prescribed_vals_total,
             adaptive_timestepping=adaptive_timestepping,
+            dt_initial_fraction=_dt_init_frac,
+            dt_grow_iter_threshold=8,  # Phase1は接触なし→積極成長
             ul_assembler=ul_asm,
         )
 
@@ -920,8 +928,11 @@ def run_bending_oscillation(
             delta_z = amplitude_m * np.sin(2.0 * np.pi * phase_frac)
             waypoints.append(delta_z)
 
-        # 初期時間増分の引き継ぎ: 前ステップの実効ステップ数を次の初期値に使用
-        _osc_n_load_steps = max(2, n_bending_steps // 10)  # Phase1の1/10が初期目安
+        # Phase2の初期Δt: Phase1の物理ベース推定から一貫して使用
+        # n_load_steps=1で統一し、dt_initial_fractionで初期増分を制御
+        # 揺動は方向転換があるため、Phase1より保守的な初期増分が必要
+        _osc_base_n = max(5, _physics_n_steps // 6)  # Phase1物理推定の1/6
+        _osc_dt_init_base = 1.0 / _osc_base_n if adaptive_timestepping else 0.0
 
         prev_delta_z = 0.0
         for osc_step in range(total_osc_steps):
@@ -945,7 +956,7 @@ def run_bending_oscillation(
                 ul_asm.coords_ref,
                 mesh.connectivity,
                 mesh.radii,
-                n_load_steps=_osc_n_load_steps,  # adaptive制御 + 前ステップからの引き継ぎ
+                n_load_steps=1,  # adaptive制御に一任
                 max_iter=max_iter,
                 tol_force=tol_force,
                 tol_ncp=tol_force,
@@ -958,11 +969,9 @@ def run_bending_oscillation(
                 prescribed_dofs=osc_prescribed_dofs,
                 prescribed_values=prescribed_vals,
                 adaptive_timestepping=adaptive_timestepping,
+                dt_initial_fraction=_osc_dt_init_base,
                 ul_assembler=ul_asm,
             )
-
-            # 前ステップの実効ステップ数を次の初期値に引き継ぎ
-            _osc_n_load_steps = max(2, _ncp_step.n_load_steps)
 
             result_step = ContactSolveResult(
                 u=_ncp_step.u,
