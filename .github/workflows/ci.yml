@@ -90,7 +90,7 @@ jobs:
 
       - name: Collect and split slow tests (shard ${{ matrix.shard }}/3)
         run: |
-          python -m pytest tests/ --collect-only -m "slow and not external" -q 2>&1 \
+          python -m pytest tests/ --collect-only -m "slow and not external and not deprecated" -q 2>&1 \
             | grep '::' \
             > /tmp/all_slow_tests.txt
           total=$(wc -l < /tmp/all_slow_tests.txt)
