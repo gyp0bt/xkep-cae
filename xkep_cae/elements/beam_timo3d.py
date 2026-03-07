@@ -1878,6 +1878,12 @@ class ULCRBeamAssembler:
         self.scf = scf
         # 各節点の参照回転行列（累積回転）
         self.R_ref = np.tile(np.eye(3), (self.n_nodes, 1, 1))  # (n_nodes, 3, 3)
+        # 累積変位（初期配置からの全変位を追跡、出力用）
+        self._u_total_accum = np.zeros(self.ndof)
+        # チェックポイント（adaptive Δt ロールバック用）
+        self._ckpt_coords_ref: np.ndarray | None = None
+        self._ckpt_R_ref: np.ndarray | None = None
+        self._ckpt_u_total_accum: np.ndarray | None = None
 
     def _to_total_u(self, u_incr: np.ndarray) -> np.ndarray:
         """増分変位を CR 要素用の変位に変換.
@@ -1951,17 +1957,33 @@ class ULCRBeamAssembler:
             theta_incr = u_incr[6 * i + 3 : 6 * i + 6]
             R_incr = _rotvec_to_rotmat(theta_incr)
             self.R_ref[i] = self.R_ref[i] @ R_incr
+        # 累積変位の追跡
+        self._u_total_accum += u_incr
+
+    def checkpoint(self) -> None:
+        """参照配置のチェックポイントを保存（adaptive Δt ロールバック用）."""
+        self._ckpt_coords_ref = self.coords_ref.copy()
+        self._ckpt_R_ref = self.R_ref.copy()
+        self._ckpt_u_total_accum = self._u_total_accum.copy()
+
+    def rollback(self) -> None:
+        """チェックポイントから参照配置を復元."""
+        if self._ckpt_coords_ref is not None:
+            self.coords_ref = self._ckpt_coords_ref.copy()
+            self.R_ref = self._ckpt_R_ref.copy()
+            self._u_total_accum = self._ckpt_u_total_accum.copy()
+
+    @property
+    def u_total_accum(self) -> np.ndarray:
+        """初期配置からの累積変位（出力用）."""
+        return self._u_total_accum
 
     def get_total_displacement(self, u_incr: np.ndarray) -> np.ndarray:
         """増分変位を初期配置からの total 変位に変換.
 
-        結果の後処理（先端変位の計算など）に使用。
+        累積変位 + 現在の未コミット増分。
         """
-        u_total = u_incr.copy()
-        # 初期配置との差分は coords_ref の累積移動分 + 現在の増分
-        # ただし内部で coords_ref を更新しているため、直接計算は複雑
-        # → 簡易実装: coords_ref - initial_coords + u_trans_incr
-        return u_total
+        return self._u_total_accum + u_incr
 
 
 def assemble_cr_beam3d_fiber(

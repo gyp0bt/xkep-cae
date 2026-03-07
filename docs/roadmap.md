@@ -153,12 +153,14 @@
 | NCP摩擦接触の行列特異化修正 | ✅ J_t_t正則化でTimo3D摩擦収束達成（status-128） |
 | CR梁収束問題の根本原因診断 | ✅ 寄生軸力が原因（EA/(EI/L²)≈9000）（status-129） |
 | Updated Lagrangian CR梁アセンブラ | ✅ 7本90°曲げ収束、~13°障壁解消（status-130） |
+| UL+NCP統合（adaptive_timestepping連動） | ✅ 手動ループ廃止、角度増分自動制御（status-131） |
 
 **TODO**:
 - [x] 7本NCP曲げ揺動のCI確認（slowテスト）→ xfailで安定化（status-127）
 - [x] NCP摩擦接触の行列特異化修正（status-128）
 - [x] CR梁ヘリカル要素の収束問題の根本原因診断（status-129）
 - [x] Updated Lagrangian実装で7本45°/90°曲げ収束達成（status-130）
+- [x] UL+NCP統合: adaptive_timesteppingとUL参照更新の一体化（status-131）
 - [ ] UL Phase 2（揺動）の特異行列問題修正
 - [ ] CR梁の摩擦接触不収束の原因調査
 - [ ] CI test-slow全パス確認（xfail解消）

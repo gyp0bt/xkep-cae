@@ -1317,6 +1317,8 @@ def newton_raphson_contact_ncp(
     active_set_update_interval: int = 1,
     du_norm_cap: float = 0.0,
     adaptive_timestepping: bool = False,
+    # --- Updated Lagrangian 統合 ---
+    ul_assembler: object | None = None,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1546,12 +1548,19 @@ def newton_raphson_contact_ncp(
     step_display = 0  # 表示用ステップカウンタ
     _prev_n_active = 0  # 前ステップのactive set数（適応Δt用）
 
+    # --- Updated Lagrangian 統合 ---
+    _ul = ul_assembler is not None
+    _ul_frac_base = 0.0  # UL リセット時の荷重分率基準
+
     # チェックポイント（適応時間増分の不収束時ロールバック用）
     u_ckpt = u.copy()
     lam_ckpt = lam_all.copy()
     lam_t_ckpt = lam_t_all.copy()
     lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
     u_ref_ckpt = u_ref.copy()
+    _ul_frac_base_ckpt = _ul_frac_base
+    if _ul:
+        ul_assembler.checkpoint()
 
     # 接線予測子用: 前ステップの変位増分を記録
     u_prev_converged = u.copy()
@@ -1623,8 +1632,12 @@ def newton_raphson_contact_ncp(
         lam_t_all = lam_t_new
 
     while step_queue:
-        step_display += 1
+        # 適応Δt成長で追い越された旧ターゲットをスキップ
         load_frac = step_queue[0]
+        if load_frac <= load_frac_prev + 1e-15:
+            step_queue.popleft()
+            continue
+        step_display += 1
         f_ext = _f_ext_base + load_frac * f_ext_total
 
         step_converged = False
@@ -1646,7 +1659,7 @@ def newton_raphson_contact_ncp(
 
         # --- 処方変位の適用 ---
         if has_prescribed:
-            u[_prescribed_dofs] = load_frac * _prescribed_values
+            u[_prescribed_dofs] = (load_frac - _ul_frac_base) * _prescribed_values
 
         # --- ステップ開始時: 候補検出 ---
         coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
@@ -2293,6 +2306,10 @@ def newton_raphson_contact_ncp(
                 if lam_mortar_ckpt is not None:
                     lam_mortar = lam_mortar_ckpt.copy()
                 u_ref = u_ref_ckpt.copy()
+                _ul_frac_base = _ul_frac_base_ckpt
+                if _ul:
+                    ul_assembler.rollback()
+                    node_coords_ref = ul_assembler.coords_ref
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
                 # 中間点を挿入（適応縮小）
@@ -2314,8 +2331,9 @@ def newton_raphson_contact_ncp(
                         f"did not converge in {max_iter} iterations."
                     )
                     print(_diag.format_report(max_iter=max_iter))
+                _u_fail = ul_assembler.u_total_accum + u if _ul else u
                 return NCPSolveResult(
-                    u=u,
+                    u=_u_fail,
                     lambdas=lam_all,
                     converged=False,
                     n_load_steps=step_display,
@@ -2328,8 +2346,17 @@ def newton_raphson_contact_ncp(
                     diagnostics=_diag,
                 )
 
-        # ステップ完了 — キューから消費 & チェックポイント保存
+        # ステップ完了 — キューから消費
         step_queue.popleft()
+
+        # --- Updated Lagrangian: 参照配置更新 & 変位リセット ---
+        if _ul:
+            ul_assembler.update_reference(u)
+            node_coords_ref = ul_assembler.coords_ref
+            _ul_frac_base = load_frac
+            # u リセット（参照配置に吸収済み）
+            u = np.zeros(ndof)
+            u_ref = np.zeros(ndof)
 
         # --- 適応時間増分制御（S3改良6）: 次ステップ幅の動的決定 ---
         if _adaptive_dt and load_frac < 1.0 - 1e-12:
@@ -2380,7 +2407,7 @@ def newton_raphson_contact_ncp(
 
         # 接線予測子用: 前ステップの変位増分と荷重増分を記録
         delta_frac_prev = load_frac - load_frac_prev
-        u_prev_converged = u_ckpt.copy()  # チェックポイント = 前ステップ収束点
+        u_prev_converged = u.copy()  # UL 時は u=0 が正しい基準
         load_frac_prev = load_frac
         for i, pair in enumerate(manager.pairs):
             if i < len(lam_all):
@@ -2433,9 +2460,13 @@ def newton_raphson_contact_ncp(
         lam_t_ckpt = lam_t_all.copy()
         lam_mortar_ckpt = lam_mortar.copy() if lam_mortar is not None else None
         u_ref_ckpt = u_ref.copy()
+        _ul_frac_base_ckpt = _ul_frac_base
+        if _ul:
+            ul_assembler.checkpoint()
 
         load_history.append(load_frac)
-        disp_history.append(u.copy())
+        _u_hist = ul_assembler.u_total_accum + u if _ul else u.copy()
+        disp_history.append(_u_hist.copy() if _ul else _u_hist)
         f_c_norm = float(np.linalg.norm(f_c))
         contact_force_history.append(f_c_norm)
 
@@ -2445,8 +2476,10 @@ def newton_raphson_contact_ncp(
         except Exception:
             pass
 
+    # UL モード: 累積変位を返す（u はリセット済みのため）
+    _u_out = ul_assembler.u_total_accum + u if _ul else u
     return NCPSolveResult(
-        u=u,
+        u=_u_out,
         lambdas=lam_all,
         converged=True,
         n_load_steps=step_display,

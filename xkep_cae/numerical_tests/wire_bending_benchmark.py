@@ -487,7 +487,8 @@ def run_bending_oscillation(
     nu: float = _DEFAULT_NU,
     # 曲げパラメータ
     bend_angle_deg: float = 90.0,
-    n_bending_steps: int = 45,
+    n_bending_steps: int | None = None,
+    max_angle_per_step_deg: float = 3.0,
     # 揺動パラメータ（サイクル変位）
     oscillation_amplitude_mm: float = 5.0,
     n_cycles: int = 2,
@@ -554,7 +555,8 @@ def run_bending_oscillation(
         E: ヤング率 [Pa]
         nu: ポアソン比
         bend_angle_deg: 目標曲げ角度 [°]
-        n_bending_steps: 曲げ荷重ステップ数
+        n_bending_steps: 曲げ荷重ステップ数（Noneで自動推定: ceil(angle/max_angle_per_step_deg)）
+        max_angle_per_step_deg: 1ステップあたり最大角度 [°]（デフォルト3°、自動推定時に使用）
         oscillation_amplitude_mm: 揺動変位振幅 [mm]
         n_cycles: サイクル数
         n_steps_per_quarter: 1/4 周期あたりのステップ数
@@ -586,6 +588,14 @@ def run_bending_oscillation(
     """
     t_total_start = time.perf_counter()
     timing = BenchmarkTimingCollector()
+
+    # ------------------------------------------------------------------
+    # 0. n_bending_steps 自動推定
+    # ------------------------------------------------------------------
+    if n_bending_steps is None:
+        import math
+
+        n_bending_steps = max(1, math.ceil(bend_angle_deg / max_angle_per_step_deg))
 
     # ------------------------------------------------------------------
     # 1. メッシュ生成
@@ -723,83 +733,53 @@ def run_bending_oscillation(
     rx_dofs_end_arr = np.array(rx_dofs_end, dtype=int)
 
     if use_ncp and use_updated_lagrangian and ul_asm is not None:
-        # --- UL + NCP: ステップごとに参照配置を更新 ---
-        # 各ステップで増分回転を処方し、収束後に参照配置を更新。
-        # ヘリカル梁の大回転収束問題（~13° barrier）を解消する。
-        incr_angle = bend_angle_rad / n_bending_steps
-        prescribed_vals_incr = np.full(len(rx_dofs_end), incr_angle)
+        # --- UL + NCP 統合: adaptive_timestepping と UL 参照更新を一体化 ---
+        # NCP ソルバ内部で各ステップ収束後に参照配置を更新。
+        # adaptive_timestepping が自然に UL と連動（不収束時に角度増分を自動縮小）。
+        prescribed_vals_total = np.full(len(rx_dofs_end), bend_angle_rad)
 
         if show_progress:
             print(
-                f"\n--- Phase 1: 曲げ（UL変位制御 θ={bend_angle_deg}°, {n_bending_steps} steps）---"
+                f"\n--- Phase 1: 曲げ（UL+NCP統合 θ={bend_angle_deg}°, "
+                f"{n_bending_steps} steps, adaptive={adaptive_timestepping}）---"
             )
 
-        u_total_accum = np.zeros(ndof)  # 初期配置からの累積変位（出力用）
-        total_nr_iters = 0
-        phase1_all_converged = True
-
-        for bend_step in range(n_bending_steps):
-            _ncp_step = newton_raphson_contact_ncp(
-                np.zeros(ndof),  # 外力なし
-                fixed_dofs_base,
-                assemble_tangent,
-                assemble_internal_force,
-                mgr,
-                ul_asm.coords_ref,  # UL参照座標
-                mesh.connectivity,
-                mesh.radii,
-                n_load_steps=1,
-                max_iter=max_iter,
-                tol_force=tol_force,
-                tol_ncp=tol_force,
-                show_progress=False,
-                broadphase_margin=broadphase_margin,
-                line_contact=line_contact,
-                use_mortar=use_mortar,
-                n_gauss=n_gauss,
-                k_pen=ncp_k_pen,
-                prescribed_dofs=rx_dofs_end_arr,
-                prescribed_values=prescribed_vals_incr,
-            )
-            total_nr_iters += _ncp_step.total_newton_iterations
-
-            if not _ncp_step.converged:
-                phase1_all_converged = False
-                if show_progress:
-                    print(
-                        f"  UL Step {bend_step + 1}/{n_bending_steps}: FAILED "
-                        f"(iter={_ncp_step.total_newton_iterations})"
-                    )
-                break
-
-            # UL 参照更新
-            u_incr = _ncp_step.u.copy()
-            ul_asm.update_reference(u_incr)
-            # 累積変位の追跡（先端変位出力用）
-            u_total_accum += u_incr
-
-            if show_progress and (
-                (bend_step + 1) % max(1, n_bending_steps // 5) == 0 or bend_step == 0
-            ):
-                theta_total = (bend_step + 1) * np.degrees(incr_angle)
-                print(
-                    f"  UL Step {bend_step + 1}/{n_bending_steps} "
-                    f"(θ={theta_total:.1f}°): "
-                    f"iter={_ncp_step.total_newton_iterations}, "
-                    f"active={_ncp_step.n_active_final}"
-                )
+        _ncp_result = newton_raphson_contact_ncp(
+            np.zeros(ndof),  # 外力なし（変位制御）
+            fixed_dofs_base,
+            assemble_tangent,
+            assemble_internal_force,
+            mgr,
+            ul_asm.coords_ref,
+            mesh.connectivity,
+            mesh.radii,
+            n_load_steps=n_bending_steps,
+            max_iter=max_iter,
+            tol_force=tol_force,
+            tol_ncp=tol_force,
+            show_progress=show_progress,
+            broadphase_margin=broadphase_margin,
+            line_contact=line_contact,
+            use_mortar=use_mortar,
+            n_gauss=n_gauss,
+            k_pen=ncp_k_pen,
+            prescribed_dofs=rx_dofs_end_arr,
+            prescribed_values=prescribed_vals_total,
+            adaptive_timestepping=adaptive_timestepping,
+            ul_assembler=ul_asm,
+        )
 
         result_bend = ContactSolveResult(
-            u=u_total_accum,
-            converged=phase1_all_converged,
-            n_load_steps=n_bending_steps,
-            total_newton_iterations=total_nr_iters,
+            u=_ncp_result.u,
+            converged=_ncp_result.converged,
+            n_load_steps=_ncp_result.n_load_steps,
+            total_newton_iterations=_ncp_result.total_newton_iterations,
             total_outer_iterations=0,
-            n_active_final=_ncp_step.n_active_final if n_bending_steps > 0 else 0,
-            load_history=[],
-            displacement_history=[],
-            contact_force_history=[],
-            graph_history=None,
+            n_active_final=_ncp_result.n_active_final,
+            load_history=_ncp_result.load_history,
+            displacement_history=_ncp_result.displacement_history,
+            contact_force_history=_ncp_result.contact_force_history,
+            graph_history=_ncp_result.graph_history,
         )
     elif use_ncp:
         # --- TL + NCP: 従来の一括ロードステッピング ---
