@@ -28,7 +28,7 @@ _NDOF_PER_NODE = 6
 def execute_s3_benchmark(
     n_strands: int,
     *,
-    n_elems_per_strand: int = 4,
+    n_elems_per_strand: int = 16,
     n_load_steps: int = 15,
     max_iter: int = 30,
     n_outer_max: int = 3,
@@ -67,7 +67,6 @@ def execute_s3_benchmark(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=1.0,
         gap=solver_params.get("gap", 0.0005),
-        min_elems_per_pitch=0,
     )
     mesh_time = time.perf_counter() - t0
 

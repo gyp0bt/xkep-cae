@@ -92,7 +92,7 @@ DEFAULT_PARAMS = {
     # メッシュ
     "wire_diameter": 0.002,
     "pitch": 0.040,
-    "n_elems_per_strand": 4,
+    "n_elems_per_strand": 16,
     "n_pitches": 0.5,
     "strand_diameter": "auto",  # "auto" = minimum_strand_diameter で自動計算
     # 材料

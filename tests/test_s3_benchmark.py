@@ -23,7 +23,7 @@ pytestmark = pytest.mark.slow
 
 _WIRE_D = 0.002  # 直径 2mm
 _PITCH = 0.040  # ピッチ 40mm
-_N_ELEM = 8  # 素線あたり要素数（ベンチマーク用に軽量化）
+_N_ELEM = 16  # 素線あたり要素数
 
 
 # ========== ヘルパー ==========
@@ -38,7 +38,6 @@ def _make_mesh(n_strands: int, n_elems: int = _N_ELEM):
         length=0.0,
         n_elems_per_strand=n_elems,
         n_pitches=1.0,
-        min_elems_per_pitch=0,
     )
 
 

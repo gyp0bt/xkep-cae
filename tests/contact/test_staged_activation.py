@@ -19,7 +19,7 @@ class TestElemLayerMap:
 
     def test_3_strand_all_layer_1(self):
         """3本撚りは全素線が layer=1."""
-        mesh = make_twisted_wire_mesh(3, 0.002, 0.04, 0.0, 8, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(3, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         assert len(lmap) == mesh.n_elems
         # 3本撚りは中心なし、全素線 layer=1
@@ -28,7 +28,7 @@ class TestElemLayerMap:
 
     def test_7_strand_center_and_layer1(self):
         """7本撚りは中心=layer 0、外=layer 1."""
-        mesh = make_twisted_wire_mesh(7, 0.002, 0.04, 0.0, 4, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(7, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         assert len(lmap) == mesh.n_elems
 
@@ -45,7 +45,7 @@ class TestElemLayerMap:
 
     def test_19_strand_three_layers(self):
         """19本撚りは layer 0, 1, 2."""
-        mesh = make_twisted_wire_mesh(19, 0.002, 0.04, 0.0, 4, n_pitches=1.0, min_elems_per_pitch=0)
+        mesh = make_twisted_wire_mesh(19, 0.002, 0.04, 0.0, 16, n_pitches=1.0)
         lmap = mesh.build_elem_layer_map()
         layers = set(lmap.values())
         assert 0 in layers

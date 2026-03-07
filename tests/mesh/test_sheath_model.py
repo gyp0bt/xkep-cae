@@ -30,7 +30,7 @@ from xkep_cae.mesh.twisted_wire import (
 # ====================================================================
 
 
-def _make_7wire_mesh(n_elems: int = 8) -> object:
+def _make_7wire_mesh(n_elems: int = 16) -> object:
     """7本撚りメッシュを生成."""
     return make_twisted_wire_mesh(
         n_strands=7,
@@ -38,11 +38,10 @@ def _make_7wire_mesh(n_elems: int = 8) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
-        min_elems_per_pitch=0,
     )
 
 
-def _make_3wire_mesh(n_elems: int = 8) -> object:
+def _make_3wire_mesh(n_elems: int = 16) -> object:
     """3本撚りメッシュを生成."""
     return make_twisted_wire_mesh(
         n_strands=3,
@@ -50,11 +49,10 @@ def _make_3wire_mesh(n_elems: int = 8) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
-        min_elems_per_pitch=0,
     )
 
 
-def _make_19wire_mesh(n_elems: int = 4) -> object:
+def _make_19wire_mesh(n_elems: int = 16) -> object:
     """19本撚りメッシュを生成."""
     return make_twisted_wire_mesh(
         n_strands=19,
@@ -62,7 +60,6 @@ def _make_19wire_mesh(n_elems: int = 4) -> object:
         pitch=40.0e-3,
         length=40.0e-3,
         n_elems_per_strand=n_elems,
-        min_elems_per_pitch=0,
     )
 
 
@@ -381,7 +378,7 @@ class TestOutermostStrandNodes:
 
     def test_7wire_node_count(self):
         """7本撚り: 最外層6素線 × (n_elems+1) ノード."""
-        n_elems = 8
+        n_elems = 16
         mesh = _make_7wire_mesh(n_elems=n_elems)
         nodes = outermost_strand_node_indices(mesh)
         expected = 6 * (n_elems + 1)
@@ -389,7 +386,7 @@ class TestOutermostStrandNodes:
 
     def test_3wire_all_outer(self):
         """3本撚り: 全素線が最外層 → 全ノード."""
-        n_elems = 4
+        n_elems = 16
         mesh = _make_3wire_mesh(n_elems=n_elems)
         nodes = outermost_strand_node_indices(mesh)
         expected = 3 * (n_elems + 1)
@@ -413,7 +410,7 @@ class TestSheathRadialGap:
 
     def test_zero_clearance_nonnegative(self):
         """クリアランス0: ギャップ >= 0（全点で非負、ヘリックスのため端部で正）."""
-        mesh = _make_7wire_mesh(n_elems=16)
+        mesh = _make_7wire_mesh()
         sheath = SheathModel(thickness=0.5e-3, E=70.0e9, nu=0.33)
         gaps = sheath_radial_gap(mesh, sheath)
         # clearance=0 のとき、配置半径上の点でギャップ=0、
@@ -431,10 +428,10 @@ class TestSheathRadialGap:
 
     def test_gap_shape(self):
         """ギャップ配列の形状 = 最外層ノード数."""
-        mesh = _make_7wire_mesh(n_elems=8)
+        mesh = _make_7wire_mesh(n_elems=16)
         sheath = SheathModel(thickness=0.5e-3, E=70.0e9, nu=0.33)
         gaps = sheath_radial_gap(mesh, sheath)
-        expected_len = 6 * (8 + 1)  # 6素線 × 9ノード
+        expected_len = 6 * (16 + 1)  # 6素線 × 17ノード
         assert gaps.shape == (expected_len,)
 
     def test_gap_with_coating(self):
@@ -449,9 +446,9 @@ class TestSheathRadialGap:
 
     def test_3wire_gap(self):
         """3本撚り: 全素線が最外層."""
-        mesh = _make_3wire_mesh(n_elems=8)
+        mesh = _make_3wire_mesh(n_elems=16)
         sheath = SheathModel(thickness=0.5e-3, E=70.0e9, nu=0.33, clearance=0.1e-3)
         gaps = sheath_radial_gap(mesh, sheath)
-        expected_len = 3 * (8 + 1)
+        expected_len = 3 * (16 + 1)
         assert gaps.shape == (expected_len,)
         assert np.all(gaps > 0)

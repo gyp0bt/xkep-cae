@@ -120,7 +120,7 @@ def _solve_7strand_ncp_mortar(
     load_type: str = "tension",
     load_value: float = 100.0,
     *,
-    n_elems_per_strand: int = 8,
+    n_elems_per_strand: int = 16,
     n_load_steps: int = 10,
     max_iter: int = 80,
     use_mortar: bool = True,
@@ -137,7 +137,6 @@ def _solve_7strand_ncp_mortar(
         n_elems_per_strand=n_elems_per_strand,
         n_pitches=0.5,
         gap=0.0,
-        min_elems_per_pitch=0,
     )
 
     assemble_tangent, assemble_internal_force, ndof_total = _make_timo3d_assemblers(mesh)

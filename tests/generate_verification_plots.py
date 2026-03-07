@@ -2026,10 +2026,9 @@ def plot_tuning_wire_cross_section(tuning_result=None):
             wire_d,
             pitch,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-            min_elems_per_pitch=0,
         )
 
         # 各素線の中点（z=pitch/2 付近）の断面位置
@@ -3197,6 +3196,99 @@ def plot_fiber_stress_contour():
 # =====================================================================
 
 
+def _project_3d_to_2d(coords_3d, elev_deg=25.0, azim_deg=45.0):
+    """四元数で3D座標を任意視点に回転し、XY平面に投影する.
+
+    Args:
+        coords_3d: (N, 3) 3D座標
+        elev_deg: 仰角（度）
+        azim_deg: 方位角（度）
+
+    Returns:
+        coords_2d: (N, 2) 投影座標 (横, 縦)
+        depth: (N,) 奥行き（Z'）。描画順序用。
+    """
+    from xkep_cae.math.quaternion import (
+        quat_from_axis_angle,
+        quat_multiply,
+        quat_to_rotation_matrix,
+    )
+
+    elev = np.deg2rad(elev_deg)
+    azim = np.deg2rad(azim_deg)
+    # 方位角回転（Z軸周り）+ 仰角回転（X軸周り）
+    q_azim = quat_from_axis_angle(np.array([0.0, 0.0, 1.0]), -azim)
+    q_elev = quat_from_axis_angle(np.array([1.0, 0.0, 0.0]), -elev)
+    q_view = quat_multiply(q_elev, q_azim)
+    R = quat_to_rotation_matrix(q_view)
+
+    rotated = (R @ coords_3d.T).T  # (N, 3)
+    coords_2d = rotated[:, :2]
+    depth = rotated[:, 2]
+    return coords_2d, depth
+
+
+def _beam_surface_polys_2d(coords, radius, n_circ=12, elev_deg=25.0, azim_deg=45.0):
+    """梁中心線から円管表面メッシュを生成し、2D投影された四角形リストを返す.
+
+    Returns:
+        polys: list of (4, 2) — 各四角形の2D頂点座標
+        depths: list of float — 各四角形の平均奥行き（描画順序用）
+    """
+    # まず3Dサーフェス座標を生成
+    n_pts = len(coords)
+    theta = np.linspace(0, 2 * np.pi, n_circ, endpoint=False)
+
+    surface_pts = []  # (n_pts * n_circ, 3)
+    for i in range(n_pts):
+        if i == 0:
+            tang = coords[1] - coords[0]
+        elif i == n_pts - 1:
+            tang = coords[-1] - coords[-2]
+        else:
+            tang = coords[i + 1] - coords[i - 1]
+        tang = tang / (np.linalg.norm(tang) + 1e-30)
+
+        if abs(tang[2]) < 0.9:
+            up = np.array([0.0, 0.0, 1.0])
+        else:
+            up = np.array([1.0, 0.0, 0.0])
+        n1 = np.cross(tang, up)
+        n1 = n1 / (np.linalg.norm(n1) + 1e-30)
+        n2 = np.cross(tang, n1)
+
+        for th in theta:
+            offset = radius * (np.cos(th) * n1 + np.sin(th) * n2)
+            surface_pts.append(coords[i] + offset)
+
+    surface_pts = np.array(surface_pts)  # (n_pts * n_circ, 3)
+    proj_2d, depth = _project_3d_to_2d(surface_pts, elev_deg, azim_deg)
+
+    # 四角形ポリゴンを構築
+    polys = []
+    depths = []
+    for i in range(n_pts - 1):
+        for j in range(n_circ):
+            j_next = (j + 1) % n_circ
+            idx00 = i * n_circ + j
+            idx01 = i * n_circ + j_next
+            idx10 = (i + 1) * n_circ + j
+            idx11 = (i + 1) * n_circ + j_next
+            poly_verts = np.array(
+                [
+                    proj_2d[idx00],
+                    proj_2d[idx01],
+                    proj_2d[idx11],
+                    proj_2d[idx10],
+                ]
+            )
+            avg_depth = (depth[idx00] + depth[idx01] + depth[idx10] + depth[idx11]) / 4.0
+            polys.append(poly_verts)
+            depths.append(avg_depth)
+
+    return polys, depths
+
+
 def _beam_surface_mesh(coords, radius, n_circ=12):
     """梁中心線座標列から円管表面メッシュを生成.
 
@@ -3489,6 +3581,561 @@ def plot_beam_3d_stress_contour():
 
 
 # =====================================================================
+# 接触力ベクトル場 3D 表示（quiver3D）
+# =====================================================================
+
+
+def _run_ncp_for_visualization(n_strands, *, layers=(1,), force_per_node=5.0):
+    """可視化用に NCP 解析を実行し (mesh, result, mgr) を返す.
+
+    径方向圧縮荷重で接触を活性化する。
+    """
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
+    from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
+    from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
+    from xkep_cae.sections.beam import BeamSection
+
+    NDOF = 6
+    E = 200e9
+    nu = 0.3
+    G = E / (2.0 * (1.0 + nu))
+    wire_d = 0.002
+    section = BeamSection.circle(wire_d)
+    kappa_s = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
+    pitch = 0.040
+
+    mesh = make_twisted_wire_mesh(
+        n_strands,
+        wire_d,
+        pitch,
+        length=0.0,
+        n_elems_per_strand=16,
+        n_pitches=1.0,
+        gap=0.0001,
+    )
+    nc = mesh.node_coords
+    conn = mesh.connectivity
+    ndof_total = mesh.n_nodes * NDOF
+
+    # 剛性行列アセンブリ
+    K = np.zeros((ndof_total, ndof_total))
+    for elem in conn:
+        n1, n2 = int(elem[0]), int(elem[1])
+        coords = nc[np.array([n1, n2])]
+        Ke = timo_beam3d_ke_global(
+            coords,
+            E,
+            G,
+            section.A,
+            section.Iy,
+            section.Iz,
+            section.J,
+            kappa_s,
+            kappa_s,
+        )
+        edofs = np.array(
+            [NDOF * n1 + d for d in range(NDOF)] + [NDOF * n2 + d for d in range(NDOF)],
+            dtype=int,
+        )
+        K[np.ix_(edofs, edofs)] += Ke
+    K_sp = sp.csr_matrix(K)
+
+    def assemble_tangent(u):
+        return K_sp
+
+    def assemble_internal_force(u):
+        return K_sp.dot(u)
+
+    # 境界条件: 全素線始端固定 + 中心素線全拘束
+    fixed = set()
+    for sid in range(mesh.n_strands):
+        nodes = mesh.strand_nodes(sid)
+        for d in range(NDOF):
+            fixed.add(NDOF * nodes[0] + d)
+        if sid == 0:
+            for node in nodes:
+                for d in range(NDOF):
+                    fixed.add(NDOF * node + d)
+    fixed_dofs = np.array(sorted(fixed), dtype=int)
+
+    # 径方向圧縮荷重
+    f_ext = np.zeros(ndof_total)
+    for sid in range(1, mesh.n_strands):
+        info = mesh.strand_infos[sid]
+        if info.layer not in layers:
+            continue
+        nodes = mesh.strand_nodes(sid)
+        mid_node = nodes[len(nodes) // 2]
+        pos = nc[mid_node]
+        r_xy = np.linalg.norm(pos[:2])
+        if r_xy > 1e-10:
+            r_dir = -pos[:2] / r_xy
+            f_ext[NDOF * mid_node + 0] = r_dir[0] * force_per_node
+            f_ext[NDOF * mid_node + 1] = r_dir[1] * force_per_node
+
+    elem_layer_map = mesh.build_elem_layer_map()
+    mgr = ContactManager(
+        config=ContactConfig(
+            k_pen_scale=0.1,
+            k_pen_mode="beam_ei",
+            beam_E=E,
+            beam_I=section.Iy,
+            k_pen_scaling="sqrt",
+            k_t_ratio=0.1,
+            mu=0.0,
+            g_on=0.001,
+            g_off=0.002,
+            use_friction=False,
+            use_line_search=False,
+            use_geometric_stiffness=True,
+            tol_penetration_ratio=0.02,
+            penalty_growth_factor=1.0,
+            k_pen_max=1e12,
+            elem_layer_map=elem_layer_map,
+            exclude_same_layer=True,
+            midpoint_prescreening=True,
+            linear_solver="auto",
+            no_deactivation_within_step=True,
+            preserve_inactive_lambda=True,
+            lambda_warmstart_neighbor=True,
+            chattering_window=3,
+            k_pen_continuation=True,
+            k_pen_continuation_start=0.1,
+            k_pen_continuation_steps=5,
+            adjust_initial_penetration=True,
+            contact_force_ramp=True,
+            contact_force_ramp_iters=5,
+            adaptive_timestepping=True,
+            dt_grow_factor=1.3,
+            dt_shrink_factor=0.5,
+            dt_grow_iter_threshold=8,
+            dt_shrink_iter_threshold=20,
+            dt_contact_change_threshold=0.3,
+            residual_scaling="rms",
+        ),
+    )
+
+    result = newton_raphson_contact_ncp(
+        f_ext,
+        fixed_dofs,
+        assemble_tangent,
+        assemble_internal_force,
+        mgr,
+        mesh.node_coords,
+        mesh.connectivity,
+        mesh.radii,
+        n_load_steps=40,
+        max_iter=100,
+        tol_force=1e-4,
+        tol_ncp=1e-4,
+        broadphase_margin=0.01,
+        show_progress=False,
+        adaptive_omega=True,
+        omega_init=0.3,
+        omega_min=0.02,
+        omega_max=0.8,
+        omega_shrink=0.5,
+        omega_growth=1.1,
+        active_set_update_interval=5,
+        du_norm_cap=3.0,
+        adaptive_timestepping=True,
+    )
+
+    return mesh, result, mgr
+
+
+def _draw_wire_2d(
+    ax, coords, radius, color, alpha=0.7, n_circ=12, elev_deg=25.0, azim_deg=45.0, zorder_base=0
+):
+    """撚線1本を2D投影してPolyCollectionで描画.
+
+    深度ソートにより正しい前後関係を表現する。
+    """
+    from matplotlib.collections import PolyCollection
+
+    polys, depths = _beam_surface_polys_2d(
+        coords,
+        radius,
+        n_circ,
+        elev_deg,
+        azim_deg,
+    )
+    if not polys:
+        return
+
+    # 深度順にソート（奥→手前）
+    sorted_idx = np.argsort(depths)
+    sorted_polys = [polys[i] for i in sorted_idx]
+
+    pc = PolyCollection(
+        sorted_polys,
+        facecolors=color,
+        edgecolors="none",
+        alpha=alpha,
+        zorder=zorder_base,
+    )
+    ax.add_collection(pc)
+
+
+def _draw_wires_2d(
+    ax, mesh, coords_array, radius, n_circ=12, elev_deg=25.0, azim_deg=45.0, layer_colors=None
+):
+    """全素線を2D投影して描画（層ごとに色分け）."""
+    if layer_colors is None:
+        layer_colors = {
+            0: "#e41a1c",
+            1: "#377eb8",
+            2: "#4daf4a",
+            3: "#984ea3",
+        }
+    for si in range(mesh.n_strands):
+        ns, ne = mesh.strand_node_ranges[si]
+        strand_coords = coords_array[ns:ne]
+        layer = mesh.strand_infos[si].layer
+        color = layer_colors.get(layer, "#999999")
+        _draw_wire_2d(
+            ax,
+            strand_coords,
+            radius,
+            color,
+            alpha=0.7,
+            n_circ=n_circ,
+            elev_deg=elev_deg,
+            azim_deg=azim_deg,
+        )
+
+
+def _setup_2d_projected_ax(ax, coords_3d, elev_deg, azim_deg, margin_frac=0.05):
+    """2D投影後の軸範囲を等方アスペクト比で設定."""
+    proj_2d, _ = _project_3d_to_2d(coords_3d, elev_deg, azim_deg)
+    x_range = proj_2d[:, 0].max() - proj_2d[:, 0].min()
+    y_range = proj_2d[:, 1].max() - proj_2d[:, 1].min()
+    margin = max(x_range, y_range) * margin_frac
+    ax.set_xlim(proj_2d[:, 0].min() - margin, proj_2d[:, 0].max() + margin)
+    ax.set_ylim(proj_2d[:, 1].min() - margin, proj_2d[:, 1].max() + margin)
+    ax.set_aspect("equal")
+    ax.grid(True, alpha=0.2)
+
+
+def plot_contact_force_vectors_3d():
+    """接触力ベクトル場の2D投影表示 + 接触診断パネル.
+
+    NCP解析を実行し、4パネルで接触状態を可視化:
+    1. 接触力ベクトル場（2D投影、法線力を矢印で表示）
+    2. 接触ギャップ分布ヒストグラム（貫入量の分布）
+    3. 接触力ノルムの荷重ステップ推移
+    4. 断面方向（端面）の接触力ベクトル
+    """
+    plt = _setup_matplotlib()
+
+    from xkep_cae.contact.pair import ContactStatus
+
+    print("    Running 7-strand NCP for contact force visualization...")
+    mesh, result, mgr = _run_ncp_for_visualization(7, layers=(1,))
+
+    if not result.converged:
+        print("    WARNING: NCP did not converge, plotting partial result")
+
+    wire_d = 0.002
+    r_wire = wire_d / 2.0
+    n_circ = 12
+    ndof_per_node = 6
+
+    # 変形後座標
+    deformed = mesh.node_coords.copy()
+    for i in range(mesh.n_nodes):
+        deformed[i] += result.u[ndof_per_node * i : ndof_per_node * i + 3]
+
+    active_pairs = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
+    all_pairs = mgr.pairs
+
+    fig, axes = plt.subplots(2, 2, figsize=(16, 14))
+
+    # --- Panel 1: 側面ビュー + 接触力ベクトル ---
+    ax1 = axes[0, 0]
+    elev, azim = 15.0, 45.0
+    _draw_wires_2d(
+        ax1,
+        mesh,
+        deformed,
+        r_wire,
+        n_circ,
+        elev,
+        azim,
+        layer_colors={0: "#cccccc", 1: "#aaccee"},
+    )
+
+    if active_pairs:
+        f_max = max(p.state.p_n for p in active_pairs)
+        if f_max < 1e-15:
+            f_max = 1.0
+
+        for pair in active_pairs:
+            na = pair.nodes_a
+            s_param = pair.state.s
+            pos_3d = (1.0 - s_param) * deformed[na[0]] + s_param * deformed[na[1]]
+            normal_3d = pair.state.normal
+            p_n = pair.state.p_n
+
+            scale = 5.0 * wire_d * (p_n / f_max)
+            tip_3d = pos_3d + normal_3d * scale
+
+            pts_3d = np.array([pos_3d, tip_3d])
+            pts_2d, _ = _project_3d_to_2d(pts_3d, elev, azim)
+
+            color_val = p_n / f_max
+            color = plt.cm.hot_r(color_val)
+            ax1.annotate(
+                "",
+                xy=(pts_2d[1, 0], pts_2d[1, 1]),
+                xytext=(pts_2d[0, 0], pts_2d[0, 1]),
+                arrowprops=dict(
+                    arrowstyle="-|>",
+                    color=color,
+                    lw=1.5 + 2.0 * color_val,
+                ),
+                zorder=100,
+            )
+
+    _setup_2d_projected_ax(ax1, deformed, elev, azim)
+    ax1.set_title(
+        f"接触力ベクトル場 (active={len(active_pairs)})",
+        fontsize=10,
+    )
+    ax1.set_xlabel("投影 x [m]")
+    ax1.set_ylabel("投影 y [m]")
+
+    # --- Panel 2: ギャップ分布ヒストグラム ---
+    ax2 = axes[0, 1]
+    gaps = [p.state.gap for p in all_pairs]
+    gaps_active = [p.state.gap for p in active_pairs]
+
+    if gaps:
+        ax2.hist(gaps, bins=40, alpha=0.5, color="steelblue", label="全ペア")
+    if gaps_active:
+        ax2.hist(gaps_active, bins=20, alpha=0.7, color="crimson", label="ACTIVE")
+    ax2.axvline(0.0, color="black", linestyle="--", linewidth=1, label="g=0（接触面）")
+    ax2.set_xlabel("ギャップ g [m]")
+    ax2.set_ylabel("頻度")
+    ax2.set_title("接触ギャップ分布", fontsize=10)
+    ax2.legend(fontsize=8)
+
+    # 貫入統計
+    penetrations = [g for g in gaps if g < 0]
+    if penetrations:
+        ax2.text(
+            0.02,
+            0.95,
+            f"貫入ペア: {len(penetrations)}\n"
+            f"最大貫入: {min(penetrations):.2e} m\n"
+            f"平均貫入: {np.mean(penetrations):.2e} m",
+            transform=ax2.transAxes,
+            fontsize=8,
+            va="top",
+            bbox=dict(boxstyle="round", facecolor="lightyellow", alpha=0.8),
+        )
+
+    # --- Panel 3: 接触力推移 ---
+    ax3 = axes[1, 0]
+    cf_hist = result.contact_force_history
+    if cf_hist:
+        ax3.plot(range(len(cf_hist)), cf_hist, "o-", color="crimson", markersize=3, linewidth=1.5)
+    ax3.set_xlabel("荷重ステップ")
+    ax3.set_ylabel("接触力ノルム [N]")
+    ax3.set_title("接触力ノルムの推移", fontsize=10)
+    ax3.set_yscale("log") if cf_hist and max(cf_hist) > 0 else None
+
+    # --- Panel 4: 断面ビュー（端面方向）+ 接触力 ---
+    ax4 = axes[1, 1]
+    elev_end, azim_end = 0.0, 0.0  # Z軸方向から見た断面
+
+    _draw_wires_2d(
+        ax4,
+        mesh,
+        deformed,
+        r_wire,
+        n_circ,
+        elev_end,
+        azim_end,
+        layer_colors={0: "#cccccc", 1: "#aaccee"},
+    )
+
+    if active_pairs:
+        for pair in active_pairs:
+            na = pair.nodes_a
+            s_param = pair.state.s
+            pos_3d = (1.0 - s_param) * deformed[na[0]] + s_param * deformed[na[1]]
+            normal_3d = pair.state.normal
+            p_n = pair.state.p_n
+            scale = 5.0 * wire_d * (p_n / f_max)
+            tip_3d = pos_3d + normal_3d * scale
+
+            pts_3d = np.array([pos_3d, tip_3d])
+            pts_2d, _ = _project_3d_to_2d(pts_3d, elev_end, azim_end)
+
+            color_val = p_n / f_max
+            color = plt.cm.hot_r(color_val)
+            ax4.annotate(
+                "",
+                xy=(pts_2d[1, 0], pts_2d[1, 1]),
+                xytext=(pts_2d[0, 0], pts_2d[0, 1]),
+                arrowprops=dict(
+                    arrowstyle="-|>",
+                    color=color,
+                    lw=1.5 + 2.0 * color_val,
+                ),
+                zorder=100,
+            )
+
+    _setup_2d_projected_ax(ax4, deformed, elev_end, azim_end)
+    ax4.set_title("断面ビュー（端面方向）+ 接触力", fontsize=10)
+    ax4.set_xlabel("投影 x [m]")
+    ax4.set_ylabel("投影 y [m]")
+
+    fig.suptitle(
+        f"接触診断パネル (7本撚線, converged={result.converged})",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "contact_force_vectors_3d.png")
+    plt.close(fig)
+    print("  -> contact_force_vectors_3d.png")
+
+
+def plot_deformed_twisted_wire_3d():
+    """変形後撚線の2D投影レンダリング（NCP解の変位適用）.
+
+    複数視点（側面・端面・斜め）から変形前後を比較する。
+    """
+    plt = _setup_matplotlib()
+
+    print("    Running 7-strand NCP for deformed visualization...")
+    mesh, result, mgr = _run_ncp_for_visualization(7, layers=(1,))
+
+    wire_d = 0.002
+    r_wire = wire_d / 2.0
+    n_circ = 12
+    ndof_per_node = 6
+
+    deformed = mesh.node_coords.copy()
+    for i in range(mesh.n_nodes):
+        deformed[i] += result.u[ndof_per_node * i : ndof_per_node * i + 3]
+
+    views = [
+        ("斜めビュー", 25.0, 45.0),
+        ("端面ビュー", 0.0, 0.0),
+        ("側面ビュー", 0.0, 90.0),
+    ]
+    layer_colors_ref = {0: "#cccccc", 1: "#bbbbbb"}
+    layer_colors_def = {0: "#e41a1c", 1: "#377eb8"}
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+
+    for col, (title, elev, azim) in enumerate(views):
+        # 変形前
+        ax_ref = axes[0, col]
+        _draw_wires_2d(
+            ax_ref,
+            mesh,
+            mesh.node_coords,
+            r_wire,
+            n_circ,
+            elev,
+            azim,
+            layer_colors=layer_colors_ref,
+        )
+        _setup_2d_projected_ax(ax_ref, mesh.node_coords, elev, azim)
+        ax_ref.set_title(f"変形前 — {title}", fontsize=10)
+
+        # 変形後
+        ax_def = axes[1, col]
+        _draw_wires_2d(
+            ax_def,
+            mesh,
+            deformed,
+            r_wire,
+            n_circ,
+            elev,
+            azim,
+            layer_colors=layer_colors_def,
+        )
+        _setup_2d_projected_ax(ax_def, deformed, elev, azim)
+        ax_def.set_title(f"変形後 — {title}", fontsize=10)
+
+    fig.suptitle(
+        f"撚線 変形前後比較 (converged={result.converged})",
+        fontsize=13,
+    )
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "deformed_twisted_wire_3d.png")
+    plt.close(fig)
+    print("  -> deformed_twisted_wire_3d.png")
+
+
+def plot_twisted_wire_3d_surface_multi(n_strands_list=None):
+    """19本/37本撚線の2D投影レンダリング（初期形状、複数視点）."""
+    plt = _setup_matplotlib()
+
+    from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
+
+    if n_strands_list is None:
+        n_strands_list = [19, 37]
+
+    wire_d = 2.0e-3
+    pitch = 40.0e-3
+    r_wire = wire_d / 2.0
+    n_circ = 12
+
+    views = [
+        ("斜め", 25.0, 45.0),
+        ("端面", 0.0, 0.0),
+    ]
+
+    fig, axes = plt.subplots(
+        len(n_strands_list),
+        len(views),
+        figsize=(8 * len(views), 8 * len(n_strands_list)),
+    )
+    if len(n_strands_list) == 1:
+        axes = axes[np.newaxis, :]
+
+    layer_colors = {0: "#e41a1c", 1: "#377eb8", 2: "#4daf4a", 3: "#984ea3"}
+
+    for row, n_s in enumerate(n_strands_list):
+        mesh = make_twisted_wire_mesh(
+            n_strands=n_s,
+            wire_diameter=wire_d,
+            pitch=pitch,
+            length=pitch,
+            n_elems_per_strand=16,
+        )
+        layers = set(info.layer for info in mesh.strand_infos)
+        layer_str = "+".join(f"L{ly}" for ly in sorted(layers))
+
+        for col, (view_name, elev, azim) in enumerate(views):
+            ax = axes[row, col]
+            _draw_wires_2d(
+                ax,
+                mesh,
+                mesh.node_coords,
+                r_wire,
+                n_circ,
+                elev,
+                azim,
+                layer_colors=layer_colors,
+            )
+            _setup_2d_projected_ax(ax, mesh.node_coords, elev, azim)
+            ax.set_title(f"{n_s}本撚線 ({layer_str}) — {view_name}", fontsize=10)
+
+    fig.suptitle("撚線 2D投影レンダリング（初期形状）", fontsize=13)
+    fig.tight_layout()
+    fig.savefig(OUTPUT_DIR / "twisted_wire_3d_surface_multi.png")
+    plt.close(fig)
+    print("  -> twisted_wire_3d_surface_multi.png")
+
+
+# =====================================================================
 # メイン
 # =====================================================================
 
@@ -3557,6 +4204,15 @@ def main():
 
     print("[3D] 片持ち梁3D応力コンター")
     plot_beam_3d_stress_contour()
+
+    print("[3D] 接触力ベクトル場 + 接触診断パネル")
+    plot_contact_force_vectors_3d()
+
+    print("[3D] 変形後撚線 2D投影レンダリング")
+    plot_deformed_twisted_wire_3d()
+
+    print("[3D] 19本/37本撚線 2D投影レンダリング")
+    plot_twisted_wire_3d_surface_multi()
 
     print()
     print("Done. All verification plots generated.")

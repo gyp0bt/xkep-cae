@@ -28,8 +28,8 @@ from xkep_cae.numerical_tests.wire_bending_benchmark import (
     _compute_kappa,
 )
 
-# プログラムテスト: 粗いメッシュで密度チェックをスキップ
-_TEST_PARAMS = {"min_elems_per_pitch": 0}
+# プログラムテスト: 16要素/ピッチ以上を厳守
+_TEST_PARAMS = {"n_elems_per_strand": 16}
 
 
 class TestMaterialParameterization:
@@ -281,9 +281,9 @@ class TestInpValidation:
 
         assert "_inp_n_nodes" in overrides
         assert "_inp_n_elems" in overrides
-        # 3素線 × 4要素/素線 = 12要素, 15節点
-        assert overrides["_inp_n_elems"] == 12
-        assert overrides["_inp_n_nodes"] == 15
+        # 3素線 × 16要素/素線 = 48要素, 51節点
+        assert overrides["_inp_n_elems"] == 48
+        assert overrides["_inp_n_nodes"] == 51
 
 
 class TestNoHardcodedConstants:

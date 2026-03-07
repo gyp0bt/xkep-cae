@@ -172,10 +172,9 @@ class TestGeneratePrescreeningSample:
             0.002,
             0.04,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0,
-            min_elems_per_pitch=0,
         )
 
         wire_ids = np.zeros(len(mesh.connectivity), dtype=int)
@@ -209,10 +208,9 @@ class TestGeneratePrescreeningSample:
             0.002,
             0.04,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0005,
-            min_elems_per_pitch=0,
         )
 
         n_nodes = len(mesh.node_coords)
@@ -241,10 +239,9 @@ class TestGeneratePrescreeningSample:
             0.002,
             0.04,
             length=0.0,
-            n_elems_per_strand=4,
+            n_elems_per_strand=16,
             n_pitches=1.0,
             gap=0.0,
-            min_elems_per_pitch=0,
         )
         sample = generate_prescreening_sample(
             mesh.node_coords,

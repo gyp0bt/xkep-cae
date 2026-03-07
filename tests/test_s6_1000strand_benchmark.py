@@ -18,7 +18,7 @@ pytestmark = pytest.mark.slow
 
 _WIRE_D = 0.002  # 直径 2mm
 _PITCH = 0.040  # 40mm ピッチ
-_N_ELEM_PER_STRAND = 4
+_N_ELEM_PER_STRAND = 16
 
 
 def _benchmark_mesh_generation(n_strands: int, n_elems: int = _N_ELEM_PER_STRAND):
@@ -31,7 +31,6 @@ def _benchmark_mesh_generation(n_strands: int, n_elems: int = _N_ELEM_PER_STRAND
         length=0.0,
         n_elems_per_strand=n_elems,
         n_pitches=1.0,
-        min_elems_per_pitch=0,
     )
     dt = time.perf_counter() - t0
     mem_bytes = mesh.node_coords.nbytes + mesh.connectivity.nbytes

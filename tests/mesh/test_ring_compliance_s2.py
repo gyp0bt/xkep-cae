@@ -30,7 +30,7 @@ from xkep_cae.mesh.twisted_wire import (
 # ============================================================
 
 
-def _make_mesh(n_strands: int, *, wire_radius: float = 0.5e-3, n_elems: int = 4):
+def _make_mesh(n_strands: int, *, wire_radius: float = 0.5e-3, n_elems: int = 16):
     """テスト用の撚線メッシュを生成する."""
     return make_twisted_wire_mesh(
         n_strands,
@@ -38,7 +38,6 @@ def _make_mesh(n_strands: int, *, wire_radius: float = 0.5e-3, n_elems: int = 4)
         pitch=20.0e-3,
         length=20.0e-3,
         n_elems_per_strand=n_elems,
-        min_elems_per_pitch=0,
     )
 
 
