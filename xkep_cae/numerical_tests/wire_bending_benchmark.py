@@ -226,6 +226,13 @@ def _build_contact_manager(
     midpoint_prescreening: bool = True,
     linear_solver: str = "auto",
     line_contact: bool = True,
+    # S3改良機能
+    adjust_initial_penetration: bool = True,
+    contact_force_ramp: bool = False,
+    contact_force_ramp_iters: int = 3,
+    k_pen_continuation: bool = False,
+    k_pen_continuation_steps: int = 3,
+    k_pen_continuation_start: float = 0.1,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -263,6 +270,12 @@ def _build_contact_manager(
             saddle_regularization=saddle_regularization,
             ncp_active_threshold=ncp_active_threshold,
             lambda_relaxation=lambda_relaxation,
+            adjust_initial_penetration=adjust_initial_penetration,
+            contact_force_ramp=contact_force_ramp,
+            contact_force_ramp_iters=contact_force_ramp_iters,
+            k_pen_continuation=k_pen_continuation,
+            k_pen_continuation_steps=k_pen_continuation_steps,
+            k_pen_continuation_start=k_pen_continuation_start,
         ),
     )
 
@@ -507,6 +520,13 @@ def run_bending_oscillation(
     line_contact: bool = True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
     broadphase_margin: float = 0.01,
+    # S3改良機能
+    adjust_initial_penetration: bool = True,
+    contact_force_ramp: bool = False,
+    contact_force_ramp_iters: int = 3,
+    k_pen_continuation: bool = False,
+    k_pen_continuation_steps: int = 3,
+    k_pen_continuation_start: float = 0.1,
     # メッシュ密度検査
     min_elems_per_pitch: int = 16,
 ) -> BendingOscillationResult:
@@ -645,6 +665,12 @@ def run_bending_oscillation(
         midpoint_prescreening=midpoint_prescreening,
         linear_solver=linear_solver,
         line_contact=line_contact,
+        adjust_initial_penetration=adjust_initial_penetration,
+        contact_force_ramp=contact_force_ramp,
+        contact_force_ramp_iters=contact_force_ramp_iters,
+        k_pen_continuation=k_pen_continuation,
+        k_pen_continuation_steps=k_pen_continuation_steps,
+        k_pen_continuation_start=k_pen_continuation_start,
     )
 
     # ------------------------------------------------------------------
