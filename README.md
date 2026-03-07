@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2271テスト（fast: 1691 + 1 xfailed / slow: 362 - 10 xfailed / deprecated: 218）** — 2026-03-07時点
+**2271テスト（fast: 1691 + 1 xfailed / slow: 362 - 9 xfailed / deprecated: 218）** — 2026-03-07時点
 
 | 分野 | 内容 | 状態 |
 |------|------|------|
