@@ -57,6 +57,122 @@ from xkep_cae.contact.pair import ContactManager, ContactStatus
 
 
 @dataclass
+class ConvergenceDiagnostics:
+    """収束失敗時の標準化診断情報.
+
+    Newton反復の履歴情報を収集し、収束失敗の原因特定を支援する。
+
+    Attributes:
+        step: 荷重ステップ番号
+        load_frac: 荷重分率
+        res_history: 各反復の力残差ノルム比 ||R_u||/||f||
+        ncp_history: 各反復のNCP残差ノルム ||C_n||
+        ncp_t_history: 各反復の摩擦NCP残差ノルム ||C_t||
+        n_active_history: 各反復のNCP活性ペア数
+        du_norm_history: 各反復の変位増分ノルム ||du||
+        max_du_dof_history: 各反復で最大の変位増分を持つDOFインデックス
+        condition_number: 最終反復の条件数推定（計算した場合）
+    """
+
+    step: int = 0
+    load_frac: float = 0.0
+    res_history: list[float] = field(default_factory=list)
+    ncp_history: list[float] = field(default_factory=list)
+    ncp_t_history: list[float] = field(default_factory=list)
+    n_active_history: list[int] = field(default_factory=list)
+    du_norm_history: list[float] = field(default_factory=list)
+    max_du_dof_history: list[int] = field(default_factory=list)
+    condition_number: float | None = None
+
+    def format_report(self, max_iter: int = 50) -> str:
+        """診断レポートの文字列を生成する.
+
+        Returns:
+            人間が読みやすいフォーマットの診断レポート
+        """
+        lines = [
+            "=" * 60,
+            "  NCP Solver Convergence Diagnostics",
+            "=" * 60,
+            f"  Step: {self.step}, Load fraction: {self.load_frac:.6f}",
+            f"  Iterations: {len(self.res_history)} / {max_iter}",
+        ]
+
+        if self.condition_number is not None:
+            lines.append(f"  Condition number (est.): {self.condition_number:.2e}")
+
+        # 残差推移テーブル
+        n_iter = len(self.res_history)
+        if n_iter > 0:
+            lines.append("")
+            lines.append(
+                "  iter  ||R||/||f||   ||C_n||     ||C_t||     n_active  ||du||       max_du_dof"
+            )
+            lines.append("  " + "-" * 76)
+            for i in range(n_iter):
+                res = self.res_history[i] if i < len(self.res_history) else 0.0
+                ncp = self.ncp_history[i] if i < len(self.ncp_history) else 0.0
+                ncp_t = self.ncp_t_history[i] if i < len(self.ncp_t_history) else 0.0
+                n_act = self.n_active_history[i] if i < len(self.n_active_history) else 0
+                du = self.du_norm_history[i] if i < len(self.du_norm_history) else 0.0
+                dof = self.max_du_dof_history[i] if i < len(self.max_du_dof_history) else -1
+                lines.append(
+                    f"  {i:4d}  {res:11.3e}  {ncp:11.3e}  {ncp_t:11.3e}  "
+                    f"{n_act:8d}  {du:11.3e}  {dof:10d}"
+                )
+
+            # 収束率の推定
+            if n_iter >= 3:
+                ratios = []
+                for i in range(2, n_iter):
+                    prev = self.res_history[i - 1]
+                    pprev = self.res_history[i - 2]
+                    if pprev > 1e-30 and prev > 1e-30:
+                        import math
+
+                        log_denom = math.log(prev / pprev)
+                        if abs(log_denom) > 1e-30:
+                            r = math.log(self.res_history[i] / prev) / log_denom
+                            ratios.append(r)
+                if ratios:
+                    avg_rate = sum(ratios) / len(ratios)
+                    lines.append(f"\n  Convergence order (avg): {avg_rate:.2f}")
+                    if avg_rate < 1.5:
+                        lines.append(
+                            "  WARNING: Sub-quadratic convergence — "
+                            "tangent stiffness may be inaccurate"
+                        )
+
+            # 残差増大の検出
+            if n_iter >= 2:
+                max_growth = max(
+                    self.res_history[i] / max(self.res_history[i - 1], 1e-30)
+                    for i in range(1, n_iter)
+                )
+                if max_growth > 10.0:
+                    lines.append(
+                        f"  WARNING: Max residual growth ratio = {max_growth:.1f}x — "
+                        "possible divergence or Newton overshoot"
+                    )
+
+            # アクティブセットの変動検出
+            if n_iter >= 2 and any(n > 0 for n in self.n_active_history):
+                changes = sum(
+                    1
+                    for i in range(1, len(self.n_active_history))
+                    if self.n_active_history[i] != self.n_active_history[i - 1]
+                )
+                if changes > n_iter * 0.5:
+                    lines.append(
+                        f"  WARNING: Active set changed in {changes}/{n_iter - 1} iterations — "
+                        "possible chattering"
+                    )
+
+        lines.append("=" * 60)
+        return "\n".join(lines)
+
+
+@dataclass
 class NCPSolveResult:
     """NCP ベース接触解析の結果.
 
@@ -71,6 +187,7 @@ class NCPSolveResult:
         displacement_history: 各ステップの変位
         contact_force_history: 各ステップの接触力ノルム
         graph_history: 接触グラフの時系列
+        diagnostics: 収束失敗時の診断情報（収束時はNone）
     """
 
     u: np.ndarray
@@ -83,6 +200,7 @@ class NCPSolveResult:
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
     graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
+    diagnostics: ConvergenceDiagnostics | None = None
 
 
 def _deformed_coords(
@@ -1579,6 +1697,9 @@ def newton_raphson_contact_ncp(
         _chattering_window = manager.config.chattering_window
         _active_history: list[np.ndarray] = []  # 直近N反復のNCP active mask履歴
 
+        # --- 収束診断データ収集 ---
+        _diag = ConvergenceDiagnostics(step=step_display, load_frac=load_frac)
+
         for it in range(max_iter):
             total_newton += 1
 
@@ -1865,6 +1986,12 @@ def newton_raphson_contact_ncp(
                 float(np.linalg.norm(C_t_ac)) if (_use_friction and n_geom_active > 0) else 0.0
             )
 
+            # 診断データ収集
+            _diag.res_history.append(res_u_norm / f_ext_ref_norm)
+            _diag.ncp_history.append(ncp_norm)
+            _diag.ncp_t_history.append(ncp_t_norm)
+            _diag.n_active_history.append(n_ncp_active)
+
             force_conv = res_u_norm / f_ext_ref_norm < tol_force
             ncp_conv = ncp_norm < tol_ncp
             ncp_t_conv = ncp_t_norm < tol_ncp if _use_friction else True
@@ -2125,6 +2252,12 @@ def newton_raphson_contact_ncp(
             # 変位ノルム判定
             u_norm = float(np.linalg.norm(u))
             du_norm_val = float(np.linalg.norm(du))
+
+            # 診断データ: du情報を収集
+            _diag.du_norm_history.append(du_norm_val)
+            _max_du_idx = int(np.argmax(np.abs(du))) if du_norm_val > 0 else -1
+            _diag.max_du_dof_history.append(_max_du_idx)
+
             if u_norm > 1e-30 and du_norm_val / u_norm < tol_disp and ncp_conv:
                 step_converged = True
                 if show_progress:
@@ -2180,6 +2313,7 @@ def newton_raphson_contact_ncp(
                         f"  WARNING: Step {step_display} (frac={load_frac:.4f}) "
                         f"did not converge in {max_iter} iterations."
                     )
+                    print(_diag.format_report(max_iter=max_iter))
                 return NCPSolveResult(
                     u=u,
                     lambdas=lam_all,
@@ -2191,6 +2325,7 @@ def newton_raphson_contact_ncp(
                     displacement_history=disp_history,
                     contact_force_history=contact_force_history,
                     graph_history=graph_history,
+                    diagnostics=_diag,
                 )
 
         # ステップ完了 — キューから消費 & チェックポイント保存
