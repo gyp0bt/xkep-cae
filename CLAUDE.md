@@ -162,7 +162,7 @@ docs/
 
 ## 現在の状態
 
-**2271テスト（fast: 1691 / slow: 362 + deprecated: 218）** — 2026-03-07
+**2271テスト（fast: 1691 + 1 xfailed / slow: 362 - 10 xfailed + deprecated: 218）** — 2026-03-07
 
 FEM基盤（梁/平面/固体要素）、非線形（幾何学的/材料）、動的解析、梁–梁接触（NCP/Mortar/Line contact/摩擦）、撚線モデル（7本撚り収束/被膜/シース）、高速化基盤（COO/CSR/共有メモリ並列/ブロック前処理）、GNN/PINNサロゲートPoC — 全て完了。
 
