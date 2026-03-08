@@ -96,6 +96,7 @@ status-098/120の被膜ベンチマークを新しいモデル（被膜厚考慮
 - [ ] 61本以上のNCP収束テスト
 - [ ] 被膜接触モデルの接線剛性行列への寄与（現在は力のみ、剛性行列に被膜スプリングの寄与を追加することで収束改善の可能性）
 - [ ] 被膜なし＋あり混合ペア接触テスト（core_radii分離が必要なケース）
+- [ ] 被膜モジュール分離リファクタリング: `CoatingModel`, `coated_radii()`, `coating_section_properties()`, `coated_beam_section()` を `xkep_cae/materials/coating.py` に移動（現在 `mesh/twisted_wire.py` に混在しており責任の分離が不十分）
 
 ---
 
