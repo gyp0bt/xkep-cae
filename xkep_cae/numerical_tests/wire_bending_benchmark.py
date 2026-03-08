@@ -549,6 +549,8 @@ def run_bending_oscillation(
     coating_youngs: float = 0.0,
     coating_nu: float = 0.4,
     coating_damping: float = 0.0,
+    # メッシュギャップ（弦近似誤差による初期貫入防止）
+    mesh_gap: float = 0.0,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -628,6 +630,7 @@ def run_bending_oscillation(
         strand_diameter=strand_diameter,
         min_elems_per_pitch=min_elems_per_pitch,
         coating_thickness=coating_thickness,
+        gap=mesh_gap,
     )
     timing.record(0, 0, -1, "mesh_generation", time.perf_counter() - t0)
 
@@ -714,7 +717,7 @@ def run_bending_oscillation(
     )
 
     # ------------------------------------------------------------------
-    # 4b. 初期貫入チェック
+    # 4b. 初期貫入チェック・修正
     # ------------------------------------------------------------------
     t0 = time.perf_counter()
     mgr.detect_candidates(
