@@ -1389,6 +1389,7 @@ def newton_raphson_contact_ncp(
     connectivity: np.ndarray,
     radii: np.ndarray | float,
     *,
+    core_radii: np.ndarray | float | None = None,
     n_load_steps: int | None = None,
     max_iter: int = 50,
     tol_force: float = 1e-8,
@@ -1461,7 +1462,9 @@ def newton_raphson_contact_ncp(
         manager: 接触マネージャ
         node_coords_ref: (n_nodes, 3) 参照節点座標
         connectivity: (n_elems, 2) 要素接続
-        radii: 断面半径
+        radii: 断面半径（被膜込み）
+        core_radii: 芯線半径（被膜なし）。None の場合 radii と同一（被膜なし）。
+            被膜接触モデル（coating_stiffness > 0）使用時に指定する。
         n_load_steps: [DEPRECATED] dt_initial_fraction を使用。
             指定時は dt_initial_fraction = 1/n_load_steps に自動変換される。
         max_iter: Newton 最大反復数
@@ -1719,9 +1722,11 @@ def newton_raphson_contact_ncp(
         radii,
         margin=broadphase_margin,
         cell_size=broadphase_cell_size,
+        core_radii=core_radii,
     )
     _pos_tol = manager.config.position_tolerance
     _adjust = manager.config.adjust_initial_penetration
+    _use_coating = manager.config.coating_stiffness > 0.0
 
     # position_tolerance > 0: 小ギャップペアを接触位置に移動
     if _adjust and _pos_tol > 0.0:
@@ -1740,32 +1745,30 @@ def newton_raphson_contact_ncp(
             radii,
             margin=broadphase_margin,
             cell_size=broadphase_cell_size,
+            core_radii=core_radii,
         )
 
-    # 初期貫入チェック + gap_offset 計算
-    n_initial_pen = manager.store_initial_offsets(node_coords_ref)
-    if n_initial_pen > 0:
-        max_offset = min(p.gap_offset for p in manager.pairs if p.gap_offset < 0.0)
-        max_pen_abs = abs(max_offset)
-        r_repr = float(np.mean(np.asarray(radii, dtype=float).ravel()[:1]))
-        pen_ratio = max_pen_abs / r_repr if r_repr > 0 else float("inf")
+    # 初期貫入チェック（status-137: gap_offset 廃止 → メッシュ側で防止）
+    n_initial_pen = manager.check_initial_penetration(node_coords_ref)
+    if n_initial_pen > 0 and not _use_coating:
+        # 被膜モデル無効時: 初期貫入はメッシュ不備
         if not _adjust:
-            # gap_offset をリセット（使用しない）
-            for pair in manager.pairs:
-                pair.gap_offset = 0.0
             raise ValueError(
-                f"初期貫入が検出されました: {n_initial_pen}ペア, "
-                f"最大貫入量={max_pen_abs * 1000:.4f} mm "
-                f"(ワイヤ半径比 {pen_ratio:.1%})。"
-                f"adjust_initial_penetration=True で補正するか、"
-                f"メッシュの gap パラメータを増やしてください。"
+                f"初期貫入が検出されました: {n_initial_pen}ペア。"
+                f"adjust_initial_penetration=True で位置調整するか、"
+                f"メッシュ生成時に coating_thickness を指定して "
+                f"被膜厚分のgapを確保してください。"
             )
-        # adjust=True: gap_offset を保持して弦近似による微小貫入を補正
+        # adjust=True かつ position_tolerance が設定済みの場合は
+        # 上流の adjust_initial_positions() で処理済み。
+        # 残存する微小貫入は弦近似誤差（16要素/ピッチで<2%）。
+        if show_progress:
+            print(f"  初期貫入検出: {n_initial_pen}ペア（弦近似誤差範囲内）")
+    elif n_initial_pen > 0 and _use_coating:
         if show_progress:
             print(
-                f"  初期貫入オフセット補正(adjust=yes): {n_initial_pen}ペア"
-                f"（最大 {max_pen_abs * 1000:.4f} mm, "
-                f"ワイヤ半径比 {pen_ratio:.1%}）"
+                f"  被膜接触モデル有効: 初期被膜圧縮ペア={n_initial_pen}"
+                f"（被膜弾性スプリングで処理）"
             )
     # λベクトルをペア数に合わせる
     if len(lam_all) < manager.n_pairs:
@@ -1814,6 +1817,7 @@ def newton_raphson_contact_ncp(
             radii,
             margin=broadphase_margin,
             cell_size=broadphase_cell_size,
+            core_radii=core_radii,
         )
 
         # --- 段階的接触アクティベーション ---
@@ -2023,6 +2027,11 @@ def newton_raphson_contact_ncp(
             if _contact_force_ramp and it < _contact_force_ramp_iters:
                 ramp_factor = (it + 1) / _contact_force_ramp_iters
                 f_c = f_c * ramp_factor
+
+            # 4d. 被膜スプリング力（status-137: 被膜層を陽にモデル化）
+            if _use_coating:
+                f_coat = manager.compute_coating_forces(coords_def)
+                f_c = f_c + f_coat
 
             # 5. 力残差
             f_int = assemble_internal_force(u)

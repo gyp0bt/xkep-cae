@@ -67,6 +67,7 @@ class ContactState:
     status: ContactStatus = ContactStatus.INACTIVE
     stick: bool = True
     dissipation: float = 0.0
+    coating_compression: float = 0.0  # 被膜圧縮量 [m]（被膜接触モデル用）
     # Gauss point friction states (for line contact friction, Phase C6-L1b)
     gp_z_t: list[np.ndarray] | None = None
     gp_stick: list[bool] | None = None
@@ -90,6 +91,7 @@ class ContactState:
             status=self.status,
             stick=self.stick,
             dissipation=self.dissipation,
+            coating_compression=self.coating_compression,
             gp_z_t=[z.copy() for z in self.gp_z_t] if self.gp_z_t is not None else None,
             gp_stick=list(self.gp_stick) if self.gp_stick is not None else None,
             gp_q_trial_norm=list(self.gp_q_trial_norm)
@@ -121,7 +123,8 @@ class ContactPair:
     state: ContactState = field(default_factory=ContactState)
     radius_a: float = 0.0
     radius_b: float = 0.0
-    gap_offset: float = 0.0  # 初期貫入オフセット（LS-DYNA IGNORE=1 相当）
+    core_radius_a: float = 0.0  # 芯線半径（被膜なし）
+    core_radius_b: float = 0.0  # 芯線半径（被膜なし）
 
     @property
     def search_radius(self) -> float:
@@ -256,9 +259,11 @@ class ContactConfig:
     # --- S3改良11: 接触力ランプ（ステップ内の段階的接触力増大） ---
     contact_force_ramp: bool = False  # Newton反復初期の接触力ランプ有効化
     contact_force_ramp_iters: int = 5  # ランプが1.0に達するまでの反復数
-    # --- S3改良12: 初期貫入補正（LS-DYNA IGNORE=1 相当） ---
-    adjust_initial_penetration: bool = True  # True: 初期貫入をオフセット補正、False: エラー
+    # --- S3改良12: 初期貫入処理 ---
+    adjust_initial_penetration: bool = True  # True: 初期貫入を補正、False: エラー
     position_tolerance: float = 0.0  # 初期貫入の許容量 [m]。0=無制限（adjust時のみ有効）
+    # --- 被膜接触モデル（status-137: gap_offset廃止 → 被膜層を陽にモデル化） ---
+    coating_stiffness: float = 0.0  # 被膜接触剛性 [Pa/m]。0=被膜モデル無効（従来互換）
 
 
 @dataclass
@@ -293,6 +298,8 @@ class ContactManager:
         nodes_b: np.ndarray,
         radius_a: float = 0.0,
         radius_b: float = 0.0,
+        core_radius_a: float = 0.0,
+        core_radius_b: float = 0.0,
     ) -> ContactPair:
         """接触ペアを追加する."""
         pair = ContactPair(
@@ -302,6 +309,8 @@ class ContactManager:
             nodes_b=np.asarray(nodes_b, dtype=int),
             radius_a=radius_a,
             radius_b=radius_b,
+            core_radius_a=core_radius_a,
+            core_radius_b=core_radius_b,
         )
         self.pairs.append(pair)
         return pair
@@ -325,6 +334,7 @@ class ContactManager:
         *,
         margin: float = 0.0,
         cell_size: float | None = None,
+        core_radii: np.ndarray | float | None = None,
     ) -> list[tuple[int, int]]:
         """Broadphase で接触候補ペアを検出し pairs を更新する.
 
@@ -334,9 +344,10 @@ class ContactManager:
         Args:
             node_coords: 節点座標 (n_nodes, 3)
             connectivity: 要素接続 (n_elems, 2) — 各行が [node_i, node_j]
-            radii: 断面半径。スカラーなら全要素共通。配列なら要素ごと
+            radii: 断面半径（被膜込み）。スカラーなら全要素共通。配列なら要素ごと
             margin: 探索マージン
             cell_size: 格子セルサイズ（None で自動推定）
+            core_radii: 芯線半径（被膜なし）。None の場合 radii と同一（被膜なし）
 
         Returns:
             候補ペアのリスト (elem_a, elem_b)
@@ -350,6 +361,14 @@ class ContactManager:
             r_arr = np.full(n_elems, float(radii))
         else:
             r_arr = np.asarray(radii, dtype=float)
+
+        # core_radii ベクトル化
+        if core_radii is None:
+            cr_arr = r_arr.copy()
+        elif np.isscalar(core_radii):
+            cr_arr = np.full(n_elems, float(core_radii))
+        else:
+            cr_arr = np.asarray(core_radii, dtype=float)
 
         # セグメントリスト構築
         segments = []
@@ -431,6 +450,8 @@ class ContactManager:
                     nodes_b=conn[j],
                     radius_a=float(r_arr[i]),
                     radius_b=float(r_arr[j]),
+                    core_radius_a=float(cr_arr[i]),
+                    core_radius_b=float(cr_arr[j]),
                 )
 
         return candidates
@@ -477,10 +498,25 @@ class ContactManager:
         )
 
         # --- ギャップ計算 ---
-        radii_a = np.array([p.radius_a for p in self.pairs])
-        radii_b = np.array([p.radius_b for p in self.pairs])
-        offsets = np.array([p.gap_offset for p in self.pairs])
-        gap_all = dist_all - (radii_a + radii_b) - offsets
+        _use_coating = self.config.coating_stiffness > 0.0
+        if _use_coating:
+            # 被膜接触モデル: 芯線半径ベースのギャップ
+            core_a = np.array([p.core_radius_a for p in self.pairs])
+            core_b = np.array([p.core_radius_b for p in self.pairs])
+            radii_a = np.array([p.radius_a for p in self.pairs])
+            radii_b = np.array([p.radius_b for p in self.pairs])
+            gap_core = dist_all - (core_a + core_b)
+            coat_total = (radii_a - core_a) + (radii_b - core_b)
+            # 被膜圧縮量: coating_compression = max(0, t_coat_total - gap_core)
+            coat_comp = np.maximum(0.0, coat_total - gap_core)
+            # NCPに渡すギャップ: gap = gap_core（芯線間距離）
+            # NCP complementarity は gap_core ≥ 0 を制約
+            gap_all = gap_core
+        else:
+            # 従来モデル: 被膜込み半径（被膜なし or 後方互換）
+            radii_a = np.array([p.radius_a for p in self.pairs])
+            radii_b = np.array([p.radius_b for p in self.pairs])
+            gap_all = dist_all - (radii_a + radii_b)
 
         # --- バッチ接触フレーム計算 ---
         prev_t1_all = np.array([p.state.tangent1 for p in self.pairs])  # (N, 3)
@@ -504,6 +540,8 @@ class ContactManager:
             pair.state.normal = n_all[i]
             pair.state.tangent1 = t1_all[i]
             pair.state.tangent2 = t2_all[i]
+            if _use_coating:
+                pair.state.coating_compression = float(coat_comp[i])
 
             if not freeze_active_set:
                 self._update_active_set(pair, allow_deactivation=allow_deactivation)
@@ -519,7 +557,7 @@ class ContactManager:
         g_on / g_off のヒステリシスバンドにより、
         接触状態のチャタリングを防止する。
 
-        - 非活性 → 活性: gap <= g_on
+        - 非活性 → 活性: gap <= g_on（または被膜圧縮 > 0）
         - 活性 → 非活性: gap >= g_off  (g_off > g_on)
 
         allow_deactivation=False の場合、ACTIVE→INACTIVE 遷移を禁止し、
@@ -529,13 +567,16 @@ class ContactManager:
         g_on = self.config.g_on
         g_off = self.config.g_off
 
+        # 被膜モデル: 被膜圧縮があれば接触活性化
+        _coat_active = self.config.coating_stiffness > 0.0 and pair.state.coating_compression > 0.0
+
         if pair.state.status == ContactStatus.INACTIVE:
             # 非活性 → 活性化判定
-            if gap <= g_on:
+            if gap <= g_on or _coat_active:
                 pair.state.status = ContactStatus.ACTIVE
         else:
             # 活性 → 非活性化判定
-            if allow_deactivation and gap >= g_off:
+            if allow_deactivation and gap >= g_off and not _coat_active:
                 pair.state.status = ContactStatus.INACTIVE
 
     # -- Phase C2: 法線AL接触力 + 乗数更新 + ペナルティ初期化 ----
@@ -639,13 +680,11 @@ class ContactManager:
                 count += 1
         return count
 
-    def store_initial_offsets(self, node_coords: np.ndarray) -> int:
-        """初期貫入オフセットを計算・保存する（LS-DYNA IGNORE=1 相当）.
+    def check_initial_penetration(self, node_coords: np.ndarray) -> int:
+        """初期貫入をチェックする.
 
-        t=0 時点の各ペアのギャップを計測し、初期貫入（g < 0）分を
-        gap_offset として保存する。以後の update_geometry() で
-        g_effective = g_raw - gap_offset が使われ、初期貫入による
-        偽の接触力が発生しない。
+        被膜モデル有効時: 芯線半径ベースでギャップを計算。
+        被膜モデル無効時: 被膜込み半径（total radius）でギャップを計算。
 
         Args:
             node_coords: 初期節点座標 (n_nodes, 3)
@@ -654,7 +693,8 @@ class ContactManager:
             初期貫入ペア数
         """
         coords = np.asarray(node_coords, dtype=float)
-        n_offset = 0
+        n_pen = 0
+        _use_coating = self.config.coating_stiffness > 0.0
 
         for pair in self.pairs:
             xA0 = coords[pair.nodes_a[0]]
@@ -663,15 +703,17 @@ class ContactManager:
             xB1 = coords[pair.nodes_b[1]]
 
             result = closest_point_segments(xA0, xA1, xB0, xB1)
-            gap_raw = compute_gap(result.distance, pair.radius_a, pair.radius_b)
-
-            if gap_raw < 0.0:
-                pair.gap_offset = gap_raw
-                n_offset += 1
+            if _use_coating:
+                # 被膜モデル: 芯線半径ベースのギャップ
+                gap = compute_gap(result.distance, pair.core_radius_a, pair.core_radius_b)
             else:
-                pair.gap_offset = 0.0
+                # 従来モデル: 被膜込み半径ベース
+                gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
 
-        return n_offset
+            if gap < 0.0:
+                n_pen += 1
+
+        return n_pen
 
     def adjust_initial_positions(
         self,
@@ -752,11 +794,60 @@ class ContactManager:
             mask = correction_count > 0
             coords[mask] += corrections[mask] / correction_count[mask, np.newaxis]
 
-        # gap_offset をリセット（物理的に調整済みなのでオフセット不要）
-        for pair in self.pairs:
-            pair.gap_offset = 0.0
-
         return coords, n_pen_fixed, n_gap_closed
+
+    def compute_coating_forces(
+        self,
+        node_coords: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """被膜圧縮による接触力ベクトルと剛性行列を計算する.
+
+        被膜接触モデル: 被膜層を弾性スプリングとしてモデル化。
+        被膜圧縮量 δ = max(0, t_coat_total - gap_core) に対し
+        f_coat = k_coating * δ の法線力を生成する。
+
+        Args:
+            node_coords: 節点座標 (n_nodes, 3)
+
+        Returns:
+            (f_coat, coat_pairs_info) — f_coat: 節点力ベクトル (ndof,),
+            coat_pairs_info: 被膜接触のペアインデックスと力のリスト
+        """
+        k_coat = self.config.coating_stiffness
+        coords = np.asarray(node_coords, dtype=float)
+        ndof = len(coords) * 3  # noqa: F841 — 将来の拡張用
+        f_coat = np.zeros(len(coords) * 3)
+
+        for pair in self.pairs:
+            cc = pair.state.coating_compression
+            if cc <= 0.0:
+                continue
+
+            # 被膜スプリング力
+            f_n = k_coat * cc
+
+            # 法線方向の力を節点に分配
+            n_vec = pair.state.normal
+            s = pair.state.s
+            t = pair.state.t
+
+            # 形状関数: セグメントAの(1-s, s), セグメントBの(1-t, t)
+            nA0 = int(pair.nodes_a[0])
+            nA1 = int(pair.nodes_a[1])
+            nB0 = int(pair.nodes_b[0])
+            nB1 = int(pair.nodes_b[1])
+
+            # AをBから離す方向（法線は A→B）
+            # セグメントAには -n方向、セグメントBには +n方向の力
+            fA = -f_n * n_vec
+            fB = f_n * n_vec
+
+            f_coat[nA0 * 3 : nA0 * 3 + 3] += (1.0 - s) * fA
+            f_coat[nA1 * 3 : nA1 * 3 + 3] += s * fA
+            f_coat[nB0 * 3 : nB0 * 3 + 3] += (1.0 - t) * fB
+            f_coat[nB1 * 3 : nB1 * 3 + 3] += t * fB
+
+        return f_coat
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

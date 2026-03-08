@@ -303,6 +303,7 @@ def make_strand_layout(
     gap: float = 0.0,
     lay_direction: int = 1,
     strand_diameter: float | None = None,
+    coating_thickness: float = 0.0,
 ) -> list[StrandInfo]:
     """撚線素線配置を生成する.
 
@@ -322,11 +323,12 @@ def make_strand_layout(
       gap 引数は無視される。
 
     strand_diameter が未指定の場合:
-      従来の r_lay = layer * (d + gap) 方式。gap=0 で密着配置。
+      従来の r_lay = layer * (d_eff + gap) 方式。gap=0 で密着配置。
+      d_eff = 2 * (wire_radius + coating_thickness) で被膜込みの有効直径を使用。
 
     非貫入制約（全モードで検証）:
-      (1) 層間: r_k - r_{k-1} >= d  （隣接層の素線が貫入しない）
-      (2) 層内: 2*r_k*sin(π/n_k) >= d （同一層の隣接素線が貫入しない）
+      (1) 層間: r_k - r_{k-1} >= d_eff  （隣接層の素線が貫入しない）
+      (2) 層内: 2*r_k*sin(π/n_k) >= d_eff （同一層の隣接素線が貫入しない）
 
     Args:
         n_strands: 素線本数 (3, 7, 19, 37, ...)
@@ -334,6 +336,7 @@ def make_strand_layout(
         gap: 素線間の初期ギャップ（0 = 密着）。strand_diameter指定時は無視。
         lay_direction: 撚り方向 (+1=S, -1=Z)
         strand_diameter: 撚線外径 [m]。指定時は非貫入制約の元で配置を自動計算。
+        coating_thickness: 被膜厚 [m]。配置計算時に有効半径に加算される。
 
     Returns:
         素線情報のリスト
@@ -342,6 +345,8 @@ def make_strand_layout(
         ValueError: strand_diameter が小さすぎて非貫入配置が不可能な場合
     """
     d = 2.0 * wire_radius
+    # 有効直径: 被膜込みの接触直径（配置計算用）
+    d_eff = 2.0 * (wire_radius + coating_thickness)
     infos: list[StrandInfo] = []
     sid = 0
 
@@ -352,8 +357,8 @@ def make_strand_layout(
             r_lay = strand_diameter / 2.0 - wire_radius
         else:
             # 三つ撚り: 中心なし、3本が120°配置
-            # 配置半径 = d/√3（三角形の外接円半径、各素線が互いに接する）
-            r_lay = (d + gap) / math.sqrt(3.0)
+            # 配置半径 = d_eff/√3（三角形の外接円半径、各素線が被膜表面で接する）
+            r_lay = (d_eff + gap) / math.sqrt(3.0)
         for k in range(3):
             angle = 2.0 * math.pi * k / 3.0
             infos.append(
@@ -393,13 +398,14 @@ def make_strand_layout(
         layer_counts = _compute_layer_structure(n_strands)
         n_layers = len(layer_counts) - 1
 
-        # 各層の最小配置半径を計算
+        # 各層の最小配置半径を計算（被膜込みの有効直径で非貫入保証）
+        r_eff = wire_radius + coating_thickness  # 被膜込み有効半径
         r_min = [0.0]  # layer 0 = 中心
         for k in range(1, n_layers + 1):
             n_k = layer_counts[k]
-            r_min_radial = r_min[k - 1] + d
+            r_min_radial = r_min[k - 1] + d_eff
             if n_k >= 2:
-                r_min_circum = wire_radius / math.sin(math.pi / n_k)
+                r_min_circum = r_eff / math.sin(math.pi / n_k)
             else:
                 r_min_circum = 0.0
             r_min.append(max(r_min_radial, r_min_circum))
@@ -437,11 +443,12 @@ def make_strand_layout(
                 )
                 sid += 1
     else:
-        # 従来のモード: r_lay = layer * (d + gap)
+        # 従来のモード: r_lay = layer * (d_eff + gap)
+        # d_eff = 2*(wire_radius + coating_thickness) で被膜込み配置
         while remaining > 0:
             n_in_layer = 6 * layer
             actual = min(n_in_layer, remaining)
-            r_lay = layer * (d + gap)
+            r_lay = layer * (d_eff + gap)
             # 交互撚り: 奇数層=lay_direction, 偶数層=-lay_direction
             layer_dir = lay_direction if (layer % 2 == 1) else -lay_direction
             for k in range(actual):
@@ -475,6 +482,7 @@ def make_twisted_wire_mesh(
     n_pitches: float | None = None,
     strand_diameter: float | None = None,
     min_elems_per_pitch: int = 16,
+    coating_thickness: float = 0.0,
 ) -> TwistedWireMesh:
     """撚線メッシュを生成するファクトリ関数.
 
@@ -488,7 +496,8 @@ def make_twisted_wire_mesh(
       gap 引数は無視される。外径が小さすぎる場合は ValueError。
 
     strand_diameter 未指定時:
-      従来の r_lay = layer * (d + gap) 方式。gap=0 で密着配置。
+      従来の r_lay = layer * (d_eff + gap) 方式。gap=0 で密着配置。
+      d_eff = wire_diameter + 2*coating_thickness（被膜込み有効直径）。
 
     Args:
         n_strands: 素線本数 (3, 7, 19, 37, ...)
@@ -502,6 +511,8 @@ def make_twisted_wire_mesh(
         strand_diameter: 撚線外径 [m]。指定時は非貫入配置を自動計算。
         min_elems_per_pitch: 1ピッチあたりの最小要素数 (デフォルト 16)。
             不足時に ValueError を発生させる。16 未満の値は指定不可。
+        coating_thickness: 被膜厚 [m]。配置計算時に有効半径に加算して
+            被膜同士の初期貫入を防止する。
 
     Returns:
         TwistedWireMesh インスタンス
@@ -541,6 +552,7 @@ def make_twisted_wire_mesh(
         gap=gap,
         lay_direction=lay_direction,
         strand_diameter=strand_diameter,
+        coating_thickness=coating_thickness,
     )
 
     n_nodes_per_strand = n_elems_per_strand + 1
