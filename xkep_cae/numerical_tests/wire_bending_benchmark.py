@@ -248,13 +248,14 @@ def _build_contact_manager(
     use_geometric_stiffness: bool = True,
     tol_penetration_ratio: float = 0.02,
     k_pen_max: float = 1e12,
-    exclude_same_layer: bool = True,
+    exclude_same_layer: bool = False,
     midpoint_prescreening: bool = True,
     linear_solver: str = "auto",
     line_contact: bool = True,
     coating_stiffness: float = 0.0,
     coating_damping: float = 0.0,
     core_radii: np.ndarray | None = None,
+    chattering_window: int = 0,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -294,6 +295,7 @@ def _build_contact_manager(
             lambda_relaxation=lambda_relaxation,
             coating_stiffness=coating_stiffness,
             coating_damping=coating_damping,
+            chattering_window=chattering_window,
         ),
     )
 
@@ -485,12 +487,13 @@ def run_bending_oscillation(
     use_geometric_stiffness: bool = True,
     tol_penetration_ratio: float = 0.02,
     k_pen_max: float = 1e12,
-    exclude_same_layer: bool = True,
+    exclude_same_layer: bool = False,
     midpoint_prescreening: bool = True,
     linear_solver: str = "auto",
     line_contact: bool = True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
-    broadphase_margin: float = 10.0,  # mm
+    broadphase_margin: float = 10.0,  # mm（Phase1用）
+    broadphase_margin_phase2: float = 0.0,  # mm（Phase2用、0=broadphase_marginと同じ）
     # メッシュ密度検査
     min_elems_per_pitch: int = 16,
     # Updated Lagrangian
@@ -503,6 +506,21 @@ def run_bending_oscillation(
     coating_damping: float = 0.0,
     # メッシュギャップ（弦近似誤差による初期貫入防止）
     mesh_gap: float = 0.0,
+    # 接触安定化（status-145: チャタリング対策）
+    chattering_window: int = 0,
+    contact_stabilization: float = 0.0,
+    lambda_decay: float = 1.0,
+    # Newton 安定化
+    du_norm_cap: float = 0.0,
+    # δ正則化（Phase2接触コンプライアンス）
+    contact_compliance: float | None = None,  # None=自動(1/k_pen), 0=無効
+    # 動的解析（Phase2）
+    dynamics: bool = False,
+    oscillation_frequency_hz: float = 1.0,
+    rho: float = 7.85e-9,  # 密度 [ton/mm³]（鋼）
+    rayleigh_alpha: float = 0.0,  # Rayleigh減衰 質量比例項
+    rayleigh_beta: float = 0.0,  # Rayleigh減衰 剛性比例項
+    rho_inf: float = 1.0,  # Generalized-α スペクトル半径
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -666,6 +684,7 @@ def run_bending_oscillation(
         line_contact=line_contact,
         coating_stiffness=coating_stiffness,
         coating_damping=coating_damping,
+        chattering_window=chattering_window,
     )
 
     # ------------------------------------------------------------------
@@ -757,6 +776,10 @@ def run_bending_oscillation(
             dt_initial_fraction=_dt_init_frac,
             dt_grow_iter_threshold=8,  # Phase1は接触なし→積極成長
             ul_assembler=ul_asm,
+            contact_stabilization=contact_stabilization,
+            lambda_decay=lambda_decay,
+            use_line_search=use_line_search,
+            du_norm_cap=du_norm_cap,
         )
 
         result_bend = ContactSolveResult(
@@ -804,6 +827,10 @@ def run_bending_oscillation(
             modified_nr_threshold=modified_nr_threshold,
             prescribed_dofs=rx_dofs_end_arr,
             prescribed_values=prescribed_vals,
+            contact_stabilization=contact_stabilization,
+            lambda_decay=lambda_decay,
+            use_line_search=use_line_search,
+            du_norm_cap=du_norm_cap,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
@@ -916,7 +943,41 @@ def run_bending_oscillation(
         _osc_base_n = max(5, _physics_n_steps // 6)  # Phase1物理推定の1/6
         _osc_dt_init_base = 1.0 / _osc_base_n if adaptive_timestepping else 0.0
 
+        # --- 動的解析の準備（Phase2） ---
+        _dyn_mass: object | None = None
+        _dyn_damp: object | None = None
+        _dyn_dt: float = 0.0
+        _dyn_vel: np.ndarray | None = None
+        _dyn_acc: np.ndarray | None = None
+        if dynamics:
+            # 質量行列アセンブリ（HRZ集中質量）
+            _dyn_mass = ul_asm.assemble_mass(rho, lumped=True)
+            # Rayleigh減衰: C = α_R·M + β_R·K
+            if rayleigh_alpha > 0 or rayleigh_beta > 0:
+                K_ref = assemble_tangent(np.zeros(ndof))
+                _dyn_damp = rayleigh_alpha * _dyn_mass
+                if rayleigh_beta > 0:
+                    _dyn_damp = _dyn_damp + rayleigh_beta * K_ref
+            # 物理時間: 各ウェイポイント間の物理的時間増分
+            T_period = 1.0 / oscillation_frequency_hz
+            _dyn_dt = T_period / (4.0 * n_steps_per_quarter)
+            _dyn_vel = np.zeros(ndof)
+            _dyn_acc = np.zeros(ndof)
+            if show_progress:
+                _total_mass = float(_dyn_mass.diagonal().sum()) / 3.0  # 並進DOFの合計/3
+                print(
+                    f"  動的解析: f={oscillation_frequency_hz:.1f}Hz, "
+                    f"T={T_period:.4f}s, dt_step={_dyn_dt:.4f}s, "
+                    f"total_mass={_total_mass:.2e} ton, "
+                    f"ρ∞={rho_inf:.2f}"
+                )
+                if rayleigh_alpha > 0 or rayleigh_beta > 0:
+                    print(f"  Rayleigh減衰: α_R={rayleigh_alpha:.2e}, β_R={rayleigh_beta:.2e}")
+
         prev_delta_z = 0.0
+        # λ warm-starting: UL更新後はペア順序が変わるため無効化
+        # （ペアID照合が未実装のため、インデックスベースの引き継ぎは誤ったλ初期値を与える）
+        _osc_lam_prev: np.ndarray | None = None
         for osc_step in range(total_osc_steps):
             delta_z = waypoints[osc_step]
             # 増分: 前ステップからの差分
@@ -942,7 +1003,9 @@ def run_bending_oscillation(
                 tol_force=tol_force,
                 tol_ncp=tol_force,
                 show_progress=show_progress,
-                broadphase_margin=broadphase_margin,
+                broadphase_margin=(
+                    broadphase_margin_phase2 if broadphase_margin_phase2 > 0 else broadphase_margin
+                ),
                 line_contact=line_contact,
                 use_mortar=use_mortar,
                 n_gauss=n_gauss,
@@ -952,7 +1015,25 @@ def run_bending_oscillation(
                 adaptive_timestepping=adaptive_timestepping,
                 dt_initial_fraction=_osc_dt_init_base,
                 ul_assembler=ul_asm,
+                contact_stabilization=contact_stabilization,
+                lambda_decay=lambda_decay,
+                lambda_init=_osc_lam_prev,
+                use_line_search=use_line_search,
+                du_norm_cap=du_norm_cap,
+                contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
+                # 動的解析パラメータ
+                mass_matrix=_dyn_mass,
+                damping_matrix=_dyn_damp,
+                dt_physical=_dyn_dt,
+                rho_inf=rho_inf,
+                velocity=_dyn_vel,
+                acceleration=_dyn_acc,
             )
+
+            # 動的解析: 速度・加速度を次ステップに引き継ぎ
+            if dynamics and _ncp_step.velocity is not None:
+                _dyn_vel = _ncp_step.velocity
+                _dyn_acc = _ncp_step.acceleration
 
             result_step = ContactSolveResult(
                 u=_ncp_step.u,
@@ -969,6 +1050,8 @@ def run_bending_oscillation(
 
             # UL更新は NCP 内部で実施済み → u=0（リセット済み）
             u = np.zeros(ndof)
+            # λ warm-starting無効: UL更新後のペア順序不一致のため
+            _osc_lam_prev = None
             phase2_results.append(result_step)
 
             if not result_step.converged:

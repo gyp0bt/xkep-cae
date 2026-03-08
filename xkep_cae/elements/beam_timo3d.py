@@ -2599,6 +2599,69 @@ class ULCRBeamAssembler:
         """
         return self._u_total_accum + u_incr
 
+    def assemble_mass(self, rho: float, *, lumped: bool = True) -> object:
+        """全体質量行列をアセンブリ.
+
+        UL 参照座標に基づいて要素長を計算し、質量行列を組み立てる。
+        集中質量行列（HRZ法）推奨：対角行列のため高速かつ安定。
+
+        Args:
+            rho: 密度 [ton/mm³]（mm-ton-MPa単位系の場合、鋼 = 7.85e-9）
+            lumped: True=集中質量（対角）、False=整合質量
+
+        Returns:
+            M: (ndof, ndof) 疎質量行列（CSR形式）
+        """
+        import scipy.sparse as sp_mod
+
+        ndof = self.ndof
+        n_elems = len(self.connectivity)
+        if lumped:
+            # 集中質量: 対角行列 → COO で高速アセンブリ
+            diag = np.zeros(ndof)
+            for e in range(n_elems):
+                n1, n2 = self.connectivity[e]
+                coords_e = self.coords_ref[[n1, n2]]
+                Me_diag = timo_beam3d_lumped_mass_local(
+                    rho,
+                    self.A,
+                    self.Iy,
+                    self.Iz,
+                    float(np.linalg.norm(coords_e[1] - coords_e[0])),
+                )
+                edofs = np.array([6 * n1 + i for i in range(6)] + [6 * n2 + i for i in range(6)])
+                for k in range(12):
+                    diag[edofs[k]] += Me_diag[k, k]
+            return sp_mod.diags(diag, format="csr")
+        else:
+            # 整合質量: 密要素行列のアセンブリ
+            rows: list[int] = []
+            cols: list[int] = []
+            vals: list[float] = []
+            for e in range(n_elems):
+                n1, n2 = self.connectivity[e]
+                coords_e = self.coords_ref[[n1, n2]]
+                Me = timo_beam3d_mass_global(
+                    coords_e,
+                    rho,
+                    self.A,
+                    self.Iy,
+                    self.Iz,
+                    v_ref=self.v_ref,
+                    lumped=False,
+                )
+                edofs = [6 * n1 + i for i in range(6)] + [6 * n2 + i for i in range(6)]
+                for ii in range(12):
+                    for jj in range(12):
+                        if abs(Me[ii, jj]) > 1e-30:
+                            rows.append(edofs[ii])
+                            cols.append(edofs[jj])
+                            vals.append(Me[ii, jj])
+            return sp_mod.csr_matrix(
+                (np.array(vals), (np.array(rows), np.array(cols))),
+                shape=(ndof, ndof),
+            )
+
 
 def assemble_cr_beam3d_fiber(
     nodes_init: np.ndarray,

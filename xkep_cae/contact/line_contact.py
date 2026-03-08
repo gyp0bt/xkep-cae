@@ -253,6 +253,7 @@ def compute_line_contact_force_local(
     xB0: np.ndarray,
     xB1: np.ndarray,
     n_gauss: int = 3,
+    contact_compliance: float = 0.0,
 ) -> tuple[np.ndarray, float]:
     """Line-to-line 接触力を Gauss 積分で評価する.
 
@@ -263,7 +264,7 @@ def compute_line_contact_force_local(
     1. A 上の点 pA = (1-s_i)*xA0 + s_i*xA1
     2. pA から B への最近接パラメータ t_i を計算
     3. ギャップ g_i = |pA - pB(t_i)| - (r_A + r_B)
-    4. 法線力 p_n_i = max(0, λ_n + k_pen * (-g_i))
+    4. 法線力 p_n_i = max(0, λ_n + k_pen * (-(g_i + δ*λ_n)))
     5. 形状ベクトル g_n_i を (s_i, t_i) で構築
     6. f_local += w_i * p_n_i * g_n_i
 
@@ -272,6 +273,7 @@ def compute_line_contact_force_local(
         xA0, xA1: セグメント A の端点座標 (3,)
         xB0, xB1: セグメント B の端点座標 (3,)
         n_gauss: Gauss 積分点数 (2-5)
+        contact_compliance: δ正則化パラメータ（0で従来動作）
 
     Returns:
         f_local: (12,) 局所接触力ベクトル
@@ -284,6 +286,7 @@ def compute_line_contact_force_local(
     lambda_n = pair.state.lambda_n
     k_pen = pair.state.k_pen
     r_sum = pair.radius_a + pair.radius_b
+    _delta_lam = contact_compliance * lambda_n  # δ*λ（各Gauss点で共通）
 
     for s_gp, w in zip(gp, gw, strict=True):
         # A 側の Gauss 点位置
@@ -296,7 +299,7 @@ def compute_line_contact_force_local(
         # ギャップと法線
         diff = pA - pB
         dist = float(np.linalg.norm(diff))
-        gap = dist - r_sum
+        gap = dist - r_sum + _delta_lam  # δ正則化: g_eff = g + δ*λ
 
         if dist > 1e-30:
             normal = diff / dist
@@ -324,6 +327,7 @@ def compute_line_contact_stiffness_local(
     n_gauss: int = 3,
     *,
     use_geometric_stiffness: bool = True,
+    contact_compliance: float = 0.0,
 ) -> np.ndarray:
     """Line-to-line 接触剛性を Gauss 積分で評価する.
 
@@ -336,6 +340,7 @@ def compute_line_contact_stiffness_local(
         xB0, xB1: セグメント B の端点座標 (3,)
         n_gauss: Gauss 積分点数 (2-5)
         use_geometric_stiffness: 幾何剛性を含めるか
+        contact_compliance: δ正則化パラメータ（0で従来動作）
 
     Returns:
         K_local: (12, 12) 局所剛性行列
@@ -346,6 +351,7 @@ def compute_line_contact_stiffness_local(
     lambda_n = pair.state.lambda_n
     k_pen = pair.state.k_pen
     r_sum = pair.radius_a + pair.radius_b
+    _delta_lam = contact_compliance * lambda_n
 
     for s_gp, w in zip(gp, gw, strict=True):
         # A 側の Gauss 点位置
@@ -358,7 +364,7 @@ def compute_line_contact_stiffness_local(
         # ギャップと法線
         diff = pA - pB
         dist = float(np.linalg.norm(diff))
-        gap = dist - r_sum
+        gap = dist - r_sum + _delta_lam  # δ正則化
 
         if dist > 1e-30:
             normal = diff / dist

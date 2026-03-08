@@ -243,6 +243,9 @@ class NCPSolverInput:
     du_norm_cap: float = 0.0
     dt_grow_iter_threshold: int = 0
     ul_assembler: object | None = None
+    contact_stabilization: float = 0.0
+    lambda_decay: float = 1.0
+    lambda_init: np.ndarray | None = None
 
     def solve(self) -> NCPSolveResult:
         """このパラメータで NCP ソルバーを実行する."""
@@ -306,6 +309,9 @@ class NCPSolveResult:
     contact_force_history: list[float] = field(default_factory=list)
     graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
     diagnostics: ConvergenceDiagnostics | None = None
+    # 動的解析結果（dynamics=True 時のみ有効）
+    velocity: np.ndarray | None = None
+    acceleration: np.ndarray | None = None
 
     @property
     def n_load_steps(self) -> int:
@@ -334,10 +340,11 @@ def _compute_contact_force_from_lambdas(
     ndof_total: int,
     ndof_per_node: int = 6,
     k_pen: float = 0.0,
+    contact_compliance: float = 0.0,
 ) -> np.ndarray:
     """AL-NCP 接触力ベクトルを計算する.
 
-    p_n_i = max(0, λ_i + k_pen * (-g_i))
+    p_n_i = max(0, λ_i + k_pen * (-(g_i + δ*λ_i)))
     f_c = Σ p_n_i * g_shape_i
 
     Args:
@@ -346,6 +353,7 @@ def _compute_contact_force_from_lambdas(
         ndof_total: 全体 DOF 数
         ndof_per_node: 1節点あたりの DOF 数
         k_pen: ペナルティ正則化パラメータ
+        contact_compliance: δ正則化パラメータ（0で従来動作）
 
     Returns:
         f_c: (ndof_total,) 接触内力ベクトル
@@ -358,6 +366,8 @@ def _compute_contact_force_from_lambdas(
 
         lam_i = lambdas[i] if i < len(lambdas) else 0.0
         g_i = pair.state.gap
+        if contact_compliance > 0.0:
+            g_i += contact_compliance * lam_i
         p_n = max(0.0, lam_i + k_pen * (-g_i))
 
         if p_n <= 0.0:
@@ -902,20 +912,26 @@ def _solve_saddle_point_direct(
     linear_solver: str = "auto",
     iterative_tol: float = 1e-10,
     ilu_drop_tol: float = 1e-4,
+    contact_compliance: float = 0.0,
+    lam_active: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を直接 Schur complement で解く.
 
-    鞍点系:
-      [K_eff   -G_A^T] [Δu  ] = [-R_u    ]
-      [G_A      0    ] [Δλ_A]   [-g_active]
+    鞍点系（δ正則化対応）:
+      [K_eff   -G_A^T] [Δu  ] = [-R_u              ]
+      [G_A     -δI   ] [Δλ_A]   [-g_active + δ*λ_A  ]
+
+    δ = contact_compliance > 0 の場合、Schur complement S = G_A*V + δI
+    は常に正定値となり、接触遷移時のNewton安定性が向上する。
+    物理的意味: コンプライアンス付き接触（g = -δ*λ）。
 
     K_eff = K_T + k_pen * G_A^T * G_A
 
     制約空間 Schur complement (n_active × n_active) で解く:
       1. v0 = K_eff^{-1} * (-R_u)        (非制約解)
       2. V  = K_eff^{-1} * G_A^T         (制約感度)
-      3. S  = G_A * V                     (制約 Schur 補集合)
-      4. Δλ = S^{-1} * (-g - G_A * v0)
+      3. S  = G_A * V + δI               (正則化 Schur 補集合)
+      4. Δλ = S^{-1} * (-g + δλ - G_A * v0)
       5. Δu = v0 + V * Δλ
 
     Args:
@@ -928,6 +944,8 @@ def _solve_saddle_point_direct(
         linear_solver: 線形ソルバーモード
         iterative_tol: 反復ソルバー許容値
         ilu_drop_tol: ILU drop tolerance
+        contact_compliance: δ正則化パラメータ（0で従来動作）
+        lam_active: (n_active,) アクティブペアの現在λ（δ>0時に使用）
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
@@ -971,22 +989,107 @@ def _solve_saddle_point_direct(
     G_A_dense = G_A.toarray()
     S = G_A_dense @ V
 
-    # 適応正則化（S の対角が微小な場合のみ補強）
-    S_diag = np.diag(S).copy()
-    _s_diag_max = np.max(np.abs(S_diag)) if n_active > 0 else 1.0
-    _reg_floor = max(1e-12, _s_diag_max * 1e-10)
-    reg_needed = np.maximum(_reg_floor - S_diag, 0.0)
-    S += np.diag(reg_needed + 1e-12)
+    # δ正則化: S += δI（Uzawa regularization）
+    _delta = contact_compliance
+    if _delta > 0.0:
+        S += _delta * np.eye(n_active)
 
-    # Step 4: rhs_S = -g_active - G_A * v0
+    # Step 4: rhs_S = -g_active + δ*λ_A - G_A * v0
     rhs_S = -g_active - G_A_dense @ v0
+    if _delta > 0.0 and lam_active is not None:
+        rhs_S += _delta * lam_active
 
-    # Δλ_A を解く（n_active × n_active 密行列、通常は極めて小さい）
-    dlam_A = np.linalg.solve(S, rhs_S)
+    # Schur complement 解法
+    if _delta > 0.0:
+        # δ正則化済み: S は正定値保証 → 直接solve
+        dlam_A = np.linalg.solve(S, rhs_S)
+    else:
+        # SVD截断によるSchur complement解法:
+        # S が悪条件の場合（接触法線が近似線形従属）、直接solve は発散する。
+        # SVD pseudo-inverse で冗長な制約方向を自動除去する。
+        U_s, sigma_s, Vt_s = np.linalg.svd(S, full_matrices=False)
+        _sigma_max = sigma_s[0] if n_active > 0 else 1.0
+        # 截断閾値: 最大特異値の1e-8以下を除去
+        _svd_tol = _sigma_max * 1e-8
+        _rank = int(np.sum(sigma_s > _svd_tol))
+        if _rank < n_active:
+            # ランク不足: SVD pseudo-inverse で解く
+            sigma_inv = np.zeros_like(sigma_s)
+            sigma_inv[:_rank] = 1.0 / sigma_s[:_rank]
+            dlam_A = Vt_s.T @ (sigma_inv * (U_s.T @ rhs_S))
+        else:
+            # フルランク: 通常の直接解法
+            dlam_A = np.linalg.solve(S, rhs_S)
 
     # Step 5: Δu = v0 + V * Δλ_A
     du = v0 + V @ dlam_A
 
+    return du, dlam_A
+
+
+def _solve_augmented_direct(
+    K_eff: sp.csr_matrix,
+    G_A: sp.csr_matrix,
+    rhs_u: np.ndarray,
+    g_active: np.ndarray,
+    fixed_dofs: np.ndarray,
+    K_bc_csr: sp.csr_matrix | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """拡大系を直接組み立てて解く（Schur complement のフォールバック）.
+
+    [K_eff   -G_A^T] [Δu  ] = [rhs_u    ]
+    [G_A      0    ] [Δλ_A]   [-g_active]
+
+    Schur complement が悪条件の場合に使用。K_eff は正定値なので
+    拡大系全体は不定値だが、sparse LU で安定に解ける。
+    """
+    ndof = K_eff.shape[0]
+    n_active = G_A.shape[0]
+    n_total = ndof + n_active
+
+    # 拡大系を組み立て
+    # 上段: [K_eff, -G_A^T]
+    # 下段: [G_A,    0    ]
+    G_A_T = G_A.T.tocsr()
+
+    # BC適用済みのK_effを使用
+    if K_bc_csr is not None:
+        K_block = K_bc_csr
+    else:
+        K_block = K_eff
+
+    top = sp.hstack([K_block, -G_A_T])
+    # G_AのBC列をゼロ化
+    G_A_bc = G_A.copy().tolil()
+    for dof in fixed_dofs:
+        G_A_bc[:, dof] = 0.0
+    G_A_bc = G_A_bc.tocsr()
+    bottom = sp.hstack([G_A_bc, sp.csr_matrix((n_active, n_active))])
+    A_aug = sp.vstack([top, bottom]).tocsc()
+
+    # 右辺
+    rhs = np.zeros(n_total)
+    rhs[:ndof] = rhs_u
+    rhs[ndof:] = -g_active
+
+    # sparse LU で解く
+    from scipy.sparse.linalg import splu
+
+    try:
+        lu = splu(A_aug)
+        x = lu.solve(rhs)
+    except RuntimeError:
+        # LU分解失敗時: 正則化を追加して再試行
+        A_aug_reg = A_aug.copy().tolil()
+        _diag_max = float(np.max(np.abs(A_aug.diagonal())))
+        _eps = max(1e-10, _diag_max * 1e-8)
+        for i in range(ndof, n_total):
+            A_aug_reg[i, i] -= _eps  # 負の正則化（不定値系の安定化）
+        lu = splu(A_aug_reg.tocsc())
+        x = lu.solve(rhs)
+
+    du = x[:ndof]
+    dlam_A = x[ndof:]
     return du, dlam_A
 
 
@@ -1249,6 +1352,8 @@ def _solve_saddle_point_contact(
     gmres_dof_threshold: int = 2000,
     use_amg: bool = False,
     residual_scaling: bool = False,
+    contact_compliance: float = 0.0,
+    lam_active: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を解く（直接法 or ブロック前処理 GMRES）.
 
@@ -1332,6 +1437,8 @@ def _solve_saddle_point_contact(
             linear_solver=linear_solver,
             iterative_tol=iterative_tol,
             ilu_drop_tol=ilu_drop_tol,
+            contact_compliance=contact_compliance,
+            lam_active=lam_active,
         )
 
     # スケーリングの逆変換
@@ -1432,6 +1539,19 @@ def newton_raphson_contact_ncp(
     dt_grow_iter_threshold: int = 0,
     # --- Updated Lagrangian 統合 ---
     ul_assembler: object | None = None,
+    # --- 接触安定化パラメータ（status-145） ---
+    contact_stabilization: float = 0.0,
+    lambda_decay: float = 1.0,
+    lambda_init: np.ndarray | None = None,
+    # --- δ正則化（Uzawa regularization） ---
+    contact_compliance: float = 0.0,
+    # --- 動的解析（Newmark-β / Generalized-α）---
+    mass_matrix: object | None = None,
+    damping_matrix: object | None = None,
+    dt_physical: float = 0.0,
+    rho_inf: float = 1.0,
+    velocity: np.ndarray | None = None,
+    acceleration: np.ndarray | None = None,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1497,13 +1617,51 @@ def newton_raphson_contact_ncp(
         prescribed_values: 処方変位の目標値（load_frac=1.0 での値）。
         adaptive_omega: 適応的緩和係数の有効化（レガシー）
         bisection_max_depth: [DEPRECATED] adaptive_timestepping を使用してください。
+        contact_stabilization: 接触安定化ダンピング係数 ∈ [0, 1)。
+            0 で無効。正値の場合、活性セット判定に使うギャップを
+            gap_eff = (1-c)*gap + c*gap_prev で平滑化し、Newton反復間の
+            活性セット振動（チャタリング）を抑制する。推奨値: 0.3。
+        lambda_decay: inactive遷移時のλ減衰率 ∈ (0, 1]。
+            1.0 で即座にゼロ化（従来動作）。0.5 で半減衰。
+            段階的なλ減衰により、active→inactive遷移時の力の急変を緩和する。
+        mass_matrix: 質量行列（疎行列 or 密行列）。None の場合は準静的解析。
+            指定時は dt_physical > 0 必須。Newmark-β / Generalized-α 時間積分を使用。
+        damping_matrix: 減衰行列（Rayleigh減衰 C = α_R·M + β_R·K など）。
+            None の場合は減衰なし。mass_matrix と同時に指定。
+        dt_physical: 物理的時間増分 [s]。load_frac 0→1 が dt_physical に対応。
+            適応時間増分で分割される場合、各サブステップの物理時間は
+            dt_sub = dt_physical * (load_frac - load_frac_prev) となる。
+        rho_inf: Generalized-α のスペクトル半径 ∈ [0, 1]。
+            1.0 = Newmark平均加速度法（エネルギー保存、数値減衰なし）。
+            0.0 = 最大数値減衰（高周波完全減衰）。推奨: 0.9〜1.0。
+        velocity: (ndof,) 初期速度。None の場合はゼロ。
+        acceleration: (ndof,) 初期加速度。None の場合はゼロ。
 
     Returns:
-        NCPSolveResult
+        NCPSolveResult（dynamics 時は velocity, acceleration も設定される）
     """
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+
+    # --- 動的解析の初期化 ---
+    _dynamics = mass_matrix is not None and dt_physical > 0.0
+    if _dynamics:
+        _M = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
+        _C = sp.csr_matrix(damping_matrix) if damping_matrix is not None else None
+        _vel = velocity.copy() if velocity is not None else np.zeros(ndof)
+        _acc = acceleration.copy() if acceleration is not None else np.zeros(ndof)
+        # Generalized-α パラメータ（Chung & Hulbert 1993）
+        _alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
+        _alpha_f = rho_inf / (rho_inf + 1.0)
+        _nm_gamma = 0.5 - _alpha_m + _alpha_f
+        _nm_beta = 0.25 * (1.0 - _alpha_m + _alpha_f) ** 2
+        # サブステップ用の一時変数（step ループ内で更新）
+        _u_pred = np.zeros(ndof)
+        _v_pred = np.zeros(ndof)
+        _acc_old = _acc.copy()
+        _vel_old = _vel.copy()
+        _dt_sub = dt_physical  # 初期値（適応Δtで更新される）
 
     # --- n_load_steps → dt_initial_fraction 自動変換 ---
     # n_load_steps は deprecated。adaptive_timestepping の初期増分として変換する。
@@ -1605,6 +1763,14 @@ def newton_raphson_contact_ncp(
                     f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
                 )
 
+    # δ正則化: contact_compliance < 0 → 自動
+    # δ = 1/(100*k_pen): ペナルティ剛性の1/100で正則化
+    # 物理的意味: 許容ギャップ g = -δ*λ ≈ -λ/(100*k_pen) ≪ ワイヤ半径
+    if contact_compliance < 0.0 and k_pen > 0.0:
+        contact_compliance = 1.0 / (100.0 * k_pen)
+        if show_progress:
+            print(f"  contact_compliance (auto): δ={contact_compliance:.6e} (k_pen={k_pen:.2e})")
+
     # --- k_pen continuation（S3改良8）---
     _k_pen_target = k_pen
     _k_pen_cont = manager.config.k_pen_continuation
@@ -1624,9 +1790,15 @@ def newton_raphson_contact_ncp(
     # Mortar 設定の解決（line contact 必須）
     _use_mortar = (use_mortar or manager.config.use_mortar) and _line_contact
 
-    # λ の初期化
+    # λ の初期化（warm-starting: 前ステップの λ を引き継ぎ可能, status-145）
     n_pairs = manager.n_pairs
-    lam_all = np.zeros(n_pairs)
+    if lambda_init is not None and len(lambda_init) >= n_pairs:
+        lam_all = lambda_init[:n_pairs].copy()
+    elif lambda_init is not None and len(lambda_init) < n_pairs:
+        lam_all = np.zeros(n_pairs)
+        lam_all[: len(lambda_init)] = lambda_init
+    else:
+        lam_all = np.zeros(n_pairs)
     # 接線乗数 λ_t（Alart-Curnier 摩擦用: 各ペア 2 成分）
     lam_t_all = np.zeros((n_pairs, 2))
 
@@ -1722,6 +1894,10 @@ def newton_raphson_contact_ncp(
     _ul_frac_base_ckpt = _ul_frac_base
     if _ul:
         ul_assembler.checkpoint()
+    # 動的解析チェックポイント
+    if _dynamics:
+        _vel_ckpt = _vel.copy()
+        _acc_ckpt = _acc.copy()
 
     # 接線予測子用: 前ステップの変位増分を記録
     u_prev_converged = u.copy()
@@ -1740,6 +1916,12 @@ def newton_raphson_contact_ncp(
     _pos_tol = manager.config.position_tolerance
     _adjust = manager.config.adjust_initial_penetration
     _use_coating = manager.config.coating_stiffness > 0.0
+
+    # ULアセンブラ使用時: adjust_initial_positions は禁止（status-145）
+    # node_coords_refを変更するとULアセンブラの参照座標と不整合になる。
+    # メッシュ生成時の compute_min_safe_gap で貫入は防止済み。
+    if _adjust and ul_assembler is not None:
+        _adjust = False
 
     # 初期貫入修正 + 小ギャップ閉鎖（position_tolerance > 0 の場合）
     if _adjust:
@@ -1761,22 +1943,22 @@ def newton_raphson_contact_ncp(
             core_radii=core_radii,
         )
 
-    # 初期貫入チェック（status-137: gap_offset 廃止 → メッシュ側で防止）
+    # 初期貫入チェック（status-145: メッシュ側で防止必須）
+    # UL更新済み参照配置では接触による貫入は物理的（メッシュ不備ではない）
+    _ul_has_accum = (
+        _ul
+        and hasattr(ul_assembler, "u_total_accum")
+        and float(np.linalg.norm(ul_assembler.u_total_accum)) > 1e-15
+    )
     n_initial_pen = manager.check_initial_penetration(node_coords_ref)
-    if n_initial_pen > 0 and not _use_coating:
-        # 被膜モデル無効時: 初期貫入はメッシュ不備
-        if not _adjust:
-            raise ValueError(
-                f"初期貫入が検出されました: {n_initial_pen}ペア。"
-                f"adjust_initial_penetration=True で位置調整するか、"
-                f"メッシュ生成時に coating_thickness を指定して "
-                f"被膜厚分のgapを確保してください。"
-            )
-        # adjust=True かつ position_tolerance が設定済みの場合は
-        # 上流の adjust_initial_positions() で処理済み。
-        # 残存する微小貫入は弦近似誤差（16要素/ピッチで<2%）。
-        if show_progress:
-            print(f"  初期貫入検出: {n_initial_pen}ペア（弦近似誤差範囲内）")
+    if n_initial_pen > 0 and not _use_coating and not _ul_has_accum:
+        raise ValueError(
+            f"初期貫入が検出されました: {n_initial_pen}ペア。"
+            f"メッシュ生成時のgapを増やしてください "
+            f"（compute_min_safe_gap() で最小安全ギャップを計算可能）。"
+        )
+    elif n_initial_pen > 0 and _ul_has_accum and show_progress:
+        print(f"  UL更新済み参照: 既存接触{n_initial_pen}ペア（物理的貫入）")
     elif n_initial_pen > 0 and _use_coating:
         if show_progress:
             print(
@@ -1811,7 +1993,17 @@ def newton_raphson_contact_ncp(
 
         # --- 接線予測子（前ステップの変位増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
-        if delta_frac_prev > 1e-30 and delta_frac > 1e-30:
+        if _dynamics:
+            # 動的解析: Newmark 予測子で初期推定
+            _dt_sub = dt_physical * delta_frac
+            _c0 = 1.0 / (_nm_beta * _dt_sub**2) if _dt_sub > 1e-30 else 0.0
+            _c1 = _nm_gamma / (_nm_beta * _dt_sub) if _dt_sub > 1e-30 else 0.0
+            _u_pred = _dt_sub * _vel + 0.5 * _dt_sub**2 * (1.0 - 2.0 * _nm_beta) * _acc
+            _v_pred = _vel + _dt_sub * (1.0 - _nm_gamma) * _acc
+            _acc_old = _acc.copy()
+            _vel_old = _vel.copy()
+            u = _u_pred.copy()
+        elif delta_frac_prev > 1e-30 and delta_frac > 1e-30:
             du_prev = u - u_prev_converged
             du_prev_norm = float(np.linalg.norm(du_prev))
             if du_prev_norm > 1e-30:
@@ -1869,6 +2061,14 @@ def newton_raphson_contact_ncp(
         # --- Active-set freeze 用の前回値 ---
         _frozen_ncp_active_mask: np.ndarray | None = None
         _frozen_ncp_mortar_active: np.ndarray | None = None
+
+        # --- 接触安定化: 前回反復のギャップ追跡（status-145） ---
+        _c_stab = contact_stabilization
+        _lambda_decay = lambda_decay
+        _contact_compliance = contact_compliance
+        # δ正則化をmanager.configに伝播（line_contact等で使用）
+        manager.config.contact_compliance = _contact_compliance
+        _gaps_prev_iter: np.ndarray | None = None
 
         # --- Active-set チャタリング抑制（S3改良5: 時間方向畳み込み） ---
         _chattering_window = manager.config.chattering_window
@@ -1936,8 +2136,35 @@ def newton_raphson_contact_ncp(
                     ncp_mortar_active = p_n_mortar_arr > 0.0
                 else:
                     ncp_mortar_active = np.array([], dtype=bool)
-                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
+
+                # 接触安定化: gap dampingで活性セット判定の振動を抑制（status-145）
+                # gap_eff = (1 - c) * gap + c * gap_prev で平滑化
+                if (
+                    _c_stab > 0.0
+                    and _gaps_prev_iter is not None
+                    and len(_gaps_prev_iter) == len(gaps)
+                ):
+                    gaps_for_active = (1.0 - _c_stab) * gaps + _c_stab * _gaps_prev_iter
+                else:
+                    gaps_for_active = gaps
+                _gaps_prev_iter = gaps.copy()
+
+                # δ正則化時: g_eff = g + δ*λ で判定
+                _gaps_eff = gaps_for_active
+                if _contact_compliance > 0.0:
+                    _gaps_eff = gaps_for_active + _contact_compliance * lams
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-_gaps_eff))
                 ncp_active_mask_raw = p_n_arr > 0.0
+
+                # 単調活性セット戦略: δ正則化時は活性ペアの脱落を禁止
+                # （Newton反復中の活性セット振動を抑制）
+                if (
+                    _contact_compliance > 0.0
+                    and _frozen_ncp_active_mask is not None
+                    and len(_frozen_ncp_active_mask) == len(ncp_active_mask_raw)
+                ):
+                    # 前回活性だったペアは活性のまま維持（単調成長）
+                    ncp_active_mask_raw = ncp_active_mask_raw | _frozen_ncp_active_mask
 
                 # チャタリング抑制: 直近N反復の過半数投票（S3改良5）
                 if _chattering_window > 1 and n_geom_active > 0:
@@ -1960,7 +2187,10 @@ def newton_raphson_contact_ncp(
                 )
             else:
                 # Frozen: p_n_arr のみ更新、active mask は前回値を使用
-                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
+                _gaps_eff_f = gaps
+                if _contact_compliance > 0.0:
+                    _gaps_eff_f = gaps + _contact_compliance * lams
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-_gaps_eff_f))
                 ncp_active_mask = _frozen_ncp_active_mask
                 if _frozen_ncp_mortar_active is not None:
                     ncp_mortar_active = _frozen_ncp_mortar_active
@@ -1972,7 +2202,11 @@ def newton_raphson_contact_ncp(
                 if pair.state.status == ContactStatus.INACTIVE:
                     continue
                 lam_i = lam_all[idx_p] if idx_p < len(lam_all) else 0.0
-                p_n = max(0.0, lam_i + k_pen * (-pair.state.gap))
+                # δ正則化時: g_eff = g + δ*λ で接触力を計算
+                _g_eff_i = pair.state.gap
+                if _contact_compliance > 0.0:
+                    _g_eff_i += _contact_compliance * lam_i
+                p_n = max(0.0, lam_i + k_pen * (-_g_eff_i))
                 pair.state.lambda_n = lam_i
                 pair.state.p_n = p_n
                 if pair.state.k_pen <= 0.0:
@@ -1993,9 +2227,9 @@ def newton_raphson_contact_ncp(
                     _n_gauss,
                     k_pen,
                 )
-            elif _line_contact:
+            elif _line_contact and _contact_compliance <= 0.0:
                 # Line-to-line Gauss 積分（assembly の既存インフラを利用）
-                # line_contact フラグを一時的に有効化
+                # δ正則化時は鞍点系との整合性のため代表点方式を使用
                 _orig_lc = manager.config.line_contact
                 _orig_ng = manager.config.n_gauss
                 manager.config.line_contact = True
@@ -2006,8 +2240,14 @@ def newton_raphson_contact_ncp(
                 manager.config.line_contact = _orig_lc
                 manager.config.n_gauss = _orig_ng
             else:
+                # 代表点方式: 鞍点系のgapsと整合的
                 f_c = _compute_contact_force_from_lambdas(
-                    manager, lam_all, ndof, ndof_per_node, k_pen=k_pen
+                    manager,
+                    lam_all,
+                    ndof,
+                    ndof_per_node,
+                    k_pen=k_pen,
+                    contact_compliance=_contact_compliance,
                 )
 
             # 4b. 摩擦力ベクトル（Alart-Curnier 接線乗数方式）
@@ -2054,6 +2294,21 @@ def newton_raphson_contact_ncp(
             # 5. 力残差
             f_int = assemble_internal_force(u)
             R_u = f_int + f_c - f_ext
+
+            # 5d. 動的解析: 慣性力・減衰力を残差に加算
+            if _dynamics and _dt_sub > 1e-30:
+                # Newmark 更新: 加速度・速度を現在の u から計算
+                _acc_new = _c0 * (u - _u_pred)
+                _vel_new = _v_pred + _dt_sub * _nm_gamma * _acc_new
+                # Generalized-α 中間時刻補間
+                _acc_alpha = (1.0 - _alpha_m) * _acc_new + _alpha_m * _acc_old
+                _vel_alpha = (1.0 - _alpha_f) * _vel_new + _alpha_f * _vel_old
+                # 慣性力: M·a_{n+1-α_m}
+                R_u = R_u + _M @ _acc_alpha
+                # 減衰力: C·v_{n+1-α_f}
+                if _C is not None:
+                    R_u = R_u + _C @ _vel_alpha
+
             R_u[fixed_dofs] = 0.0
 
             # 6. NCP 残差（Alart-Curnier 方式）
@@ -2070,12 +2325,15 @@ def newton_raphson_contact_ncp(
                 C_mortar = np.array([])
 
             # 6-perpair: Per-pair NCP 残差
-            #    Active: C_i = k_pen * g_i  (g → 0 を目標)
-            #    Inactive: C_i = λ_i        (λ → 0 を目標)
+            #    Active: C_i = k_pen * (g_i + δ*λ_i)  (g + δλ → 0 を目標)
+            #    Inactive: C_i = λ_i                   (λ → 0 を目標)
             C_ac = np.empty(n_geom_active) if n_geom_active > 0 else np.array([])
             for j in range(n_geom_active):
                 if ncp_active_mask[j]:
-                    C_ac[j] = k_pen * gaps[j]
+                    _g_reg = gaps[j]
+                    if _contact_compliance > 0.0:
+                        _g_reg += _contact_compliance * lams[j]
+                    C_ac[j] = k_pen * _g_reg
                 else:
                     C_ac[j] = lams[j]
 
@@ -2257,6 +2515,12 @@ def newton_raphson_contact_ncp(
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
 
+            # 8d. 動的解析: 有効接線剛性に質量・減衰を加算
+            if _dynamics and _dt_sub > 1e-30:
+                K_T = K_T + (1.0 - _alpha_m) * _c0 * _M
+                if _C is not None:
+                    K_T = K_T + (1.0 - _alpha_f) * _c1 * _C
+
             # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
             if _use_mortar and len(mortar_nodes) > 0 and n_ncp_active > 0:
                 # Mortar 鞍点系
@@ -2293,7 +2557,7 @@ def newton_raphson_contact_ncp(
                         diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
-                elif du_norm_cap > 0.0:
+                if du_norm_cap > 0.0:
                     _du_n = float(np.linalg.norm(du))
                     _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
                     if _du_n > du_norm_cap * _u_ref_n:
@@ -2343,7 +2607,7 @@ def newton_raphson_contact_ncp(
                         diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
-                elif du_norm_cap > 0.0:
+                if du_norm_cap > 0.0:
                     _du_n = float(np.linalg.norm(du))
                     _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
                     if _du_n > du_norm_cap * _u_ref_n:
@@ -2374,6 +2638,9 @@ def newton_raphson_contact_ncp(
                     G_A = sp.csr_matrix((0, ndof))
                     g_A = np.array([])
 
+                # アクティブペアの現在λを取得（δ正則化用）
+                _lam_A = lams[active_row_indices] if n_ncp_active > 0 else np.array([])
+
                 du, dlam_A = _solve_saddle_point_contact(
                     K_T,
                     G_A,
@@ -2388,6 +2655,8 @@ def newton_raphson_contact_ncp(
                     gmres_dof_threshold=gmres_dof_threshold_cfg,
                     use_amg=manager.config.use_amg_preconditioner,
                     residual_scaling=_residual_scaling,
+                    contact_compliance=_contact_compliance,
+                    lam_active=_lam_A,
                 )
 
                 # 11. Line search + 更新
@@ -2404,7 +2673,7 @@ def newton_raphson_contact_ncp(
                         diverge_factor=_ls_diverge,
                     )
                     du = alpha * du
-                elif du_norm_cap > 0.0:
+                if du_norm_cap > 0.0:
                     _du_n = float(np.linalg.norm(du))
                     _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
                     if _du_n > du_norm_cap * _u_ref_n:
@@ -2419,12 +2688,17 @@ def newton_raphson_contact_ncp(
                     for j_local, pair_idx in enumerate(active_pair_indices):
                         lam_all[pair_idx] += _omega * dlam_A[j_local]
 
-            # NCP 非アクティブ乗数をゼロに（Mortar 時はスキップ）
+            # NCP 非アクティブ乗数の処理（Mortar 時はスキップ）
+            # λ soft decay: 即座ゼロ化→段階的減衰で力の急変を緩和（status-145）
             if not _use_mortar:
                 for j in range(n_geom_active):
                     if not ncp_active_mask[j]:
-                        lam_all[active_indices[j]] = 0.0
-                        lam_t_all[active_indices[j]] = 0.0
+                        if _lambda_decay < 1.0:
+                            lam_all[active_indices[j]] *= 1.0 - _lambda_decay
+                            lam_t_all[active_indices[j]] *= 1.0 - _lambda_decay
+                        else:
+                            lam_all[active_indices[j]] = 0.0
+                            lam_t_all[active_indices[j]] = 0.0
                 lam_all = np.maximum(lam_all, 0.0)
 
             # --- adaptive omega: メリット関数による緩和係数更新 ---
@@ -2495,6 +2769,10 @@ def newton_raphson_contact_ncp(
                 if _ul:
                     ul_assembler.rollback()
                     node_coords_ref = ul_assembler.coords_ref
+                # 動的解析: 速度・加速度をチェックポイントに復元
+                if _dynamics:
+                    _vel = _vel_ckpt.copy()
+                    _acc = _acc_ckpt.copy()
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
                 _consecutive_good = 0  # カットバック発生→積極成長モードに復帰
@@ -2530,6 +2808,8 @@ def newton_raphson_contact_ncp(
                     contact_force_history=contact_force_history,
                     graph_history=graph_history,
                     diagnostics=_diag,
+                    velocity=_vel.copy() if _dynamics else None,
+                    acceleration=_acc.copy() if _dynamics else None,
                 )
 
         # ステップ完了 — キューから消費
@@ -2539,6 +2819,11 @@ def newton_raphson_contact_ncp(
         if _use_coating:
             for pair in manager.pairs:
                 pair.state.coating_compression_prev = pair.state.coating_compression
+
+        # --- 動的解析: 収束後の速度・加速度更新 ---
+        if _dynamics and _dt_sub > 1e-30:
+            _acc = _c0 * (u - _u_pred)
+            _vel = _v_pred + _dt_sub * _nm_gamma * _acc
 
         # --- Updated Lagrangian: 参照配置更新 & 変位リセット ---
         if _ul:
@@ -2666,6 +2951,9 @@ def newton_raphson_contact_ncp(
         _ul_frac_base_ckpt = _ul_frac_base
         if _ul:
             ul_assembler.checkpoint()
+        if _dynamics:
+            _vel_ckpt = _vel.copy()
+            _acc_ckpt = _acc.copy()
 
         load_history.append(load_frac)
         _u_hist = ul_assembler.u_total_accum + u if _ul else u.copy()
@@ -2692,4 +2980,6 @@ def newton_raphson_contact_ncp(
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
         graph_history=graph_history,
+        velocity=_vel.copy() if _dynamics else None,
+        acceleration=_acc.copy() if _dynamics else None,
     )
