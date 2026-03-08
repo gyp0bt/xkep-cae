@@ -145,7 +145,7 @@ DEFAULT_PARAMS = {
     "output_vtk": True,
     "output_vtk_prefix": "result",
     "output_gif": True,
-    "output_gif_views": ["yz", "xz"],
+    "output_gif_views": ["isometric", "end_yz"],
     "output_gif_figsize": [10.0, 8.0],
     "output_gif_dpi": 80,
     "output_gif_duration": 300,

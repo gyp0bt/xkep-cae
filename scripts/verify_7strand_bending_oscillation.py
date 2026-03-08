@@ -144,11 +144,11 @@ print(f"\n結果: converged={result_friction.phase1_converged}, 時間={t_fricti
 print(f"  活性接触ペア: {result_friction.n_active_contacts}")
 
 # ==================================================================
-# 4. 2D投影スナップショット（物理的妥当性確認）
+# 4. 3Dチューブレンダリングスナップショット（物理的妥当性確認）
 # ==================================================================
 print()
 print("=" * 70)
-print("  2D投影スナップショット生成")
+print("  3Dレンダリングスナップショット生成")
 print("=" * 70)
 
 try:
@@ -158,6 +158,7 @@ try:
     import matplotlib.pyplot as plt
 
     from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
+    from xkep_cae.output.render_beam_3d import render_twisted_wire_3d
 
     output_dir = Path("docs/verification")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -166,54 +167,89 @@ try:
         7, 2.0, 40.0, length=0.0, n_elems_per_strand=8, n_pitches=0.5, gap=0.15
     )
 
-    def plot_2d_projection(mesh_obj, snapshots, labels, filename, title=""):
-        """メッシュの2D投影図を生成."""
+    def plot_3d_snapshots(mesh_obj, snapshots, labels, filename, title=""):
+        """メッシュの3Dチューブレンダリングスナップショットを生成."""
         n_snaps = min(len(snapshots), 8)
-        fig, axes = plt.subplots(2, min(n_snaps, 4), figsize=(16, 8))
-        if n_snaps <= 4:
-            axes = [axes] if n_snaps == 1 else [axes, [None] * 4]
+        n_cols = min(n_snaps, 4)
+        n_rows = (n_snaps + n_cols - 1) // n_cols
+
+        fig = plt.figure(figsize=(6 * n_cols, 6 * n_rows), dpi=120)
 
         for idx in range(n_snaps):
-            row = idx // 4
-            col = idx % 4
-            ax = axes[row][col] if axes[row][col] is not None else axes[0][col]
             u_snap = snapshots[idx]
             coords = mesh_obj.node_coords.copy()
             for i in range(mesh_obj.n_nodes):
                 coords[i, 0] += u_snap[6 * i]
                 coords[i, 1] += u_snap[6 * i + 1]
                 coords[i, 2] += u_snap[6 * i + 2]
+
+            fig_tmp, _ax_tmp = render_twisted_wire_3d(
+                mesh_obj,
+                node_coords=coords,
+                elev=25.0,
+                azim=-60.0,
+                title=labels[idx] if idx < len(labels) else f"Step {idx}",
+                figsize=(8, 7),
+                dpi=80,
+                n_circ=10,
+            )
+            plt.close(fig_tmp)
+
+            # マルチパネルに再描画
+            from xkep_cae.output.render_beam_3d import (
+                _STRAND_COLORS,
+                _make_tube_mesh,
+                _set_equal_aspect_3d,
+            )
+
+            ax = fig.add_subplot(n_rows, n_cols, idx + 1, projection="3d")
+            coords_mm = coords * 1000.0
+            r_mm = mesh_obj.wire_radius * 1000.0
             for sid in range(mesh_obj.n_strands):
-                nodes = mesh_obj.strand_nodes(sid)
-                x = coords[nodes, 0]
-                y = coords[nodes, 1]
-                color = f"C{sid % 10}"
-                ax.plot(x, y, "-", color=color, linewidth=1.5, alpha=0.8)
-            ax.set_aspect("equal")
-            ax.set_title(labels[idx] if idx < len(labels) else f"Step {idx}", fontsize=8)
-            ax.set_xlabel("x [mm]", fontsize=7)
-            ax.set_ylabel("y [mm]", fontsize=7)
-            ax.tick_params(labelsize=6)
-            ax.grid(True, alpha=0.3)
+                color = _STRAND_COLORS[sid % len(_STRAND_COLORS)]
+                ns, ne = mesh_obj.strand_node_ranges[sid]
+                for eidx in range(len(mesh_obj.connectivity)):
+                    n0, n1 = mesh_obj.connectivity[eidx]
+                    if ns <= n0 < ne and ns <= n1 < ne:
+                        X, Y, Z = _make_tube_mesh(coords_mm[n0], coords_mm[n1], r_mm, 8)
+                        ax.plot_surface(
+                            X,
+                            Y,
+                            Z,
+                            color=color,
+                            alpha=0.85,
+                            shade=True,
+                            linewidth=0,
+                            antialiased=True,
+                        )
+            ax.view_init(elev=25.0, azim=-60.0)
+            snap_title = labels[idx] if idx < len(labels) else f"Step {idx}"
+            ax.set_title(snap_title, fontsize=9)
+            ax.set_xlabel("X [mm]", fontsize=7)
+            ax.set_ylabel("Y [mm]", fontsize=7)
+            ax.set_zlabel("Z [mm]", fontsize=7)
+            ax.tick_params(labelsize=5)
+            _set_equal_aspect_3d(ax, coords_mm)
+
         fig.suptitle(title, fontsize=12)
-        fig.tight_layout()
-        fig.savefig(filename, dpi=150, bbox_inches="tight")
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+        fig.savefig(filename, dpi=150, bbox_inches="tight", facecolor="white")
         plt.close(fig)
         print(f"  保存: {filename}")
 
     if result_90.displacement_snapshots:
-        plot_2d_projection(
+        plot_3d_snapshots(
             mesh,
             result_90.displacement_snapshots,
             result_90.snapshot_labels,
-            str(output_dir / "7strand_bending_oscillation_2d.png"),
-            title="7本撚線 90°曲げ+揺動 2D投影（XY平面）",
+            str(output_dir / "7strand_bending_oscillation_3d.png"),
+            title="7-strand 90deg bending + oscillation (3D)",
         )
     else:
         print("  スナップショットなし（GIF出力が無効）")
 
 except ImportError:
-    print("  matplotlib が利用不可能。2D投影スキップ。")
+    print("  matplotlib が利用不可能。3Dレンダリングスキップ。")
 
 # ==================================================================
 # 5. サマリー

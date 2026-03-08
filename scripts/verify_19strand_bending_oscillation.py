@@ -55,6 +55,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh  # noqa: E402
 from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
+from xkep_cae.output.render_beam_3d import (  # noqa: E402
+    _STRAND_COLORS,
+    _make_tube_mesh,
+    _set_equal_aspect_3d,
+    render_twisted_wire_3d,
+)
 
 
 def deformed_coords(mesh_obj, u_snap):
@@ -67,95 +73,88 @@ def deformed_coords(mesh_obj, u_snap):
     return coords
 
 
-def plot_side_view(mesh_obj, coords, ax, plane="xy", title=""):
-    """Plot side view of deformed mesh (beam centerlines)."""
-    idx_map = {"xy": (0, 1), "xz": (0, 2), "yz": (1, 2)}
-    ix, iy = idx_map[plane]
-    labels = {0: "x", 1: "y", 2: "z"}
-
+def _render_3d_on_ax(mesh_obj, coords, ax, title="", elev=25.0, azim=-60.0):
+    """3Dチューブを指定axに描画する（マルチパネル用）."""
+    coords_mm = coords * 1000.0
+    r_mm = mesh_obj.wire_radius * 1000.0
     for sid in range(mesh_obj.n_strands):
-        nodes = mesh_obj.strand_nodes(sid)
-        c = f"C{sid % 10}"
-        ax.plot(
-            coords[nodes, ix] * 1000,
-            coords[nodes, iy] * 1000,
-            "-", color=c, linewidth=1.0, alpha=0.7,
-        )
-    ax.set_aspect("equal")
-    ax.set_xlabel(f"{labels[ix]} [mm]", fontsize=7)
-    ax.set_ylabel(f"{labels[iy]} [mm]", fontsize=7)
+        color = _STRAND_COLORS[sid % len(_STRAND_COLORS)]
+        ns, ne = mesh_obj.strand_node_ranges[sid]
+        for eidx in range(len(mesh_obj.connectivity)):
+            n0, n1 = mesh_obj.connectivity[eidx]
+            if ns <= n0 < ne and ns <= n1 < ne:
+                X, Y, Z = _make_tube_mesh(coords_mm[n0], coords_mm[n1], r_mm, 8)
+                ax.plot_surface(
+                    X,
+                    Y,
+                    Z,
+                    color=color,
+                    alpha=0.85,
+                    shade=True,
+                    linewidth=0,
+                    antialiased=True,
+                )
+    ax.view_init(elev=elev, azim=azim)
     ax.set_title(title, fontsize=8)
-    ax.tick_params(labelsize=6)
-    ax.grid(True, alpha=0.3)
-
-
-def plot_cross_section(mesh_obj, coords, ax, z_frac=0.5, title=""):
-    """Plot cross-section at given z fraction (interpolated node positions)."""
-    z_min = coords[:, 2].min()
-    z_max = coords[:, 2].max()
-    z_target = z_min + (z_max - z_min) * z_frac
-
-    for sid in range(mesh_obj.n_strands):
-        nodes = mesh_obj.strand_nodes(sid)
-        strand_coords = coords[nodes]
-        z_vals = strand_coords[:, 2]
-
-        # Find closest segment to z_target
-        for j in range(len(nodes) - 1):
-            z0, z1 = z_vals[j], z_vals[j + 1]
-            if (z0 <= z_target <= z1) or (z1 <= z_target <= z0):
-                if abs(z1 - z0) < 1e-15:
-                    t = 0.5
-                else:
-                    t = (z_target - z0) / (z1 - z0)
-                x_interp = strand_coords[j, 0] * (1 - t) + strand_coords[j + 1, 0] * t
-                y_interp = strand_coords[j, 1] * (1 - t) + strand_coords[j + 1, 1] * t
-                c = f"C{sid % 10}"
-                ax.plot(x_interp * 1000, y_interp * 1000, "o", color=c, markersize=4)
-                break
-
-    ax.set_aspect("equal")
-    ax.set_xlabel("x [mm]", fontsize=7)
-    ax.set_ylabel("y [mm]", fontsize=7)
-    ax.set_title(title, fontsize=8)
-    ax.tick_params(labelsize=6)
-    ax.grid(True, alpha=0.3)
+    ax.set_xlabel("X [mm]", fontsize=6)
+    ax.set_ylabel("Y [mm]", fontsize=6)
+    ax.set_zlabel("Z [mm]", fontsize=6)
+    ax.tick_params(labelsize=5)
+    _set_equal_aspect_3d(ax, coords_mm)
 
 
 def save_multi_view(mesh_obj, u_snap, out_path, suptitle=""):
-    """Save 6-panel figure: 3 side views + 3 cross-sections."""
+    """Save 2x3 panel: 3D views from 6 angles."""
     coords = deformed_coords(mesh_obj, u_snap)
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    view_list = [
+        ("isometric", 25.0, -60.0),
+        ("front_xy", 0.0, -90.0),
+        ("side_xz", 0.0, 0.0),
+        ("end_yz", 0.0, -180.0),
+        ("bird_eye", 45.0, -45.0),
+        ("top_down", 90.0, -90.0),
+    ]
 
-    # Side views
-    plot_side_view(mesh_obj, coords, axes[0, 0], "xy", "Side view (XY)")
-    plot_side_view(mesh_obj, coords, axes[0, 1], "xz", "Side view (XZ)")
-    plot_side_view(mesh_obj, coords, axes[0, 2], "yz", "Side view (YZ)")
-
-    # Cross-sections at 25%, 50%, 75%
-    for j, (frac, label) in enumerate([(0.25, "z=25%"), (0.5, "z=50%"), (0.75, "z=75%")]):
-        plot_cross_section(mesh_obj, coords, axes[1, j], frac, f"Cross-section {label}")
+    fig = plt.figure(figsize=(18, 12))
+    for idx, (label, elev, azim) in enumerate(view_list):
+        ax = fig.add_subplot(2, 3, idx + 1, projection="3d")
+        _render_3d_on_ax(mesh_obj, coords, ax, label, elev, azim)
 
     fig.suptitle(suptitle, fontsize=13)
-    fig.tight_layout()
-    fig.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(str(out_path), dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"  Saved: {out_path}")
 
 
 def save_increment_gallery(mesh_obj, snapshots, labels, out_dir, prefix, plane="xy"):
-    """Save individual increment images + gallery overview."""
+    """Save individual 3D increment images + gallery overview.
+
+    plane引数は後方互換性のため残すが、3Dレンダリングでは無視される。
+    """
     if not snapshots:
         return
 
     n = len(snapshots)
-    # Individual images
+    # Individual 3D images
     for i, (u_snap, label) in enumerate(zip(snapshots, labels, strict=True)):
         coords = deformed_coords(mesh_obj, u_snap)
-        fig, ax = plt.subplots(figsize=(8, 6))
-        plot_side_view(mesh_obj, coords, ax, plane, f"{prefix} - {label}")
-        fig.tight_layout()
-        fig.savefig(str(out_dir / f"{prefix}_incr{i:03d}_{plane}.png"), dpi=120)
+        fig, _ax = render_twisted_wire_3d(
+            mesh_obj,
+            node_coords=coords,
+            elev=25.0,
+            azim=-60.0,
+            title=f"{prefix} - {label}",
+            figsize=(10, 8),
+            dpi=100,
+            n_circ=10,
+        )
+        fig.savefig(
+            str(out_dir / f"{prefix}_incr{i:03d}_3d.png"),
+            dpi=120,
+            bbox_inches="tight",
+            facecolor="white",
+        )
         plt.close(fig)
 
     # Gallery (up to 12 panels)
@@ -163,29 +162,24 @@ def save_increment_gallery(mesh_obj, snapshots, labels, out_dir, prefix, plane="
     indices = np.linspace(0, n - 1, n_show, dtype=int)
     ncols = min(n_show, 4)
     nrows = (n_show + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3.5 * nrows))
-    if nrows == 1 and ncols == 1:
-        axes = np.array([[axes]])
-    elif nrows == 1:
-        axes = axes[np.newaxis, :]
-    elif ncols == 1:
-        axes = axes[:, np.newaxis]
 
+    fig = plt.figure(figsize=(6 * ncols, 5.5 * nrows))
     for plot_idx, snap_idx in enumerate(indices):
-        r, c = plot_idx // ncols, plot_idx % ncols
         coords = deformed_coords(mesh_obj, snapshots[snap_idx])
         lbl = labels[snap_idx] if snap_idx < len(labels) else f"Step {snap_idx}"
-        plot_side_view(mesh_obj, coords, axes[r, c], plane, lbl)
+        ax = fig.add_subplot(nrows, ncols, plot_idx + 1, projection="3d")
+        _render_3d_on_ax(mesh_obj, coords, ax, lbl)
 
-    for plot_idx in range(len(indices), nrows * ncols):
-        r, c = plot_idx // ncols, plot_idx % ncols
-        axes[r, c].set_visible(False)
-
-    fig.suptitle(f"{prefix} gallery ({plane.upper()} plane)", fontsize=12)
-    fig.tight_layout()
-    fig.savefig(str(out_dir / f"{prefix}_gallery_{plane}.png"), dpi=150, bbox_inches="tight")
+    fig.suptitle(f"{prefix} gallery (3D)", fontsize=12)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    fig.savefig(
+        str(out_dir / f"{prefix}_gallery_3d.png"),
+        dpi=150,
+        bbox_inches="tight",
+        facecolor="white",
+    )
     plt.close(fig)
-    print(f"  Saved gallery: {out_dir / f'{prefix}_gallery_{plane}.png'}")
+    print(f"  Saved gallery: {out_dir / f'{prefix}_gallery_3d.png'}")
 
 
 # ==================================================================
@@ -239,9 +233,9 @@ if result_45.displacement_snapshots:
         "19-strand 45deg bending - final state",
     )
     # Increment gallery for all 3 planes
-    for plane in ["xy", "xz", "yz"]:
-        save_increment_gallery(mesh, result_45.displacement_snapshots,
-                               result_45.snapshot_labels, out_45, "bend45", plane)
+    save_increment_gallery(
+        mesh, result_45.displacement_snapshots, result_45.snapshot_labels, out_45, "bend45"
+    )
 
 # ==================================================================
 # 2. 90-degree bending + oscillation
@@ -293,37 +287,29 @@ if result_90.displacement_snapshots:
         out_90 / "final_multiview.png",
         "19-strand 90deg + oscillation - final state",
     )
-    for plane in ["xy", "xz", "yz"]:
-        save_increment_gallery(mesh, result_90.displacement_snapshots,
-                               result_90.snapshot_labels, out_90, "bend90_osc", plane)
+    save_increment_gallery(
+        mesh, result_90.displacement_snapshots, result_90.snapshot_labels, out_90, "bend90_osc"
+    )
 
-    # Cross-section evolution (at z=50%) across increments
+    # Cross-section evolution — end view (YZ) showing circular cross-sections
     n_show = min(len(result_90.displacement_snapshots), 8)
     indices = np.linspace(0, len(result_90.displacement_snapshots) - 1, n_show, dtype=int)
     ncols = min(n_show, 4)
     nrows = (n_show + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 4 * nrows))
-    if nrows == 1 and ncols == 1:
-        axes = np.array([[axes]])
-    elif nrows == 1:
-        axes = axes[np.newaxis, :]
-    elif ncols == 1:
-        axes = axes[:, np.newaxis]
 
+    fig = plt.figure(figsize=(6 * ncols, 5.5 * nrows))
     for plot_idx, snap_idx in enumerate(indices):
-        r, c = plot_idx // ncols, plot_idx % ncols
         coords = deformed_coords(mesh, result_90.displacement_snapshots[snap_idx])
-        lbl = result_90.snapshot_labels[snap_idx] if snap_idx < len(result_90.snapshot_labels) else ""
-        plot_cross_section(mesh, coords, axes[r, c], 0.5, f"z=50% - {lbl}")
+        lbl = (
+            result_90.snapshot_labels[snap_idx] if snap_idx < len(result_90.snapshot_labels) else ""
+        )
+        ax = fig.add_subplot(nrows, ncols, plot_idx + 1, projection="3d")
+        _render_3d_on_ax(mesh, coords, ax, f"End view - {lbl}", elev=0.0, azim=-180.0)
 
-    for plot_idx in range(len(indices), nrows * ncols):
-        r, c = plot_idx // ncols, plot_idx % ncols
-        axes[r, c].set_visible(False)
-
-    fig.suptitle("19-strand cross-section evolution (z=50%)", fontsize=12)
-    fig.tight_layout()
-    cs_path = out_90 / "cross_section_evolution.png"
-    fig.savefig(str(cs_path), dpi=150, bbox_inches="tight")
+    fig.suptitle("19-strand cross-section evolution (End view)", fontsize=12)
+    fig.tight_layout(rect=[0, 0, 1, 0.96])
+    cs_path = out_90 / "cross_section_evolution_3d.png"
+    fig.savefig(str(cs_path), dpi=150, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     print(f"  Saved: {cs_path}")
 
