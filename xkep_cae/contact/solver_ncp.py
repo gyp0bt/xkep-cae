@@ -2046,6 +2046,12 @@ def newton_raphson_contact_ncp(
                 _coat_dt = max(load_frac - load_frac_prev, 1e-15)
                 f_coat = manager.compute_coating_forces(coords_def, dt=_coat_dt)
                 f_c = f_c + f_coat
+                # 4e. 被膜Coulomb摩擦力（status-140）
+                if manager.config.coating_mu > 0.0:
+                    f_coat_fric = manager.compute_coating_friction_forces(
+                        coords_def, u, u_ref
+                    )
+                    f_c = f_c + f_coat_fric
 
             # 5. 力残差
             f_int = assemble_internal_force(u)
@@ -2246,6 +2252,12 @@ def newton_raphson_contact_ncp(
                 _coat_dt = max(load_frac - load_frac_prev, 1e-15)
                 K_coat = manager.compute_coating_stiffness(coords_def, ndof, dt=_coat_dt)
                 K_T = K_T + K_coat
+                # 8b3. 被膜Coulomb摩擦接線剛性（status-140）
+                if manager.config.coating_mu > 0.0:
+                    K_coat_fric = manager.compute_coating_friction_stiffness(
+                        coords_def, ndof
+                    )
+                    K_T = K_T + K_coat_fric
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
 

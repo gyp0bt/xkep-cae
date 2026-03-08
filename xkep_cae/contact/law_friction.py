@@ -79,6 +79,84 @@ def compute_tangential_displacement(
     return delta_ut
 
 
+def return_mapping_core(
+    z_t_old: np.ndarray,
+    delta_ut: np.ndarray,
+    k_t: float,
+    p_n: float,
+    mu: float,
+) -> tuple[np.ndarray, bool, float, float]:
+    """Coulomb return mappingの純粋関数版.
+
+    pair.stateに依存しない汎用実装。梁-梁、被膜-被膜、被膜-梁の
+    全ての接触摩擦で共有される。
+
+    Args:
+        z_t_old: (2,) 接線履歴ベクトル
+        delta_ut: (2,) 接線相対変位増分
+        k_t: 接線ペナルティ剛性
+        p_n: 法線力（>0で接触中）
+        mu: 摩擦係数
+
+    Returns:
+        q: (2,) 摩擦力
+        is_stick: stick状態フラグ
+        q_trial_norm: trial接線力ノルム（slip consistent tangent用）
+        dissipation: 散逸増分
+    """
+    if p_n <= 0.0 or mu <= 0.0:
+        return np.zeros(2), True, 0.0, 0.0
+
+    q_trial = z_t_old + k_t * delta_ut
+    q_trial_norm = float(np.linalg.norm(q_trial))
+    f_yield = mu * p_n
+
+    if q_trial_norm <= f_yield:
+        q = q_trial.copy()
+        is_stick = True
+    else:
+        q = f_yield * q_trial / q_trial_norm
+        is_stick = False
+
+    dissipation = float(np.dot(q, delta_ut))
+    return q, is_stick, q_trial_norm, dissipation
+
+
+def tangent_2x2_core(
+    k_t: float,
+    p_n: float,
+    mu: float,
+    z_t: np.ndarray,
+    q_trial_norm: float,
+    is_stick: bool,
+) -> np.ndarray:
+    """摩擦接線剛性(2x2)の純粋関数版.
+
+    Args:
+        k_t: 接線ペナルティ剛性
+        p_n: 法線力
+        mu: 摩擦係数
+        z_t: (2,) 現在の接線履歴
+        q_trial_norm: trial接線力ノルム
+        is_stick: stick状態フラグ
+
+    Returns:
+        D_t: (2, 2) 摩擦接線剛性
+    """
+    if p_n <= 0.0 or mu <= 0.0:
+        return np.zeros((2, 2))
+
+    if is_stick:
+        return k_t * np.eye(2)
+    else:
+        z_norm = float(np.linalg.norm(z_t))
+        if z_norm < 1e-30 or q_trial_norm < 1e-30:
+            return k_t * np.eye(2)
+        q_hat = z_t / z_norm
+        ratio = (mu * p_n) / q_trial_norm
+        return ratio * k_t * (np.eye(2) - np.outer(q_hat, q_hat))
+
+
 def friction_return_mapping(
     pair: ContactPair,
     delta_ut: np.ndarray,
@@ -100,42 +178,18 @@ def friction_return_mapping(
     if pair.state.status == ContactStatus.INACTIVE:
         return np.zeros(2)
 
-    z_t_old = pair.state.z_t.copy()
-    k_t = pair.state.k_t
-    p_n = pair.state.p_n
+    q, is_stick, q_trial_norm, dissipation = return_mapping_core(
+        pair.state.z_t.copy(), delta_ut, pair.state.k_t, pair.state.p_n, mu
+    )
 
-    if p_n <= 0.0 or mu <= 0.0:
-        # 法線力ゼロ or 摩擦なし → 摩擦力なし
-        pair.state.stick = True
-        pair.state.dissipation = 0.0
-        return np.zeros(2)
-
-    # 弾性予測（trial）
-    q_trial = z_t_old + k_t * delta_ut
-    q_trial_norm = float(np.linalg.norm(q_trial))
-
-    # Coulomb 条件
-    f_yield = mu * p_n
-
-    # q_trial_norm を記録（slip consistent tangent 用、Phase C5）
+    pair.state.z_t = q.copy()
+    pair.state.stick = is_stick
     pair.state.q_trial_norm = q_trial_norm
-
-    if q_trial_norm <= f_yield:
-        # stick
-        q = q_trial.copy()
-        pair.state.z_t = q.copy()
-        pair.state.stick = True
+    pair.state.dissipation = dissipation
+    if is_stick:
         pair.state.status = ContactStatus.ACTIVE
     else:
-        # slip → radial return
-        q = f_yield * q_trial / q_trial_norm
-        pair.state.z_t = q.copy()
-        pair.state.stick = False
         pair.state.status = ContactStatus.SLIDING
-
-    # 散逸増分（非負であるべき）
-    d_inc = float(np.dot(q, delta_ut))
-    pair.state.dissipation = d_inc
 
     return q
 
@@ -160,29 +214,17 @@ def friction_tangent_2x2(
     Returns:
         D_t: (2, 2) 摩擦接線剛性
     """
-    k_t = pair.state.k_t
-    p_n = pair.state.p_n
-
-    if pair.state.status == ContactStatus.INACTIVE or p_n <= 0.0 or mu <= 0.0:
+    if pair.state.status == ContactStatus.INACTIVE:
         return np.zeros((2, 2))
 
-    if pair.state.stick:
-        # stick: 完全弾性接線
-        return k_t * np.eye(2)
-    else:
-        # slip: consistent tangent (Phase C5)
-        # D_t = (μ*p_n / ||q_trial||) * k_t * (I₂ - q̂⊗q̂)
-        z_t = pair.state.z_t
-        z_norm = float(np.linalg.norm(z_t))
-        q_tn = pair.state.q_trial_norm
-
-        if z_norm < 1e-30 or q_tn < 1e-30:
-            return k_t * np.eye(2)
-
-        # q̂ = z_t / ||z_t|| = q_trial / ||q_trial||（同じ方向）
-        q_hat = z_t / z_norm
-        ratio = (mu * p_n) / q_tn
-        return ratio * k_t * (np.eye(2) - np.outer(q_hat, q_hat))
+    return tangent_2x2_core(
+        k_t=pair.state.k_t,
+        p_n=pair.state.p_n,
+        mu=mu,
+        z_t=pair.state.z_t,
+        q_trial_norm=pair.state.q_trial_norm,
+        is_stick=pair.state.stick,
+    )
 
 
 def rotate_friction_history(

@@ -67,8 +67,13 @@ class ContactState:
     status: ContactStatus = ContactStatus.INACTIVE
     stick: bool = True
     dissipation: float = 0.0
-    coating_compression: float = 0.0  # 被膜圧縮量 [m]（被膜接触モデル用）
-    coating_compression_prev: float = 0.0  # 前ステップの被膜圧縮量 [m]（粘性項用）
+    coating_compression: float = 0.0  # 被膜圧縮量 [mm]（被膜接触モデル用）
+    coating_compression_prev: float = 0.0  # 前ステップの被膜圧縮量 [mm]（粘性項用）
+    # --- 被膜摩擦状態（status-140: Coulomb return mapping） ---
+    coating_z_t: np.ndarray = field(default_factory=lambda: np.zeros(2))  # 被膜接線履歴
+    coating_stick: bool = True  # 被膜stick/slip状態
+    coating_q_trial_norm: float = 0.0  # 被膜trial force ノルム
+    coating_dissipation: float = 0.0  # 被膜摩擦散逸増分
     # Gauss point friction states (for line contact friction, Phase C6-L1b)
     gp_z_t: list[np.ndarray] | None = None
     gp_stick: list[bool] | None = None
@@ -94,6 +99,10 @@ class ContactState:
             dissipation=self.dissipation,
             coating_compression=self.coating_compression,
             coating_compression_prev=self.coating_compression_prev,
+            coating_z_t=self.coating_z_t.copy(),
+            coating_stick=self.coating_stick,
+            coating_q_trial_norm=self.coating_q_trial_norm,
+            coating_dissipation=self.coating_dissipation,
             gp_z_t=[z.copy() for z in self.gp_z_t] if self.gp_z_t is not None else None,
             gp_stick=list(self.gp_stick) if self.gp_stick is not None else None,
             gp_q_trial_norm=list(self.gp_q_trial_norm)
@@ -267,7 +276,10 @@ class ContactConfig:
     # --- 被膜接触モデル（status-137: gap_offset廃止 → 被膜層を陽にモデル化） ---
     coating_stiffness: float = 0.0  # 被膜接触剛性 [Pa/m]。0=被膜モデル無効（従来互換）
     # --- 被膜粘性減衰（status-140: Kelvin-Voigt粘性項） ---
-    coating_damping: float = 0.0  # 被膜粘性減衰係数 [Pa·s/m]。0=減衰なし
+    coating_damping: float = 0.0  # 被膜粘性減衰係数 [MPa·s/mm]。0=減衰なし
+    # --- 被膜摩擦（status-140: Coulomb return mapping） ---
+    coating_mu: float = 0.0  # 被膜摩擦係数（0=被膜摩擦無効）
+    coating_k_t_ratio: float = 0.5  # 被膜接線/法線ペナルティ比
 
 
 @dataclass
@@ -934,6 +946,204 @@ class ContactManager:
             return sp.csr_matrix((ndof_total, ndof_total))
 
         return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
+
+    def compute_coating_friction_forces(
+        self,
+        node_coords: np.ndarray,
+        u_cur: np.ndarray,
+        u_ref: np.ndarray,
+    ) -> np.ndarray:
+        """被膜接触面のCoulomb摩擦力を計算する.
+
+        被膜法線力 p_n = k_coat * δ に対し Coulomb return mapping を適用。
+        接線変位増分 Δu_t は梁-梁摩擦と同様に接線面投影で算出。
+
+        Args:
+            node_coords: 現在の節点座標 (n_nodes, 3)
+            u_cur: 現在の変位ベクトル (ndof,)
+            u_ref: 前ステップの変位ベクトル (ndof,)
+
+        Returns:
+            f_fric: 被膜摩擦力ベクトル (ndof,)
+        """
+        from xkep_cae.contact.law_friction import return_mapping_core
+
+        mu = self.config.coating_mu
+        if mu <= 0.0:
+            return np.zeros_like(u_cur)
+
+        k_coat = self.config.coating_stiffness
+        k_t_ratio = self.config.coating_k_t_ratio
+        k_t = k_coat * k_t_ratio
+
+        ndof_per_node = (
+            self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
+        )
+        n_nodes = len(node_coords)
+        f_fric = np.zeros(n_nodes * ndof_per_node)
+        du = u_cur - u_ref
+
+        for pair in self.pairs:
+            cc = pair.state.coating_compression
+            if cc <= 0.0:
+                # 非接触: 摩擦履歴リセット
+                pair.state.coating_z_t[:] = 0.0
+                pair.state.coating_stick = True
+                pair.state.coating_q_trial_norm = 0.0
+                pair.state.coating_dissipation = 0.0
+                continue
+
+            # 被膜法線力（弾性成分のみ — 摩擦のCoulomb条件に使用）
+            p_n = k_coat * cc
+
+            # 接線相対変位増分
+            s = pair.state.s
+            t = pair.state.t
+            t1 = pair.state.tangent1
+            t2 = pair.state.tangent2
+
+            nA0, nA1 = int(pair.nodes_a[0]), int(pair.nodes_a[1])
+            nB0, nB1 = int(pair.nodes_b[0]), int(pair.nodes_b[1])
+            dpn = ndof_per_node
+            du_A0 = du[nA0 * dpn : nA0 * dpn + 3]
+            du_A1 = du[nA1 * dpn : nA1 * dpn + 3]
+            du_B0 = du[nB0 * dpn : nB0 * dpn + 3]
+            du_B1 = du[nB1 * dpn : nB1 * dpn + 3]
+
+            du_A = (1.0 - s) * du_A0 + s * du_A1
+            du_B = (1.0 - t) * du_B0 + t * du_B1
+            du_rel = du_B - du_A
+
+            delta_ut = np.array(
+                [float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))]
+            )
+
+            # Coulomb return mapping（純粋関数）
+            q, is_stick, q_trial_norm, dissipation = return_mapping_core(
+                pair.state.coating_z_t.copy(), delta_ut, k_t, p_n, mu
+            )
+
+            # 状態更新
+            pair.state.coating_z_t = q.copy()
+            pair.state.coating_stick = is_stick
+            pair.state.coating_q_trial_norm = q_trial_norm
+            pair.state.coating_dissipation = dissipation
+
+            # 接線力を節点力に分配
+            # f_t = q[0]*t1 + q[1]*t2 (3D接線力ベクトル)
+            f_t_3d = q[0] * t1 + q[1] * t2
+
+            # A側: -f_t (反力), B側: +f_t
+            fA = -f_t_3d
+            fB = f_t_3d
+
+            f_fric[nA0 * dpn : nA0 * dpn + 3] += (1.0 - s) * fA
+            f_fric[nA1 * dpn : nA1 * dpn + 3] += s * fA
+            f_fric[nB0 * dpn : nB0 * dpn + 3] += (1.0 - t) * fB
+            f_fric[nB1 * dpn : nB1 * dpn + 3] += t * fB
+
+        return f_fric
+
+    def compute_coating_friction_stiffness(
+        self,
+        node_coords: np.ndarray,
+        ndof_total: int,
+    ) -> np.ndarray:
+        """被膜摩擦の接線剛性行列を計算する.
+
+        stick: D_t = k_t * I₂
+        slip:  D_t = (μ*p_n/||q_trial||) * k_t * (I₂ - q̂⊗q̂)
+
+        Args:
+            node_coords: 節点座標 (n_nodes, 3)
+            ndof_total: 全体自由度数
+
+        Returns:
+            K_fric: (ndof_total, ndof_total) CSR形式被膜摩擦剛性行列
+        """
+        import scipy.sparse as sp
+
+        from xkep_cae.contact.law_friction import tangent_2x2_core
+
+        mu = self.config.coating_mu
+        if mu <= 0.0:
+            return sp.csr_matrix((ndof_total, ndof_total))
+
+        k_coat = self.config.coating_stiffness
+        k_t = k_coat * self.config.coating_k_t_ratio
+        ndof_per_node = (
+            self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
+        )
+
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[float] = []
+
+        for pair in self.pairs:
+            cc = pair.state.coating_compression
+            if cc <= 0.0:
+                continue
+
+            p_n = k_coat * cc
+
+            # 2x2接線剛性
+            D_t = tangent_2x2_core(
+                k_t=k_t,
+                p_n=p_n,
+                mu=mu,
+                z_t=pair.state.coating_z_t,
+                q_trial_norm=pair.state.coating_q_trial_norm,
+                is_stick=pair.state.coating_stick,
+            )
+
+            # 3D接線方向への展開
+            t1 = pair.state.tangent1
+            t2 = pair.state.tangent2
+            s = pair.state.s
+            t = pair.state.t
+
+            nA0 = int(pair.nodes_a[0])
+            nA1 = int(pair.nodes_a[1])
+            nB0 = int(pair.nodes_b[0])
+            nB1 = int(pair.nodes_b[1])
+
+            # 接線力の変位に対する微分
+            # T = [t1 | t2] (3x2), D_t (2x2)
+            # K_3x3 = T @ D_t @ T^T
+            T_mat = np.column_stack([t1, t2])  # (3, 2)
+            K_3x3 = T_mat @ D_t @ T_mat.T  # (3, 3)
+
+            # 節点への分配（形状関数の微分）
+            weights_A = [-(1.0 - s), -s]
+            weights_B = [(1.0 - t), t]
+            node_ids = [nA0, nA1, nB0, nB1]
+            weights = weights_A + weights_B
+
+            dpn = ndof_per_node
+            gdofs = []
+            for nid in node_ids:
+                gdofs.append(nid * dpn)
+
+            for i_node in range(4):
+                for j_node in range(4):
+                    w_ij = weights[i_node] * weights[j_node]
+                    K_block = w_ij * K_3x3
+                    gi = gdofs[i_node]
+                    gj = gdofs[j_node]
+                    for ii in range(3):
+                        for jj in range(3):
+                            val = K_block[ii, jj]
+                            if abs(val) > 1e-30:
+                                rows.append(gi + ii)
+                                cols.append(gj + jj)
+                                data.append(val)
+
+        if not data:
+            return sp.csr_matrix((ndof_total, ndof_total))
+
+        return sp.coo_matrix(
+            (data, (rows, cols)), shape=(ndof_total, ndof_total)
+        ).tocsr()
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.
