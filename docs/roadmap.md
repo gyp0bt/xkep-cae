@@ -177,6 +177,10 @@
 - [x] **mm-ton-MPa移行 + Kelvin-Voigt粘性減衰 + k_pen材料ベース強制**（status-140）
 - [ ] 全テストのmm-ton-MPa移行（~100ファイルの定数変換）
 - [x] **被膜Coulomb摩擦モデル実装 + 摩擦core関数抽出**（status-141: return_mapping_core/tangent_2x2_core純粋関数化、被膜摩擦のsolver_ncp統合）
+- [x] **Mortarギャップ計算バグ修正**（status-142: pair.state.radius_a→pair.radius_a、全Mortar NCPテストで接触力ゼロだった致命的バグ）
+- [ ] 撚線メッシュ初期貫入の解消（弦近似誤差対策: メッシュgap確保 or position_tolerance調整）
+- [ ] 7本NCP曲げ揺動の**接触あり**収束達成
+- [ ] 摩擦あり（素線間μ=0.1、被膜間μ=0.25）曲げ揺動収束検証
 - [ ] 19本→37本のスケールアップ
 - [ ] CR梁の摩擦接触不収束の原因調査
 - [ ] 37本Layer1+2圧縮の段階的活性化による収束改善確認

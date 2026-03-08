@@ -48,13 +48,13 @@ def _common_params() -> dict:
         use_updated_lagrangian=True,
         # 摩擦パラメータ
         use_friction=True,
-        mu=0.3,
+        mu=0.1,
     )
 
 
 def run_case1() -> BendingOscillationResult:
     """Case 1: 7本 45度曲げ（揺動なし）摩擦あり."""
-    _header("Case 1: 7本 45度曲げ（揺動なし）μ=0.3")
+    _header("Case 1: 7本 45度曲げ（揺動なし）μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
         n_strands=7,
@@ -73,7 +73,7 @@ def run_case1() -> BendingOscillationResult:
 
 def run_case2() -> BendingOscillationResult:
     """Case 2: 7本 90度曲げ（揺動なし）摩擦あり."""
-    _header("Case 2: 7本 90度曲げ（揺動なし）μ=0.3")
+    _header("Case 2: 7本 90度曲げ（揺動なし）μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
         n_strands=7,
@@ -92,7 +92,7 @@ def run_case2() -> BendingOscillationResult:
 
 def run_case3() -> BendingOscillationResult:
     """Case 3: 7本 90度曲げ + 揺動1周期 摩擦あり."""
-    _header("Case 3: 7本 90度曲げ + 揺動1周期 μ=0.3")
+    _header("Case 3: 7本 90度曲げ + 揺動1周期 μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
         n_strands=7,
