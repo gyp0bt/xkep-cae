@@ -27,6 +27,8 @@ from xkep_cae.output.database import (
     run_transient_steps,
 )
 from xkep_cae.output.export_animation import (
+    export_3d_animation,
+    export_3d_animation_gif,
     export_field_animation,
     export_field_animation_gif,
     render_beam_animation_frame,
@@ -45,6 +47,12 @@ from xkep_cae.output.initial_conditions import (
     InitialConditionEntry,
     InitialConditions,
     InitialConditionType,
+)
+from xkep_cae.output.render_beam_3d import (
+    VIEW_PRESETS,
+    render_beam_3d,
+    render_multiview_3d,
+    render_twisted_wire_3d,
 )
 from xkep_cae.output.request import (
     ALL_VARIABLES,
@@ -84,6 +92,13 @@ __all__ = [
     "export_field_animation",
     "export_field_animation_gif",
     "render_beam_animation_frame",
+    # 3D rendering
+    "render_beam_3d",
+    "render_twisted_wire_3d",
+    "render_multiview_3d",
+    "VIEW_PRESETS",
+    "export_3d_animation",
+    "export_3d_animation_gif",
     # VTK constants
     "VTK_VERTEX",
     "VTK_LINE",

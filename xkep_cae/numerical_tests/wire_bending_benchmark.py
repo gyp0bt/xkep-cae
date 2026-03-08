@@ -310,8 +310,15 @@ def _deformed_coords(node_coords_ref: np.ndarray, u: np.ndarray) -> np.ndarray:
 
 
 # ====================================================================
-# GIF 出力
+# GIF 出力（3Dチューブレンダリング）
 # ====================================================================
+
+# 2D→3D視角の対応マッピング（後方互換性）
+_VIEW_2D_TO_3D = {
+    "xy": "front_xy",
+    "xz": "side_xz",
+    "yz": "end_yz",
+}
 
 
 def export_bending_oscillation_gif(
@@ -322,11 +329,11 @@ def export_bending_oscillation_gif(
     *,
     prefix: str = "bending_oscillation",
     views: list[str] | None = None,
-    figsize: tuple[float, float] = (10.0, 8.0),
+    figsize: tuple[float, float] = (12.0, 10.0),
     dpi: int = 80,
     duration: int = 200,
 ) -> list[Path]:
-    """曲げ揺動の経時変化GIFを生成.
+    """曲げ揺動の経時変化GIFを3Dチューブレンダリングで生成.
 
     Args:
         mesh: 撚線メッシュ
@@ -334,7 +341,8 @@ def export_bending_oscillation_gif(
         snapshot_labels: 各ステップのラベル
         output_dir: 出力ディレクトリ
         prefix: ファイル名プレフィックス
-        views: 描画ビュー方向 (デフォルト ["yz", "xz"])
+        views: 描画ビュー方向。旧2D名("xy","xz","yz")または
+            3Dプリセット名("isometric","front_xy"等)。デフォルト ["isometric", "end_yz"]
         figsize: 図サイズ
         dpi: 解像度
         duration: フレーム間ミリ秒
@@ -348,107 +356,51 @@ def export_bending_oscillation_gif(
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
         from PIL import Image as PILImage
+
+        from xkep_cae.output.render_beam_3d import VIEW_PRESETS, render_twisted_wire_3d
     except ImportError:
         return []
 
     if views is None:
-        views = ["yz", "xz"]
+        views = ["isometric", "end_yz"]
 
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
 
-    _VIEW_AXES = {
-        "xy": (0, 1, "X [mm]", "Y [mm]"),
-        "xz": (0, 2, "X [mm]", "Z [mm]"),
-        "yz": (1, 2, "Y [mm]", "Z [mm]"),
-    }
-
-    # 素線ごとの色パレット
-    _COLORS = [
-        "#1f77b4",
-        "#ff7f0e",
-        "#2ca02c",
-        "#d62728",
-        "#9467bd",
-        "#8c564b",
-        "#e377c2",
-        "#7f7f7f",
-        "#bcbd22",
-        "#17becf",
-    ]
-
     node_coords_ref = mesh.node_coords
-    connectivity = mesh.connectivity
 
     # 全フレームの変形座標を収集
     deformed_frames = []
     for u in displacement_snapshots:
         coords_def = _deformed_coords(node_coords_ref, u)
-        deformed_frames.append(coords_def)  # 既にmm単位
+        deformed_frames.append(coords_def)
 
     output_files: list[Path] = []
 
     for view in views:
-        if view not in _VIEW_AXES:
-            continue
-        ax_h, ax_v, label_h, label_v = _VIEW_AXES[view]
-
-        # 全フレームの描画範囲を計算
-        all_h: list[float] = []
-        all_v: list[float] = []
-        for coords in deformed_frames:
-            for elem in connectivity:
-                n1, n2 = int(elem[0]), int(elem[1])
-                all_h.extend([coords[n1, ax_h], coords[n2, ax_h]])
-                all_v.extend([coords[n1, ax_v], coords[n2, ax_v]])
-
-        if not all_h:
+        # 旧2D名 → 3Dプリセット名に変換（後方互換性）
+        view_3d = _VIEW_2D_TO_3D.get(view, view)
+        if view_3d not in VIEW_PRESETS:
             continue
 
-        h_min, h_max = min(all_h), max(all_h)
-        v_min, v_max = min(all_v), max(all_v)
-        h_range = max(h_max - h_min, 0.1)
-        v_range = max(v_max - v_min, 0.1)
-        margin = 0.1
-        xlim = (h_min - h_range * margin, h_max + h_range * margin)
-        ylim = (v_min - v_range * margin, v_max + v_range * margin)
+        preset = VIEW_PRESETS[view_3d]
 
-        # 素線→要素のマッピング
-        strand_elems: dict[int, list[int]] = {}
-        for sid in range(mesh.n_strands):
-            strand_elems[sid] = mesh.strand_elems(sid).tolist()
-
-        # 各フレームを描画
         pil_images: list[PILImage.Image] = []
-        for frame_idx, (coords, label) in enumerate(
-            zip(deformed_frames, snapshot_labels, strict=True)
-        ):
-            fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
-
-            for sid in range(mesh.n_strands):
-                color = _COLORS[sid % len(_COLORS)]
-                for ei, elem_idx in enumerate(strand_elems[sid]):
-                    elem = connectivity[elem_idx]
-                    n1, n2 = int(elem[0]), int(elem[1])
-                    ax.plot(
-                        [coords[n1, ax_h], coords[n2, ax_h]],
-                        [coords[n1, ax_v], coords[n2, ax_v]],
-                        color=color,
-                        linewidth=1.5,
-                        label=f"strand {sid}" if ei == 0 and frame_idx == 0 else None,
-                    )
-
-            ax.set_xlim(xlim)
-            ax.set_ylim(ylim)
-            ax.set_xlabel(label_h)
-            ax.set_ylabel(label_v)
-            ax.set_aspect("equal")
-            ax.grid(True, alpha=0.3)
-            ax.set_title(f"{label} — {view.upper()}")
-            fig.tight_layout()
+        for coords, label in zip(deformed_frames, snapshot_labels, strict=True):
+            title = f"{label} — {preset['label']}"
+            fig, _ax = render_twisted_wire_3d(
+                mesh,
+                node_coords=coords,
+                elev=float(preset["elev"]),
+                azim=float(preset["azim"]),
+                title=title,
+                figsize=figsize,
+                dpi=dpi,
+                n_circ=10,
+            )
 
             buf = io.BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight")
+            fig.savefig(buf, format="png", bbox_inches="tight", facecolor="white")
             plt.close(fig)
             buf.seek(0)
             img = PILImage.open(buf).convert("RGB")
