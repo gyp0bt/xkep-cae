@@ -1,12 +1,10 @@
 """FIELD ANIMATION エクスポート（梁要素のアニメーション出力）.
 
 xkep-cae独自のアニメーション出力機能。
-梁要素をx,y,z軸方向から見た二次元プロットを生成する。
 
-対応範囲（現行バージョン）:
-  - 梁要素（B21, B22, B31, B32）の線図描画
-  - 要素セット（ELSET）ごとの色分け・凡例表示
-  - xy, xz, yz の3ビュー方向
+描画モード:
+  - 2D投影（従来）: 梁中心線の2D線図描画（AbaqusMesh用）
+  - 3Dチューブ（推奨）: 円形断面付き3Dサーフェスレンダリング（TwistedWireMesh用）
 
 出力:
   - PNG画像ファイル（各ビュー方向ごと、各フレームごと）
@@ -381,7 +379,186 @@ def export_field_animation_gif(
     return output_files
 
 
+def export_3d_animation(
+    mesh,
+    output_dir: str | Path = "animation",
+    *,
+    node_coords_frames: list[np.ndarray] | None = None,
+    frame_labels: list[str] | None = None,
+    views: list[str] | None = None,
+    figsize: tuple[float, float] = (12.0, 10.0),
+    dpi: int = 150,
+    n_circ: int = 12,
+) -> list[Path]:
+    """TwistedWireMeshの3Dチューブアニメーションをフレーム出力する.
+
+    各フレーム × 各視角のPNG画像を出力する。
+
+    Args:
+        mesh: TwistedWireMesh オブジェクト
+        output_dir: 出力ディレクトリパス
+        node_coords_frames: フレームごとの節点座標リスト。
+            Noneの場合は初期配置のみ1フレーム出力
+        frame_labels: フレームのラベルリスト
+        views: 視角名リスト（VIEW_PRESETSのキー）。Noneの場合は
+            ["isometric", "front_xy", "side_xz", "end_yz"]
+        figsize: 図のサイズ
+        dpi: 解像度
+        n_circ: 円周方向分割数
+
+    Returns:
+        出力されたPNGファイルのパスリスト
+    """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from xkep_cae.output.render_beam_3d import VIEW_PRESETS, render_twisted_wire_3d
+
+    if views is None:
+        views = ["isometric", "front_xy", "side_xz", "end_yz"]
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    if node_coords_frames is None:
+        node_coords_frames = [None]
+        if frame_labels is None:
+            frame_labels = ["Initial"]
+
+    if frame_labels is None:
+        frame_labels = [f"Frame {i}" for i in range(len(node_coords_frames))]
+
+    output_files: list[Path] = []
+
+    for frame_idx, (coords, label) in enumerate(zip(node_coords_frames, frame_labels, strict=True)):
+        for vname in views:
+            preset = VIEW_PRESETS[vname]
+            title = f"{label} — {preset['label']}"
+            fig, _ax = render_twisted_wire_3d(
+                mesh,
+                node_coords=coords,
+                elev=float(preset["elev"]),
+                azim=float(preset["azim"]),
+                title=title,
+                figsize=figsize,
+                dpi=dpi,
+                n_circ=n_circ,
+            )
+
+            fname = f"frame_{frame_idx:04d}_{vname}.png"
+            fpath = out_path / fname
+            fig.savefig(fpath, bbox_inches="tight", facecolor="white")
+            plt.close(fig)
+            output_files.append(fpath)
+
+    return output_files
+
+
+def export_3d_animation_gif(
+    mesh,
+    output_dir: str | Path = "animation",
+    *,
+    node_coords_frames: list[np.ndarray] | None = None,
+    frame_labels: list[str] | None = None,
+    views: list[str] | None = None,
+    figsize: tuple[float, float] = (12.0, 10.0),
+    dpi: int = 150,
+    n_circ: int = 12,
+    duration: int = 200,
+    loop: int = 0,
+) -> list[Path]:
+    """TwistedWireMeshの3DチューブアニメーションをGIF出力する.
+
+    各視角ごとに1つのGIFファイルを生成する。
+
+    Args:
+        mesh: TwistedWireMesh オブジェクト
+        output_dir: 出力ディレクトリパス
+        node_coords_frames: フレームごとの節点座標リスト
+        frame_labels: フレームのラベルリスト
+        views: 視角名リスト。Noneの場合は
+            ["isometric", "front_xy", "side_xz", "end_yz"]
+        figsize: 図のサイズ
+        dpi: 解像度
+        n_circ: 円周方向分割数
+        duration: フレーム間の表示時間（ミリ秒）
+        loop: ループ回数（0=無限ループ）
+
+    Returns:
+        出力されたGIFファイルのパスリスト
+    """
+    import io
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from PIL import Image as PILImage
+
+    from xkep_cae.output.render_beam_3d import VIEW_PRESETS, render_twisted_wire_3d
+
+    if views is None:
+        views = ["isometric", "front_xy", "side_xz", "end_yz"]
+
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    if node_coords_frames is None:
+        node_coords_frames = [None]
+        if frame_labels is None:
+            frame_labels = ["Initial"]
+
+    if frame_labels is None:
+        frame_labels = [f"Frame {i}" for i in range(len(node_coords_frames))]
+
+    output_files: list[Path] = []
+
+    for vname in views:
+        preset = VIEW_PRESETS[vname]
+        pil_images: list[PILImage.Image] = []
+
+        for coords, label in zip(node_coords_frames, frame_labels, strict=True):
+            title = f"{label} — {preset['label']}"
+            fig, _ax = render_twisted_wire_3d(
+                mesh,
+                node_coords=coords,
+                elev=float(preset["elev"]),
+                azim=float(preset["azim"]),
+                title=title,
+                figsize=figsize,
+                dpi=dpi,
+                n_circ=n_circ,
+            )
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight", facecolor="white")
+            plt.close(fig)
+            buf.seek(0)
+            img = PILImage.open(buf).convert("RGB")
+            pil_images.append(img)
+
+        gif_path = out_path / f"animation_3d_{vname}.gif"
+        if len(pil_images) == 1:
+            pil_images[0].save(gif_path, format="GIF")
+        else:
+            pil_images[0].save(
+                gif_path,
+                format="GIF",
+                save_all=True,
+                append_images=pil_images[1:],
+                duration=duration,
+                loop=loop,
+            )
+        output_files.append(gif_path)
+
+    return output_files
+
+
 __all__ = [
+    "export_3d_animation",
+    "export_3d_animation_gif",
     "export_field_animation",
     "export_field_animation_gif",
     "render_beam_animation_frame",
