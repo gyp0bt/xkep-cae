@@ -253,20 +253,21 @@ def _build_contact_manager(
     linear_solver: str = "auto",
     line_contact: bool = True,
     coating_stiffness: float = 0.0,
+    coating_damping: float = 0.0,
     core_radii: np.ndarray | None = None,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
-    kpen_mode = "beam_ei" if auto_kpen else "manual"
-    kpen_scale = 0.1 if auto_kpen else 1e5
+    # 常に材料ベースでk_penを推定（status-140: 手動モード廃止）
+    kpen_scale = 0.1
 
     return ContactManager(
         config=ContactConfig(
             k_pen_scale=kpen_scale,
-            k_pen_mode=kpen_mode,
-            beam_E=E if auto_kpen else 0.0,
-            beam_I=section.Iy if auto_kpen else 0.0,
-            beam_A=section.A if auto_kpen else 0.0,
+            k_pen_mode="beam_ei",
+            beam_E=E,
+            beam_I=section.Iy,
+            beam_A=section.A,
             k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=g_on,
@@ -292,6 +293,7 @@ def _build_contact_manager(
             ncp_active_threshold=ncp_active_threshold,
             lambda_relaxation=lambda_relaxation,
             coating_stiffness=coating_stiffness,
+            coating_damping=coating_damping,
         ),
     )
 
@@ -544,6 +546,9 @@ def run_bending_oscillation(
     # 被膜モデル
     coating_thickness: float = 0.0,
     coating_stiffness: float = 0.0,
+    coating_youngs: float = 0.0,
+    coating_nu: float = 0.4,
+    coating_damping: float = 0.0,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -630,8 +635,15 @@ def run_bending_oscillation(
     if coating_thickness > 0.0:
         from xkep_cae.mesh.twisted_wire import CoatingModel, coated_radii
 
-        _coat_model = CoatingModel(thickness=coating_thickness, E=1e8, nu=0.4)
+        _coating_youngs = coating_youngs if coating_youngs > 0.0 else 1e8
+        _coat_model = CoatingModel(thickness=coating_thickness, E=_coating_youngs, nu=coating_nu)
         contact_radii = coated_radii(mesh, _coat_model)
+        # k_coat 自動導出: Winkler基盤 k = E_coat / t_coat [Pa/m]
+        if coating_stiffness <= 0.0 and _coating_youngs > 0.0:
+            coating_stiffness = _coating_youngs / coating_thickness
+        # 粘性減衰の自動推定（ζ=1.0 臨界減衰、面密度ρ*t近似）
+        if coating_damping <= 0.0 and coating_stiffness > 0.0:
+            coating_damping = 0.0  # デフォルト無減衰（ユーザ指定時のみ有効）
     else:
         contact_radii = mesh.radii
 
@@ -698,6 +710,7 @@ def run_bending_oscillation(
         linear_solver=linear_solver,
         line_contact=line_contact,
         coating_stiffness=coating_stiffness,
+        coating_damping=coating_damping,
     )
 
     # ------------------------------------------------------------------

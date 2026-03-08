@@ -68,6 +68,7 @@ class ContactState:
     stick: bool = True
     dissipation: float = 0.0
     coating_compression: float = 0.0  # 被膜圧縮量 [m]（被膜接触モデル用）
+    coating_compression_prev: float = 0.0  # 前ステップの被膜圧縮量 [m]（粘性項用）
     # Gauss point friction states (for line contact friction, Phase C6-L1b)
     gp_z_t: list[np.ndarray] | None = None
     gp_stick: list[bool] | None = None
@@ -92,6 +93,7 @@ class ContactState:
             stick=self.stick,
             dissipation=self.dissipation,
             coating_compression=self.coating_compression,
+            coating_compression_prev=self.coating_compression_prev,
             gp_z_t=[z.copy() for z in self.gp_z_t] if self.gp_z_t is not None else None,
             gp_stick=list(self.gp_stick) if self.gp_stick is not None else None,
             gp_q_trial_norm=list(self.gp_q_trial_norm)
@@ -169,11 +171,11 @@ class ContactConfig:
         contact_tangent_scale: "scaled" モード時の K_c スケール係数 α ∈ (0,1]。
     """
 
-    k_pen_scale: float = 1.0
-    k_pen_mode: str = "manual"  # "manual" | "beam_ei" | "ea_l" （自動推定モード）
-    beam_E: float = 0.0  # 梁ヤング率（beam_ei / ea_l モード用）
-    beam_I: float = 0.0  # 梁代表断面二次モーメント（beam_ei モード用）
-    beam_A: float = 0.0  # 梁断面積（ea_l モード用）
+    k_pen_scale: float = 0.1  # k_pen無次元スケール係数（材料剛性に対する比率）
+    k_pen_mode: str = "beam_ei"  # "beam_ei" | "ea_l" （材料ベース自動推定モード）
+    beam_E: float = 0.0  # 梁ヤング率 [応力単位]（k_pen自動推定に必須）
+    beam_I: float = 0.0  # 梁代表断面二次モーメント [長さ⁴]（beam_ei モード用）
+    beam_A: float = 0.0  # 梁断面積 [長さ²]（ea_l モード用）
     k_t_ratio: float = 0.5
     mu: float = 0.3
     g_on: float = 0.0
@@ -264,6 +266,8 @@ class ContactConfig:
     position_tolerance: float = 0.0  # 初期貫入の許容量 [m]。0=無制限（adjust時のみ有効）
     # --- 被膜接触モデル（status-137: gap_offset廃止 → 被膜層を陽にモデル化） ---
     coating_stiffness: float = 0.0  # 被膜接触剛性 [Pa/m]。0=被膜モデル無効（従来互換）
+    # --- 被膜粘性減衰（status-140: Kelvin-Voigt粘性項） ---
+    coating_damping: float = 0.0  # 被膜粘性減衰係数 [Pa·s/m]。0=減衰なし
 
 
 @dataclass
@@ -799,48 +803,53 @@ class ContactManager:
     def compute_coating_forces(
         self,
         node_coords: np.ndarray,
+        dt: float = 1.0,
     ) -> np.ndarray:
         """被膜圧縮による接触力ベクトルを計算する.
 
-        被膜接触モデル: 被膜層を弾性スプリングとしてモデル化。
+        Kelvin-Voigt被膜モデル: 弾性スプリング + 粘性ダッシュポット。
         被膜圧縮量 δ = max(0, t_coat_total - gap_core) に対し
-        f_coat = k_coating * δ の法線力を生成する。
+        f_coat = k * δ + c * δ̇ の法線力を生成する。
+
+        δ̇ ≈ (δ - δ_prev) / dt （後退差分近似）
 
         Args:
             node_coords: 節点座標 (n_nodes, 3)
+            dt: 時間増分 [s]（粘性項の計算に使用）
 
         Returns:
-            (f_coat, coat_pairs_info) — f_coat: 節点力ベクトル (ndof,),
-            coat_pairs_info: 被膜接触のペアインデックスと力のリスト
+            f_coat: 節点力ベクトル (ndof,)
         """
         k_coat = self.config.coating_stiffness
+        c_coat = self.config.coating_damping
         coords = np.asarray(node_coords, dtype=float)
         n_nodes = len(coords)
-        # 6DOF/node（梁要素: 並進3+回転3）に対応
         ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
         f_coat = np.zeros(n_nodes * ndof_per_node)
 
         for pair in self.pairs:
             cc = pair.state.coating_compression
-            if cc <= 0.0:
+            if cc <= 0.0 and pair.state.coating_compression_prev <= 0.0:
                 continue
 
-            # 被膜スプリング力
+            # Kelvin-Voigt: f = k * δ + c * δ̇
             f_n = k_coat * cc
+            if c_coat > 0.0 and dt > 0.0:
+                delta_dot = (cc - pair.state.coating_compression_prev) / dt
+                f_n += c_coat * delta_dot
 
-            # 法線方向の力を節点に分配
+            if abs(f_n) < 1e-30:
+                continue
+
             n_vec = pair.state.normal
             s = pair.state.s
             t = pair.state.t
 
-            # 形状関数: セグメントAの(1-s, s), セグメントBの(1-t, t)
             nA0 = int(pair.nodes_a[0])
             nA1 = int(pair.nodes_a[1])
             nB0 = int(pair.nodes_b[0])
             nB1 = int(pair.nodes_b[1])
 
-            # AをBから離す方向（法線は A→B）
-            # セグメントAには -n方向、セグメントBには +n方向の力
             fA = -f_n * n_vec
             fB = f_n * n_vec
 
@@ -856,25 +865,31 @@ class ContactManager:
         self,
         node_coords: np.ndarray,
         ndof_total: int,
+        dt: float = 1.0,
     ) -> np.ndarray:
-        """被膜スプリングの接線剛性行列を計算する.
+        """被膜Kelvin-Voigtモデルの接線剛性行列を計算する.
 
-        K_coat = k_coat * α * N^T (n ⊗ n) N
+        K_coat = (k_coat + c_coat/dt) * N^T (n ⊗ n) N
 
-        ここで N は形状関数行列、n は法線ベクトル、
-        α = d(smooth_max(δ))/dδ = 0.5*(1 + δ/sqrt(δ²+ε²))
-        は smooth Macaulay bracket の微分係数。
+        弾性項 k_coat と粘性項 c_coat/dt の合算が接線剛性となる。
+        後退Euler離散化により c*δ̇ ≈ c*(δ-δ_prev)/dt の δ に対する微分が c/dt。
 
         Args:
             node_coords: 節点座標 (n_nodes, 3)
             ndof_total: 全体自由度数
+            dt: 時間増分 [s]（粘性項の接線剛性 c/dt に使用）
 
         Returns:
-            K_coat: (ndof_total, ndof_total) CSR形式被膜スプリング剛性行列
+            K_coat: (ndof_total, ndof_total) CSR形式被膜剛性行列
         """
         import scipy.sparse as sp
 
         k_coat = self.config.coating_stiffness
+        c_coat = self.config.coating_damping
+        # 実効接線剛性: 弾性 + 粘性（後退Euler）
+        k_eff = k_coat
+        if c_coat > 0.0 and dt > 0.0:
+            k_eff += c_coat / dt
         ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
 
         rows: list[int] = []
@@ -886,10 +901,6 @@ class ContactManager:
             if cc <= 1e-15:
                 continue
 
-            # max(0, δ) の微分: δ > 0 → 1, δ = 0 → 0
-            # cc > 0 なら α = 1.0（活性領域）
-            alpha_smooth = 1.0
-
             n_vec = pair.state.normal
             s = pair.state.s
             t = pair.state.t
@@ -899,12 +910,9 @@ class ContactManager:
             nB0 = int(pair.nodes_b[0])
             nB1 = int(pair.nodes_b[1])
 
-            # 形状関数の重み: セグメントAは-(1-s), -s（離す方向）
-            # セグメントBは+(1-t), +t
             weights = [-(1.0 - s), -s, (1.0 - t), t]
             node_ids = [nA0, nA1, nB0, nB1]
 
-            # ギャップ勾配ベクトル g_n = [w_i * n] (12x1)
             gdofs = []
             g_n = np.zeros(12)
             for idx, (w, nid) in enumerate(zip(weights, node_ids, strict=True)):
@@ -912,8 +920,7 @@ class ContactManager:
                 gdofs.extend([base, base + 1, base + 2])
                 g_n[3 * idx : 3 * idx + 3] = w * n_vec
 
-            # K_coat_local = k_coat * α * g_n ⊗ g_n (12x12)
-            K_local = (k_coat * alpha_smooth) * np.outer(g_n, g_n)
+            K_local = k_eff * np.outer(g_n, g_n)
 
             for i_loc in range(12):
                 for j_loc in range(12):
