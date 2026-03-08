@@ -51,7 +51,7 @@ print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
 
 # 共通パラメータ（point contact, mesh_gap で初期貫入防止）
 COMMON_PARAMS = dict(

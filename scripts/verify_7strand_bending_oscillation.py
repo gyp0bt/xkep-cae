@@ -17,8 +17,6 @@ import sys
 import time
 from pathlib import Path
 
-import numpy as np
-
 # --- ログ tee設定 ---
 log_path = f"/tmp/verify_7strand_{int(time.time())}.log"
 
@@ -48,7 +46,7 @@ print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
 
 # ==================================================================
 # 共通パラメータ
@@ -113,7 +111,7 @@ result_90 = run_bending_oscillation(
     **_COMMON_PARAMS,
 )
 t_90 = time.perf_counter() - t0
-print(f"\n結果:")
+print("\n結果:")
 print(f"  Phase1(曲げ): converged={result_90.phase1_converged}")
 print(f"  Phase2(揺動): converged={result_90.phase2_converged}")
 print(f"  総計算時間: {t_90:.2f}s")
