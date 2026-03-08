@@ -97,6 +97,7 @@ from xkep_cae.contact.solver_hooks import (
 from xkep_cae.contact.solver_ncp import (
     ConvergenceDiagnostics,
     NCPSolveResult,
+    NCPSolverInput,
     _solve_saddle_point_direct,
     _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
@@ -156,6 +157,7 @@ __all__ = [
     "update_al_multiplier",
     "TimingRecord",
     "NCPSolveResult",
+    "NCPSolverInput",
     "build_augmented_residual",
     "compute_gap_jacobian_wrt_u",
     "evaluate_ncp_jacobian",

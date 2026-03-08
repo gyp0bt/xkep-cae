@@ -1515,7 +1515,43 @@ def assemble_cr_beam3d(
             K_T_dense[np.ix_(edofs, edofs)] += K_e
         return K_T_dense, f_int_global
 
-    # --- COO インデックス事前計算 (stiffness + sparse用) ---
+    # --- ベクトル化パス（解析的接線 + sparse） ---
+    if analytical_tangent and n_elems > 0:
+        batch_coo, batch_fint = _assemble_cr_beam3d_batch(
+            nodes_init,
+            connectivity,
+            u,
+            E,
+            G,
+            A,
+            Iy,
+            Iz,
+            J,
+            kappa_y,
+            kappa_z,
+            v_ref=v_ref,
+            scf=scf,
+            stiffness=stiffness,
+            internal_force=internal_force,
+            analytical_tangent=True,
+        )
+
+        if internal_force and batch_fint is not None:
+            f_int_global = batch_fint
+
+        if stiffness and batch_coo is not None:
+            import scipy.sparse as sp
+
+            block_nnz = m * m  # 144
+            coo_rows = np.repeat(all_edofs, m, axis=1).ravel()
+            coo_cols = np.tile(all_edofs, (1, m)).ravel()
+            K_T_csr = sp.csr_matrix((batch_coo, (coo_rows, coo_cols)), shape=(ndof, ndof))
+            K_T_csr.sum_duplicates()
+            return K_T_csr, f_int_global
+
+        return None, f_int_global
+
+    # --- フォールバック: 数値微分用の逐次ループ ---
     if stiffness:
         import scipy.sparse as sp
 
@@ -1525,7 +1561,6 @@ def assemble_cr_beam3d(
         coo_cols = np.tile(all_edofs, (1, m)).ravel()
         coo_data = np.empty(total_nnz, dtype=float)
 
-    # --- 要素ループ ---
     for i in range(n_elems):
         n1, n2 = int(conn_int[i, 0]), int(conn_int[i, 1])
         coords = nodes_init[np.array([n1, n2])]
@@ -1548,10 +1583,7 @@ def assemble_cr_beam3d(
             )
             f_int_global[edofs] += f_e
         if stiffness:
-            _tangent_fn = (
-                timo_beam3d_cr_tangent_analytical if analytical_tangent else timo_beam3d_cr_tangent
-            )
-            K_e = _tangent_fn(
+            K_e = timo_beam3d_cr_tangent(
                 coords,
                 u_elem,
                 E,
@@ -1568,13 +1600,595 @@ def assemble_cr_beam3d(
             offset = i * block_nnz
             coo_data[offset : offset + block_nnz] = K_e.ravel()
 
-    # --- CSR 変換 ---
     if stiffness:
         K_T_csr = sp.csr_matrix((coo_data, (coo_rows, coo_cols)), shape=(ndof, ndof))
         K_T_csr.sum_duplicates()
         return K_T_csr, f_int_global
 
     return None, f_int_global
+
+
+# ---------------------------------------------------------------------------
+# Vectorized (batch) CR beam assembly — 要素ループのベクトル化
+# ---------------------------------------------------------------------------
+
+
+def _batch_skew(v: np.ndarray) -> np.ndarray:
+    """バッチ歪対称行列 [v]×.
+
+    Args:
+        v: (n, 3) ベクトル配列
+
+    Returns:
+        S: (n, 3, 3) 歪対称行列配列
+    """
+    n = v.shape[0]
+    S = np.zeros((n, 3, 3), dtype=float)
+    S[:, 0, 1] = -v[:, 2]
+    S[:, 0, 2] = v[:, 1]
+    S[:, 1, 0] = v[:, 2]
+    S[:, 1, 2] = -v[:, 0]
+    S[:, 2, 0] = -v[:, 1]
+    S[:, 2, 1] = v[:, 0]
+    return S
+
+
+def _batch_rotvec_to_rotmat(thetas: np.ndarray) -> np.ndarray:
+    """バッチ回転ベクトル→回転行列（四元数経由）.
+
+    Args:
+        thetas: (n, 3) 回転ベクトル配列
+
+    Returns:
+        Rs: (n, 3, 3) 回転行列配列
+    """
+    n = thetas.shape[0]
+    angles = np.linalg.norm(thetas, axis=1)  # (n,)
+
+    # 四元数生成（指数写像）
+    small = angles < 1e-12
+    half = angles / 2.0
+    half_sq = half * half
+
+    # sinc = sin(half)/angle, cos_half = cos(half)
+    sinc = np.empty(n, dtype=float)
+    cos_half = np.empty(n, dtype=float)
+    sinc[small] = 0.5 - half_sq[small] / 48.0
+    cos_half[small] = 1.0 - half_sq[small] / 2.0
+    big = ~small
+    sinc[big] = np.sin(half[big]) / angles[big]
+    cos_half[big] = np.cos(half[big])
+
+    # q = [w, x, y, z]
+    w = cos_half  # (n,)
+    xyz = sinc[:, None] * thetas  # (n, 3)
+    x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+
+    # 回転行列への変換
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+
+    Rs = np.empty((n, 3, 3), dtype=float)
+    Rs[:, 0, 0] = 1.0 - 2.0 * (yy + zz)
+    Rs[:, 0, 1] = 2.0 * (xy - wz)
+    Rs[:, 0, 2] = 2.0 * (xz + wy)
+    Rs[:, 1, 0] = 2.0 * (xy + wz)
+    Rs[:, 1, 1] = 1.0 - 2.0 * (xx + zz)
+    Rs[:, 1, 2] = 2.0 * (yz - wx)
+    Rs[:, 2, 0] = 2.0 * (xz - wy)
+    Rs[:, 2, 1] = 2.0 * (yz + wx)
+    Rs[:, 2, 2] = 1.0 - 2.0 * (xx + yy)
+    return Rs
+
+
+def _batch_rotmat_to_rotvec(Rs: np.ndarray) -> np.ndarray:
+    """バッチ回転行列→回転ベクトル（四元数経由、Shepperd法ベクトル化）.
+
+    Args:
+        Rs: (n, 3, 3) 回転行列配列
+
+    Returns:
+        rotvecs: (n, 3) 回転ベクトル配列
+    """
+    n = Rs.shape[0]
+    trace = Rs[:, 0, 0] + Rs[:, 1, 1] + Rs[:, 2, 2]  # (n,)
+
+    # Shepperd法: 4ケースの最大対角成分を選択
+    # case0: trace > max(diag) → w が最大
+    # case1: R[0,0] が最大
+    # case2: R[1,1] が最大
+    # case3: R[2,2] が最大
+    diag_vals = np.stack([trace, Rs[:, 0, 0], Rs[:, 1, 1], Rs[:, 2, 2]], axis=1)  # (n, 4)
+    best = np.argmax(diag_vals, axis=1)  # (n,)
+
+    q = np.empty((n, 4), dtype=float)
+
+    # Case 0: trace > others
+    m0 = best == 0
+    if np.any(m0):
+        s = 2.0 * np.sqrt(trace[m0] + 1.0)
+        q[m0, 0] = 0.25 * s
+        q[m0, 1] = (Rs[m0, 2, 1] - Rs[m0, 1, 2]) / s
+        q[m0, 2] = (Rs[m0, 0, 2] - Rs[m0, 2, 0]) / s
+        q[m0, 3] = (Rs[m0, 1, 0] - Rs[m0, 0, 1]) / s
+
+    # Case 1: R[0,0] が最大
+    m1 = best == 1
+    if np.any(m1):
+        s = 2.0 * np.sqrt(1.0 + Rs[m1, 0, 0] - Rs[m1, 1, 1] - Rs[m1, 2, 2])
+        q[m1, 0] = (Rs[m1, 2, 1] - Rs[m1, 1, 2]) / s
+        q[m1, 1] = 0.25 * s
+        q[m1, 2] = (Rs[m1, 0, 1] + Rs[m1, 1, 0]) / s
+        q[m1, 3] = (Rs[m1, 0, 2] + Rs[m1, 2, 0]) / s
+
+    # Case 2: R[1,1] が最大
+    m2 = best == 2
+    if np.any(m2):
+        s = 2.0 * np.sqrt(1.0 + Rs[m2, 1, 1] - Rs[m2, 0, 0] - Rs[m2, 2, 2])
+        q[m2, 0] = (Rs[m2, 0, 2] - Rs[m2, 2, 0]) / s
+        q[m2, 1] = (Rs[m2, 0, 1] + Rs[m2, 1, 0]) / s
+        q[m2, 2] = 0.25 * s
+        q[m2, 3] = (Rs[m2, 1, 2] + Rs[m2, 2, 1]) / s
+
+    # Case 3: R[2,2] が最大
+    m3 = best == 3
+    if np.any(m3):
+        s = 2.0 * np.sqrt(1.0 + Rs[m3, 2, 2] - Rs[m3, 0, 0] - Rs[m3, 1, 1])
+        q[m3, 0] = (Rs[m3, 1, 0] - Rs[m3, 0, 1]) / s
+        q[m3, 1] = (Rs[m3, 0, 2] + Rs[m3, 2, 0]) / s
+        q[m3, 2] = (Rs[m3, 1, 2] + Rs[m3, 2, 1]) / s
+        q[m3, 3] = 0.25 * s
+
+    # w >= 0 に正規化
+    neg_w = q[:, 0] < 0
+    q[neg_w] = -q[neg_w]
+
+    # 正規化
+    norms = np.linalg.norm(q, axis=1, keepdims=True)
+    norms = np.maximum(norms, 1e-15)
+    q = q / norms
+
+    # 対数写像: q → rotvec
+    vec = q[:, 1:4]  # (n, 3)
+    sin_half = np.linalg.norm(vec, axis=1)  # (n,)
+    small = sin_half < 1e-12
+    big = ~small
+
+    coeff = np.empty(n, dtype=float)
+    coeff[small] = 2.0
+    coeff[big] = 2.0 * np.arctan2(sin_half[big], q[big, 0]) / sin_half[big]
+
+    return coeff[:, None] * vec
+
+
+def _batch_rodrigues_rotation(e_from: np.ndarray, e_to: np.ndarray) -> np.ndarray:
+    """バッチ最小回転行列（Rodrigues公式）.
+
+    Args:
+        e_from: (n, 3) 回転元の単位ベクトル
+        e_to: (n, 3) 回転先の単位ベクトル
+
+    Returns:
+        Rs: (n, 3, 3) 回転行列配列
+    """
+    v = np.cross(e_from, e_to)  # (n, 3)
+    s = np.linalg.norm(v, axis=1)  # (n,) sin(angle)
+    c = np.sum(e_from * e_to, axis=1)  # (n,) cos(angle)
+
+    small = s < 1e-14
+
+    # 通常ケース: Rodrigues公式
+    vx = _batch_skew(v)  # (n, 3, 3)
+    vx2 = np.einsum("nij,njk->nik", vx, vx)  # (n, 3, 3)
+
+    eye3 = np.eye(3, dtype=float)
+    # (1 - c) / s^2 の係数、s=0 のときは 0 にする
+    denom = s * s
+    denom[small] = 1.0  # ゼロ除算回避
+    coeff = (1.0 - c) / denom  # (n,)
+    coeff[small] = 0.0
+
+    Rs = eye3[None, :, :] + vx + coeff[:, None, None] * vx2
+
+    # 同方向（s≈0, c>0）→ 恒等行列
+    same_dir = small & (c > 0)
+    Rs[same_dir] = eye3
+
+    # 反対方向（s≈0, c<0）→ 180°回転
+    opposite = small & (c <= 0)
+    if np.any(opposite):
+        opp_idx = np.where(opposite)[0]
+        for idx in opp_idx:
+            ef = e_from[idx]
+            abs_ef = np.abs(ef)
+            if abs_ef[0] <= abs_ef[1] and abs_ef[0] <= abs_ef[2]:
+                perp = np.array([1.0, 0.0, 0.0])
+            elif abs_ef[1] <= abs_ef[2]:
+                perp = np.array([0.0, 1.0, 0.0])
+            else:
+                perp = np.array([0.0, 0.0, 1.0])
+            axis = np.cross(ef, perp)
+            axis = axis / np.linalg.norm(axis)
+            Rs[idx] = 2.0 * np.outer(axis, axis) - eye3
+
+    return Rs
+
+
+def _batch_build_local_axes(e_x: np.ndarray, v_ref: np.ndarray | None = None) -> np.ndarray:
+    """バッチ局所座標系構築.
+
+    Args:
+        e_x: (n, 3) 梁軸方向の単位ベクトル配列
+        v_ref: (3,) 参照ベクトル（全要素共通）。None の場合は自動選択。
+
+    Returns:
+        Rs: (n, 3, 3) 回転行列配列（行ベクトルが局所軸）
+    """
+    n = e_x.shape[0]
+
+    if v_ref is not None:
+        # 全要素で同じ参照ベクトル
+        vr = np.tile(v_ref, (n, 1))  # (n, 3)
+    else:
+        # 要素ごとに最も直交する座標軸を選択
+        abs_ex = np.abs(e_x)  # (n, 3)
+        vr = np.zeros((n, 3), dtype=float)
+        min_idx = np.argmin(abs_ex, axis=1)  # (n,)
+        vr[np.arange(n), min_idx] = 1.0
+
+    # Gram-Schmidt: e_z = e_x × v_ref, e_y = e_z × e_x
+    e_z = np.cross(e_x, vr)  # (n, 3)
+    norm_ez = np.linalg.norm(e_z, axis=1, keepdims=True)  # (n, 1)
+    norm_ez = np.maximum(norm_ez, 1e-10)
+    e_z = e_z / norm_ez
+    e_y = np.cross(e_z, e_x)  # (n, 3)
+
+    Rs = np.empty((n, 3, 3), dtype=float)
+    Rs[:, 0, :] = e_x
+    Rs[:, 1, :] = e_y
+    Rs[:, 2, :] = e_z
+    return Rs
+
+
+def _batch_tangent_operator(thetas: np.ndarray) -> np.ndarray:
+    """バッチ接線演算子 T_s(θ).
+
+    Args:
+        thetas: (n, 3) 回転ベクトル配列
+
+    Returns:
+        Ts: (n, 3, 3) 接線演算子配列
+    """
+    n = thetas.shape[0]
+    angles = np.linalg.norm(thetas, axis=1)  # (n,)
+    S = _batch_skew(thetas)  # (n, 3, 3)
+    S2 = np.einsum("nij,njk->nik", S, S)  # (n, 3, 3)
+
+    small = angles < 1e-10
+    big = ~small
+
+    eye3 = np.eye(3, dtype=float)
+    Ts = np.tile(eye3, (n, 1, 1))  # (n, 3, 3)
+
+    if np.any(small):
+        Ts[small] += 0.5 * S[small] + (1.0 / 6.0) * S2[small]
+
+    if np.any(big):
+        a = angles[big]
+        c = np.cos(a)
+        s = np.sin(a)
+        a2 = a * a
+        coeff1 = (1.0 - c) / a2
+        coeff2 = (1.0 - s / a) / a2
+        Ts[big] += coeff1[:, None, None] * S[big] + coeff2[:, None, None] * S2[big]
+
+    return Ts
+
+
+def _batch_tangent_operator_inv(thetas: np.ndarray) -> np.ndarray:
+    """バッチ接線演算子の逆 T_s^{-1}(θ).
+
+    Args:
+        thetas: (n, 3) 回転ベクトル配列
+
+    Returns:
+        T_inv: (n, 3, 3) 接線演算子の逆配列
+    """
+    n = thetas.shape[0]
+    angles = np.linalg.norm(thetas, axis=1)  # (n,)
+    S = _batch_skew(thetas)  # (n, 3, 3)
+    S2 = np.einsum("nij,njk->nik", S, S)  # (n, 3, 3)
+
+    small = angles < 1e-10
+    big = ~small
+
+    eye3 = np.eye(3, dtype=float)
+    T_inv = np.tile(eye3, (n, 1, 1))  # (n, 3, 3)
+
+    if np.any(small):
+        T_inv[small] += -0.5 * S[small] + (1.0 / 12.0) * S2[small]
+
+    if np.any(big):
+        a = angles[big]
+        c = np.cos(a)
+        s = np.sin(a)
+        a2 = a * a
+        coeff = 1.0 / a2 - (1.0 + c) / (2.0 * a * s)
+        T_inv[big] += -0.5 * S[big] + coeff[:, None, None] * S2[big]
+
+    return T_inv
+
+
+def _batch_timo_ke_local(
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    L: np.ndarray,
+    kappa_y: float,
+    kappa_z: float,
+    scf: float | None = None,
+) -> np.ndarray:
+    """バッチ局所剛性行列計算（L のみ要素依存）.
+
+    Args:
+        E, G, A, Iy, Iz, J, kappa_y, kappa_z: 材料・断面定数（全要素共通）
+        L: (n,) 要素長さ配列
+        scf: スレンダネス補償係数
+
+    Returns:
+        Ke: (n, 12, 12) 局所剛性行列配列
+    """
+    n = L.shape[0]
+
+    Phi_y = 12.0 * E * Iy / (kappa_y * G * A * L * L)  # (n,)
+    Phi_z = 12.0 * E * Iz / (kappa_z * G * A * L * L)  # (n,)
+
+    if scf is not None and scf > 0.0:
+        slenderness_y = L * L * A / (12.0 * Iy)
+        f_p_y = 1.0 / (1.0 + scf * slenderness_y)
+        Phi_y = Phi_y * f_p_y
+        slenderness_z = L * L * A / (12.0 * Iz)
+        f_p_z = 1.0 / (1.0 + scf * slenderness_z)
+        Phi_z = Phi_z * f_p_z
+
+    denom_y = 1.0 + Phi_y  # (n,)
+    denom_z = 1.0 + Phi_z  # (n,)
+
+    Ke = np.zeros((n, 12, 12), dtype=float)
+
+    EA_L = E * A / L  # (n,)
+    Ke[:, 0, 0] = EA_L
+    Ke[:, 0, 6] = -EA_L
+    Ke[:, 6, 0] = -EA_L
+    Ke[:, 6, 6] = EA_L
+
+    GJ_L = G * J / L
+    Ke[:, 3, 3] = GJ_L
+    Ke[:, 3, 9] = -GJ_L
+    Ke[:, 9, 3] = -GJ_L
+    Ke[:, 9, 9] = GJ_L
+
+    # xy面曲げ (EIz)
+    L2 = L * L
+    L3 = L2 * L
+    EIz_L3 = E * Iz / L3
+    EIz_L2 = E * Iz / L2
+    EIz_L = E * Iz / L
+
+    Ke[:, 1, 1] = 12.0 * EIz_L3 / denom_z
+    Ke[:, 1, 5] = 6.0 * EIz_L2 / denom_z
+    Ke[:, 1, 7] = -12.0 * EIz_L3 / denom_z
+    Ke[:, 1, 11] = 6.0 * EIz_L2 / denom_z
+    Ke[:, 5, 1] = 6.0 * EIz_L2 / denom_z
+    Ke[:, 5, 5] = (4.0 + Phi_z) * EIz_L / denom_z
+    Ke[:, 5, 7] = -6.0 * EIz_L2 / denom_z
+    Ke[:, 5, 11] = (2.0 - Phi_z) * EIz_L / denom_z
+    Ke[:, 7, 1] = -12.0 * EIz_L3 / denom_z
+    Ke[:, 7, 5] = -6.0 * EIz_L2 / denom_z
+    Ke[:, 7, 7] = 12.0 * EIz_L3 / denom_z
+    Ke[:, 7, 11] = -6.0 * EIz_L2 / denom_z
+    Ke[:, 11, 1] = 6.0 * EIz_L2 / denom_z
+    Ke[:, 11, 5] = (2.0 - Phi_z) * EIz_L / denom_z
+    Ke[:, 11, 7] = -6.0 * EIz_L2 / denom_z
+    Ke[:, 11, 11] = (4.0 + Phi_z) * EIz_L / denom_z
+
+    # xz面曲げ (EIy)
+    EIy_L3 = E * Iy / L3
+    EIy_L2 = E * Iy / L2
+    EIy_L = E * Iy / L
+
+    Ke[:, 2, 2] = 12.0 * EIy_L3 / denom_y
+    Ke[:, 2, 4] = -6.0 * EIy_L2 / denom_y
+    Ke[:, 2, 8] = -12.0 * EIy_L3 / denom_y
+    Ke[:, 2, 10] = -6.0 * EIy_L2 / denom_y
+    Ke[:, 4, 2] = -6.0 * EIy_L2 / denom_y
+    Ke[:, 4, 4] = (4.0 + Phi_y) * EIy_L / denom_y
+    Ke[:, 4, 8] = 6.0 * EIy_L2 / denom_y
+    Ke[:, 4, 10] = (2.0 - Phi_y) * EIy_L / denom_y
+    Ke[:, 8, 2] = -12.0 * EIy_L3 / denom_y
+    Ke[:, 8, 4] = 6.0 * EIy_L2 / denom_y
+    Ke[:, 8, 8] = 12.0 * EIy_L3 / denom_y
+    Ke[:, 8, 10] = 6.0 * EIy_L2 / denom_y
+    Ke[:, 10, 2] = -6.0 * EIy_L2 / denom_y
+    Ke[:, 10, 4] = (2.0 - Phi_y) * EIy_L / denom_y
+    Ke[:, 10, 8] = 6.0 * EIy_L2 / denom_y
+    Ke[:, 10, 10] = (4.0 + Phi_y) * EIy_L / denom_y
+
+    return Ke
+
+
+def _assemble_cr_beam3d_batch(
+    nodes_init: np.ndarray,
+    connectivity: np.ndarray,
+    u: np.ndarray,
+    E: float,
+    G: float,
+    A: float,
+    Iy: float,
+    Iz: float,
+    J: float,
+    kappa_y: float,
+    kappa_z: float,
+    *,
+    v_ref: np.ndarray | None = None,
+    scf: float | None = None,
+    stiffness: bool = True,
+    internal_force: bool = True,
+    analytical_tangent: bool = True,
+) -> tuple:
+    """ベクトル化された CR Timoshenko 3D 梁アセンブリ.
+
+    全要素をバッチ処理してPythonループを排除。
+    解析的接線剛性 (analytical_tangent=True) 専用。
+
+    Returns:
+        (coo_data, f_int_global) — coo_data は (n_elems * 144,) の COO値配列。
+        呼び出し元で CSR 変換する。
+    """
+    conn_int = connectivity.astype(np.int64)
+    n_elems = len(conn_int)
+    n_nodes = len(nodes_init)
+    ndof = 6 * n_nodes
+
+    # --- 全要素の座標・変位を一括抽出 ---
+    coords_all = nodes_init[conn_int]  # (n_elems, 2, 3)
+    m = 12
+    dof_offsets = np.arange(6, dtype=np.int64)
+    all_edofs = (conn_int[:, :, None] * 6 + dof_offsets[None, None, :]).reshape(n_elems, m)
+    u_all = u[all_edofs]  # (n_elems, 12)
+
+    # --- Step 1: 初期形状の長さ・方向 ---
+    dx0 = coords_all[:, 1] - coords_all[:, 0]  # (n, 3)
+    L_0 = np.linalg.norm(dx0, axis=1)  # (n,)
+    e_x_0 = dx0 / L_0[:, None]  # (n, 3)
+
+    # --- Step 2: 初期ローカルフレーム R_0 ---
+    R_0 = _batch_build_local_axes(e_x_0, v_ref)  # (n, 3, 3)
+
+    # --- Step 3: 変形後の形状 ---
+    x1_def = coords_all[:, 0] + u_all[:, 0:3]  # (n, 3)
+    x2_def = coords_all[:, 1] + u_all[:, 6:9]  # (n, 3)
+    dx_def = x2_def - x1_def  # (n, 3)
+    L_def = np.linalg.norm(dx_def, axis=1)  # (n,)
+    e_x_def = dx_def / L_def[:, None]  # (n, 3)
+
+    # --- Step 4: Rodrigues 回転 → corotated フレーム ---
+    R_rod = _batch_rodrigues_rotation(e_x_0, e_x_def)  # (n, 3, 3)
+    # R_cr = R_0 @ R_rod^T
+    R_cr = np.einsum("nij,nkj->nik", R_0, R_rod)  # (n, 3, 3)
+
+    # --- Step 5: 節点回転行列 ---
+    R_node1 = _batch_rotvec_to_rotmat(u_all[:, 3:6])  # (n, 3, 3)
+    R_node2 = _batch_rotvec_to_rotmat(u_all[:, 9:12])  # (n, 3, 3)
+
+    # --- Step 6: 自然変形回転 ---
+    # R_def = R_cr @ R_node @ R_0^T
+    R_0_T = np.einsum("nji->nij", R_0)  # (n, 3, 3) transpose
+    R_def1 = np.einsum("nij,njk,nkl->nil", R_cr, R_node1, R_0_T)  # (n, 3, 3)
+    R_def2 = np.einsum("nij,njk,nkl->nil", R_cr, R_node2, R_0_T)  # (n, 3, 3)
+    theta_def1 = _batch_rotmat_to_rotvec(R_def1)  # (n, 3)
+    theta_def2 = _batch_rotmat_to_rotvec(R_def2)  # (n, 3)
+
+    # --- Step 7: d_cr 構築 ---
+    d_cr = np.zeros((n_elems, 12), dtype=float)
+    d_cr[:, 3:6] = theta_def1
+    d_cr[:, 6] = L_def - L_0
+    d_cr[:, 9:12] = theta_def2
+
+    # --- Step 8: バッチ局所剛性 ---
+    Ke_local = _batch_timo_ke_local(
+        E, G, A, Iy, Iz, J, L_0, kappa_y, kappa_z, scf=scf
+    )  # (n, 12, 12)
+
+    # --- Step 9: 局所内力 f_cr = Ke_local @ d_cr ---
+    f_cr = np.einsum("nij,nj->ni", Ke_local, d_cr)  # (n, 12)
+
+    # --- Step 10: 変換行列 T_cr (12x12 ブロック対角) と f_global ---
+    R_cr_T = np.einsum("nji->nij", R_cr)  # (n, 3, 3)
+    f_int_global = None
+    if internal_force:
+        # T_cr^T @ f_cr = R_cr^T @ f_cr_blocks (4ブロック)
+        f_global = np.empty((n_elems, 12), dtype=float)
+        for blk in range(4):
+            s = 3 * blk
+            f_global[:, s : s + 3] = np.einsum("nij,nj->ni", R_cr_T, f_cr[:, s : s + 3])
+
+        # scatter-add to global
+        f_int_global = np.zeros(ndof, dtype=float)
+        np.add.at(f_int_global, all_edofs.ravel(), f_global.ravel())
+
+    # --- Step 11: 接線剛性（解析的） ---
+    coo_data = None
+    if stiffness and analytical_tangent:
+        # B行列構築
+        S_ex = _batch_skew(e_x_def)  # (n, 3, 3)
+        R_cr_S_ex = np.einsum("nij,njk->nik", R_cr, S_ex)  # (n, 3, 3)
+        inv_L = 1.0 / L_def  # (n,)
+        dpsi_du1 = inv_L[:, None, None] * R_cr_S_ex  # (n, 3, 3)
+        dpsi_du2 = -dpsi_du1  # (n, 3, 3)
+
+        T_inv1 = _batch_tangent_operator_inv(theta_def1)  # (n, 3, 3)
+        T_inv2 = _batch_tangent_operator_inv(theta_def2)  # (n, 3, 3)
+        T_s1 = _batch_tangent_operator(u_all[:, 3:6])  # (n, 3, 3)
+        T_s2 = _batch_tangent_operator(u_all[:, 9:12])  # (n, 3, 3)
+
+        B = np.zeros((n_elems, 12, 12), dtype=float)
+        # 軸方向
+        B[:, 6, 0:3] = -e_x_def
+        B[:, 6, 6:9] = e_x_def
+
+        # 節点1回転
+        B[:, 3:6, 0:3] = np.einsum("nij,njk->nik", T_inv1, dpsi_du1)
+        B[:, 3:6, 6:9] = np.einsum("nij,njk->nik", T_inv1, dpsi_du2)
+        B[:, 3:6, 3:6] = np.einsum("nij,njk,nkl->nil", T_inv1, R_cr, T_s1)
+
+        # 節点2回転
+        B[:, 9:12, 0:3] = np.einsum("nij,njk->nik", T_inv2, dpsi_du1)
+        B[:, 9:12, 6:9] = np.einsum("nij,njk->nik", T_inv2, dpsi_du2)
+        B[:, 9:12, 9:12] = np.einsum("nij,njk,nkl->nil", T_inv2, R_cr, T_s2)
+
+        # T_cr^T @ Ke_local @ B (ブロック対角変換)
+        # T_cr^T @ M は各3x3ブロックに R_cr^T を適用
+        # まず Ke_local @ B
+        KB = np.einsum("nij,njk->nik", Ke_local, B)  # (n, 12, 12)
+
+        # T_cr^T @ KB: ブロック対角なので4つの3x12サブブロックを変換
+        K_mat = np.empty((n_elems, 12, 12), dtype=float)
+        for blk in range(4):
+            s = 3 * blk
+            K_mat[:, s : s + 3, :] = np.einsum("nij,njk->nik", R_cr_T, KB[:, s : s + 3, :])
+
+        # 幾何剛性 K_geo — 全要素一括計算（activeフィルタなし）
+        K_geo = np.zeros((n_elems, 12, 12), dtype=float)
+        for blk in range(4):
+            s = 3 * blk
+            f_blk = f_cr[:, s : s + 3]  # (n, 3)
+            Sf = _batch_skew(f_blk)  # (n, 3, 3)
+            RtSf = np.einsum("nij,njk->nik", R_cr_T, Sf)  # (n, 3, 3)
+            K_geo[:, s : s + 3, 0:3] += np.einsum("nij,njk->nik", RtSf, dpsi_du1)
+            K_geo[:, s : s + 3, 6:9] += np.einsum("nij,njk->nik", RtSf, dpsi_du2)
+
+        # K_T = K_mat + K_geo, 対称化
+        K_T = K_mat + K_geo  # (n, 12, 12)
+        K_T = 0.5 * (K_T + np.einsum("nij->nji", K_T))
+
+        coo_data = K_T.reshape(-1)  # (n * 144,)
+
+    elif stiffness and not analytical_tangent:
+        # 数値微分の場合はバッチ化が困難 → フォールバック
+        coo_data = None
+
+    return coo_data, f_int_global
 
 
 # ---------------------------------------------------------------------------

@@ -715,7 +715,7 @@ def run_bending_oscillation(
             snap_labels.append(label)
 
     # 初期状態
-    _record_snapshot(np.zeros(ndof), "初期")
+    _record_snapshot(np.zeros(ndof), "initial")
 
     # ------------------------------------------------------------------
     # Phase 1: 曲げ
@@ -758,7 +758,6 @@ def run_bending_oscillation(
             ul_asm.coords_ref,
             mesh.connectivity,
             mesh.radii,
-            n_load_steps=n_bending_steps,
             max_iter=max_iter,
             tol_force=tol_force,
             tol_ncp=tol_force,
@@ -807,7 +806,6 @@ def run_bending_oscillation(
             mesh.node_coords,
             mesh.connectivity,
             mesh.radii,
-            n_load_steps=n_bending_steps,
             max_iter=max_iter,
             tol_force=tol_force,
             tol_ncp=tol_force,
@@ -818,6 +816,7 @@ def run_bending_oscillation(
             n_gauss=n_gauss,
             k_pen=ncp_k_pen,
             adaptive_timestepping=adaptive_timestepping,
+            dt_initial_fraction=_dt_init_frac,
             modified_nr_threshold=modified_nr_threshold,
             prescribed_dofs=rx_dofs_end_arr,
             prescribed_values=prescribed_vals,
@@ -858,7 +857,7 @@ def run_bending_oscillation(
         )
 
     u_after_bend = result_bend.u.copy()
-    _record_snapshot(u_after_bend, f"曲げ完了 ({bend_angle_deg}°)")
+    _record_snapshot(u_after_bend, f"bend done ({bend_angle_deg}deg)")
 
     if show_progress:
         tip_node = mesh.strand_nodes(0)[-1]
@@ -956,7 +955,6 @@ def run_bending_oscillation(
                 ul_asm.coords_ref,
                 mesh.connectivity,
                 mesh.radii,
-                n_load_steps=1,  # adaptive制御に一任
                 max_iter=max_iter,
                 tol_force=tol_force,
                 tol_ncp=tol_force,
@@ -1035,7 +1033,6 @@ def run_bending_oscillation(
                     _phase2_node_coords,
                     mesh.connectivity,
                     mesh.radii,
-                    n_load_steps=1,
                     max_iter=max_iter,
                     tol_force=tol_force,
                     tol_ncp=tol_force,
