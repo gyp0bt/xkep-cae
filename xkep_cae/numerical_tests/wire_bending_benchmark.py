@@ -252,6 +252,8 @@ def _build_contact_manager(
     midpoint_prescreening: bool = True,
     linear_solver: str = "auto",
     line_contact: bool = True,
+    coating_stiffness: float = 0.0,
+    core_radii: np.ndarray | None = None,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
@@ -289,6 +291,7 @@ def _build_contact_manager(
             saddle_regularization=saddle_regularization,
             ncp_active_threshold=ncp_active_threshold,
             lambda_relaxation=lambda_relaxation,
+            coating_stiffness=coating_stiffness,
         ),
     )
 
@@ -538,6 +541,9 @@ def run_bending_oscillation(
     min_elems_per_pitch: int = 16,
     # Updated Lagrangian
     use_updated_lagrangian: bool = False,
+    # 被膜モデル
+    coating_thickness: float = 0.0,
+    coating_stiffness: float = 0.0,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -616,8 +622,18 @@ def run_bending_oscillation(
         n_pitches=n_pitches,
         strand_diameter=strand_diameter,
         min_elems_per_pitch=min_elems_per_pitch,
+        coating_thickness=coating_thickness,
     )
     timing.record(0, 0, -1, "mesh_generation", time.perf_counter() - t0)
+
+    # 被膜ありの場合、接触半径を被膜込み / 芯線半径を分離
+    if coating_thickness > 0.0:
+        from xkep_cae.mesh.twisted_wire import CoatingModel, coated_radii
+
+        _coat_model = CoatingModel(thickness=coating_thickness, E=1e8, nu=0.4)
+        contact_radii = coated_radii(mesh, _coat_model)
+    else:
+        contact_radii = mesh.radii
 
     section = BeamSection.circle(wire_diameter)
     ndof_total = mesh.n_nodes * _NDOF_PER_NODE
@@ -681,16 +697,17 @@ def run_bending_oscillation(
         midpoint_prescreening=midpoint_prescreening,
         linear_solver=linear_solver,
         line_contact=line_contact,
+        coating_stiffness=coating_stiffness,
     )
 
     # ------------------------------------------------------------------
-    # 4b. 初期貫入オフセット（LS-DYNA IGNORE=1 相当）
+    # 4b. 初期貫入チェック
     # ------------------------------------------------------------------
     t0 = time.perf_counter()
     mgr.detect_candidates(
         mesh.node_coords,
         mesh.connectivity,
-        mesh.radii,
+        contact_radii,
         margin=broadphase_margin,
     )
     n_initial_pen = mgr.check_initial_penetration(mesh.node_coords)
@@ -756,7 +773,7 @@ def run_bending_oscillation(
             mgr,
             ul_asm.coords_ref,
             mesh.connectivity,
-            mesh.radii,
+            contact_radii,
             max_iter=max_iter,
             tol_force=tol_force,
             tol_ncp=tol_force,
@@ -804,7 +821,7 @@ def run_bending_oscillation(
             mgr,
             mesh.node_coords,
             mesh.connectivity,
-            mesh.radii,
+            contact_radii,
             max_iter=max_iter,
             tol_force=tol_force,
             tol_ncp=tol_force,
@@ -846,7 +863,7 @@ def run_bending_oscillation(
             mgr,
             mesh.node_coords,
             mesh.connectivity,
-            mesh.radii,
+            contact_radii,
             n_load_steps=n_bending_steps,
             max_iter=max_iter,
             tol_force=tol_force,
@@ -953,7 +970,7 @@ def run_bending_oscillation(
                 mgr,
                 ul_asm.coords_ref,
                 mesh.connectivity,
-                mesh.radii,
+                contact_radii,
                 max_iter=max_iter,
                 tol_force=tol_force,
                 tol_ncp=tol_force,
@@ -1031,7 +1048,7 @@ def run_bending_oscillation(
                     mgr,
                     _phase2_node_coords,
                     mesh.connectivity,
-                    mesh.radii,
+                    contact_radii,
                     max_iter=max_iter,
                     tol_force=tol_force,
                     tol_ncp=tol_force,
@@ -1064,7 +1081,7 @@ def run_bending_oscillation(
                     mgr,
                     mesh.node_coords,
                     mesh.connectivity,
-                    mesh.radii,
+                    contact_radii,
                     n_load_steps=1,
                     max_iter=max_iter,
                     tol_force=tol_force,

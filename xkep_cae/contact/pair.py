@@ -799,8 +799,8 @@ class ContactManager:
     def compute_coating_forces(
         self,
         node_coords: np.ndarray,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """被膜圧縮による接触力ベクトルと剛性行列を計算する.
+    ) -> np.ndarray:
+        """被膜圧縮による接触力ベクトルを計算する.
 
         被膜接触モデル: 被膜層を弾性スプリングとしてモデル化。
         被膜圧縮量 δ = max(0, t_coat_total - gap_core) に対し
