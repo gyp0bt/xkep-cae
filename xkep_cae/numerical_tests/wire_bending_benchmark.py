@@ -693,12 +693,11 @@ def run_bending_oscillation(
         mesh.radii,
         margin=broadphase_margin,
     )
-    n_initial_pen = mgr.store_initial_offsets(mesh.node_coords)
-    timing.record(0, 0, -1, "initial_penetration_offset", time.perf_counter() - t0)
+    n_initial_pen = mgr.check_initial_penetration(mesh.node_coords)
+    timing.record(0, 0, -1, "initial_penetration_check", time.perf_counter() - t0)
 
     if show_progress and n_initial_pen > 0:
-        max_offset = min(p.gap_offset for p in mgr.pairs if p.gap_offset < 0.0)
-        print(f"  初期貫入オフセット: {n_initial_pen}ペア（最大 {max_offset * 1000:.4f} mm）")
+        print(f"  初期貫入検出: {n_initial_pen}ペア")
 
     # ------------------------------------------------------------------
     # GIF 用スナップショット収集

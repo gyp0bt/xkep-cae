@@ -127,25 +127,17 @@ def diagnose_mesh_geometry(n_strands=7, n_pitches=0.5):
             use_mortar=False,
         ),
     )
-    mgr.detect_candidates(
-        mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01
-    )
-    n_pen = mgr.store_initial_offsets(mesh.node_coords)
+    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     print(f"\n  ContactManager 初期貫入ペア数: {n_pen}/{len(mgr.pairs)}")
     if n_pen > 0:
-        offsets = [p.gap_offset for p in mgr.pairs if p.gap_offset < 0.0]
-        print(
-            f"  最大初期貫入: {min(offsets) * 1000:.6f} mm "
-            f"(pen_ratio = {abs(min(offsets)) / (2 * r):.4f})"
-        )
+        print(f"  初期貫入検出: {n_pen}ペア")
     print(f"  全候補ペア数: {len(mgr.pairs)}")
 
     # 法線角度の不連続性チェック（隣接セグメント間）
     print("\n  接触ペアの法線方向:")
-    active_pairs = [
-        p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE
-    ]
+    active_pairs = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
     if active_pairs:
         normals = [p.state.normal for p in active_pairs[:10]]
         for i, n in enumerate(normals):
@@ -260,7 +252,9 @@ def diagnose_kpen_sensitivity(angle_deg=20.0):
 
     # 自動推定値の確認
     mesh = make_twisted_wire_mesh(
-        7, _WIRE_D, _PITCH,
+        7,
+        _WIRE_D,
+        _PITCH,
         length=0.0,
         n_elems_per_strand=max(4, int(round(_N_ELEMS_PER_PITCH * 0.5))),
         n_pitches=0.5,
@@ -293,10 +287,7 @@ def diagnose_kpen_sensitivity(angle_deg=20.0):
                 adaptive_timestepping=True,
                 ncp_k_pen=kp,
             )
-            print(
-                f"  結果: converged={result.converged}, "
-                f"iters={result.total_newton_iterations}"
-            )
+            print(f"  結果: converged={result.converged}, iters={result.total_newton_iterations}")
         except Exception as e:
             print(f"  エラー: {e}")
 
@@ -384,7 +375,9 @@ def diagnose_tangent_condition(angle_deg=20.0):
     print("=" * 70)
 
     mesh = make_twisted_wire_mesh(
-        7, _WIRE_D, _PITCH,
+        7,
+        _WIRE_D,
+        _PITCH,
         length=0.0,
         n_elems_per_strand=max(4, int(round(_N_ELEMS_PER_PITCH * 0.5))),
         n_pitches=0.5,
@@ -399,9 +392,19 @@ def diagnose_tangent_condition(angle_deg=20.0):
     u_zero = np.zeros(ndof)
 
     K_T, _ = assemble_cr_beam3d(
-        mesh.node_coords, mesh.connectivity, u_zero,
-        _E, G, section.A, section.Iy, section.Iz, section.J,
-        kappa, kappa, stiffness=True, internal_force=False,
+        mesh.node_coords,
+        mesh.connectivity,
+        u_zero,
+        _E,
+        G,
+        section.A,
+        section.Iy,
+        section.Iz,
+        section.J,
+        kappa,
+        kappa,
+        stiffness=True,
+        internal_force=False,
     )
 
     from scipy.sparse.linalg import eigsh
@@ -419,12 +422,14 @@ def diagnose_tangent_condition(angle_deg=20.0):
         free = sorted(set(range(ndof)) - fixed)
         K_free = K_dense[np.ix_(free, free)]
 
-        eig_max = eigsh(
-            K_free.astype(np.float64), k=1, which="LM", return_eigenvectors=False
-        )[0]
+        eig_max = eigsh(K_free.astype(np.float64), k=1, which="LM", return_eigenvectors=False)[0]
         eig_min = eigsh(
-            K_free.astype(np.float64), k=1, which="SM", return_eigenvectors=False,
-            sigma=0, mode="normal"
+            K_free.astype(np.float64),
+            k=1,
+            which="SM",
+            return_eigenvectors=False,
+            sigma=0,
+            mode="normal",
         )[0]
         cond = abs(eig_max / eig_min) if abs(eig_min) > 1e-30 else float("inf")
         print(f"  初期状態:")
@@ -485,7 +490,9 @@ def _run_ncp_bending(
 ):
     """7本撚線NCP曲げを実行（Phase1のみ）."""
     mesh = make_twisted_wire_mesh(
-        7, _WIRE_D, _PITCH,
+        7,
+        _WIRE_D,
+        _PITCH,
         length=0.0,
         n_elems_per_strand=max(4, int(round(_N_ELEMS_PER_PITCH * n_pitches))),
         n_pitches=n_pitches,
@@ -498,17 +505,37 @@ def _run_ncp_bending(
 
     def assemble_tangent(u):
         K_T, _ = assemble_cr_beam3d(
-            mesh.node_coords, mesh.connectivity, u,
-            _E, G, section.A, section.Iy, section.Iz, section.J,
-            kappa, kappa, stiffness=True, internal_force=False,
+            mesh.node_coords,
+            mesh.connectivity,
+            u,
+            _E,
+            G,
+            section.A,
+            section.Iy,
+            section.Iz,
+            section.J,
+            kappa,
+            kappa,
+            stiffness=True,
+            internal_force=False,
         )
         return K_T
 
     def assemble_internal_force(u):
         _, f_int = assemble_cr_beam3d(
-            mesh.node_coords, mesh.connectivity, u,
-            _E, G, section.A, section.Iy, section.Iz, section.J,
-            kappa, kappa, stiffness=False, internal_force=True,
+            mesh.node_coords,
+            mesh.connectivity,
+            u,
+            _E,
+            G,
+            section.A,
+            section.Iy,
+            section.Iz,
+            section.J,
+            kappa,
+            kappa,
+            stiffness=False,
+            internal_force=True,
         )
         return f_int
 
@@ -551,10 +578,8 @@ def _run_ncp_bending(
             use_geometric_stiffness=True,
         ),
     )
-    mgr.detect_candidates(
-        mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01
-    )
-    mgr.store_initial_offsets(mesh.node_coords)
+    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    mgr.check_initial_penetration(mesh.node_coords)
 
     result = newton_raphson_contact_ncp(
         np.zeros(ndof),
