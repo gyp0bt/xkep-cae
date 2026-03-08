@@ -176,7 +176,7 @@
 - [x] **被膜接線剛性実装 + 6DOFバグ修正 + 収束検証**（status-139: compute_coating_stiffness追加、k=1e6で完全収束、3D投影可視化）
 - [x] **mm-ton-MPa移行 + Kelvin-Voigt粘性減衰 + k_pen材料ベース強制**（status-140）
 - [ ] 全テストのmm-ton-MPa移行（~100ファイルの定数変換）
-- [ ] 被膜接触の摩擦モデル統合（梁-梁、被膜-被膜、被膜-梁）
+- [x] **被膜Coulomb摩擦モデル実装 + 摩擦core関数抽出**（status-141: return_mapping_core/tangent_2x2_core純粋関数化、被膜摩擦のsolver_ncp統合）
 - [ ] 19本→37本のスケールアップ
 - [ ] CR梁の摩擦接触不収束の原因調査
 - [ ] 37本Layer1+2圧縮の段階的活性化による収束改善確認
