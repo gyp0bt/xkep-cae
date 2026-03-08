@@ -32,7 +32,7 @@ from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 def _make_spring_system_validation(
     k_spring: float = 1e4,
     ndof_per_node: int = 6,
-    z_sep: float = 0.035,
+    z_sep: float = 0.04,
     radii: float = 0.04,
 ):
     """バリデーション用2交差梁ばねモデル.
