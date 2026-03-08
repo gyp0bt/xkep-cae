@@ -309,6 +309,9 @@ class NCPSolveResult:
     contact_force_history: list[float] = field(default_factory=list)
     graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
     diagnostics: ConvergenceDiagnostics | None = None
+    # 動的解析結果（dynamics=True 時のみ有効）
+    velocity: np.ndarray | None = None
+    acceleration: np.ndarray | None = None
 
     @property
     def n_load_steps(self) -> int:
@@ -1542,6 +1545,13 @@ def newton_raphson_contact_ncp(
     lambda_init: np.ndarray | None = None,
     # --- δ正則化（Uzawa regularization） ---
     contact_compliance: float = 0.0,
+    # --- 動的解析（Newmark-β / Generalized-α）---
+    mass_matrix: object | None = None,
+    damping_matrix: object | None = None,
+    dt_physical: float = 0.0,
+    rho_inf: float = 1.0,
+    velocity: np.ndarray | None = None,
+    acceleration: np.ndarray | None = None,
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1614,13 +1624,44 @@ def newton_raphson_contact_ncp(
         lambda_decay: inactive遷移時のλ減衰率 ∈ (0, 1]。
             1.0 で即座にゼロ化（従来動作）。0.5 で半減衰。
             段階的なλ減衰により、active→inactive遷移時の力の急変を緩和する。
+        mass_matrix: 質量行列（疎行列 or 密行列）。None の場合は準静的解析。
+            指定時は dt_physical > 0 必須。Newmark-β / Generalized-α 時間積分を使用。
+        damping_matrix: 減衰行列（Rayleigh減衰 C = α_R·M + β_R·K など）。
+            None の場合は減衰なし。mass_matrix と同時に指定。
+        dt_physical: 物理的時間増分 [s]。load_frac 0→1 が dt_physical に対応。
+            適応時間増分で分割される場合、各サブステップの物理時間は
+            dt_sub = dt_physical * (load_frac - load_frac_prev) となる。
+        rho_inf: Generalized-α のスペクトル半径 ∈ [0, 1]。
+            1.0 = Newmark平均加速度法（エネルギー保存、数値減衰なし）。
+            0.0 = 最大数値減衰（高周波完全減衰）。推奨: 0.9〜1.0。
+        velocity: (ndof,) 初期速度。None の場合はゼロ。
+        acceleration: (ndof,) 初期加速度。None の場合はゼロ。
 
     Returns:
-        NCPSolveResult
+        NCPSolveResult（dynamics 時は velocity, acceleration も設定される）
     """
     ndof = f_ext_total.shape[0]
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
+
+    # --- 動的解析の初期化 ---
+    _dynamics = mass_matrix is not None and dt_physical > 0.0
+    if _dynamics:
+        _M = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
+        _C = sp.csr_matrix(damping_matrix) if damping_matrix is not None else None
+        _vel = velocity.copy() if velocity is not None else np.zeros(ndof)
+        _acc = acceleration.copy() if acceleration is not None else np.zeros(ndof)
+        # Generalized-α パラメータ（Chung & Hulbert 1993）
+        _alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
+        _alpha_f = rho_inf / (rho_inf + 1.0)
+        _nm_gamma = 0.5 - _alpha_m + _alpha_f
+        _nm_beta = 0.25 * (1.0 - _alpha_m + _alpha_f) ** 2
+        # サブステップ用の一時変数（step ループ内で更新）
+        _u_pred = np.zeros(ndof)
+        _v_pred = np.zeros(ndof)
+        _acc_old = _acc.copy()
+        _vel_old = _vel.copy()
+        _dt_sub = dt_physical  # 初期値（適応Δtで更新される）
 
     # --- n_load_steps → dt_initial_fraction 自動変換 ---
     # n_load_steps は deprecated。adaptive_timestepping の初期増分として変換する。
@@ -1853,6 +1894,10 @@ def newton_raphson_contact_ncp(
     _ul_frac_base_ckpt = _ul_frac_base
     if _ul:
         ul_assembler.checkpoint()
+    # 動的解析チェックポイント
+    if _dynamics:
+        _vel_ckpt = _vel.copy()
+        _acc_ckpt = _acc.copy()
 
     # 接線予測子用: 前ステップの変位増分を記録
     u_prev_converged = u.copy()
@@ -1948,7 +1993,17 @@ def newton_raphson_contact_ncp(
 
         # --- 接線予測子（前ステップの変位増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
-        if delta_frac_prev > 1e-30 and delta_frac > 1e-30:
+        if _dynamics:
+            # 動的解析: Newmark 予測子で初期推定
+            _dt_sub = dt_physical * delta_frac
+            _c0 = 1.0 / (_nm_beta * _dt_sub**2) if _dt_sub > 1e-30 else 0.0
+            _c1 = _nm_gamma / (_nm_beta * _dt_sub) if _dt_sub > 1e-30 else 0.0
+            _u_pred = _dt_sub * _vel + 0.5 * _dt_sub**2 * (1.0 - 2.0 * _nm_beta) * _acc
+            _v_pred = _vel + _dt_sub * (1.0 - _nm_gamma) * _acc
+            _acc_old = _acc.copy()
+            _vel_old = _vel.copy()
+            u = _u_pred.copy()
+        elif delta_frac_prev > 1e-30 and delta_frac > 1e-30:
             du_prev = u - u_prev_converged
             du_prev_norm = float(np.linalg.norm(du_prev))
             if du_prev_norm > 1e-30:
@@ -2239,6 +2294,21 @@ def newton_raphson_contact_ncp(
             # 5. 力残差
             f_int = assemble_internal_force(u)
             R_u = f_int + f_c - f_ext
+
+            # 5d. 動的解析: 慣性力・減衰力を残差に加算
+            if _dynamics and _dt_sub > 1e-30:
+                # Newmark 更新: 加速度・速度を現在の u から計算
+                _acc_new = _c0 * (u - _u_pred)
+                _vel_new = _v_pred + _dt_sub * _nm_gamma * _acc_new
+                # Generalized-α 中間時刻補間
+                _acc_alpha = (1.0 - _alpha_m) * _acc_new + _alpha_m * _acc_old
+                _vel_alpha = (1.0 - _alpha_f) * _vel_new + _alpha_f * _vel_old
+                # 慣性力: M·a_{n+1-α_m}
+                R_u = R_u + _M @ _acc_alpha
+                # 減衰力: C·v_{n+1-α_f}
+                if _C is not None:
+                    R_u = R_u + _C @ _vel_alpha
+
             R_u[fixed_dofs] = 0.0
 
             # 6. NCP 残差（Alart-Curnier 方式）
@@ -2444,6 +2514,12 @@ def newton_raphson_contact_ncp(
                     K_T = K_T + K_coat_fric
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
+
+            # 8d. 動的解析: 有効接線剛性に質量・減衰を加算
+            if _dynamics and _dt_sub > 1e-30:
+                K_T = K_T + (1.0 - _alpha_m) * _c0 * _M
+                if _C is not None:
+                    K_T = K_T + (1.0 - _alpha_f) * _c1 * _C
 
             # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
             if _use_mortar and len(mortar_nodes) > 0 and n_ncp_active > 0:
@@ -2693,6 +2769,10 @@ def newton_raphson_contact_ncp(
                 if _ul:
                     ul_assembler.rollback()
                     node_coords_ref = ul_assembler.coords_ref
+                # 動的解析: 速度・加速度をチェックポイントに復元
+                if _dynamics:
+                    _vel = _vel_ckpt.copy()
+                    _acc = _acc_ckpt.copy()
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
                 _consecutive_good = 0  # カットバック発生→積極成長モードに復帰
@@ -2728,6 +2808,8 @@ def newton_raphson_contact_ncp(
                     contact_force_history=contact_force_history,
                     graph_history=graph_history,
                     diagnostics=_diag,
+                    velocity=_vel.copy() if _dynamics else None,
+                    acceleration=_acc.copy() if _dynamics else None,
                 )
 
         # ステップ完了 — キューから消費
@@ -2737,6 +2819,11 @@ def newton_raphson_contact_ncp(
         if _use_coating:
             for pair in manager.pairs:
                 pair.state.coating_compression_prev = pair.state.coating_compression
+
+        # --- 動的解析: 収束後の速度・加速度更新 ---
+        if _dynamics and _dt_sub > 1e-30:
+            _acc = _c0 * (u - _u_pred)
+            _vel = _v_pred + _dt_sub * _nm_gamma * _acc
 
         # --- Updated Lagrangian: 参照配置更新 & 変位リセット ---
         if _ul:
@@ -2864,6 +2951,9 @@ def newton_raphson_contact_ncp(
         _ul_frac_base_ckpt = _ul_frac_base
         if _ul:
             ul_assembler.checkpoint()
+        if _dynamics:
+            _vel_ckpt = _vel.copy()
+            _acc_ckpt = _acc.copy()
 
         load_history.append(load_frac)
         _u_hist = ul_assembler.u_total_accum + u if _ul else u.copy()
@@ -2890,4 +2980,6 @@ def newton_raphson_contact_ncp(
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
         graph_history=graph_history,
+        velocity=_vel.copy() if _dynamics else None,
+        acceleration=_acc.copy() if _dynamics else None,
     )
