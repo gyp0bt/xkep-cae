@@ -79,9 +79,10 @@ class TestMeshGeneration1000:
         assert mesh.n_strands == n_strands
 
     def test_1000_strand_ndof(self):
-        """1000本撚線の自由度数が30000であること."""
+        """1000本撚線の自由度数が正しいこと."""
         mesh, _, _ = _benchmark_mesh_generation(1000)
-        assert mesh.n_nodes * 6 == 30000
+        expected_ndof = 1000 * (_N_ELEM_PER_STRAND + 1) * 6
+        assert mesh.n_nodes * 6 == expected_ndof
 
 
 class TestBroadphaseScaling:
