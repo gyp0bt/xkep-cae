@@ -85,6 +85,28 @@
 ![incr000](19strand/bend45/bend45_incr000_xy.png)
 ![incr001](19strand/bend45/bend45_incr001_xy.png)
 
+## 視角別マルチビュー — 初期メッシュ形状 (2026-03-08)
+
+> 時間ステップなし、視野違いの2D投影のみ。正面/側面/端面/斜め30°/等角/斜め60°/上面/底面 + 断面3箇所。
+
+### 7本撚線
+
+![7strand multiview](7strand/7strand_multiview_angles.png)
+
+[-> 7strand 詳細ギャラリー](7strand/gallery.md)
+
+### 19本撚線
+
+![19strand multiview](19strand/views/19strand_multiview_angles.png)
+
+[-> 19strand 詳細ギャラリー](19strand/views/gallery.md)
+
+### 37本撚線
+
+![37strand multiview](37strand/37strand_multiview_angles.png)
+
+[-> 37strand 詳細ギャラリー](37strand/gallery.md)
+
 ## Twisted wire mesh (status-120, 2026-03-06)
 
 ![twisted_wire_3d_surface](twisted_wire_3d_surface.png)
