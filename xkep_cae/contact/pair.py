@@ -976,9 +976,7 @@ class ContactManager:
         k_t_ratio = self.config.coating_k_t_ratio
         k_t = k_coat * k_t_ratio
 
-        ndof_per_node = (
-            self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-        )
+        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
         n_nodes = len(node_coords)
         f_fric = np.zeros(n_nodes * ndof_per_node)
         du = u_cur - u_ref
@@ -1014,9 +1012,7 @@ class ContactManager:
             du_B = (1.0 - t) * du_B0 + t * du_B1
             du_rel = du_B - du_A
 
-            delta_ut = np.array(
-                [float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))]
-            )
+            delta_ut = np.array([float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))])
 
             # Coulomb return mapping（純粋関数）
             q, is_stick, q_trial_norm, dissipation = return_mapping_core(
@@ -1071,9 +1067,7 @@ class ContactManager:
 
         k_coat = self.config.coating_stiffness
         k_t = k_coat * self.config.coating_k_t_ratio
-        ndof_per_node = (
-            self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-        )
+        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
 
         rows: list[int] = []
         cols: list[int] = []
@@ -1141,9 +1135,7 @@ class ContactManager:
         if not data:
             return sp.csr_matrix((ndof_total, ndof_total))
 
-        return sp.coo_matrix(
-            (data, (rows, cols)), shape=(ndof_total, ndof_total)
-        ).tocsr()
+        return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

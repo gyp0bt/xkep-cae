@@ -1741,15 +1741,15 @@ def newton_raphson_contact_ncp(
     _adjust = manager.config.adjust_initial_penetration
     _use_coating = manager.config.coating_stiffness > 0.0
 
-    # position_tolerance > 0: 小ギャップペアを接触位置に移動
-    if _adjust and _pos_tol > 0.0:
+    # 初期貫入修正 + 小ギャップ閉鎖（position_tolerance > 0 の場合）
+    if _adjust:
         node_coords_ref, n_pen_fixed, n_gap_closed = manager.adjust_initial_positions(
             node_coords_ref, _pos_tol
         )
         if show_progress and (n_pen_fixed + n_gap_closed) > 0:
             print(
                 f"  初期位置調整(adjust=yes, tol={_pos_tol * 1000:.3f}mm): "
-                f"ギャップ閉鎖={n_gap_closed}ペア"
+                f"貫入修正={n_pen_fixed}ペア, ギャップ閉鎖={n_gap_closed}ペア"
             )
         # 再検出
         manager.detect_candidates(
@@ -2048,9 +2048,7 @@ def newton_raphson_contact_ncp(
                 f_c = f_c + f_coat
                 # 4e. 被膜Coulomb摩擦力（status-140）
                 if manager.config.coating_mu > 0.0:
-                    f_coat_fric = manager.compute_coating_friction_forces(
-                        coords_def, u, u_ref
-                    )
+                    f_coat_fric = manager.compute_coating_friction_forces(coords_def, u, u_ref)
                     f_c = f_c + f_coat_fric
 
             # 5. 力残差
@@ -2254,9 +2252,7 @@ def newton_raphson_contact_ncp(
                 K_T = K_T + K_coat
                 # 8b3. 被膜Coulomb摩擦接線剛性（status-140）
                 if manager.config.coating_mu > 0.0:
-                    K_coat_fric = manager.compute_coating_friction_stiffness(
-                        coords_def, ndof
-                    )
+                    K_coat_fric = manager.compute_coating_friction_stiffness(coords_def, ndof)
                     K_T = K_T + K_coat_fric
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
