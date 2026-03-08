@@ -302,7 +302,9 @@ def train_model_pinn(
 
             # Physics loss (on denormalized ΔT)
             dt_pred = pred.squeeze(-1) * y_std + y_mean
-            K_mat = getattr(data, "K_sparse", None) or data.K_dense
+            K_mat = getattr(data, "K_sparse", None)
+            if K_mat is None:
+                K_mat = data.K_dense
             l_phys = compute_physics_loss(dt_pred, K_mat, data.f_shifted)
 
             loss = l_data + lambda_phys * l_phys
