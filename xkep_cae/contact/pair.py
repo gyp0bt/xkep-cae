@@ -507,7 +507,7 @@ class ContactManager:
             radii_b = np.array([p.radius_b for p in self.pairs])
             gap_core = dist_all - (core_a + core_b)
             coat_total = (radii_a - core_a) + (radii_b - core_b)
-            # 被膜圧縮量: coating_compression = max(0, t_coat_total - gap_core)
+            # 被膜圧縮量: max(0, t_coat_total - gap_core)
             coat_comp = np.maximum(0.0, coat_total - gap_core)
             # NCPに渡すギャップ: gap = gap_core（芯線間距離）
             # NCP complementarity は gap_core ≥ 0 を制約
@@ -815,8 +815,10 @@ class ContactManager:
         """
         k_coat = self.config.coating_stiffness
         coords = np.asarray(node_coords, dtype=float)
-        ndof = len(coords) * 3  # noqa: F841 — 将来の拡張用
-        f_coat = np.zeros(len(coords) * 3)
+        n_nodes = len(coords)
+        # 6DOF/node（梁要素: 並進3+回転3）に対応
+        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
+        f_coat = np.zeros(n_nodes * ndof_per_node)
 
         for pair in self.pairs:
             cc = pair.state.coating_compression
@@ -842,12 +844,89 @@ class ContactManager:
             fA = -f_n * n_vec
             fB = f_n * n_vec
 
-            f_coat[nA0 * 3 : nA0 * 3 + 3] += (1.0 - s) * fA
-            f_coat[nA1 * 3 : nA1 * 3 + 3] += s * fA
-            f_coat[nB0 * 3 : nB0 * 3 + 3] += (1.0 - t) * fB
-            f_coat[nB1 * 3 : nB1 * 3 + 3] += t * fB
+            dpn = ndof_per_node
+            f_coat[nA0 * dpn : nA0 * dpn + 3] += (1.0 - s) * fA
+            f_coat[nA1 * dpn : nA1 * dpn + 3] += s * fA
+            f_coat[nB0 * dpn : nB0 * dpn + 3] += (1.0 - t) * fB
+            f_coat[nB1 * dpn : nB1 * dpn + 3] += t * fB
 
         return f_coat
+
+    def compute_coating_stiffness(
+        self,
+        node_coords: np.ndarray,
+        ndof_total: int,
+    ) -> np.ndarray:
+        """被膜スプリングの接線剛性行列を計算する.
+
+        K_coat = k_coat * α * N^T (n ⊗ n) N
+
+        ここで N は形状関数行列、n は法線ベクトル、
+        α = d(smooth_max(δ))/dδ = 0.5*(1 + δ/sqrt(δ²+ε²))
+        は smooth Macaulay bracket の微分係数。
+
+        Args:
+            node_coords: 節点座標 (n_nodes, 3)
+            ndof_total: 全体自由度数
+
+        Returns:
+            K_coat: (ndof_total, ndof_total) CSR形式被膜スプリング剛性行列
+        """
+        import scipy.sparse as sp
+
+        k_coat = self.config.coating_stiffness
+        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
+
+        rows: list[int] = []
+        cols: list[int] = []
+        data: list[float] = []
+
+        for pair in self.pairs:
+            cc = pair.state.coating_compression
+            if cc <= 1e-15:
+                continue
+
+            # max(0, δ) の微分: δ > 0 → 1, δ = 0 → 0
+            # cc > 0 なら α = 1.0（活性領域）
+            alpha_smooth = 1.0
+
+            n_vec = pair.state.normal
+            s = pair.state.s
+            t = pair.state.t
+
+            nA0 = int(pair.nodes_a[0])
+            nA1 = int(pair.nodes_a[1])
+            nB0 = int(pair.nodes_b[0])
+            nB1 = int(pair.nodes_b[1])
+
+            # 形状関数の重み: セグメントAは-(1-s), -s（離す方向）
+            # セグメントBは+(1-t), +t
+            weights = [-(1.0 - s), -s, (1.0 - t), t]
+            node_ids = [nA0, nA1, nB0, nB1]
+
+            # ギャップ勾配ベクトル g_n = [w_i * n] (12x1)
+            gdofs = []
+            g_n = np.zeros(12)
+            for idx, (w, nid) in enumerate(zip(weights, node_ids, strict=True)):
+                base = nid * ndof_per_node
+                gdofs.extend([base, base + 1, base + 2])
+                g_n[3 * idx : 3 * idx + 3] = w * n_vec
+
+            # K_coat_local = k_coat * α * g_n ⊗ g_n (12x12)
+            K_local = (k_coat * alpha_smooth) * np.outer(g_n, g_n)
+
+            for i_loc in range(12):
+                for j_loc in range(12):
+                    val = K_local[i_loc, j_loc]
+                    if abs(val) > 1e-30:
+                        rows.append(gdofs[i_loc])
+                        cols.append(gdofs[j_loc])
+                        data.append(val)
+
+        if not data:
+            return sp.csr_matrix((ndof_total, ndof_total))
+
+        return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

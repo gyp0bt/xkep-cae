@@ -2227,6 +2227,11 @@ def newton_raphson_contact_ncp(
                 manager.config.n_gauss = _orig_ng
                 K_T = K_T + K_line
 
+            # 8b2. 被膜スプリング接線剛性（status-139: 被膜層の接線剛性寄与）
+            if _use_coating:
+                K_coat = manager.compute_coating_stiffness(coords_def, ndof)
+                K_T = K_T + K_coat
+
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
 
             # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
