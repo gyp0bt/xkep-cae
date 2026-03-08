@@ -98,11 +98,11 @@ results["bare"] = (result_bare, t_bare)
 # ==================================================================
 print()
 print("=" * 70)
-print("  ケース2: 被膜あり同士（coating_thickness=0.1mm, k_coat=1e8）")
+print("  ケース2: 被膜あり同士（coating_thickness=0.1mm, k_coat=E/t自動導出）")
 print("=" * 70)
 
-COAT_T = 0.0001  # 100μm
-COAT_K = 1e8  # Pa/m
+COAT_T = 0.1  # mm（100μm）
+COAT_K = 0.0  # 自動導出（E_coat / t_coat）
 
 t0 = time.perf_counter()
 result_coated = run_bending_oscillation(
@@ -119,20 +119,22 @@ print(f"  活性接触ペア: {result_coated.n_active_contacts}")
 results["coated"] = (result_coated, t_coated)
 
 # ==================================================================
-# ケース3: 被膜なし＋あり混合
-# 被膜パラメータありでメッシュを作るが、coating_stiffnessを低くして
-# 被膜接触の柔軟性を確認
+# ケース3: 被膜あり + 粘性減衰
+# 被膜パラメータ + Kelvin-Voigt粘性減衰で高剛性被膜の収束を改善
 # ==================================================================
 print()
 print("=" * 70)
-print("  ケース3: 被膜あり（低剛性, k_coat=1e6）")
+print("  ケース3: 被膜あり + 粘性減衰（ζ=0.5相当）")
 print("=" * 70)
 
 t0 = time.perf_counter()
+# 粘性減衰: c = k_coat * τ（τ: 緩和時間、荷重増分の数倍程度）
+# k_coat = E_coat / t = 100 / 0.1 = 1000 MPa/mm
+# c = 1000 * 0.1 = 100 MPa·s/mm（荷重増分=0.1程度を想定）
 result_soft_coat = run_bending_oscillation(
     **COMMON_PARAMS,
     coating_thickness=COAT_T,
-    coating_stiffness=1e6,  # 低剛性被膜
+    coating_damping=100.0,  # MPa·s/mm
 )
 t_soft = time.perf_counter() - t0
 
@@ -230,10 +232,10 @@ try:
     LAYER_COLORS = {0: "#e41a1c", 1: "#377eb8", 2: "#4daf4a", 3: "#984ea3"}
     ELEV, AZIM = 25.0, 45.0
     N_CIRC = 12
-    R_WIRE = 0.001  # 1mm radius
+    R_WIRE = 1.0  # mm radius
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    case_names = ["被膜なし", "被膜あり(k=1e8)", "被膜あり(k=1e6)"]
+    case_names = ["被膜なし", "被膜あり(E/t自動)", "被膜+粘性減衰"]
     case_keys = ["bare", "coated", "soft_coat"]
 
     for ax, name, key in zip(axes, case_names, case_keys, strict=True):
@@ -241,8 +243,8 @@ try:
         coat_t = 0.0 if key == "bare" else COAT_T
         mesh = make_twisted_wire_mesh(
             7,
-            0.002,
-            0.040,
+            2.0,  # mm
+            40.0,  # mm
             length=0.0,
             n_elems_per_strand=8,
             n_pitches=0.5,
@@ -325,7 +327,7 @@ all_pass = True
 for key, label in [
     ("bare", "被膜なし"),
     ("coated", "被膜あり(k=1e8)"),
-    ("soft_coat", "被膜あり(k=1e6)"),
+    ("soft_coat", "被膜+粘性減衰"),
 ]:
     result, t_elapsed = results[key]
     status = "PASS" if result.phase1_converged else "FAIL"
