@@ -37,9 +37,9 @@ class TestMaterialParameterization:
 
     def test_compute_G(self):
         """せん断弾性係数の計算."""
-        G = _compute_G(200e9, 0.3)
-        expected = 200e9 / (2.0 * 1.3)
-        assert abs(G - expected) < 1.0
+        G = _compute_G(200e3, 0.3)
+        expected = 200e3 / (2.0 * 1.3)
+        assert abs(G - expected) < 1e-6
 
     def test_compute_kappa(self):
         """Cowper せん断補正係数の計算."""
@@ -48,13 +48,13 @@ class TestMaterialParameterization:
         assert abs(kappa - expected) < 1e-10
 
     def test_default_values_unchanged(self):
-        """デフォルト値が鋼線値と一致."""
-        assert _DEFAULT_E == 200e9
+        """デフォルト値が鋼線値と一致（mm-ton-MPa単位系）."""
+        assert _DEFAULT_E == 200e3  # MPa
         assert _DEFAULT_NU == 0.3
 
     def test_custom_material(self):
         """カスタム材料の G/kappa 計算."""
-        E_aluminum = 70e9
+        E_aluminum = 70e3  # MPa
         nu_aluminum = 0.33
         G = _compute_G(E_aluminum, nu_aluminum)
         kappa = _compute_kappa(nu_aluminum)

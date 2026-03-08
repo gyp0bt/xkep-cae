@@ -110,7 +110,7 @@ class TestContactConfig:
     def test_defaults(self):
         """デフォルト設定値の確認."""
         cfg = ContactConfig()
-        assert cfg.k_pen_scale == 1.0
+        assert cfg.k_pen_scale == 0.1
         assert cfg.k_t_ratio == 0.5
         assert cfg.mu == pytest.approx(0.3)
         assert cfg.g_on == 0.0

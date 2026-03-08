@@ -148,10 +148,8 @@ def build_mortar_system(
             gap_vec = x_gp - x_proj
             gap_dist = float(np.linalg.norm(gap_vec))
 
-            # 半径補正
-            r_a = pair.state.radius_a if hasattr(pair.state, "radius_a") else 0.0
-            r_b = pair.state.radius_b if hasattr(pair.state, "radius_b") else 0.0
-            gap_val = gap_dist - (r_a + r_b)
+            # 半径補正（pair.radius_a/b を使用 — pair.state には radius 属性はない）
+            gap_val = gap_dist - (pair.radius_a + pair.radius_b)
 
             if gap_dist > 1e-30:
                 normal = gap_vec / gap_dist
@@ -266,8 +264,8 @@ def compute_mortar_contact_force(
 
         dofs = _contact_dofs(pair, ndof_per_node)
 
-        r_a = pair.state.radius_a if hasattr(pair.state, "radius_a") else 0.0
-        r_b = pair.state.radius_b if hasattr(pair.state, "radius_b") else 0.0
+        r_a = pair.radius_a
+        r_b = pair.radius_b
 
         for gp_idx in range(n_gauss):
             s_gp = gp_pts[gp_idx]

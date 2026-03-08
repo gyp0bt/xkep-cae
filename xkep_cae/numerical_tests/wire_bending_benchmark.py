@@ -47,9 +47,9 @@ from xkep_cae.sections.beam import BeamSection
 # 物理パラメータ（鋼線デフォルト）
 # ====================================================================
 
-_DEFAULT_E = 200e9  # Pa
+_DEFAULT_E = 200e3  # MPa（鋼、mm-ton-MPa単位系）
 _DEFAULT_NU = 0.3
-_WIRE_D = 0.002  # 2 mm 直径
+_WIRE_D = 2.0  # mm 直径（mm-ton-MPa単位系）
 _NDOF_PER_NODE = 6
 
 
@@ -242,7 +242,7 @@ def _build_contact_manager(
     # カテゴリD: 接触パラメータ（従来ハードコード）
     k_t_ratio: float = 0.1,
     g_on: float = 0.0,
-    g_off: float = 1e-5,
+    g_off: float = 0.01,  # mm
     use_line_search: bool = True,
     line_search_max_steps: int = 5,
     use_geometric_stiffness: bool = True,
@@ -253,20 +253,21 @@ def _build_contact_manager(
     linear_solver: str = "auto",
     line_contact: bool = True,
     coating_stiffness: float = 0.0,
+    coating_damping: float = 0.0,
     core_radii: np.ndarray | None = None,
 ) -> ContactManager:
     """接触マネージャを構築."""
     elem_layer_map = mesh.build_elem_layer_map()
-    kpen_mode = "beam_ei" if auto_kpen else "manual"
-    kpen_scale = 0.1 if auto_kpen else 1e5
+    # 常に材料ベースでk_penを推定（status-140: 手動モード廃止）
+    kpen_scale = 0.1
 
     return ContactManager(
         config=ContactConfig(
             k_pen_scale=kpen_scale,
-            k_pen_mode=kpen_mode,
-            beam_E=E if auto_kpen else 0.0,
-            beam_I=section.Iy if auto_kpen else 0.0,
-            beam_A=section.A if auto_kpen else 0.0,
+            k_pen_mode="beam_ei",
+            beam_E=E,
+            beam_I=section.Iy,
+            beam_A=section.A,
             k_t_ratio=k_t_ratio,
             mu=mu,
             g_on=g_on,
@@ -292,6 +293,7 @@ def _build_contact_manager(
             ncp_active_threshold=ncp_active_threshold,
             lambda_relaxation=lambda_relaxation,
             coating_stiffness=coating_stiffness,
+            coating_damping=coating_damping,
         ),
     )
 
@@ -382,7 +384,7 @@ def export_bending_oscillation_gif(
     deformed_frames = []
     for u in displacement_snapshots:
         coords_def = _deformed_coords(node_coords_ref, u)
-        deformed_frames.append(coords_def * 1000.0)  # m → mm
+        deformed_frames.append(coords_def)  # 既にmm単位
 
     output_files: list[Path] = []
 
@@ -481,11 +483,11 @@ def run_bending_oscillation(
     n_strands: int = 7,
     *,
     wire_diameter: float = _WIRE_D,
-    pitch: float = 0.040,
+    pitch: float = 40.0,  # mm
     n_elems_per_pitch: int = 16,
     n_elems_per_strand: int | None = None,  # 後方互換: 指定時は n_elems_per_pitch を上書き
     n_pitches: float = 1.0,
-    strand_diameter: float | None = None,  # 撚線外径 [m]（非貫入配置）
+    strand_diameter: float | None = None,  # 撚線外径 [mm]（非貫入配置）
     # 材料パラメータ（カテゴリB+C: ハードコード除去）
     E: float = _DEFAULT_E,
     nu: float = _DEFAULT_NU,
@@ -525,7 +527,7 @@ def run_bending_oscillation(
     # カテゴリD: 接触パラメータ（従来ハードコード）
     k_t_ratio: float = 0.1,
     g_on: float = 0.0,
-    g_off: float = 1e-5,
+    g_off: float = 0.01,  # mm
     use_line_search: bool = True,
     line_search_max_steps: int = 5,
     use_geometric_stiffness: bool = True,
@@ -536,7 +538,7 @@ def run_bending_oscillation(
     linear_solver: str = "auto",
     line_contact: bool = True,
     # カテゴリE: 数値パラメータ（従来ハードコード）
-    broadphase_margin: float = 0.01,
+    broadphase_margin: float = 10.0,  # mm
     # メッシュ密度検査
     min_elems_per_pitch: int = 16,
     # Updated Lagrangian
@@ -544,6 +546,9 @@ def run_bending_oscillation(
     # 被膜モデル
     coating_thickness: float = 0.0,
     coating_stiffness: float = 0.0,
+    coating_youngs: float = 0.0,
+    coating_nu: float = 0.4,
+    coating_damping: float = 0.0,
 ) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
@@ -630,8 +635,15 @@ def run_bending_oscillation(
     if coating_thickness > 0.0:
         from xkep_cae.mesh.twisted_wire import CoatingModel, coated_radii
 
-        _coat_model = CoatingModel(thickness=coating_thickness, E=1e8, nu=0.4)
+        _coating_youngs = coating_youngs if coating_youngs > 0.0 else 100.0  # MPa（PE被膜）
+        _coat_model = CoatingModel(thickness=coating_thickness, E=_coating_youngs, nu=coating_nu)
         contact_radii = coated_radii(mesh, _coat_model)
+        # k_coat 自動導出: Winkler基盤 k = E_coat / t_coat [Pa/m]
+        if coating_stiffness <= 0.0 and _coating_youngs > 0.0:
+            coating_stiffness = _coating_youngs / coating_thickness
+        # 粘性減衰の自動推定（ζ=1.0 臨界減衰、面密度ρ*t近似）
+        if coating_damping <= 0.0 and coating_stiffness > 0.0:
+            coating_damping = 0.0  # デフォルト無減衰（ユーザ指定時のみ有効）
     else:
         contact_radii = mesh.radii
 
@@ -646,7 +658,7 @@ def run_bending_oscillation(
         print(f"  要素数:     {mesh.n_elems}")
         print(f"  節点数:     {mesh.n_nodes}")
         print(f"  自由度数:   {ndof_total}")
-        print(f"  モデル長さ: {L * 1000:.1f} mm")
+        print(f"  モデル長さ: {L:.1f} mm")
         print(f"  目標曲げ角: {bend_angle_deg}°")
         print(f"  揺動振幅:   ±{oscillation_amplitude_mm} mm, {n_cycles}周期")
 
@@ -698,6 +710,7 @@ def run_bending_oscillation(
         linear_solver=linear_solver,
         line_contact=line_contact,
         coating_stiffness=coating_stiffness,
+        coating_damping=coating_damping,
     )
 
     # ------------------------------------------------------------------
@@ -883,8 +896,7 @@ def run_bending_oscillation(
             f"NR={result_bend.total_newton_iterations}"
         )
         print(
-            f"  先端変位: dx={tip_disp[0] * 1000:.3f} mm, "
-            f"dy={tip_disp[1] * 1000:.3f} mm, dz={tip_disp[2] * 1000:.3f} mm"
+            f"  先端変位: dx={tip_disp[0]:.3f} mm, dy={tip_disp[1]:.3f} mm, dz={tip_disp[2]:.3f} mm"
         )
 
     # ------------------------------------------------------------------
@@ -915,7 +927,7 @@ def run_bending_oscillation(
         z_base = u_after_bend[z_dofs_end_arr].copy()
         u = u_after_bend.copy()
 
-    amplitude_m = oscillation_amplitude_mm * 1e-3
+    amplitude_m = oscillation_amplitude_mm  # mm-ton-MPa系: 振幅はmm単位
     total_osc_steps = n_cycles * 4 * n_steps_per_quarter
 
     phase2_results: list[ContactSolveResult] = []
@@ -1016,12 +1028,12 @@ def run_bending_oscillation(
             cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
             quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
             _snap_u = ul_asm.get_total_displacement(np.zeros(ndof))
-            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z:.2f}mm")
 
             if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
                 print(
                     f"  揺動 step {osc_step + 1}/{total_osc_steps}: "
-                    f"Δz={delta_z * 1000:.2f} mm, "
+                    f"Δz={delta_z:.2f} mm, "
                     f"conv={result_step.converged}, "
                     f"NR={result_step.total_newton_iterations}"
                 )
@@ -1100,7 +1112,7 @@ def run_bending_oscillation(
             cycle_num = osc_step // (4 * n_steps_per_quarter) + 1
             quarter = (osc_step % (4 * n_steps_per_quarter)) // n_steps_per_quarter + 1
             _snap_u = (u_after_bend + u) if (use_updated_lagrangian and ul_asm is not None) else u
-            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z * 1000:.2f}mm")
+            _record_snapshot(_snap_u, f"C{cycle_num} Q{quarter} dz={delta_z:.2f}mm")
 
             if show_progress and (osc_step + 1) % n_steps_per_quarter == 0:
                 tip_node = mesh.strand_nodes(0)[-1]
@@ -1108,8 +1120,8 @@ def run_bending_oscillation(
                 tip_dz_ref = mesh.node_coords[tip_node, 2]
                 print(
                     f"  揺動 step {osc_step + 1}/{total_osc_steps}: "
-                    f"Δz={delta_z * 1000:.2f} mm, "
-                    f"tip_z={tip_dz * 1000:.2f} mm (ref={tip_dz_ref * 1000:.1f} mm), "
+                    f"Δz={delta_z:.2f} mm, "
+                    f"tip_z={tip_dz:.2f} mm (ref={tip_dz_ref:.1f} mm), "
                     f"conv={result_step.converged}, "
                     f"NR={result_step.total_newton_iterations}"
                 )
@@ -1187,7 +1199,7 @@ def print_benchmark_report(result: BendingOscillationResult) -> str:
     lines.append(f"  要素数:       {result.n_elems}")
     lines.append(f"  節点数:       {result.n_nodes}")
     lines.append(f"  自由度数:     {result.ndof}")
-    lines.append(f"  モデル長さ:   {result.mesh_length * 1000:.1f} mm")
+    lines.append(f"  モデル長さ:   {result.mesh_length:.1f} mm")
     lines.append(f"  Phase 1 収束: {result.phase1_converged}")
     lines.append(f"  Phase 2 収束: {result.phase2_converged}")
     lines.append(f"  活性接触:     {result.n_active_contacts}")
@@ -1195,9 +1207,7 @@ def print_benchmark_report(result: BendingOscillationResult) -> str:
     lines.append(f"  総計算時間:   {result.total_time_s:.2f} s")
 
     dx, dy, dz = result.tip_displacement_final
-    lines.append(
-        f"  先端変位:     dx={dx * 1000:.3f} mm, dy={dy * 1000:.3f} mm, dz={dz * 1000:.3f} mm"
-    )
+    lines.append(f"  先端変位:     dx={dx:.3f} mm, dy={dy:.3f} mm, dz={dz:.3f} mm")
 
     total_nr = result.phase1_result.total_newton_iterations
     for r in result.phase2_results:

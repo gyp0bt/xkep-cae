@@ -1552,9 +1552,23 @@ def newton_raphson_contact_ncp(
         )
         adaptive_timestepping = True
 
-    # k_pen の決定（S3改良9: beam_ei/ea_l 自動推定をNCPソルバーに導入）
+    # k_pen の決定（材料剛性ベース自動推定: status-140で手動モード廃止）
     if k_pen <= 0.0:
-        if manager.config.k_pen_mode in ("beam_ei", "ea_l"):
+        if manager.config.beam_E <= 0.0:
+            # 後方互換: beam_Eが未設定の場合はk_pen_scaleをフォールバック使用
+            # （deprecated: 将来バージョンで削除予定）
+            import warnings
+
+            if manager.config.k_pen_scale >= 1.0:
+                warnings.warn(
+                    "k_pen_scale >= 1.0 はペナルティ剛性の直接指定（手動モード）です。"
+                    "beam_E, beam_I を設定して材料ベースの自動推定を使用してください。"
+                    "手動モードは将来バージョンで削除されます。",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+            k_pen = manager.config.k_pen_scale
+        else:
             # 代表要素長の推定
             _L_elems = []
             for elem in connectivity:
@@ -1564,7 +1578,17 @@ def newton_raphson_contact_ncp(
             _L_avg = float(np.mean(_L_elems)) if _L_elems else 1.0
             _L_avg = max(_L_avg, 1e-30)
 
-            if manager.config.k_pen_mode == "beam_ei":
+            if manager.config.k_pen_mode == "ea_l":
+                from xkep_cae.contact.law_normal import auto_penalty_stiffness
+
+                k_pen = auto_penalty_stiffness(
+                    manager.config.beam_E,
+                    manager.config.beam_A,
+                    _L_avg,
+                    scale=manager.config.k_pen_scale,
+                )
+            else:
+                # beam_ei モード（デフォルト）
                 from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
 
                 k_pen = auto_beam_penalty_stiffness(
@@ -1575,22 +1599,11 @@ def newton_raphson_contact_ncp(
                     scale=manager.config.k_pen_scale,
                     scaling=manager.config.k_pen_scaling,
                 )
-            else:
-                from xkep_cae.contact.law_normal import auto_penalty_stiffness
-
-                k_pen = auto_penalty_stiffness(
-                    manager.config.beam_E,
-                    manager.config.beam_A,
-                    _L_avg,
-                    scale=manager.config.k_pen_scale,
-                )
             if show_progress:
                 print(
                     f"  NCP auto k_pen ({manager.config.k_pen_mode}): "
                     f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
                 )
-        else:
-            k_pen = manager.config.k_pen_scale
 
     # --- k_pen continuation（S3改良8）---
     _k_pen_target = k_pen
@@ -2028,10 +2041,17 @@ def newton_raphson_contact_ncp(
                 ramp_factor = (it + 1) / _contact_force_ramp_iters
                 f_c = f_c * ramp_factor
 
-            # 4d. 被膜スプリング力（status-137: 被膜層を陽にモデル化）
+            # 4d. 被膜Kelvin-Voigt力（status-140: 弾性+粘性減衰）
             if _use_coating:
-                f_coat = manager.compute_coating_forces(coords_def)
+                _coat_dt = max(load_frac - load_frac_prev, 1e-15)
+                f_coat = manager.compute_coating_forces(coords_def, dt=_coat_dt)
                 f_c = f_c + f_coat
+                # 4e. 被膜Coulomb摩擦力（status-140）
+                if manager.config.coating_mu > 0.0:
+                    f_coat_fric = manager.compute_coating_friction_forces(
+                        coords_def, u, u_ref
+                    )
+                    f_c = f_c + f_coat_fric
 
             # 5. 力残差
             f_int = assemble_internal_force(u)
@@ -2226,6 +2246,18 @@ def newton_raphson_contact_ncp(
                 manager.config.line_contact = _orig_lc
                 manager.config.n_gauss = _orig_ng
                 K_T = K_T + K_line
+
+            # 8b2. 被膜Kelvin-Voigt接線剛性（status-140: k + c/dt）
+            if _use_coating:
+                _coat_dt = max(load_frac - load_frac_prev, 1e-15)
+                K_coat = manager.compute_coating_stiffness(coords_def, ndof, dt=_coat_dt)
+                K_T = K_T + K_coat
+                # 8b3. 被膜Coulomb摩擦接線剛性（status-140）
+                if manager.config.coating_mu > 0.0:
+                    K_coat_fric = manager.compute_coating_friction_stiffness(
+                        coords_def, ndof
+                    )
+                    K_T = K_T + K_coat_fric
 
             # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
 
@@ -2506,6 +2538,11 @@ def newton_raphson_contact_ncp(
 
         # ステップ完了 — キューから消費
         step_queue.popleft()
+
+        # --- 被膜圧縮量の前ステップ値保存（粘性項用）---
+        if _use_coating:
+            for pair in manager.pairs:
+                pair.state.coating_compression_prev = pair.state.coating_compression
 
         # --- Updated Lagrangian: 参照配置更新 & 変位リセット ---
         if _ul:

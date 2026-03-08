@@ -16,7 +16,7 @@
 
 ## 現在地（2026-03-08）
 
-**2271テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装 + 段階的活性化NCP移植。37本NCP収束達成（Layer1径方向圧縮）。**NCP 6x高速化（解析的接線+バッチ接触幾何）+ 要素ループ12.6xバッチ化達成。7本撚線90°曲げ+揺動1周期が130秒で完全収束。**ソルバー一本化完了（n_load_steps廃止、NCPSolverInput導入、adaptive_timestepping=Trueデフォルト化）。Updated Lagrangian CR梁アセンブラで大回転収束障壁を解消。接触診断2D投影可視化。被膜接触モデル再構築（gap_offset廃止→被膜厚考慮メッシュ+被膜スプリング）。**
+**2271テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装 + 段階的活性化NCP移植。37本NCP収束達成（Layer1径方向圧縮）。**NCP 6x高速化（解析的接線+バッチ接触幾何）+ 要素ループ12.6xバッチ化達成。7本撚線90°曲げ+揺動1周期が130秒で完全収束。**ソルバー一本化完了（n_load_steps廃止、NCPSolverInput導入、adaptive_timestepping=Trueデフォルト化）。Updated Lagrangian CR梁アセンブラで大回転収束障壁を解消。接触診断2D投影可視化。被膜接触モデル再構築（gap_offset廃止→被膜厚考慮メッシュ+被膜スプリング）。mm-ton-MPa単位系移行開始。被膜Kelvin-Voigt粘性減衰。k_pen材料ベース自動推定強制。**
 
 ### 到達点
 
@@ -173,6 +173,14 @@
 - [x] 要素ループのベクトル化（12.6x高速化、status-134）
 - [x] 19本撚線の曲げ揺動収束確認（status-135: 45°+90°+揺動 ALL PASS）
 - [x] **gap_offset手法の廃止と被膜接触モデルの再構築**（status-137: メッシュ側で被膜厚gap確保 + 被膜弾性スプリングモデル）
+- [x] **被膜接線剛性実装 + 6DOFバグ修正 + 収束検証**（status-139: compute_coating_stiffness追加、k=1e6で完全収束、3D投影可視化）
+- [x] **mm-ton-MPa移行 + Kelvin-Voigt粘性減衰 + k_pen材料ベース強制**（status-140）
+- [ ] 全テストのmm-ton-MPa移行（~100ファイルの定数変換）
+- [x] **被膜Coulomb摩擦モデル実装 + 摩擦core関数抽出**（status-141: return_mapping_core/tangent_2x2_core純粋関数化、被膜摩擦のsolver_ncp統合）
+- [x] **Mortarギャップ計算バグ修正**（status-142: pair.state.radius_a→pair.radius_a、全Mortar NCPテストで接触力ゼロだった致命的バグ）
+- [ ] 撚線メッシュ初期貫入の解消（弦近似誤差対策: メッシュgap確保 or position_tolerance調整）
+- [ ] 7本NCP曲げ揺動の**接触あり**収束達成
+- [ ] 摩擦あり（素線間μ=0.1、被膜間μ=0.25）曲げ揺動収束検証
 - [ ] 19本→37本のスケールアップ
 - [ ] CR梁の摩擦接触不収束の原因調査
 - [ ] 37本Layer1+2圧縮の段階的活性化による収束改善確認
