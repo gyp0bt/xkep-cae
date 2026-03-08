@@ -545,6 +545,28 @@ def make_twisted_wire_mesh(
                 f"以上に設定してください。"
             )
 
+    # 弦近似誤差に基づくギャップ最小値チェック（status-145: 貫入除去厳格化）
+    if n_strands > 1 and strand_diameter is None and gap >= 0:
+        _n_p = n_pitches if n_pitches is not None else (length / pitch if pitch > 0 else 1.0)
+        min_gap = compute_min_safe_gap(
+            n_strands,
+            wire_radius,
+            pitch,
+            n_elems_per_strand,
+            _n_p,
+            coating_thickness=coating_thickness,
+        )
+        if gap < min_gap:
+            import warnings
+
+            warnings.warn(
+                f"指定ギャップ {gap:.6f} < 最小安全ギャップ "
+                f"{min_gap:.6f}（弦近似誤差）。"
+                f"自動的に {min_gap:.6f} に引き上げます。",
+                stacklevel=2,
+            )
+            gap = min_gap
+
     # 素線配置を決定
     layout = make_strand_layout(
         n_strands,
@@ -606,6 +628,53 @@ def make_twisted_wire_mesh(
         length=length,
         n_elems_per_strand=n_elems_per_strand,
     )
+
+
+def compute_min_safe_gap(
+    n_strands: int,
+    wire_radius: float,
+    pitch: float,
+    n_elems_per_strand: int,
+    n_pitches: float = 1.0,
+    *,
+    safety_factor: float = 2.0,
+    coating_thickness: float = 0.0,
+) -> float:
+    """弦近似誤差に基づく最小安全ギャップを計算する.
+
+    直線要素でヘリカル曲線を近似する際の弦近似誤差（sagitta）を考慮し、
+    初期貫入が発生しない最小ギャップを返す。
+
+    Args:
+        n_strands: 素線本数
+        wire_radius: 素線半径 [m]
+        pitch: 撚ピッチ [m]
+        n_elems_per_strand: 1素線あたりの要素数
+        n_pitches: ピッチ数（長さ = n_pitches * pitch）
+        safety_factor: 安全係数（デフォルト1.5）
+        coating_thickness: 被膜厚 [m]
+
+    Returns:
+        最小安全ギャップ [m]
+    """
+    if n_strands <= 1:
+        return 0.0
+    length = n_pitches * pitch
+    n_per_pitch = n_elems_per_strand * pitch / length if length > 0 else n_elems_per_strand
+    if n_per_pitch < 1:
+        return 0.0
+
+    d_eff = 2.0 * (wire_radius + coating_thickness)
+    # 最外層の配置半径を推定（layer=1の場合）
+    r_lay_max = d_eff  # gap=0 での layer 1 配置半径
+
+    # 弦近似誤差（sagitta）: R * (1 - cos(π/n_per_pitch))
+    theta_half = math.pi / n_per_pitch
+    sagitta = r_lay_max * (1.0 - math.cos(theta_half))
+
+    # 最悪ケース: 2本の隣接ワイヤ両方に弦近似誤差
+    min_gap = 2.0 * sagitta * safety_factor
+    return min_gap
 
 
 def compute_helix_angle(lay_radius: float, pitch: float) -> float:

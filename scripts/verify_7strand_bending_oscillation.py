@@ -51,20 +51,27 @@ from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillat
 # ==================================================================
 # 共通パラメータ
 # ==================================================================
-# mesh_gap: 弦近似誤差による初期貫入防止（16要素/ピッチで0.15mm必要）
+# mesh_gap=0: メッシュ生成時にcompute_min_safe_gapで自動計算（status-145）
+# exclude_same_layer=False: 密な撚線では同層接触が物理的に発生する
 # use_mortar=False: Point contact を使用（Mortarは接触チャタリング問題あり）
 _COMMON_PARAMS = dict(
     use_ncp=True,
     use_mortar=False,  # Point contact（Mortar接触チャタリング未解決）
     adaptive_timestepping=True,
     use_updated_lagrangian=True,
-    exclude_same_layer=True,
+    exclude_same_layer=False,  # 同層接触を含める（密な撚線で物理的に必要）
     midpoint_prescreening=True,
-    use_line_search=False,
+    use_line_search=True,
     g_on=0.0005,
     g_off=0.001,
-    mesh_gap=0.15,
+    mesh_gap=0.0,  # 自動計算（make_twisted_wire_meshで安全ギャップに引き上げ）
     show_progress=True,
+    # 接触安定化（status-145: Phase2チャタリング対策）
+    chattering_window=5,
+    contact_stabilization=0.3,
+    lambda_decay=0.5,
+    # Newton安定化: 鞍点系悪条件化時の過大ステップ防止
+    du_norm_cap=0.5,
 )
 
 # ==================================================================

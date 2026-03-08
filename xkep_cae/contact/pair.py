@@ -280,6 +280,8 @@ class ContactConfig:
     # --- 被膜摩擦（status-140: Coulomb return mapping） ---
     coating_mu: float = 0.0  # 被膜摩擦係数（0=被膜摩擦無効）
     coating_k_t_ratio: float = 0.5  # 被膜接線/法線ペナルティ比
+    # --- δ正則化（status-145: Uzawa regularization） ---
+    contact_compliance: float = 0.0  # δ正則化パラメータ（0で従来動作）
 
 
 @dataclass

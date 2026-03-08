@@ -382,7 +382,15 @@ def compute_contact_force(
             if manager.config.n_gauss_auto:
                 n_gp = auto_select_n_gauss(xA0, xA1, xB0, xB1, default=n_gp)
 
-            f_local, total_p_n = compute_line_contact_force_local(pair, xA0, xA1, xB0, xB1, n_gp)
+            f_local, total_p_n = compute_line_contact_force_local(
+                pair,
+                xA0,
+                xA1,
+                xB0,
+                xB1,
+                n_gp,
+                contact_compliance=manager.config.contact_compliance,
+            )
             pair.state.p_n = total_p_n
 
             # scatter-add: ベクトル化
@@ -584,6 +592,7 @@ def compute_contact_stiffness(
                 xB1,
                 n_gp,
                 use_geometric_stiffness=use_geometric_stiffness,
+                contact_compliance=manager.config.contact_compliance,
             )
 
             # --- ∂t/∂u 一貫接線（Phase C6-L2, line contact）---

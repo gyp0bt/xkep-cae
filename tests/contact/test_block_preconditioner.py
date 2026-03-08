@@ -237,7 +237,7 @@ class TestBlockPreconditionerConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.045, radii=0.04)
 
         mgr = ContactManager(
             config=ContactConfig(
@@ -411,7 +411,7 @@ class TestBlockPreconditionerConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.045, radii=0.04)
 
         mgr = ContactManager(
             config=ContactConfig(
