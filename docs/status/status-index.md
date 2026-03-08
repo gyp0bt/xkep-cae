@@ -55,6 +55,7 @@
 | [141](status-141.md) | 2026-03-08 | 被膜Coulomb摩擦モデル実装 + 摩擦core関数抽出 | 2271 |
 | [142](status-142.md) | 2026-03-08 | Mortarギャップ計算の致命的バグ修正（pair.state.radius→pair.radius） | 2271 |
 | [143](status-143.md) | 2026-03-08 | Mortarバグ修正後の収束検証 — Point contact + mesh_gap方式確立 | 2271 |
+| [144](status-144.md) | 2026-03-08 | 3Dチューブレンダリング統一 — 2D投影線図からの完全移行 | 2271 |
 
 ## アーカイブ（001〜096）
 
