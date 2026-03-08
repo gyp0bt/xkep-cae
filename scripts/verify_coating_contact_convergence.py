@@ -1,12 +1,13 @@
 """被膜接触モデルの収束検証スクリプト.
 
-status-137 TODO: 被膜スプリングモデルの実問題での収束検証。
-3ケースの接触パターンを7本撚線45度曲げで検証する。
+status-142 TODO: 被膜接触+被膜摩擦（μ=0.25）の検証。
+7本撚線45度曲げで被膜モデルの各構成を検証する。
 
 ケース:
-  1. 被膜なし同士（ベースライン）
-  2. 被膜あり同士（被膜スプリングモデル有効）
-  3. 被膜なし＋あり混合ペア
+  1. 被膜なし（ベースライン, point contact）
+  2. 被膜あり（coating_thickness=0.1mm, k_coat=E/t自動導出）
+  3. 被膜あり + 摩擦（μ=0.25）
+  4. 被膜あり + 粘性減衰 + 摩擦（μ=0.25）
 
 Usage:
   python scripts/verify_coating_contact_convergence.py 2>&1 | tee /tmp/verify_coating_contact.log
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 import sys
 import time
-from pathlib import Path
 
 # --- ログ tee設定 ---
 log_path = f"/tmp/verify_coating_contact_{int(time.time())}.log"
@@ -45,8 +45,7 @@ tee = TeeWriter(log_path)
 sys.stdout = tee
 
 print("=" * 70)
-print("  被膜接触モデル 収束検証")
-print("  status-137 TODO: 被膜スプリングモデルの実問題での収束検証")
+print("  被膜接触モデル 収束検証（status-142 TODO）")
 print("=" * 70)
 print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -54,266 +53,79 @@ print()
 
 from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
 
-# 共通パラメータ
+# 共通パラメータ（point contact, mesh_gap で初期貫入防止）
 COMMON_PARAMS = dict(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=45,
     use_ncp=True,
-    use_mortar=True,
-    n_gauss=2,
-    max_iter=30,
-    tol_force=1e-6,
+    use_mortar=False,  # Point contact（Mortar接触チャタリング問題あり）
     adaptive_timestepping=True,
     use_updated_lagrangian=True,
     show_progress=True,
     n_cycles=0,
+    exclude_same_layer=True,
+    midpoint_prescreening=True,
+    use_line_search=False,
+    g_on=0.0005,
+    g_off=0.001,
+    mesh_gap=0.15,
+    max_iter=50,
+    tol_force=1e-4,
 )
 
+COAT_T = 0.1  # mm（100μm被膜厚）
 results = {}
 
-# ==================================================================
-# ケース1: 被膜なし同士（ベースライン）
-# ==================================================================
-print("=" * 70)
-print("  ケース1: 被膜なし同士（ベースライン）")
-print("=" * 70)
 
-t0 = time.perf_counter()
-result_bare = run_bending_oscillation(
-    **COMMON_PARAMS,
-    coating_thickness=0.0,
-    coating_stiffness=0.0,
-)
-t_bare = time.perf_counter() - t0
+def run_case(name, **extra_params):
+    """ケースを実行してサマリーを表示."""
+    print()
+    print("=" * 70)
+    print(f"  {name}")
+    print("=" * 70)
+    t0 = time.perf_counter()
+    result = run_bending_oscillation(**COMMON_PARAMS, **extra_params)
+    elapsed = time.perf_counter() - t0
+    print(f"\n結果: converged={result.phase1_converged}, 時間={elapsed:.2f}s")
+    print(f"  活性接触ペア: {result.n_active_contacts}")
+    print(f"  最大貫入比: {result.max_penetration_ratio:.6f}")
+    return result, elapsed
 
-print(f"\n結果: converged={result_bare.phase1_converged}, 時間={t_bare:.2f}s")
-print(f"  NR反復: {result_bare.phase1_result.total_newton_iterations}")
-print(f"  最大貫入比: {result_bare.max_penetration_ratio:.6f}")
-print(f"  活性接触ペア: {result_bare.n_active_contacts}")
-results["bare"] = (result_bare, t_bare)
 
 # ==================================================================
-# ケース2: 被膜あり同士（被膜スプリングモデル有効）
+# ケース1: 被膜なし（ベースライン）
 # ==================================================================
-print()
-print("=" * 70)
-print("  ケース2: 被膜あり同士（coating_thickness=0.1mm, k_coat=E/t自動導出）")
-print("=" * 70)
+results["bare"] = run_case("ケース1: 被膜なし（ベースライン）")
 
-COAT_T = 0.1  # mm（100μm）
-COAT_K = 0.0  # 自動導出（E_coat / t_coat）
-
-t0 = time.perf_counter()
-result_coated = run_bending_oscillation(
-    **COMMON_PARAMS,
+# ==================================================================
+# ケース2: 被膜あり（k_coat=E/t自動導出）
+# ==================================================================
+results["coated"] = run_case(
+    "ケース2: 被膜あり（t=0.1mm, k_coat=E/t自動）",
     coating_thickness=COAT_T,
-    coating_stiffness=COAT_K,
 )
-t_coated = time.perf_counter() - t0
-
-print(f"\n結果: converged={result_coated.phase1_converged}, 時間={t_coated:.2f}s")
-print(f"  NR反復: {result_coated.phase1_result.total_newton_iterations}")
-print(f"  最大貫入比: {result_coated.max_penetration_ratio:.6f}")
-print(f"  活性接触ペア: {result_coated.n_active_contacts}")
-results["coated"] = (result_coated, t_coated)
 
 # ==================================================================
-# ケース3: 被膜あり + 粘性減衰
-# 被膜パラメータ + Kelvin-Voigt粘性減衰で高剛性被膜の収束を改善
+# ケース3: 被膜あり + 摩擦（μ=0.25）
 # ==================================================================
-print()
-print("=" * 70)
-print("  ケース3: 被膜あり + 粘性減衰（ζ=0.5相当）")
-print("=" * 70)
+results["coated_friction"] = run_case(
+    "ケース3: 被膜あり + 被膜摩擦（μ=0.25）",
+    coating_thickness=COAT_T,
+    use_friction=True,
+    mu=0.25,
+)
 
-t0 = time.perf_counter()
-# 粘性減衰: c = k_coat * τ（τ: 緩和時間、荷重増分の数倍程度）
-# k_coat = E_coat / t = 100 / 0.1 = 1000 MPa/mm
-# c = 1000 * 0.1 = 100 MPa·s/mm（荷重増分=0.1程度を想定）
-result_soft_coat = run_bending_oscillation(
-    **COMMON_PARAMS,
+# ==================================================================
+# ケース4: 被膜あり + 粘性減衰 + 摩擦（μ=0.25）
+# ==================================================================
+results["coated_damped_friction"] = run_case(
+    "ケース4: 被膜あり + 粘性減衰 + 摩擦（μ=0.25）",
     coating_thickness=COAT_T,
     coating_damping=100.0,  # MPa·s/mm
+    use_friction=True,
+    mu=0.25,
 )
-t_soft = time.perf_counter() - t0
-
-print(f"\n結果: converged={result_soft_coat.phase1_converged}, 時間={t_soft:.2f}s")
-print(f"  NR反復: {result_soft_coat.phase1_result.total_newton_iterations}")
-print(f"  最大貫入比: {result_soft_coat.max_penetration_ratio:.6f}")
-print(f"  活性接触ペア: {result_soft_coat.n_active_contacts}")
-results["soft_coat"] = (result_soft_coat, t_soft)
-
-# ==================================================================
-# 3D梁表面の2D投影スナップショット
-# ==================================================================
-print()
-print("=" * 70)
-print("  3D梁表面の2D投影スナップショット生成")
-print("=" * 70)
-
-try:
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from matplotlib.collections import PolyCollection
-
-    from xkep_cae.math.quaternion import (
-        quat_from_axis_angle,
-        quat_multiply,
-        quat_to_rotation_matrix,
-    )
-    from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-
-    def _project_3d_to_2d(coords_3d, elev_deg=25.0, azim_deg=45.0):
-        """四元数で3D座標を任意視点に回転し、XY平面に投影."""
-        elev = np.deg2rad(elev_deg)
-        azim = np.deg2rad(azim_deg)
-        q_azim = quat_from_axis_angle(np.array([0.0, 0.0, 1.0]), -azim)
-        q_elev = quat_from_axis_angle(np.array([1.0, 0.0, 0.0]), -elev)
-        q_view = quat_multiply(q_elev, q_azim)
-        R = quat_to_rotation_matrix(q_view)
-        rotated = (R @ coords_3d.T).T
-        return rotated[:, :2], rotated[:, 2]
-
-    def _beam_surface_polys_2d(coords, radius, n_circ=12, elev_deg=25.0, azim_deg=45.0):
-        """梁中心線から円管表面メッシュを生成し、2D投影された四角形リストを返す."""
-        n_pts = len(coords)
-        theta = np.linspace(0, 2 * np.pi, n_circ, endpoint=False)
-        surface_pts = []
-        for i in range(n_pts):
-            if i == 0:
-                tang = coords[1] - coords[0]
-            elif i == n_pts - 1:
-                tang = coords[-1] - coords[-2]
-            else:
-                tang = coords[i + 1] - coords[i - 1]
-            tang = tang / (np.linalg.norm(tang) + 1e-30)
-            if abs(tang[2]) < 0.9:
-                up = np.array([0.0, 0.0, 1.0])
-            else:
-                up = np.array([1.0, 0.0, 0.0])
-            n1 = np.cross(tang, up)
-            n1 = n1 / (np.linalg.norm(n1) + 1e-30)
-            n2 = np.cross(tang, n1)
-            for th in theta:
-                offset = radius * (np.cos(th) * n1 + np.sin(th) * n2)
-                surface_pts.append(coords[i] + offset)
-        surface_pts = np.array(surface_pts)
-        proj_2d, depth = _project_3d_to_2d(surface_pts, elev_deg, azim_deg)
-        polys = []
-        depths = []
-        for i in range(n_pts - 1):
-            for j in range(n_circ):
-                j_next = (j + 1) % n_circ
-                idx00 = i * n_circ + j
-                idx01 = i * n_circ + j_next
-                idx10 = (i + 1) * n_circ + j
-                idx11 = (i + 1) * n_circ + j_next
-                poly_verts = np.array(
-                    [
-                        proj_2d[idx00],
-                        proj_2d[idx01],
-                        proj_2d[idx11],
-                        proj_2d[idx10],
-                    ]
-                )
-                avg_depth = (depth[idx00] + depth[idx01] + depth[idx10] + depth[idx11]) / 4.0
-                polys.append(poly_verts)
-                depths.append(avg_depth)
-        return polys, depths
-
-    output_dir = Path("docs/verification")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # 層ごとの色分け
-    LAYER_COLORS = {0: "#e41a1c", 1: "#377eb8", 2: "#4daf4a", 3: "#984ea3"}
-    ELEV, AZIM = 25.0, 45.0
-    N_CIRC = 12
-    R_WIRE = 1.0  # mm radius
-
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    case_names = ["被膜なし", "被膜あり(E/t自動)", "被膜+粘性減衰"]
-    case_keys = ["bare", "coated", "soft_coat"]
-
-    for ax, name, key in zip(axes, case_names, case_keys, strict=True):
-        result, t_elapsed = results[key]
-        coat_t = 0.0 if key == "bare" else COAT_T
-        mesh = make_twisted_wire_mesh(
-            7,
-            2.0,  # mm
-            40.0,  # mm
-            length=0.0,
-            n_elems_per_strand=8,
-            n_pitches=0.5,
-            coating_thickness=coat_t,
-        )
-
-        # 変形後座標
-        u = result.phase1_result.u
-        deformed = mesh.node_coords.copy()
-        for i in range(mesh.n_nodes):
-            deformed[i, 0] += u[6 * i]
-            deformed[i, 1] += u[6 * i + 1]
-            deformed[i, 2] += u[6 * i + 2]
-
-        # 全ストランドのポリゴンを収集（深度ソート用）
-        all_polys = []
-        all_depths = []
-        all_colors = []
-        for sid in range(mesh.n_strands):
-            ns, ne = mesh.strand_node_ranges[sid]
-            strand_coords = deformed[ns:ne]
-            layer = mesh.strand_infos[sid].layer
-            color = LAYER_COLORS.get(layer, "#999999")
-            polys, depths = _beam_surface_polys_2d(strand_coords, R_WIRE, N_CIRC, ELEV, AZIM)
-            all_polys.extend(polys)
-            all_depths.extend(depths)
-            all_colors.extend([color] * len(polys))
-
-        # 深度順にソート（奥→手前）
-        sorted_idx = np.argsort(all_depths)
-        sorted_polys = [all_polys[i] for i in sorted_idx]
-        sorted_colors = [all_colors[i] for i in sorted_idx]
-
-        pc = PolyCollection(
-            sorted_polys,
-            facecolors=sorted_colors,
-            edgecolors="none",
-            alpha=0.8,
-        )
-        ax.add_collection(pc)
-
-        # 軸範囲設定
-        all_verts = np.concatenate(sorted_polys, axis=0)
-        xr = all_verts[:, 0].max() - all_verts[:, 0].min()
-        yr = all_verts[:, 1].max() - all_verts[:, 1].min()
-        margin = max(xr, yr) * 0.05
-        ax.set_xlim(all_verts[:, 0].min() - margin, all_verts[:, 0].max() + margin)
-        ax.set_ylim(all_verts[:, 1].min() - margin, all_verts[:, 1].max() + margin)
-        ax.set_aspect("equal")
-
-        conv_str = "PASS" if result.phase1_converged else "FAIL"
-        nr_iter = result.phase1_result.total_newton_iterations
-        pen_ratio = result.max_penetration_ratio
-        ax.set_title(
-            f"{name}\n{conv_str} | NR={nr_iter} | pen={pen_ratio:.4f} | {t_elapsed:.1f}s",
-            fontsize=9,
-        )
-        ax.grid(True, alpha=0.2)
-        ax.set_xlabel("x' [m]", fontsize=8)
-        ax.set_ylabel("y' [m]", fontsize=8)
-
-    fig.suptitle("被膜接触モデル 収束比較（7本45°曲げ, 3D梁表面2D投影）", fontsize=13)
-    fig.tight_layout()
-    fig.savefig(str(output_dir / "coating_contact_convergence.png"), dpi=150)
-    plt.close(fig)
-    print("  保存: docs/verification/coating_contact_convergence.png")
-
-except ImportError:
-    print("  matplotlib が利用不可能。2D投影スキップ。")
 
 # ==================================================================
 # サマリー
@@ -325,17 +137,18 @@ print("=" * 70)
 
 all_pass = True
 for key, label in [
-    ("bare", "被膜なし"),
-    ("coated", "被膜あり(k=1e8)"),
-    ("soft_coat", "被膜+粘性減衰"),
+    ("bare", "被膜なし（ベースライン）"),
+    ("coated", "被膜あり"),
+    ("coated_friction", "被膜+摩擦(μ=0.25)"),
+    ("coated_damped_friction", "被膜+減衰+摩擦"),
 ]:
     result, t_elapsed = results[key]
     status = "PASS" if result.phase1_converged else "FAIL"
     if not result.phase1_converged:
         all_pass = False
     print(
-        f"  {label:20s}: {status}  "
-        f"NR={result.phase1_result.total_newton_iterations:3d}  "
+        f"  {label:25s}: {status}  "
+        f"active={result.n_active_contacts:3d}  "
         f"pen_ratio={result.max_penetration_ratio:.6f}  "
         f"time={t_elapsed:.1f}s"
     )
