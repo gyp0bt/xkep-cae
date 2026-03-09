@@ -95,6 +95,7 @@ master直近失敗（ID: 22834514568）は `test_stick_condition_small_tangentia
 | `tests/contact/test_solver_ncp.py` | z_sep 0.035→0.041（5箇所） |
 | `tests/mesh/test_ring_compliance.py` | 変動許容50%→120% |
 | `tests/mesh/test_ring_compliance_s2.py` | test_with_coating_larger xfail追加 |
+| `tests/mesh/test_sheath_model.py` | 自動ギャップ補正影響で3クラス11テストxfail化 |
 | `docs/roadmap.md` | 277行→142行スリム化 |
 | `docs/status/s3-completed.md` | **新規**: S3完了済み53項目 |
 | `README.md` | 現在の状態セクション更新 |
