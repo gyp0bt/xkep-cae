@@ -160,7 +160,7 @@ class TestOutputSettingsMetadata:
         assert meta["output_vtk"] is True
         assert meta["output_vtk_prefix"] == "result"
         assert meta["output_gif"] is True
-        assert meta["output_gif_views"] == ["yz", "xz"]
+        assert meta["output_gif_views"] == ["isometric", "end_yz"]
         assert meta["output_gif_figsize"] == [10.0, 8.0]
         assert meta["output_gif_dpi"] == 80
         assert meta["output_gif_duration"] == 300

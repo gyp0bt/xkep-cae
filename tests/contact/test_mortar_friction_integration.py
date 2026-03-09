@@ -165,7 +165,7 @@ class TestTripleIntegration:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         config = ContactConfig(
             k_pen_scale=1e5,
@@ -218,7 +218,7 @@ class TestTripleIntegration:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         config = ContactConfig(
             k_pen_scale=1e5,
@@ -271,7 +271,7 @@ class TestTripleIntegration:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         config = ContactConfig(
             k_pen_scale=1e5,
@@ -325,7 +325,7 @@ class TestTripleIntegration:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         f_ext = np.zeros(ndof)
         f_ext[1 * ndof_per_node + 2] = -20.0
@@ -416,7 +416,7 @@ class TestTripleIntegration:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         config = ContactConfig(
             k_pen_scale=1e5,

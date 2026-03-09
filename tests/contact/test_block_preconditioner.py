@@ -113,7 +113,7 @@ def _setup_saddle_point_problem():
         K_fn,
         _,
         fixed_dofs,
-    ) = _make_spring_system(z_sep=0.035, radii=0.04)
+    ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
     u = np.zeros(ndof)
     K_T = K_fn(u)

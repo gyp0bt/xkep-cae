@@ -18,29 +18,25 @@
 
 ## 現在の状態
 
-**2271テスト（fast: 1691 + 1 xfailed / slow: 362 - 9 xfailed / deprecated: 218）** — 2026-03-07時点
+**2271テスト** — 2026-03-09時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
-| 分野 | 内容 | 状態 |
+| 分野 | 概要 | 状態 |
 |------|------|------|
-| FEM基盤 | 梁要素（EB/Timo/Cosserat/CR）、平面要素（Q4/TRI）、固体要素（HEX8）| 完了 |
-| 非線形 | 幾何学的非線形（NR/弧長/CR/TL/UL）、弾塑性、ファイバーモデル | 完了 |
-| 動的解析 | Newmark-β/HHT-α/Generalized-α/陽解法/モーダル減衰 | 完了 |
-| 接触 | 梁–梁接触（NCP+Mortar+Line contact+摩擦）| 完了 |
-| 撚線モデル | 7本撚り収束、被膜/シース、ヒステリシス観測 | 完了 |
-| 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理 | 完了 |
-| GNN/PINN | 2D熱伝導サロゲートPoC（R²=0.995） | 完了 |
-| **大規模収束** | **19本NCP曲げ揺動収束達成（90°+揺動1周期）、37本径方向圧縮Layer1収束、NCP 6x+要素12.6xバッチ化高速化、ソルバー一本化完了、被膜接線剛性実装（k=1e6収束）、smooth penalty+Uzawaで摩擦90°曲げ+揺動収束** | **91本曲げ揺動で収束** |
-| **チューニング基盤** | TuningTaskスキーマ + 検証プロット14種 + YAML/JSON直列化 + Optuna連携 | AI自動チューニング |
-| **可視化** | 3Dチューブレンダリング（円形断面付き表面描画）・接触診断パネル・変形比較・マルチビューギャラリー | 数値困難の診断 |
+| FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 平面 + HEX8 + 非線形 + 動的解析 | 完了 |
+| 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了 |
+| 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了 |
+| 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了 |
+| **大規模収束** | **19本曲げ揺動収束、37本径方向圧縮収束** | **61本以上が次課題** |
 
-**推奨ソルバー構成**: NCP Semi-smooth Newton + Line contact + Mortar + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成リファレンス構成)）
+**推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
 ## ドキュメント
 
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全144件のstatus + テスト数推移 |
+| [ステータス一覧](docs/status/status-index.md) | 全148件のstatus + テスト数推移 |
+| [S3完了済み項目](docs/status/s3-completed.md) | S3フェーズ53項目の完了記録 |
 | [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
 | [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |

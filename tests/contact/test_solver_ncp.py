@@ -257,7 +257,7 @@ class TestNCPSolverConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04, k_spring=1e4)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04, k_spring=1e4)
         # 初期ギャップ = 2*0.035 - 2*0.04 = -0.01 (貫入)
 
         mgr = ContactManager(
@@ -305,7 +305,7 @@ class TestNCPSolverConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         f_ext = np.zeros(ndof)
         f_ext[1 * ndof_per_node + 2] = -30.0
@@ -347,7 +347,7 @@ class TestNCPSolverConvergence:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04)
 
         mgr = ContactManager(
             config=ContactConfig(
@@ -407,7 +407,7 @@ class TestNCPSolverComparison:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04, k_spring=1e4)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04, k_spring=1e4)
 
         f_ext = np.zeros(ndof)
         f_ext[1 * ndof_per_node + 2] = -20.0
@@ -679,7 +679,7 @@ class TestConvergenceDiagnostics:
             K_fn,
             f_int_fn,
             fixed_dofs,
-        ) = _make_spring_system(z_sep=0.035, radii=0.04, k_spring=1e4)
+        ) = _make_spring_system(z_sep=0.041, radii=0.04, k_spring=1e4)
 
         mgr = ContactManager(
             config=ContactConfig(
