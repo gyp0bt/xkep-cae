@@ -24,15 +24,20 @@ def _common_params() -> dict:
         max_iter=50,
         tol_force=1e-4,
         show_progress=True,
+        # smooth penalty モード（NCP鞍点系ではなくsmooth penalty + Uzawa）
+        contact_mode="smooth_penalty",
         use_ncp=True,
         use_mortar=True,
         adaptive_timestepping=True,
+        # 接触パラメータ
         exclude_same_layer=True,
         midpoint_prescreening=True,
         use_line_search=False,
         g_on=0.0005,
         g_off=0.001,
+        # Updated Lagrangian
         use_updated_lagrangian=True,
+        # 摩擦パラメータ
         use_friction=True,
         mu=0.1,
     )
