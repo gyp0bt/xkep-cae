@@ -2855,6 +2855,22 @@ def newton_raphson_contact_ncp(
                         for j_local, pair_idx in enumerate(active_pair_indices):
                             lam_all[pair_idx] += _omega * _scale_factor * dlam_A[j_local]
 
+                else:
+                    # Mortar有効だが接触なし → 接触なしの線形求解
+                    du, _ = _solve_saddle_point_contact(
+                        K_T,
+                        sp.csr_matrix((0, ndof)),
+                        k_pen,
+                        R_u,
+                        np.array([]),
+                        fixed_dofs,
+                        linear_solver=linear_solver_mode,
+                        iterative_tol=iterative_tol_cfg,
+                        ilu_drop_tol=ilu_drop_tol_cfg,
+                        gmres_dof_threshold=gmres_dof_threshold_cfg,
+                    )
+                    u += _omega * du
+
                 # NCP 非アクティブ乗数の処理（Mortar 時はスキップ）
                 # λ soft decay: 即座ゼロ化→段階的減衰で力の急変を緩和（status-145）
                 if not _use_mortar:

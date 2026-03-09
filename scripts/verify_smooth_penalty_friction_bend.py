@@ -1,13 +1,12 @@
-"""摩擦あり曲げ揺動の収束検証スクリプト（smooth penalty + Uzawa）.
+"""smooth penalty + Uzawa 外部ループによる摩擦曲げ揺動の収束検証.
 
-smooth penalty + Uzawa 外部ループで摩擦曲げ揺動を実行する。
-NCP 鞍点系の摩擦接線剛性符号問題（status-147）を回避するため、
-摩擦ありの場合は必ず contact_mode="smooth_penalty" を使用すること。
+NCP 鞍点系の摩擦接線剛性符号問題（d(f_fric)/du = -k_t*g_t⊗g_t が負定値）を
+回避するため、smooth penalty + Uzawa 外部ループで摩擦曲げを実行する。
 
 段階的検証:
-  Case 1: 7本 45度曲げ（揺動なし）摩擦あり smooth penalty
-  Case 2: 7本 90度曲げ（揺動なし）摩擦あり smooth penalty
-  Case 3: 7本 90度曲げ + 揺動1周期 摩擦あり smooth penalty
+  Case 1: 7本 45度曲げ（揺動なし）摩擦あり → smooth penalty
+  Case 2: 7本 90度曲げ（揺動なし）摩擦あり → smooth penalty
+  Case 3: 7本 90度曲げ + 揺動1周期 摩擦あり → smooth penalty
 
 [← README](../../README.md)
 """
@@ -29,21 +28,17 @@ def _header(title: str) -> None:
 
 
 def _common_params() -> dict:
-    """全ケース共通パラメータ（smooth penalty + Uzawa）.
-
-    注意: 摩擦ありの場合は contact_mode="smooth_penalty" が必須。
-    NCP 鞍点系（デフォルト）では摩擦接線剛性の符号問題で発散する。
-    詳細は status-147 を参照。
-    """
+    """全ケース共通パラメータ."""
     return dict(
         n_elems_per_strand=16,
         n_pitches=0.5,
         max_iter=50,
         tol_force=1e-4,
         show_progress=True,
-        # smooth penalty + Uzawa（NCP鞍点系は摩擦接線剛性符号問題あり）
+        # smooth penalty モード
         contact_mode="smooth_penalty",
         use_ncp=True,
+        use_mortar=True,
         adaptive_timestepping=True,
         # 接触パラメータ
         exclude_same_layer=True,
@@ -60,7 +55,7 @@ def _common_params() -> dict:
 
 
 def run_case1() -> BendingOscillationResult:
-    """Case 1: 7本 45度曲げ（揺動なし）smooth penalty 摩擦あり."""
+    """Case 1: 7本 45度曲げ（揺動なし）smooth penalty + 摩擦."""
     _header("Case 1: 7本 45度曲げ（揺動なし）smooth penalty μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
@@ -79,7 +74,7 @@ def run_case1() -> BendingOscillationResult:
 
 
 def run_case2() -> BendingOscillationResult:
-    """Case 2: 7本 90度曲げ（揺動なし）smooth penalty 摩擦あり."""
+    """Case 2: 7本 90度曲げ（揺動なし）smooth penalty + 摩擦."""
     _header("Case 2: 7本 90度曲げ（揺動なし）smooth penalty μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
@@ -98,7 +93,7 @@ def run_case2() -> BendingOscillationResult:
 
 
 def run_case3() -> BendingOscillationResult:
-    """Case 3: 7本 90度曲げ + 揺動1周期 smooth penalty 摩擦あり."""
+    """Case 3: 7本 90度曲げ + 揺動1周期 smooth penalty + 摩擦."""
     _header("Case 3: 7本 90度曲げ + 揺動1周期 smooth penalty μ=0.1")
     t0 = time.perf_counter()
     result = run_bending_oscillation(
@@ -120,7 +115,7 @@ def run_case3() -> BendingOscillationResult:
 
 def main():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    print(f"摩擦あり曲げ揺動 収束検証 — {timestamp}")
+    print(f"smooth penalty 摩擦曲げ揺動 収束検証 — {timestamp}")
     print(f"Python {sys.version}")
 
     results = {}
