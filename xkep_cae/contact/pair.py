@@ -282,6 +282,11 @@ class ContactConfig:
     coating_k_t_ratio: float = 0.5  # 被膜接線/法線ペナルティ比
     # --- δ正則化（status-145: Uzawa regularization） ---
     contact_compliance: float = 0.0  # δ正則化パラメータ（0で従来動作）
+    # --- スムースペナルティ（Phase C7） ---
+    contact_mode: str = "ncp"  # "ncp" | "smooth_penalty"
+    smoothing_delta: float = 0.0  # softplus平滑化幅（0=自動: 梁半径の1%）
+    n_uzawa_max: int = 5  # Uzawa外部ループ最大回数
+    tol_uzawa: float = 1e-6  # Uzawa乗数収束判定
 
 
 @dataclass

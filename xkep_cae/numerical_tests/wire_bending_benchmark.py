@@ -515,6 +515,10 @@ def run_bending_oscillation(
     du_norm_cap: float = 0.0,
     # δ正則化（Phase2接触コンプライアンス）
     contact_compliance: float | None = None,  # None=自動(1/k_pen), 0=無効
+    # スムースペナルティ（Phase C7）
+    contact_mode: str = "ncp",  # "ncp" | "smooth_penalty"
+    smoothing_delta: float = 0.0,  # softplus平滑化幅（0=自動）
+    n_uzawa_max: int = 5,  # Uzawa外部ループ最大回数
     # 動的解析
     dynamics: bool = False,
     dynamics_phase1: bool = False,  # Phase1にも動的解析を適用
@@ -804,6 +808,10 @@ def run_bending_oscillation(
             du_norm_cap=du_norm_cap,
             contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
             mu_ramp_steps=mu_ramp_steps,
+            # スムースペナルティ（Phase C7）
+            contact_mode=contact_mode,
+            smoothing_delta=smoothing_delta,
+            n_uzawa_max=n_uzawa_max,
             # Phase1 動的解析パラメータ
             mass_matrix=_p1_mass,
             damping_matrix=_p1_damp,
@@ -864,6 +872,9 @@ def run_bending_oscillation(
             du_norm_cap=du_norm_cap,
             contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
             mu_ramp_steps=mu_ramp_steps,
+            contact_mode=contact_mode,
+            smoothing_delta=smoothing_delta,
+            n_uzawa_max=n_uzawa_max,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
@@ -1055,6 +1066,9 @@ def run_bending_oscillation(
                 du_norm_cap=du_norm_cap,
                 contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
                 mu_ramp_steps=mu_ramp_steps,
+                contact_mode=contact_mode,
+                smoothing_delta=smoothing_delta,
+                n_uzawa_max=n_uzawa_max,
                 # 動的解析パラメータ
                 mass_matrix=_dyn_mass,
                 damping_matrix=_dyn_damp,

@@ -27,7 +27,11 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.contact.law_normal import evaluate_normal_force, normal_force_linearization
+from xkep_cae.contact.law_normal import (
+    evaluate_normal_force,
+    normal_force_linearization,
+    smooth_normal_force,
+)
 from xkep_cae.contact.pair import ContactManager, ContactPair, ContactStatus
 
 
@@ -681,3 +685,111 @@ def compute_contact_stiffness(
     K_csr = K.tocsr()
     K_csr.sum_duplicates()
     return K_csr
+
+
+def assemble_smooth_contact(
+    manager: ContactManager,
+    ndof_total: int,
+    k_pen: float,
+    lambdas: np.ndarray,
+    delta: float,
+    *,
+    ndof_per_node: int = 6,
+    use_geometric_stiffness: bool = True,
+    node_coords: np.ndarray | None = None,
+    gap_threshold_factor: float = 5.0,
+) -> tuple[np.ndarray, sp.csr_matrix, np.ndarray]:
+    """全ペア参加型スムースペナルティの接触力・剛性アセンブリ（Phase C7）.
+
+    Active/inactive の二値判定を排除し、全ペアに対して softplus 平滑化された
+    接触力と接線剛性を返す。gap >> delta のペアは指数的に力が減衰するため、
+    力学的には従来の active set 方式と等価だが、ヤコビアンが C¹ 連続。
+
+    力:     f_c[i] = p_n_i * g_n_i     (形状ベクトル展開)
+    剛性:   K_c[i] = |dp_dg_i| * g_n_i ⊗ g_n_i + K_geo_i
+
+    gap_threshold_factor: gap > delta * factor のペアをスキップ（計算節約）。
+    softplus(x) ≈ 0 for x < -30*delta なので factor=30 で数値的に完全。
+    デフォルト 5.0 は softplus(-5) ≈ 0.007*delta で十分小さい。
+
+    Args:
+        manager: 接触マネージャ
+        ndof_total: 全体 DOF 数
+        k_pen: ペナルティ剛性
+        lambdas: (n_pairs,) 全ペアのラグランジュ乗数
+        delta: softplus 平滑化幅
+        ndof_per_node: 1節点あたりの DOF 数
+        use_geometric_stiffness: 幾何剛性の有効化
+        node_coords: (n_nodes, 3) 変形後節点座標
+        gap_threshold_factor: gap > delta * factor のペアをスキップ
+
+    Returns:
+        f_contact: (ndof_total,) 接触内力ベクトル
+        K_contact: (ndof_total, ndof_total) 接触接線剛性行列 (CSR)
+        p_n_all: (n_pairs,) 各ペアの法線力
+    """
+    f_contact = np.zeros(ndof_total)
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+
+    n_pairs = len(manager.pairs)
+    p_n_all = np.zeros(n_pairs)
+
+    # スキップ閾値: gap がこれより大きいペアは力 ≈ 0
+    gap_skip = delta * gap_threshold_factor
+
+    for pair_idx, pair in enumerate(manager.pairs):
+        # 幾何的に遠いペアはスキップ（ただし INACTIVE でもスキップしない）
+        gap = pair.state.gap
+        lam_i = lambdas[pair_idx] if pair_idx < len(lambdas) else 0.0
+
+        # softplus の引数 x = -gap + lam/k_pen
+        # x << -delta なら p_n ≈ 0 → スキップ可能
+        x_arg = -gap + lam_i / k_pen if k_pen > 0.0 else -gap
+        if x_arg < -gap_skip:
+            continue
+
+        # スムース法線力
+        p_n, dp_dg = smooth_normal_force(gap, k_pen, lam_i, delta=delta)
+        p_n_all[pair_idx] = p_n
+        pair.state.p_n = p_n
+
+        if p_n < 1e-30 * k_pen * delta:
+            continue
+
+        # 並進DOFインデックス（4節点 × 3DOF = 12成分）
+        nodes_arr = np.array(
+            [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]],
+            dtype=int,
+        )
+        gdofs = (nodes_arr[:, None] * ndof_per_node + np.arange(3, dtype=int)).ravel()
+
+        # 形状ベクトル
+        g_n = _contact_shape_vector(pair)
+
+        # 力: f_c += p_n * g_n
+        np.add.at(f_contact, gdofs, p_n * g_n)
+
+        # 法線剛性: K_n = |dp_dg| * g_n ⊗ g_n（dp_dg は負なので絶対値）
+        k_eff = abs(dp_dg)
+        if k_eff > 0.0:
+            K_n_local = k_eff * np.outer(g_n, g_n)
+            _add_local_to_coo(K_n_local, gdofs, rows, cols, data)
+
+        # 幾何剛性
+        if use_geometric_stiffness and p_n > 0.0:
+            K_geo_local = _contact_geometric_stiffness_local(pair)
+            _add_local_to_coo(K_geo_local, gdofs, rows, cols, data)
+
+    if not rows:
+        K_contact = sp.csr_matrix((ndof_total, ndof_total))
+    else:
+        K = sp.coo_matrix(
+            (np.array(data), (np.array(rows, dtype=int), np.array(cols, dtype=int))),
+            shape=(ndof_total, ndof_total),
+        )
+        K_contact = K.tocsr()
+        K_contact.sum_duplicates()
+
+    return f_contact, K_contact, p_n_all

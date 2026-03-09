@@ -1,17 +1,26 @@
-"""法線接触力則（Augmented Lagrangian）.
+"""法線接触力則（Augmented Lagrangian + Smooth Penalty）.
 
 Phase C2: 法線方向の接触力計算と AL 乗数更新。
+Phase C7: スムースペナルティ (softplus) による区分連続接触力。
 
-接触反力:
+接触反力（従来 AL）:
     p_n = max(0, lambda_n + k_pen * (-g))
 
-乗数更新（Outer loop 終了時）:
-    lambda_n <- p_n
+接触反力（スムースペナルティ）:
+    p_n = k_pen * softplus(-g + lambda_n/k_pen, delta)
+    softplus(x, δ) = δ * ln(1 + exp(x/δ))
+
+乗数更新（Uzawa, Outer loop 終了時）:
+    lambda_n <- max(0, lambda_n + k_pen * (-g))
 
 設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §4
 """
 
 from __future__ import annotations
+
+import math
+
+import numpy as np
 
 from xkep_cae.contact.pair import ContactPair, ContactStatus
 
@@ -42,6 +51,109 @@ def evaluate_normal_force(pair: ContactPair) -> float:
     p_n = max(0.0, lam + k * (-g))
     pair.state.p_n = p_n
     return p_n
+
+
+def _softplus(x: float, delta: float) -> tuple[float, float]:
+    """Softplus 関数とその導関数（数値安定版）.
+
+    softplus(x, δ) = δ * ln(1 + exp(x/δ))
+    sigmoid(x, δ) = 1 / (1 + exp(-x/δ))
+
+    オーバーフロー回避:
+        x/δ > 30: softplus ≈ x, sigmoid ≈ 1
+        x/δ < -30: softplus ≈ 0, sigmoid ≈ 0
+
+    Args:
+        x: 入力値
+        delta: 平滑化幅 (> 0)
+
+    Returns:
+        sp: softplus(x, δ)
+        sig: sigmoid(x, δ) = d(softplus)/dx
+    """
+    z = x / delta
+    if z > 30.0:
+        return x, 1.0
+    elif z < -30.0:
+        return 0.0, 0.0
+    else:
+        exp_z = math.exp(z)
+        sp = delta * math.log1p(exp_z)
+        sig = exp_z / (1.0 + exp_z)
+        return sp, sig
+
+
+def smooth_normal_force(
+    gap: float,
+    k_pen: float,
+    lambda_n: float = 0.0,
+    *,
+    delta: float = 1e-4,
+) -> tuple[float, float]:
+    """スムースペナルティによる法線接触力（C∞連続）.
+
+    softplus 平滑化により max(0, ·) を連続近似する。
+    Active/inactive の二値判定を排除し、全ペアから連続的な力を返す。
+
+    p_n = k_pen * softplus(-g + λ_n/k_pen, δ)
+
+    導関数:
+        dp_n/dg = -k_pen * sigmoid((-g + λ_n/k_pen) / δ)
+
+    |g| >> δ の領域では従来の max(0, λ + k_pen*(-g)) と一致。
+    遷移領域 |g| ~ δ で C∞ 平滑化される。
+
+    Args:
+        gap: ギャップ値 g（g > 0: 非接触, g < 0: 貫入）
+        k_pen: ペナルティ剛性
+        lambda_n: ラグランジュ乗数（Uzawa で更新、初期値 0）
+        delta: 平滑化幅。梁半径の 1% 程度を推奨。
+
+    Returns:
+        p_n: 法線接触力 (>= 0)
+        dp_dg: dp_n/dg（接線剛性への寄与、<= 0）
+    """
+    # x = -g + λ/k
+    x = -gap + lambda_n / k_pen if k_pen > 0.0 else -gap
+    sp, sig = _softplus(x, delta)
+    p_n = k_pen * sp
+    dp_dg = -k_pen * sig  # dp/dg = k_pen * d(softplus)/dx * dx/dg = k_pen * sig * (-1)
+    return p_n, dp_dg
+
+
+def smooth_normal_force_vectorized(
+    gaps: np.ndarray,
+    k_pen: float,
+    lambdas: np.ndarray,
+    *,
+    delta: float = 1e-4,
+) -> tuple[np.ndarray, np.ndarray]:
+    """スムースペナルティのベクトル版（全ペア一括計算）.
+
+    Args:
+        gaps: (n,) ギャップ配列
+        k_pen: ペナルティ剛性
+        lambdas: (n,) ラグランジュ乗数配列
+        delta: 平滑化幅
+
+    Returns:
+        p_n: (n,) 法線力配列
+        dp_dg: (n,) 接線剛性配列
+    """
+    x = -gaps + lambdas / k_pen if k_pen > 0.0 else -gaps
+    z = x / delta
+
+    # 数値安定化: クリップして exp オーバーフロー回避
+    z_clip = np.clip(z, -30.0, 30.0)
+    exp_z = np.exp(z_clip)
+
+    # softplus と sigmoid
+    sp = np.where(z > 30.0, x, np.where(z < -30.0, 0.0, delta * np.log1p(exp_z)))
+    sig = np.where(z > 30.0, 1.0, np.where(z < -30.0, 0.0, exp_z / (1.0 + exp_z)))
+
+    p_n = k_pen * sp
+    dp_dg = -k_pen * sig
+    return p_n, dp_dg
 
 
 def update_al_multiplier(
