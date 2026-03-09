@@ -62,11 +62,12 @@
 - `newton_raphson_contact_ncp`（solver_ncp.py）
 - UL+NCP統合: `ul_assembler` + `adaptive_timestepping=True`
 - 解析的接線剛性: `analytical_tangent=True`（デフォルト）
-- Line-to-line Gauss積分 + Mortar + 同層除外 + Fischer-Burmeister NCP
+- Line-to-line Gauss積分 + 同層除外 + Fischer-Burmeister NCP
+- **摩擦あり**: `contact_mode="smooth_penalty"`（必須。NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
 
 ## 現在の状態
 
-**2271テスト** — 2026-03-07
+**2271テスト** — 2026-03-09
 
 ### ターゲット
 

@@ -76,8 +76,8 @@
 | **ソルバー** | `newton_raphson_contact_ncp`（`solver_ncp.py`） | Outer loop 不要、λ暴走なし |
 | **接触離散化** | Line-to-line Gauss 積分 | セグメント間力の連続性 |
 | **NCP関数** | Fischer-Burmeister | 微分可能、正則化容易 |
-| **摩擦** | Coulomb return mapping + NCP ハイブリッド | 法線NCP + 摩擦return mapping |
-| **Mortar** | 適応ペナルティ付き Mortar | 力の連続化 |
+| **摩擦** | smooth penalty + Uzawa（`contact_mode="smooth_penalty"`） | NCP鞍点系は摩擦接線剛性符号問題あり（status-147） |
+| **Mortar** | 適応ペナルティ付き Mortar（摩擦なし時のみ） | smooth penalty時は不使用 |
 | **同層除外** | `exclude_same_layer=True` | ~80% ペア削減 |
 | **k_pen** | 自動推定（beam EI ベース） | 手動設定不要 |
 | **線形ソルバー** | DOF閾値自動切替（直接法 / GMRES+ILU） | スケーラビリティ |
