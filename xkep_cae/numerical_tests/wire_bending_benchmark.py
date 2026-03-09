@@ -461,6 +461,7 @@ def run_bending_oscillation(
     auto_kpen: bool = True,
     use_friction: bool = False,
     mu: float = 0.0,
+    mu_ramp_steps: int | None = None,  # 摩擦ランプ（None=ランプなし, >0=段階的μ導入）
     k_pen_scaling: str = "sqrt",
     penalty_growth_factor: float = 4.0,
     show_progress: bool = True,
@@ -514,9 +515,11 @@ def run_bending_oscillation(
     du_norm_cap: float = 0.0,
     # δ正則化（Phase2接触コンプライアンス）
     contact_compliance: float | None = None,  # None=自動(1/k_pen), 0=無効
-    # 動的解析（Phase2）
+    # 動的解析
     dynamics: bool = False,
+    dynamics_phase1: bool = False,  # Phase1にも動的解析を適用
     oscillation_frequency_hz: float = 1.0,
+    bending_time: float = 1.0,  # Phase1曲げの物理時間 [s]
     rho: float = 7.85e-9,  # 密度 [ton/mm³]（鋼）
     rayleigh_alpha: float = 0.0,  # Rayleigh減衰 質量比例項
     rayleigh_beta: float = 0.0,  # Rayleigh減衰 剛性比例項
@@ -745,11 +748,30 @@ def run_bending_oscillation(
         _physics_n_steps = max(1, math.ceil(bend_angle_deg / max_angle_per_step_deg))
         _dt_init_frac = 1.0 / _physics_n_steps if adaptive_timestepping else 0.0
 
+        # Phase1 動的解析の準備
+        _p1_mass: object | None = None
+        _p1_damp: object | None = None
+        _p1_dt: float = 0.0
+        _p1_vel: np.ndarray | None = None
+        _p1_acc: np.ndarray | None = None
+        if dynamics_phase1:
+            _p1_mass = ul_asm.assemble_mass(rho, lumped=True)
+            if rayleigh_alpha > 0 or rayleigh_beta > 0:
+                K_ref_p1 = assemble_tangent(np.zeros(ndof))
+                _p1_damp = rayleigh_alpha * _p1_mass
+                if rayleigh_beta > 0:
+                    _p1_damp = _p1_damp + rayleigh_beta * K_ref_p1
+            _p1_dt = bending_time  # load_frac 0→1 に対応する物理時間
+            _p1_vel = np.zeros(ndof)
+            _p1_acc = np.zeros(ndof)
+
         if show_progress:
+            _dyn_msg = ", dynamics=True" if dynamics_phase1 else ""
             print(
                 f"\n--- Phase 1: 曲げ（UL+NCP統合 θ={bend_angle_deg}°, "
                 f"{n_bending_steps} steps, adaptive={adaptive_timestepping}"
-                f"{f', dt_init={_dt_init_frac:.4f}' if _dt_init_frac > 0 else ''}）---"
+                f"{f', dt_init={_dt_init_frac:.4f}' if _dt_init_frac > 0 else ''}"
+                f"{_dyn_msg}）---"
             )
 
         _ncp_result = newton_raphson_contact_ncp(
@@ -780,6 +802,15 @@ def run_bending_oscillation(
             lambda_decay=lambda_decay,
             use_line_search=use_line_search,
             du_norm_cap=du_norm_cap,
+            contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
+            mu_ramp_steps=mu_ramp_steps,
+            # Phase1 動的解析パラメータ
+            mass_matrix=_p1_mass,
+            damping_matrix=_p1_damp,
+            dt_physical=_p1_dt,
+            rho_inf=rho_inf,
+            velocity=_p1_vel,
+            acceleration=_p1_acc,
         )
 
         result_bend = ContactSolveResult(
@@ -831,6 +862,8 @@ def run_bending_oscillation(
             lambda_decay=lambda_decay,
             use_line_search=use_line_search,
             du_norm_cap=du_norm_cap,
+            contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
+            mu_ramp_steps=mu_ramp_steps,
         )
         result_bend = ContactSolveResult(
             u=_ncp_result.u,
@@ -1021,6 +1054,7 @@ def run_bending_oscillation(
                 use_line_search=use_line_search,
                 du_norm_cap=du_norm_cap,
                 contact_compliance=(-1.0 if contact_compliance is None else contact_compliance),
+                mu_ramp_steps=mu_ramp_steps,
                 # 動的解析パラメータ
                 mass_matrix=_dyn_mass,
                 damping_matrix=_dyn_damp,

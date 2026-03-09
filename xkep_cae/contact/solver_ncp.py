@@ -396,11 +396,12 @@ def _compute_friction_forces_ncp(
     mu: float = 0.3,
     mu_ramp_counter: int = 0,
     mu_ramp_steps: int = 0,
+    contact_compliance: float = 0.0,
 ) -> tuple[np.ndarray, dict[int, np.ndarray]]:
     """NCP ソルバー用の摩擦力計算.
 
     各 ACTIVE ペアで:
-    1. NCP 法線力 p_n = max(0, λ + k_pen*(-g)) を設定
+    1. NCP 法線力 p_n = max(0, λ + k_pen*(-(g + δ*λ))) を設定
     2. 接線変位を計算
     3. Coulomb return mapping を実行
     4. 摩擦力ベクトルをアセンブリ
@@ -417,6 +418,7 @@ def _compute_friction_forces_ncp(
         mu: 摩擦係数
         mu_ramp_counter: μランプカウンタ
         mu_ramp_steps: μランプ総ステップ数
+        contact_compliance: δ正則化パラメータ（0で従来動作）
 
     Returns:
         f_friction: (ndof_total,) 摩擦内力ベクトル
@@ -425,6 +427,7 @@ def _compute_friction_forces_ncp(
     mu_eff = compute_mu_effective(mu, mu_ramp_counter, mu_ramp_steps)
     f_friction = np.zeros(ndof_total)
     friction_tangents: dict[int, np.ndarray] = {}
+    _delta = contact_compliance
 
     for i, pair in enumerate(manager.pairs):
         if pair.state.status == ContactStatus.INACTIVE:
@@ -432,7 +435,9 @@ def _compute_friction_forces_ncp(
 
         lam_i = lambdas[i] if i < len(lambdas) else 0.0
         g_i = pair.state.gap
-        p_n = max(0.0, lam_i + k_pen * (-g_i))
+        # δ正則化: g_eff = g + δ*λ で法線力を計算
+        g_eff = g_i + _delta * lam_i if _delta > 0.0 else g_i
+        p_n = max(0.0, lam_i + k_pen * (-g_eff))
         pair.state.p_n = p_n
 
         if p_n <= 0.0 or mu_eff <= 0.0:
@@ -918,12 +923,12 @@ def _solve_saddle_point_direct(
     """Alart-Curnier NCP 鞍点系を直接 Schur complement で解く.
 
     鞍点系（δ正則化対応）:
-      [K_eff   -G_A^T] [Δu  ] = [-R_u              ]
-      [G_A     -δI   ] [Δλ_A]   [-g_active + δ*λ_A  ]
+      [K_eff   -G_A^T] [Δu  ] = [-R_u      ]
+      [G_A      δI   ] [Δλ_A]   [-g_active  ]
 
     δ = contact_compliance > 0 の場合、Schur complement S = G_A*V + δI
-    は常に正定値となり、接触遷移時のNewton安定性が向上する。
-    物理的意味: コンプライアンス付き接触（g = -δ*λ）。
+    は常に正定値となり、接触遷移時のSchur補集合の安定性が向上する。
+    δは Schur complement の正則化のみに使用し、NCP残差や接触力には適用しない。
 
     K_eff = K_T + k_pen * G_A^T * G_A
 
@@ -931,7 +936,7 @@ def _solve_saddle_point_direct(
       1. v0 = K_eff^{-1} * (-R_u)        (非制約解)
       2. V  = K_eff^{-1} * G_A^T         (制約感度)
       3. S  = G_A * V + δI               (正則化 Schur 補集合)
-      4. Δλ = S^{-1} * (-g + δλ - G_A * v0)
+      4. Δλ = S^{-1} * (-g - G_A * v0)
       5. Δu = v0 + V * Δλ
 
     Args:
@@ -994,10 +999,11 @@ def _solve_saddle_point_direct(
     if _delta > 0.0:
         S += _delta * np.eye(n_active)
 
-    # Step 4: rhs_S = -g_active + δ*λ_A - G_A * v0
+    # Step 4: rhs_S = -g_active - G_A * v0
+    # δ正則化は Schur complement S = G*V + δI のみに適用。
+    # 接触制約 g = 0 を目標とし、δ は Schur complement の正定値化のみに使用。
+    # (G_A*V + δI)*Δλ = -g - G_A*v0
     rhs_S = -g_active - G_A_dense @ v0
-    if _delta > 0.0 and lam_active is not None:
-        rhs_S += _delta * lam_active
 
     # Schur complement 解法
     if _delta > 0.0:
@@ -1763,13 +1769,20 @@ def newton_raphson_contact_ncp(
                     f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
                 )
 
+    # 摩擦設定の解決（δ自動決定より前に必要）
+    _use_friction = use_friction or manager.config.use_friction
+    _mu = mu if mu is not None else manager.config.mu
+
     # δ正則化: contact_compliance < 0 → 自動
-    # δ = 1/(100*k_pen): ペナルティ剛性の1/100で正則化
-    # 物理的意味: 許容ギャップ g = -δ*λ ≈ -λ/(100*k_pen) ≪ ワイヤ半径
+    # δ = 1/(α*k_pen): Schur complement S = G*V + δI を正定値化
+    # 物理的意味: 許容ギャップ g ≈ -δ*λ（小さいほど精度向上、大きいほど安定化）
     if contact_compliance < 0.0 and k_pen > 0.0:
         contact_compliance = 1.0 / (100.0 * k_pen)
         if show_progress:
-            print(f"  contact_compliance (auto): δ={contact_compliance:.6e} (k_pen={k_pen:.2e})")
+            print(
+                f"  contact_compliance (auto): δ={contact_compliance:.6e} "
+                f"(k_pen={k_pen:.2e})"
+            )
 
     # --- k_pen continuation（S3改良8）---
     _k_pen_target = k_pen
@@ -1777,10 +1790,6 @@ def newton_raphson_contact_ncp(
     _k_pen_cont_steps = manager.config.k_pen_continuation_steps
     if _k_pen_cont:
         k_pen = _k_pen_target * manager.config.k_pen_continuation_start
-
-    # 摩擦設定の解決
-    _use_friction = use_friction or manager.config.use_friction
-    _mu = mu if mu is not None else manager.config.mu
     _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
 
     # line contact 設定の解決
@@ -2070,6 +2079,10 @@ def newton_raphson_contact_ncp(
         manager.config.contact_compliance = _contact_compliance
         _gaps_prev_iter: np.ndarray | None = None
 
+        # --- Active-set 安定化カウンタ（摩擦あり時の早期凍結用）---
+        _active_set_stable_count: int = 0
+        _prev_active_set: np.ndarray | None = None
+
         # --- Active-set チャタリング抑制（S3改良5: 時間方向畳み込み） ---
         _chattering_window = manager.config.chattering_window
         _active_history: list[np.ndarray] = []  # 直近N反復のNCP active mask履歴
@@ -2122,6 +2135,7 @@ def newton_raphson_contact_ncp(
                 )
 
             # 3. NCP アクティブセット判定（frozen active-set 対応）
+            # 摩擦あり: active setが安定したら凍結してNewton収束を促進
             _update_active = (
                 it % active_set_update_interval == 0
                 or _frozen_ncp_active_mask is None
@@ -2130,6 +2144,9 @@ def newton_raphson_contact_ncp(
                     and len(_frozen_ncp_active_mask) != n_geom_active
                 )
             )
+            # 摩擦あり: active set が安定したら早期凍結
+            if _use_friction and _active_set_stable_count >= 3 and it >= 5:
+                _update_active = False
             if _update_active:
                 if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
                     p_n_mortar_arr = compute_mortar_p_n(mortar_nodes, lam_mortar, g_mortar, k_pen)
@@ -2149,22 +2166,10 @@ def newton_raphson_contact_ncp(
                     gaps_for_active = gaps
                 _gaps_prev_iter = gaps.copy()
 
-                # δ正則化時: g_eff = g + δ*λ で判定
-                _gaps_eff = gaps_for_active
-                if _contact_compliance > 0.0:
-                    _gaps_eff = gaps_for_active + _contact_compliance * lams
-                p_n_arr = np.maximum(0.0, lams + k_pen * (-_gaps_eff))
+                # active set 判定: δ正則化は Schur complement のみで使用し、
+                # active set と NCP 残差は未修正ギャップで計算する
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps_for_active))
                 ncp_active_mask_raw = p_n_arr > 0.0
-
-                # 単調活性セット戦略: δ正則化時は活性ペアの脱落を禁止
-                # （Newton反復中の活性セット振動を抑制）
-                if (
-                    _contact_compliance > 0.0
-                    and _frozen_ncp_active_mask is not None
-                    and len(_frozen_ncp_active_mask) == len(ncp_active_mask_raw)
-                ):
-                    # 前回活性だったペアは活性のまま維持（単調成長）
-                    ncp_active_mask_raw = ncp_active_mask_raw | _frozen_ncp_active_mask
 
                 # チャタリング抑制: 直近N反復の過半数投票（S3改良5）
                 if _chattering_window > 1 and n_geom_active > 0:
@@ -2187,10 +2192,7 @@ def newton_raphson_contact_ncp(
                 )
             else:
                 # Frozen: p_n_arr のみ更新、active mask は前回値を使用
-                _gaps_eff_f = gaps
-                if _contact_compliance > 0.0:
-                    _gaps_eff_f = gaps + _contact_compliance * lams
-                p_n_arr = np.maximum(0.0, lams + k_pen * (-_gaps_eff_f))
+                p_n_arr = np.maximum(0.0, lams + k_pen * (-gaps))
                 ncp_active_mask = _frozen_ncp_active_mask
                 if _frozen_ncp_mortar_active is not None:
                     ncp_mortar_active = _frozen_ncp_mortar_active
@@ -2198,15 +2200,12 @@ def newton_raphson_contact_ncp(
                     ncp_mortar_active = np.array([], dtype=bool)
 
             # 4. NCP 法線力を pair.state に同期（assembly 関数が参照するため）
+            # δ正則化は Schur complement のみ。接触力は未修正ギャップで計算。
             for idx_p, pair in enumerate(manager.pairs):
                 if pair.state.status == ContactStatus.INACTIVE:
                     continue
                 lam_i = lam_all[idx_p] if idx_p < len(lam_all) else 0.0
-                # δ正則化時: g_eff = g + δ*λ で接触力を計算
-                _g_eff_i = pair.state.gap
-                if _contact_compliance > 0.0:
-                    _g_eff_i += _contact_compliance * lam_i
-                p_n = max(0.0, lam_i + k_pen * (-_g_eff_i))
+                p_n = max(0.0, lam_i + k_pen * (-pair.state.gap))
                 pair.state.lambda_n = lam_i
                 pair.state.p_n = p_n
                 if pair.state.k_pen <= 0.0:
@@ -2227,9 +2226,8 @@ def newton_raphson_contact_ncp(
                     _n_gauss,
                     k_pen,
                 )
-            elif _line_contact and _contact_compliance <= 0.0:
+            elif _line_contact:
                 # Line-to-line Gauss 積分（assembly の既存インフラを利用）
-                # δ正則化時は鞍点系との整合性のため代表点方式を使用
                 _orig_lc = manager.config.line_contact
                 _orig_ng = manager.config.n_gauss
                 manager.config.line_contact = True
@@ -2241,39 +2239,34 @@ def newton_raphson_contact_ncp(
                 manager.config.n_gauss = _orig_ng
             else:
                 # 代表点方式: 鞍点系のgapsと整合的
+                # δ正則化はSchur complementのみ。接触力にはδ=0。
                 f_c = _compute_contact_force_from_lambdas(
                     manager,
                     lam_all,
                     ndof,
                     ndof_per_node,
                     k_pen=k_pen,
-                    contact_compliance=_contact_compliance,
+                    contact_compliance=0.0,
                 )
 
-            # 4b. 摩擦力ベクトル（Alart-Curnier 接線乗数方式）
+            # 4b. 摩擦力ベクトル（ペナルティ return mapping 方式）
+            # 摩擦は法線NCP乗数ベースの return mapping で計算し、
+            # 力をR_uに、剛性をK_Tに加算。Alart-Curnier拡大鞍点系は使わない。
+            _friction_tangents: dict[int, np.ndarray] = {}
             if _use_friction:
                 mu_eff = compute_mu_effective(_mu, step_display, _mu_ramp_steps)
-                # 接線乗数から摩擦力を計算: f_fric = -G_t^T * λ_t
-                f_friction = np.zeros(ndof)
-                for _j, pair_idx in enumerate(active_indices):
-                    pair = manager.pairs[pair_idx]
-                    if pair.state.status == ContactStatus.INACTIVE:
-                        continue
-                    lam_t_j = lam_t_all[pair_idx]
-                    if float(np.linalg.norm(lam_t_j)) < 1e-30:
-                        continue
-                    dofs = _contact_dofs(pair, ndof_per_node)
-                    for axis in range(2):
-                        if abs(lam_t_j[axis]) < 1e-30:
-                            continue
-                        g_t = _contact_tangent_shape_vector(pair, axis)
-                        for kk in range(4):
-                            for d in range(3):
-                                # g_t_shape の符号は -(G_t^T) に対応
-                                # f = -G_t^T * λ_t, g_t_shape は assembly 規約に従う
-                                f_friction[dofs[kk * ndof_per_node + d]] += (
-                                    lam_t_j[axis] * g_t[kk * 3 + d]
-                                )
+                f_friction, _friction_tangents = _compute_friction_forces_ncp(
+                    manager,
+                    lam_all,
+                    u,
+                    u_ref,
+                    node_coords_ref,
+                    ndof,
+                    ndof_per_node=ndof_per_node,
+                    k_pen=k_pen,
+                    mu=mu_eff,
+                    contact_compliance=0.0,
+                )
                 f_c = f_c + f_friction
 
             # 4c. 接触力ランプ（S3改良11）: 初期反復で接触力を段階的に増大
@@ -2325,96 +2318,45 @@ def newton_raphson_contact_ncp(
                 C_mortar = np.array([])
 
             # 6-perpair: Per-pair NCP 残差
-            #    Active: C_i = k_pen * (g_i + δ*λ_i)  (g + δλ → 0 を目標)
-            #    Inactive: C_i = λ_i                   (λ → 0 を目標)
+            #    Active: C_i = k_pen * g_i  (g → 0 を目標)
+            #    Inactive: C_i = λ_i        (λ → 0 を目標)
+            # δ正則化は Schur complement のみで使用
             C_ac = np.empty(n_geom_active) if n_geom_active > 0 else np.array([])
             for j in range(n_geom_active):
                 if ncp_active_mask[j]:
-                    _g_reg = gaps[j]
-                    if _contact_compliance > 0.0:
-                        _g_reg += _contact_compliance * lams[j]
-                    C_ac[j] = k_pen * _g_reg
+                    C_ac[j] = k_pen * gaps[j]
                 else:
                     C_ac[j] = lams[j]
 
-            # 6b. 接線 NCP 残差 + J ブロック構築（Alart-Curnier 摩擦）
-            C_t_ac = np.zeros(2 * n_geom_active)
-            J_blocks: dict = {}
+            # 6b. 摩擦残差（ペナルティ方式: 摩擦力の大きさ指標）
+            # Alart-Curnier鞍点系は使わず、return mappingの残差を計算
+            ncp_t_norm_raw = 0.0
             if _use_friction and n_geom_active > 0:
-                _k_t = k_pen * manager.config.k_t_ratio
+                # 摩擦残差: 各ペアの |f_t| - μ*p_n の超過量（slip余剰）
+                _n_fric_pairs = 0
+                _fric_residual_sq = 0.0
                 for j in range(n_geom_active):
+                    if not ncp_active_mask[j]:
+                        continue
                     pair_idx = active_indices[j]
                     pair = manager.pairs[pair_idx]
-                    lam_t_j = lam_t_all[pair_idx]  # (2,)
-                    p_n_j = p_n_arr[j] if ncp_active_mask[j] else 0.0
-
-                    if not ncp_active_mask[j]:
-                        # 法線非アクティブ → 接線も非アクティブ
-                        C_t_ac[2 * j] = lam_t_j[0]
-                        C_t_ac[2 * j + 1] = lam_t_j[1]
-                        J_blocks[pair_idx] = {"mode": "inactive"}
+                    if pair.state.status == ContactStatus.INACTIVE:
                         continue
-
-                    # 接線変位増分 Δu_t
-                    delta_ut = compute_tangential_displacement(
-                        pair, u, u_ref, node_coords_ref, ndof_per_node
-                    )
-
-                    # 増強接線乗数: λ̂_t = λ_t + k_t * Δu_t
-                    lam_t_hat = lam_t_j + _k_t * delta_ut
-                    lam_t_hat_norm = float(np.linalg.norm(lam_t_hat))
-
-                    # Stick/slip 判定
-                    if lam_t_hat_norm <= mu_eff * p_n_j or lam_t_hat_norm < 1e-30:
-                        # Stick: C_t = λ_t - λ̂_t = -k_t * Δu_t
-                        C_t_ac[2 * j : 2 * j + 2] = lam_t_j - lam_t_hat
-                        J_blocks[pair_idx] = {"mode": "active_stick"}
-                    else:
-                        # Slip: C_t = λ_t - μ*p_n * q̂
-                        q_hat = lam_t_hat / lam_t_hat_norm
-                        C_t_ac[2 * j : 2 * j + 2] = lam_t_j - mu_eff * p_n_j * q_hat
-
-                        # J_t_t = I - (μ*p_n/||λ̂_t||) * (I - q̂⊗q̂)
-                        ratio = mu_eff * p_n_j / lam_t_hat_norm
-                        I2 = np.eye(2)
-                        J_t_t_local = I2 - ratio * (I2 - np.outer(q_hat, q_hat))
-                        # 正則化: J_t_t の固有値は 1（q̂方向）と 1-ratio（垂直方向）
-                        # ratio > 1 で負固有値→行列特異化を防ぐため正則化項を追加
-                        if ratio > 1.0:
-                            reg_eps = (ratio - 1.0) + 1e-4
-                            J_t_t_local += reg_eps * I2
-
-                        # J_t_n = -μ * q̂  (∂f_fric/∂λ_n coupling!)
-                        J_t_n_local = -mu_eff * q_hat
-
-                        # J_t_u: slip の変位微分
-                        # ∂C_t/∂u = μ*k_pen * outer(q̂, G_n_row) - μ*p_n*k_t/||λ̂_t|| * (I-q̂⊗q̂) @ G_t_rows
-                        G_n_row_j = G_mat[j, :].toarray().ravel()  # (ndof,)
-                        G_t_rows_j = np.zeros((2, ndof))
-                        dofs_j = _contact_dofs(pair, ndof_per_node)
-                        for ax in range(2):
-                            g_t_sv = _contact_tangent_shape_vector(pair, ax)
-                            # G_t の符号: coeffs = [-(1-s), -s, (1-t), t]
-                            # g_t_shape の符号: [(1-s), s, -(1-t), -t]
-                            # G_t = -g_t_shape を DOF 配置
-                            for kk in range(4):
-                                for d in range(3):
-                                    G_t_rows_j[ax, dofs_j[kk * ndof_per_node + d]] = -g_t_sv[
-                                        kk * 3 + d
-                                    ]
-
-                        proj = np.eye(2) - np.outer(q_hat, q_hat)
-                        J_t_u_local = (
-                            mu_eff * k_pen * np.outer(q_hat, G_n_row_j)
-                            - mu_eff * p_n_j * _k_t / lam_t_hat_norm * proj @ G_t_rows_j
-                        )
-
-                        J_blocks[pair_idx] = {
-                            "mode": "active_slip",
-                            "J_t_t": J_t_t_local,
-                            "J_t_n": J_t_n_local,
-                            "J_t_u": J_t_u_local,
-                        }
+                    p_n_j = p_n_arr[j]
+                    if p_n_j <= 0.0:
+                        continue
+                    # return mapping後の摩擦力: pair.state.z_t
+                    q_j = pair.state.z_t if pair.state.z_t is not None else np.zeros(2)
+                    q_norm = float(np.linalg.norm(q_j))
+                    # Coulomb条件: ||q|| ≤ μ*p_n
+                    mu_pn = mu_eff * p_n_j if mu_eff > 0 else 0.0
+                    if mu_pn > 1e-30:
+                        # 正規化残差: slip余剰 / μ*p_n
+                        slip_excess = max(0.0, q_norm - mu_pn)
+                        _fric_residual_sq += (slip_excess / mu_pn) ** 2
+                    _n_fric_pairs += 1
+                if _n_fric_pairs > 0:
+                    ncp_t_norm_raw = float(np.sqrt(_fric_residual_sq / _n_fric_pairs))
 
             # 7. 収束判定
             res_u_norm = float(np.linalg.norm(R_u))
@@ -2427,9 +2369,8 @@ def newton_raphson_contact_ncp(
             else:
                 ncp_norm = float(np.linalg.norm(C_ac)) if n_geom_active > 0 else 0.0
                 n_ncp_active = int(np.sum(ncp_active_mask))
-            ncp_t_norm = (
-                float(np.linalg.norm(C_t_ac)) if (_use_friction and n_geom_active > 0) else 0.0
-            )
+            # 摩擦残差（ペナルティ方式: Coulomb条件の正規化残差）
+            ncp_t_norm = ncp_t_norm_raw if _use_friction else 0.0
 
             # 診断データ収集
             _diag.res_history.append(res_u_norm / f_ext_ref_norm)
@@ -2513,7 +2454,12 @@ def newton_raphson_contact_ncp(
                     K_coat_fric = manager.compute_coating_friction_stiffness(coords_def, ndof)
                     K_T = K_T + K_coat_fric
 
-            # 8c. 摩擦は拡大鞍点系で処理（K_T への加算不要）
+            # 8c. 摩擦接線剛性をK_Tに加算（ペナルティ方式）
+            if _use_friction and _friction_tangents:
+                K_fric = _build_friction_stiffness(
+                    manager, _friction_tangents, ndof, ndof_per_node
+                )
+                K_T = K_T + K_fric
 
             # 8d. 動的解析: 有効接線剛性に質量・減衰を加算
             if _dynamics and _dt_sub > 1e-30:
@@ -2570,65 +2516,7 @@ def newton_raphson_contact_ncp(
                         lam_mortar[k] = 0.0
                 lam_mortar = np.maximum(lam_mortar, 0.0)
 
-            elif _use_friction and n_geom_active > 0:
-                # Alart-Curnier 摩擦拡大鞍点系
-                G_t_mat = _build_tangential_constraint_jacobian(
-                    manager, active_indices, ndof, ndof_per_node
-                )
-                _k_t = k_pen * manager.config.k_t_ratio
-
-                du, dlam_n, dlam_t = _solve_augmented_friction_system(
-                    K_T,
-                    G_mat,
-                    G_t_mat,
-                    k_pen,
-                    _k_t,
-                    R_u,
-                    C_ac,
-                    C_t_ac,
-                    J_blocks,
-                    fixed_dofs,
-                    n_ncp_active,
-                    ncp_active_mask,
-                    active_indices,
-                )
-
-                # 11. Line search + 更新
-                if use_line_search:
-                    alpha = _ncp_line_search(
-                        u,
-                        du,
-                        f_ext,
-                        fixed_dofs,
-                        assemble_internal_force,
-                        res_u_norm,
-                        max_steps=line_search_max_steps,
-                        f_c=f_c,
-                        diverge_factor=_ls_diverge,
-                    )
-                    du = alpha * du
-                if du_norm_cap > 0.0:
-                    _du_n = float(np.linalg.norm(du))
-                    _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
-                    if _du_n > du_norm_cap * _u_ref_n:
-                        du *= du_norm_cap * _u_ref_n / _du_n
-                u += _omega * du
-
-                # 法線乗数の更新
-                if n_ncp_active > 0:
-                    active_rows_n = np.where(ncp_active_mask)[0]
-                    for j_local in range(n_ncp_active):
-                        j_geom = int(active_rows_n[j_local])
-                        pair_idx = active_indices[j_geom]
-                        lam_all[pair_idx] += _omega * dlam_n[j_local]
-
-                    # 接線乗数の更新
-                    for j_local in range(n_ncp_active):
-                        j_geom = int(active_rows_n[j_local])
-                        pair_idx = active_indices[j_geom]
-                        lam_t_all[pair_idx] += _omega * dlam_t[2 * j_local : 2 * j_local + 2]
-
-            else:
+            elif not _use_mortar:
                 # 従来の法線のみ鞍点系
                 if n_ncp_active > 0:
                     active_row_indices = np.where(ncp_active_mask)[0]
@@ -2660,6 +2548,9 @@ def newton_raphson_contact_ncp(
                 )
 
                 # 11. Line search + 更新
+                # δ正則化時: du と dlam を同じ比率でスケーリングし、
+                # 鞍点系の制約整合性を維持する
+                _scale_factor = 1.0
                 if use_line_search:
                     alpha = _ncp_line_search(
                         u,
@@ -2672,21 +2563,22 @@ def newton_raphson_contact_ncp(
                         f_c=f_c,
                         diverge_factor=_ls_diverge,
                     )
-                    du = alpha * du
+                    _scale_factor *= alpha
                 if du_norm_cap > 0.0:
-                    _du_n = float(np.linalg.norm(du))
+                    _du_n = float(np.linalg.norm(_scale_factor * du))
                     _u_ref_n = max(float(np.linalg.norm(u)), 1.0)
                     if _du_n > du_norm_cap * _u_ref_n:
-                        du *= du_norm_cap * _u_ref_n / _du_n
+                        _scale_factor *= du_norm_cap * _u_ref_n / _du_n
+                du = _scale_factor * du
                 u += _omega * du
 
-                # NCP アクティブ乗数の更新
+                # NCP アクティブ乗数の更新（du と同じスケーリング）
                 if n_ncp_active > 0:
                     active_pair_indices = [
                         active_indices[j] for j in range(n_geom_active) if ncp_active_mask[j]
                     ]
                     for j_local, pair_idx in enumerate(active_pair_indices):
-                        lam_all[pair_idx] += _omega * dlam_A[j_local]
+                        lam_all[pair_idx] += _omega * _scale_factor * dlam_A[j_local]
 
             # NCP 非アクティブ乗数の処理（Mortar 時はスキップ）
             # λ soft decay: 即座ゼロ化→段階的減衰で力の急変を緩和（status-145）
