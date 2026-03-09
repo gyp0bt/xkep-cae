@@ -14,9 +14,9 @@
 
 ---
 
-## 現在地（2026-03-08）
+## 現在地（2026-03-09）
 
-**2271テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装 + 段階的活性化NCP移植。37本NCP収束達成（Layer1径方向圧縮）。**NCP 6x高速化（解析的接線+バッチ接触幾何）+ 要素ループ12.6xバッチ化達成。7本撚線90°曲げ+揺動1周期が130秒で完全収束。**ソルバー一本化完了（n_load_steps廃止、NCPSolverInput導入、adaptive_timestepping=Trueデフォルト化）。Updated Lagrangian CR梁アセンブラで大回転収束障壁を解消。接触診断2D投影可視化。被膜接触モデル再構築（gap_offset廃止→被膜厚考慮メッシュ+被膜スプリング）。mm-ton-MPa単位系移行開始。被膜Kelvin-Voigt粘性減衰。k_pen材料ベース自動推定強制。**
+**2271テスト。Phase 1〜C6 + S1-S2 + 高速化基盤 完了。S3改良12項目実装 + 段階的活性化NCP移植。37本NCP収束達成（Layer1径方向圧縮）。**NCP 6x高速化（解析的接線+バッチ接触幾何）+ 要素ループ12.6xバッチ化達成。7本撚線90°曲げ+揺動1周期が130秒で完全収束。**ソルバー一本化完了（n_load_steps廃止、NCPSolverInput導入、adaptive_timestepping=Trueデフォルト化）。Updated Lagrangian CR梁アセンブラで大回転収束障壁を解消。接触診断2D投影可視化。被膜接触モデル再構築（gap_offset廃止→被膜厚考慮メッシュ+被膜スプリング）。mm-ton-MPa単位系移行開始。被膜Kelvin-Voigt粘性減衰。k_pen材料ベース自動推定強制。smooth penalty+Uzawaで摩擦90度曲げ+揺動収束達成。**
 
 ### 到達点
 
@@ -25,7 +25,7 @@
 | FEM要素 | 梁（EB/Timo/CR/Cosserat）+ 平面（Q4/TRI）+ 固体（HEX8） | 解析解一致 |
 | 非線形 | 幾何学的非線形（NR/弧長/CR/TL/UL）+ 弾塑性 + ファイバーモデル | Abaqus比較 |
 | 動的解析 | Newmark-β/HHT-α/Generalized-α/陽解法/モーダル減衰 | 解析解一致 |
-| 接触 | NCP Semi-smooth Newton + Line contact + Mortar + Coulomb摩擦 | 7本撚り収束 |
+| 接触 | NCP Semi-smooth Newton + Line contact + Mortar + Coulomb摩擦 + smooth penalty Uzawa | 7本摩擦曲げ+揺動収束 |
 | 撚線 | 7本撚り曲げ揺動収束、被膜/シース、ヒステリシス観測 | 計測データあり |
 | 高速化 | COO/CSRベクトル化、共有メモリ並列、ブロック前処理、修正NR法 | 91本まで計測 |
 | ML | GNN/PINNサロゲートPoC（R²=0.995） | 熱伝導2D |
