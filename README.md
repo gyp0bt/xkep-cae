@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2271テスト** — 2026-03-09時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**2271テスト** — 2026-03-10時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
@@ -40,6 +40,7 @@
 | [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
 | [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
+| [プロセスアーキテクチャ設計](docs/design/process-architecture.md) | AbstractProcess + Strategy分解の設計仕様 |
 | [使用例](docs/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
 
 ### モジュール別ドキュメント
