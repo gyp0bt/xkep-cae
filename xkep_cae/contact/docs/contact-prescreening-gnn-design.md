@@ -1,6 +1,6 @@
 # 接触プリスクリーニング用GNN設計仕様
 
-[← README](../../README.md) | [← roadmap](../roadmap.md) | [← status-067](../status/status-067.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md) | [← status-067](../../../docs/status/status-067.md)
 
 **日付**: 2026-02-26
 **作成者**: Claude Code

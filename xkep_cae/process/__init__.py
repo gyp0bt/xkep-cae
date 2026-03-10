@@ -2,8 +2,6 @@
 
 AbstractProcess + Strategy Protocol によるソルバー契約化フレームワーク。
 
-設計仕様: xkep_cae/process/process-architecture.md
-
 公開API:
     - AbstractProcess, ProcessMeta, ProcessMetaclass: 基底クラス群
     - PreProcess, SolverProcess, PostProcess, VerifyProcess, BatchProcess: カテゴリ

@@ -3,7 +3,6 @@
 AbstractProcess の中間抽象クラス5種を定義する。
 具象プロセスはこれらのいずれかを継承する。
 
-設計仕様: xkep_cae/process/process-architecture.md §3
 """
 
 from __future__ import annotations

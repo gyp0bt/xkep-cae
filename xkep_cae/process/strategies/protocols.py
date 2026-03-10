@@ -3,7 +3,6 @@
 ソルバー内部の直交する振る舞い軸を Protocol で規定する。
 具象実装は Phase 2 で各 strategy ファイルに配置する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.2
 """
 
 from __future__ import annotations
@@ -128,6 +127,25 @@ class ContactGeometryStrategy(Protocol):
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
         """ギャップの計算."""
+        ...
+
+    def update_geometry(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        *,
+        config: object | None = None,
+    ) -> None:
+        """全ペアの幾何情報（s, t, gap, frame）を更新."""
+        ...
+
+    def build_constraint_jacobian(
+        self,
+        pairs: list,
+        ndof_total: int,
+        ndof_per_node: int = 6,
+    ) -> tuple[sp.csr_matrix, list[int]]:
+        """制約ヤコビアン G = ∂g_n/∂u を構築."""
         ...
 
 

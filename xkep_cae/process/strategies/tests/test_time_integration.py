@@ -11,6 +11,7 @@ from xkep_cae.process.strategies.time_integration import (
     GeneralizedAlphaProcess,
     QuasiStaticProcess,
     TimeIntegrationInput,
+    create_time_integration_strategy,
 )
 from xkep_cae.process.testing import binds_to
 
@@ -200,3 +201,57 @@ class TestGeneralizedAlphaProcess:
         # 元配列を変更しても proc の状態は変わらない
         v0[0] = 999.0
         assert proc.vel[0] == 1.0
+
+
+# --- create_time_integration_strategy ファクトリ ---
+
+
+class TestCreateTimeIntegrationStrategy:
+    """create_time_integration_strategy ファクトリのテスト."""
+
+    def test_quasi_static_default(self):
+        """mass_matrix=None → QuasiStaticProcess."""
+        strategy = create_time_integration_strategy()
+        assert isinstance(strategy, QuasiStaticProcess)
+
+    def test_quasi_static_no_dt(self):
+        """dt_physical=0 → QuasiStaticProcess."""
+        M = sp.eye(3, format="csr")
+        strategy = create_time_integration_strategy(mass_matrix=M, dt_physical=0.0)
+        assert isinstance(strategy, QuasiStaticProcess)
+
+    def test_dynamic(self):
+        """mass_matrix + dt_physical > 0 → GeneralizedAlphaProcess."""
+        M = sp.eye(3, format="csr")
+        strategy = create_time_integration_strategy(mass_matrix=M, dt_physical=0.01)
+        assert isinstance(strategy, GeneralizedAlphaProcess)
+
+    def test_dynamic_rho_inf(self):
+        """rho_inf パラメータの伝播."""
+        M = sp.eye(3, format="csr")
+        strategy = create_time_integration_strategy(mass_matrix=M, dt_physical=0.01, rho_inf=1.0)
+        assert isinstance(strategy, GeneralizedAlphaProcess)
+        assert strategy.gamma == pytest.approx(0.5)
+        assert strategy.beta == pytest.approx(0.25)
+
+    def test_dynamic_with_initial_state(self):
+        """初速・初期加速度の設定."""
+        M = sp.eye(3, format="csr")
+        v0 = np.array([1.0, 2.0, 3.0])
+        a0 = np.array([0.1, 0.2, 0.3])
+        strategy = create_time_integration_strategy(
+            mass_matrix=M, dt_physical=0.01, velocity=v0, acceleration=a0
+        )
+        assert isinstance(strategy, GeneralizedAlphaProcess)
+        np.testing.assert_array_equal(strategy.vel, v0)
+        np.testing.assert_array_equal(strategy.acc, a0)
+
+    def test_dynamic_with_damping(self):
+        """減衰行列の設定."""
+        M = sp.eye(3, format="csr")
+        C = sp.eye(3, format="csr") * 10.0
+        strategy = create_time_integration_strategy(
+            mass_matrix=M, damping_matrix=C, dt_physical=0.01
+        )
+        assert isinstance(strategy, GeneralizedAlphaProcess)
+        assert strategy.C is not None

@@ -1,6 +1,6 @@
 # xkep-cae プロセスアーキテクチャ設計仕様書
 
-[← README](../../README.md) | [← process](README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← process](../README.md) | [← roadmap](../../../docs/roadmap.md)
 
 ## Context
 
@@ -816,7 +816,7 @@ def binds_to(process_class: type[AbstractProcess]):
 ```python
 # docs からは md リンクで参照
 # xkep_cae/process/process-architecture.md 内:
-#   [NCPContactSolverProcess 仕様](../../xkep_cae/process/concrete/solve_ncp.spec.md)
+#   [NCPContactSolverProcess 仕様](../../../xkep_cae/process/concrete/solve_ncp.spec.md)
 
 # tests/ からは import で参照（conftest.py で自動検出）
 # tests/conftest.py:

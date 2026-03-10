@@ -15,7 +15,6 @@ Line-to-line 接触は Gauss 積分で接触力の空間分布を捉え、精度
 - Meier, Popp, Wall (2016): "A finite element approach for the line-to-line
   contact interaction of thin beams"
 
-設計仕様: docs/contact/contact-algorithm-overhaul-c6.md §3
 """
 
 from __future__ import annotations

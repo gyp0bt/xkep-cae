@@ -13,7 +13,6 @@ Mortar 制約ヤコビアン:
 Mortar 基底関数（線形梁要素）:
   Φ_{A0}(s) = 1 - s,  Φ_{A1}(s) = s
 
-設計仕様: docs/contact/contact-algorithm-overhaul-c6.md §7
 """
 
 from __future__ import annotations

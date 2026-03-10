@@ -2,7 +2,9 @@
 
 時間積分方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.3
+Phase 3 統合:
+- create_time_integration_strategy() ファクトリで solver_ncp.py の
+  動的解析初期化ロジックを Strategy に移譲する。
 """
 
 from __future__ import annotations
@@ -175,3 +177,40 @@ class GeneralizedAlphaProcess(SolverProcess[TimeIntegrationInput, TimeIntegratio
     def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
         u_pred = self.predict(input_data.u, input_data.dt)
         return TimeIntegrationOutput(u=u_pred)
+
+
+def create_time_integration_strategy(
+    *,
+    mass_matrix: sp.csr_matrix | np.ndarray | None = None,
+    damping_matrix: sp.csr_matrix | np.ndarray | None = None,
+    dt_physical: float = 0.0,
+    rho_inf: float = 0.9,
+    velocity: np.ndarray | None = None,
+    acceleration: np.ndarray | None = None,
+) -> QuasiStaticProcess | GeneralizedAlphaProcess:
+    """solver_ncp.py の動的解析初期化ロジックを Strategy に移譲するファクトリ.
+
+    solver_ncp.py (lines 1659-1676) の分岐ロジックを再現する。
+
+    Args:
+        mass_matrix: 質量行列（None → 準静的）
+        damping_matrix: 減衰行列（オプション）
+        dt_physical: 物理時間刻み
+        rho_inf: Generalized-α スペクトル半径（0.0-1.0）
+        velocity: 初期速度
+        acceleration: 初期加速度
+
+    Returns:
+        QuasiStaticProcess または GeneralizedAlphaProcess
+    """
+    is_dynamic = mass_matrix is not None and dt_physical > 0.0
+    if not is_dynamic:
+        return QuasiStaticProcess()
+
+    strategy = GeneralizedAlphaProcess(
+        mass_matrix=mass_matrix,
+        damping_matrix=damping_matrix,
+        rho_inf=rho_inf,
+    )
+    strategy.set_initial_state(velocity=velocity, acceleration=acceleration)
+    return strategy

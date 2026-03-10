@@ -1,6 +1,6 @@
 # elements/ — 有限要素ライブラリ
 
-[← README](../../README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md)
 
 ## 概要
 
@@ -53,8 +53,8 @@ FEM要素の剛性行列・内力・質量行列を実装する。
 | 仕様書 | 内容 |
 |--------|------|
 | [cosserat-design](cosserat-design.md) | Cosserat rod 四元数回転・B行列定式化 |
-| [abaqus-differences](../../docs/reference/abaqus-differences.md) | xkep-cae と Abaqus の既知の差異 |
+| [abaqus-differences](../../../docs/reference/abaqus-differences.md) | xkep-cae と Abaqus の既知の差異 |
 
 ## 検証
 
-解析解との比較検証は [docs/verification/validation.md](../../docs/verification/validation.md) を参照（検証図15枚）。
+解析解との比較検証は [docs/verification/validation.md](../../../docs/verification/validation.md) を参照（検証図15枚）。

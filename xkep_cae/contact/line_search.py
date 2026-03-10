@@ -2,8 +2,6 @@
 
 Phase C4: Newton step length の適応制御。
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §8
-
 Merit function:
     Phi = ||R|| + alpha * sum(max(0, -g)^2) + beta * sum(max(0, D_inc))
 

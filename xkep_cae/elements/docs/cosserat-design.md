@@ -1,6 +1,6 @@
 # Cosserat Rod 設計仕様書
 
-[← README](../../README.md) | [← elements](README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← elements](README.md) | [← roadmap](../../../docs/roadmap.md)
 
 ## 概要
 

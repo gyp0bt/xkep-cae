@@ -22,7 +22,6 @@ Fischer-Burmeister (FB) NCP 関数:
 - De Luca, Facchinei, Kanzow (1996): "A semismooth equation approach
   to the solution of nonlinear complementarity problems"
 
-設計仕様: docs/contact/contact-algorithm-overhaul-c6.md §5
 """
 
 from __future__ import annotations

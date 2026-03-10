@@ -15,6 +15,7 @@ from xkep_cae.process.strategies.penalty import (
     ContinuationPenaltyProcess,
     ManualPenaltyProcess,
     PenaltyInput,
+    create_penalty_strategy,
 )
 from xkep_cae.process.strategies.protocols import PenaltyStrategy
 from xkep_cae.process.testing import binds_to
@@ -197,3 +198,113 @@ class TestContinuationPenaltyProcess:
         proc = ContinuationPenaltyProcess(k_pen_target=1e6)
         result = proc.process(PenaltyInput(step=0, total_steps=10))
         assert result.k_pen > 0
+
+
+# --- create_penalty_strategy ファクトリ ---
+
+
+class _MockConfig:
+    """テスト用モック ContactConfig."""
+
+    def __init__(self, **kwargs):
+        defaults = {
+            "beam_E": 210e3,
+            "beam_I": 1e-4,
+            "beam_A": 1e-2,
+            "k_pen_scale": 0.1,
+            "k_pen_mode": "beam_ei",
+            "k_pen_scaling": "linear",
+            "k_pen_continuation": False,
+            "k_pen_continuation_start": 0.01,
+            "k_pen_continuation_steps": 5,
+        }
+        defaults.update(kwargs)
+        for k, v in defaults.items():
+            setattr(self, k, v)
+
+
+class _MockManager:
+    """テスト用モック ContactManager."""
+
+    def __init__(self, config=None, n_pairs=10):
+        self.config = config or _MockConfig()
+        self.n_pairs = n_pairs
+
+
+class TestCreatePenaltyStrategy:
+    """create_penalty_strategy ファクトリのテスト."""
+
+    def test_manual_k_pen(self):
+        """k_pen > 0 → ManualPenaltyProcess."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            strategy = create_penalty_strategy(k_pen=1e6)
+        assert isinstance(strategy, ManualPenaltyProcess)
+        assert strategy.compute_k_pen(0, 10) == 1e6
+
+    def test_manual_k_pen_deprecated_warning(self):
+        """k_pen > 0 で DeprecationWarning が出る."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            create_penalty_strategy(k_pen=1e6)
+        dep_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+        assert len(dep_warnings) >= 1
+
+    def test_auto_beam_ei(self):
+        """beam_E > 0, k_pen_mode='beam_ei' → AutoBeamEIProcess."""
+        import numpy as np
+
+        coords = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0]], dtype=float)
+        conn = np.array([[0, 1], [1, 2]])
+        mgr = _MockManager(config=_MockConfig(k_pen_mode="beam_ei"))
+        strategy = create_penalty_strategy(manager=mgr, node_coords_ref=coords, connectivity=conn)
+        assert isinstance(strategy, AutoBeamEIProcess)
+        assert strategy.compute_k_pen(0, 10) > 0
+
+    def test_auto_ea_l(self):
+        """beam_E > 0, k_pen_mode='ea_l' → AutoEALProcess."""
+        import numpy as np
+
+        coords = np.array([[0, 0, 0], [1, 0, 0]], dtype=float)
+        conn = np.array([[0, 1]])
+        mgr = _MockManager(config=_MockConfig(k_pen_mode="ea_l"))
+        strategy = create_penalty_strategy(manager=mgr, node_coords_ref=coords, connectivity=conn)
+        assert isinstance(strategy, AutoEALProcess)
+
+    def test_continuation(self):
+        """k_pen_continuation=True → ContinuationPenaltyProcess."""
+        import numpy as np
+
+        coords = np.array([[0, 0, 0], [1, 0, 0]], dtype=float)
+        conn = np.array([[0, 1]])
+        mgr = _MockManager(config=_MockConfig(k_pen_continuation=True))
+        strategy = create_penalty_strategy(manager=mgr, node_coords_ref=coords, connectivity=conn)
+        assert isinstance(strategy, ContinuationPenaltyProcess)
+        # step=0 では start_fraction * target
+        k0 = strategy.compute_k_pen(0, 10)
+        k_target = strategy.k_pen_target
+        assert k0 == pytest.approx(0.01 * k_target, rel=1e-10)
+
+    def test_no_manager(self):
+        """manager=None → ManualPenaltyProcess(1.0) フォールバック."""
+        strategy = create_penalty_strategy()
+        assert isinstance(strategy, ManualPenaltyProcess)
+        assert strategy.compute_k_pen(0, 10) == 1.0
+
+    def test_beam_E_zero_fallback(self):
+        """beam_E=0 → k_pen_scale フォールバック."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            mgr = _MockManager(config=_MockConfig(beam_E=0.0, k_pen_scale=5.0))
+            strategy = create_penalty_strategy(manager=mgr)
+        assert isinstance(strategy, ManualPenaltyProcess)
+        assert strategy.compute_k_pen(0, 10) == 5.0
+
+    def test_k_pen_with_continuation(self):
+        """k_pen > 0 + continuation → ContinuationPenaltyProcess."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            mgr = _MockManager(config=_MockConfig(k_pen_continuation=True))
+            strategy = create_penalty_strategy(k_pen=1e6, manager=mgr)
+        assert isinstance(strategy, ContinuationPenaltyProcess)
+        assert strategy.k_pen_target == 1e6

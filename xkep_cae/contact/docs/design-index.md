@@ -1,6 +1,6 @@
 # 接触モジュール設計文書
 
-[← README](../../README.md) | [← contact](README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← contact](README.md) | [← roadmap](../../../docs/roadmap.md)
 
 梁–梁接触モジュール（Phase C）および撚線接触に関する設計文書群。
 
