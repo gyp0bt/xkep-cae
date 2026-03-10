@@ -1,6 +1,6 @@
 # 梁–梁（素線–素線）接触モジュール 設計仕様書 v0.1
 
-[← README](../../README.md) | [ロードマップ](../roadmap.md)
+[← README](../../../README.md) | [ロードマップ](../../../docs/roadmap.md)
 
 ## 0. 目的と非目的
 

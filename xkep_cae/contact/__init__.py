@@ -1,7 +1,5 @@
 """梁–梁接触モジュール.
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md
-
 モジュール構成:
 - geometry: segment-to-segment 最近接点計算
 - broadphase: AABB格子による候補ペア探索

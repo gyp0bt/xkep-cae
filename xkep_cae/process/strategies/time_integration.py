@@ -2,8 +2,6 @@
 
 時間積分方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.3
-
 Phase 3 統合:
 - create_time_integration_strategy() ファクトリで solver_ncp.py の
   動的解析初期化ロジックを Strategy に移譲する。

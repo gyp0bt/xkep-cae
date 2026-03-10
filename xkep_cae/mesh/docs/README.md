@@ -1,6 +1,6 @@
 # mesh/ — メッシュ生成モジュール
 
-[← README](../../README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md)
 
 ## 概要
 

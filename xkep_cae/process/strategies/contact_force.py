@@ -2,8 +2,6 @@
 
 接触力の評価方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.1
-
 Phase 3 統合:
 - NCPContactForceProcess: solver_ncp._compute_contact_force_from_lambdas を移植
 - SmoothPenaltyContactForceProcess: softplus 接触力の実ロジックを移植

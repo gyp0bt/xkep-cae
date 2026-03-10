@@ -2,8 +2,6 @@
 
 接触幾何の評価方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.4
-
 Phase 4 統合:
 - PointToPointProcess: ContactManager.update_geometry() からバッチ最近接点ロジックを移植
 - LineToLineGaussProcess: line_contact.py のGauss積分ベース幾何更新を統合

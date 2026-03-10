@@ -2,8 +2,6 @@
 
 摩擦力の評価方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.2
-
 Phase 3 統合:
 - CoulombReturnMappingProcess: solver_ncp._compute_friction_forces_ncp を移植
 - _build_friction_stiffness ロジックを tangent() に移植

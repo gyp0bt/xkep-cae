@@ -1,7 +1,5 @@
 """接触プリスクリーニングGNN用データ生成パイプライン.
 
-設計仕様: docs/contact/contact-prescreening-gnn-design.md (Step 1)
-
 撚線テストケースからGNN学習用の接触ラベル付きグラフデータを
 自動生成する。各セグメントペアに対し、実際に接触（gap < threshold）
 したか否かのバイナリラベルを付与する。

@@ -2,8 +2,6 @@
 
 ペナルティ剛性 k_pen の決定方法を Strategy として実装する。
 
-設計仕様: xkep_cae/process/process-architecture.md §2.5
-
 Phase 3 統合:
 - create_penalty_strategy() ファクトリで solver_ncp.py の
   k_pen 決定ロジックを Strategy に移譲する。

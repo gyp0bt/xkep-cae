@@ -1,6 +1,6 @@
 # 接触アルゴリズム根本整理 — Phase C6 設計仕様
 
-[← README](../../README.md) | [← roadmap](../roadmap.md) | [← status-076](../status/status-076.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md) | [← status-076](../../../docs/status/status-076.md)
 
 **日付**: 2026-02-27
 **作成者**: Claude Code

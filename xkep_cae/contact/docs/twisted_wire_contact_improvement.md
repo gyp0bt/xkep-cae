@@ -1,6 +1,6 @@
 # 撚線接触収束改善 設計仕様書
 
-[← README](../../README.md) | [← roadmap](../roadmap.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md)
 
 **日付**: 2026-02-26
 **目的**: 7本撚り（1+6構成）の接触NR収束を達成し、xfailテストを解消する

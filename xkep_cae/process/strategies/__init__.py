@@ -1,7 +1,5 @@
 """Strategy Protocol + 具象実装.
 
-設計仕様: xkep_cae/process/process-architecture.md §2
-
 Phase 1: Protocol 定義 (protocols.py)
 Phase 2: 具象 Strategy 実装 (contact_force.py, friction.py, etc.)
 """

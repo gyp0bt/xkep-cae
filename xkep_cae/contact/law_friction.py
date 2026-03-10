@@ -3,8 +3,6 @@
 Phase C3: 接線方向の摩擦力計算（Coulomb return mapping）。
 Phase C5: slip consistent tangent の実装 + q_trial_norm 記録。
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5
-
 摩擦の return mapping:
     1. q_trial = z_t_old + k_t * Δu_t       (弾性予測)
     2. Coulomb 条件: ||q_trial|| <= μ * p_n

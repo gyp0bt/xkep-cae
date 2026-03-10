@@ -17,7 +17,6 @@ Phase C5: 幾何微分込み一貫接線 + PDAS Active-set + slip consistent tan
 - merit function の改善停滞による早期終了
 - または Inner が 1 反復で収束
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §6, §8, §12
 """
 
 from __future__ import annotations

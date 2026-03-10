@@ -18,8 +18,6 @@ Phase C6-L1: Line-to-line Gauss 積分による接触力・剛性評価。
     stick: K_f = k_t * (g_t1 g_t1^T + g_t2 g_t2^T)
     slip:  K_f = ratio * k_t * (I₂ - q̂⊗q̂) に基づく (Phase C5)
 
-設計仕様: docs/contact/beam_beam_contact_spec_v0.1.md §5, §7
-         docs/contact/contact-algorithm-overhaul-c6.md §3
 """
 
 from __future__ import annotations

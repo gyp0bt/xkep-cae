@@ -1,6 +1,6 @@
 # k_pen最適推定MLモデル設計仕様（v2 — GNNベース）
 
-[← README](../../README.md) | [← contact](README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← contact](README.md) | [← roadmap](../../../docs/roadmap.md)
 
 **日付**: 2026-02-27（v2 改訂）
 **作成者**: Claude Code

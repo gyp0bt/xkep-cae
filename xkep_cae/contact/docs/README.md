@@ -1,6 +1,6 @@
 # contact/ — 梁–梁接触モジュール
 
-[← README](../../README.md) | [← roadmap](../../docs/roadmap.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md)
 
 ## 概要
 
@@ -64,4 +64,4 @@ prescreening_data.py  ML用プリスクリーニングデータ
 ## テスト
 
 - `tests/contact/` — 518 passed, 26 skipped（fast）
-- 接触テストカタログ: [docs/verification/contact_test_catalog.md](../../docs/verification/contact_test_catalog.md)
+- 接触テストカタログ: [docs/verification/contact_test_catalog.md](../../../docs/verification/contact_test_catalog.md)

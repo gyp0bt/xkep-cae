@@ -1,6 +1,6 @@
 # 接触付き弧長法 設計検討
 
-[← README](../../README.md) | [← roadmap](../roadmap.md) | [← 接触仕様](beam_beam_contact_spec_v0.1.md)
+[← README](../../../README.md) | [← roadmap](../../../docs/roadmap.md) | [← 接触仕様](beam_beam_contact_spec_v0.1.md)
 
 ## 0. 目的
 
