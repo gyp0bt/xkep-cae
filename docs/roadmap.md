@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-09）
+## 現在地（2026-03-10）
 
-**2271テスト** | S3フェーズ | [最新status](status/status-index.md)
+**2271テスト** | S3フェーズ + リファクタリング設計 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -32,7 +32,7 @@
 Phase 1-5, C0-C6, S1-S2 ← 完了（status-001〜096）
   ↓
 S3 (大規模収束) ← 現在地（status-097〜）
-  ↓
+  ↓ + R1 (プロセスアーキテクチャ) ← S3並行
 S4 (剛性比較) ← S3並行可
   ↓
 S5 (ML導入) → 候補ペア削減でS6の前提条件
@@ -94,6 +94,14 @@ S7 (GPU)
 ---
 
 ## 後続フェーズ
+
+### R1: プロセスアーキテクチャリファクタリング（S3並行）
+
+AbstractProcess + Strategy分解によるソルバー契約化。10セッション計画。
+- [設計仕様書](design/process-architecture.md)（status-150）
+- Phase 1-2: 基盤 + Strategy Protocol + Strategy実装
+- Phase 3-4: 具体プロセス + 検証プロセス移行
+- Phase 5: バッチ・統合・クリーンアップ
 
 ### S4: 撚線構造剛性比較
 
