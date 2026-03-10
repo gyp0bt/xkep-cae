@@ -3,12 +3,19 @@
 ペナルティ剛性 k_pen の決定方法を Strategy として実装する。
 
 設計仕様: xkep_cae/process/process-architecture.md §2.5
+
+Phase 3 統合:
+- create_penalty_strategy() ファクトリで solver_ncp.py の
+  k_pen 決定ロジックを Strategy に移譲する。
 """
 
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
+
+import numpy as np
 
 from xkep_cae.process.base import ProcessMeta
 from xkep_cae.process.categories import SolverProcess
@@ -160,3 +167,112 @@ class ContinuationPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
 
     def process(self, input_data: PenaltyInput) -> PenaltyOutput:
         return PenaltyOutput(k_pen=self.compute_k_pen(input_data.step, input_data.total_steps))
+
+
+def create_penalty_strategy(
+    *,
+    k_pen: float = 0.0,
+    manager: object | None = None,
+    node_coords_ref: np.ndarray | None = None,
+    connectivity: np.ndarray | None = None,
+) -> AutoBeamEIProcess | AutoEALProcess | ManualPenaltyProcess | ContinuationPenaltyProcess:
+    """solver_ncp.py の k_pen 決定ロジックを Strategy に移譲するファクトリ.
+
+    solver_ncp.py (lines 1725-1810) の分岐ロジックを再現する。
+
+    Args:
+        k_pen: 手動指定のペナルティ剛性（>0 なら ManualPenaltyProcess）
+        manager: ContactManager (config.beam_E 等を参照)
+        node_coords_ref: 参照座標 (要素長推定用)
+        connectivity: 要素コネクティビティ (要素長推定用)
+
+    Returns:
+        適切な PenaltyStrategy インスタンス
+    """
+    # 1. k_pen > 0 が明示指定されている場合 → Manual (deprecated)
+    if k_pen > 0.0:
+        warnings.warn(
+            "k_pen の直接指定は deprecated です。"
+            "beam_E, beam_I を設定して材料ベースの自動推定を使用してください。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        config = getattr(manager, "config", None)
+        if config is not None and getattr(config, "k_pen_continuation", False):
+            return ContinuationPenaltyProcess(
+                k_pen_target=k_pen,
+                start_fraction=getattr(config, "k_pen_continuation_start", 0.01),
+                ramp_steps=getattr(config, "k_pen_continuation_steps", 5),
+            )
+        return ManualPenaltyProcess(k_pen=k_pen)
+
+    if manager is None:
+        return ManualPenaltyProcess(k_pen=1.0)
+
+    config = getattr(manager, "config", None)
+    if config is None:
+        return ManualPenaltyProcess(k_pen=1.0)
+
+    beam_E = getattr(config, "beam_E", 0.0)
+
+    # 2. beam_E 未設定 → k_pen_scale フォールバック (deprecated)
+    if beam_E <= 0.0:
+        k_pen_scale = getattr(config, "k_pen_scale", 1.0)
+        if k_pen_scale >= 1.0:
+            warnings.warn(
+                "k_pen_scale >= 1.0 はペナルティ剛性の直接指定（手動モード）です。"
+                "beam_E, beam_I を設定して材料ベースの自動推定を使用してください。",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        return ManualPenaltyProcess(k_pen=k_pen_scale)
+
+    # 3. 代表要素長の推定
+    L_avg = 1.0
+    if node_coords_ref is not None and connectivity is not None:
+        L_elems = []
+        for elem in connectivity:
+            n1, n2 = int(elem[0]), int(elem[1])
+            if n1 < len(node_coords_ref) and n2 < len(node_coords_ref):
+                dxyz = node_coords_ref[n2] - node_coords_ref[n1]
+                L_elems.append(float(np.linalg.norm(dxyz)))
+        if L_elems:
+            L_avg = float(np.mean(L_elems))
+    L_avg = max(L_avg, 1e-30)
+
+    k_pen_mode = getattr(config, "k_pen_mode", "beam_ei")
+    k_pen_scale = getattr(config, "k_pen_scale", 0.1)
+    n_pairs = max(1, getattr(manager, "n_pairs", 1))
+
+    # 4. EA/L モード
+    if k_pen_mode == "ea_l":
+        beam_A = getattr(config, "beam_A", 1.0)
+        base_strategy = AutoEALProcess(
+            beam_E=beam_E,
+            beam_A=beam_A,
+            L_elem=L_avg,
+            scale=k_pen_scale,
+        )
+    else:
+        # beam_ei モード（デフォルト）
+        beam_I = getattr(config, "beam_I", 1.0)
+        k_pen_scaling = getattr(config, "k_pen_scaling", "linear")
+        base_strategy = AutoBeamEIProcess(
+            beam_E=beam_E,
+            beam_I=beam_I,
+            L_elem=L_avg,
+            n_contact_pairs=n_pairs,
+            scale=k_pen_scale,
+            scaling=k_pen_scaling,
+        )
+
+    # 5. Continuation の判定
+    if getattr(config, "k_pen_continuation", False):
+        k_pen_base = base_strategy.compute_k_pen(0, 1)
+        return ContinuationPenaltyProcess(
+            k_pen_target=k_pen_base,
+            start_fraction=getattr(config, "k_pen_continuation_start", 0.01),
+            ramp_steps=getattr(config, "k_pen_continuation_steps", 5),
+        )
+
+    return base_strategy
