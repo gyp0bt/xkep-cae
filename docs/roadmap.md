@@ -98,7 +98,7 @@ S7 (GPU)
 ### R1: プロセスアーキテクチャリファクタリング（S3並行）
 
 AbstractProcess + Strategy分解によるソルバー契約化。10セッション計画。
-- [設計仕様書](design/process-architecture.md)（status-150）
+- [設計仕様書](../xkep_cae/process/process-architecture.md)（status-150）
 - ✅ Phase 1: 基盤 + Strategy Protocol（status-151、39テスト）
 - Phase 2: Strategy具象実装（solver_ncp.py からの抽出）← 次
 - Phase 3-4: 具体プロセス + 検証プロセス移行

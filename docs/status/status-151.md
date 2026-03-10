@@ -7,7 +7,7 @@
 
 ## 概要
 
-status-150 で策定した設計仕様（docs/design/process-architecture.md）に基づき、
+status-150 で策定した設計仕様（xkep_cae/process/process-architecture.md）に基づき、
 プロセスアーキテクチャの Phase 1（基盤 + Strategy Protocol）を実装した。
 39テストを追加し、全テスト通過・lint clean。
 

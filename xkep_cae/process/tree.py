@@ -2,7 +2,7 @@
 
 プロセスの実行順序と依存関係をグラフとして表現し、バリデーションを行う。
 
-設計仕様: docs/design/process-architecture.md §6
+設計仕様: xkep_cae/process/process-architecture.md §6
 """
 
 from __future__ import annotations

@@ -1,6 +1,6 @@
 # xkep-cae と Abaqus の差異
 
-[← README](../README.md) | [ロードマップ](roadmap.md) | [最新status](status/status-009.md)
+[← README](../../README.md) | [← reference](README.md) | [← roadmap](../roadmap.md)
 
 xkep-cae の要素定式化と Abaqus との既知の差異をまとめる。
 Abaqus ベンチマークとの比較時に参照すること。

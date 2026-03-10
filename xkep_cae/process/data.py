@@ -3,7 +3,7 @@
 dataclass(frozen=True) で不変性を保証する。
 既存 NCPSolverInput/NCPSolveResult へのラッパー変換は Phase 3 で実装。
 
-設計仕様: docs/design/process-architecture.md §4
+設計仕様: xkep_cae/process/process-architecture.md §4
 """
 
 from __future__ import annotations
