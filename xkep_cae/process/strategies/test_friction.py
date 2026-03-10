@@ -10,6 +10,7 @@ from xkep_cae.process.strategies.friction import (
     FrictionInput,
     NoFrictionProcess,
     SmoothPenaltyFrictionProcess,
+    create_friction_strategy,
 )
 from xkep_cae.process.strategies.protocols import FrictionStrategy
 from xkep_cae.process.testing import binds_to
@@ -137,3 +138,60 @@ class TestSmoothPenaltyFrictionProcess:
     def test_meta(self):
         assert SmoothPenaltyFrictionProcess.meta.name == "SmoothPenaltyFriction"
         assert not SmoothPenaltyFrictionProcess.meta.deprecated
+
+
+# --- create_friction_strategy ファクトリ ---
+
+
+class TestCreateFrictionStrategy:
+    """create_friction_strategy ファクトリのテスト."""
+
+    def test_no_friction(self):
+        """use_friction=False → NoFrictionProcess."""
+        strategy = create_friction_strategy(use_friction=False, ndof=12)
+        assert isinstance(strategy, NoFrictionProcess)
+
+    def test_no_friction_default(self):
+        """デフォルトは摩擦なし."""
+        strategy = create_friction_strategy(ndof=12)
+        assert isinstance(strategy, NoFrictionProcess)
+
+    def test_coulomb_ncp(self):
+        """use_friction=True + contact_mode='ncp' → CoulombReturnMappingProcess."""
+        strategy = create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
+        assert isinstance(strategy, CoulombReturnMappingProcess)
+
+    def test_smooth_penalty(self):
+        """use_friction=True + contact_mode='smooth_penalty' → SmoothPenaltyFrictionProcess."""
+        strategy = create_friction_strategy(
+            use_friction=True, contact_mode="smooth_penalty", ndof=12
+        )
+        assert isinstance(strategy, SmoothPenaltyFrictionProcess)
+
+    def test_k_pen_propagation(self):
+        """k_pen パラメータの伝播."""
+        strategy = create_friction_strategy(
+            use_friction=True, contact_mode="ncp", ndof=12, k_pen=1e4
+        )
+        assert isinstance(strategy, CoulombReturnMappingProcess)
+        assert strategy._k_pen == 1e4
+
+    def test_k_t_ratio_propagation(self):
+        """k_t_ratio パラメータの伝播."""
+        strategy = create_friction_strategy(
+            use_friction=True, contact_mode="smooth_penalty", ndof=12, k_t_ratio=0.5
+        )
+        assert isinstance(strategy, SmoothPenaltyFrictionProcess)
+        assert strategy._k_t_ratio == 0.5
+
+    def test_no_friction_evaluate_zero(self):
+        """NoFrictionProcess の evaluate はゼロを返す."""
+        strategy = create_friction_strategy(ndof=12)
+        f, r = strategy.evaluate(np.zeros(12), [], 0.3)
+        np.testing.assert_array_equal(f, np.zeros(12))
+
+    def test_coulomb_evaluate_no_pairs(self):
+        """CoulombReturnMapping: ペアなしでゼロ."""
+        strategy = create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
+        f, r = strategy.evaluate(np.zeros(12), [], 0.3)
+        np.testing.assert_array_equal(f, np.zeros(12))
