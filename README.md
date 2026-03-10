@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2410テスト** — 2026-03-10時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**2445テスト** — 2026-03-10時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
@@ -35,7 +35,7 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全153件のstatus + テスト数推移 |
+| [ステータス一覧](docs/status/status-index.md) | 全154件のstatus + テスト数推移 |
 | [S3完了済み項目](docs/status/s3-completed.md) | S3フェーズ53項目の完了記録 |
 | [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
