@@ -9,6 +9,7 @@ from xkep_cae.process.strategies.contact_force import (
     ContactForceInput,
     NCPContactForceProcess,
     SmoothPenaltyContactForceProcess,
+    create_contact_force_strategy,
 )
 from xkep_cae.process.strategies.protocols import ContactForceStrategy
 from xkep_cae.process.testing import binds_to
@@ -36,15 +37,26 @@ class TestContactForceProtocolConformance:
 
 class _MockState:
     def __init__(self, gap=0.0, status="ACTIVE"):
+        from xkep_cae.contact.pair import ContactStatus
+
         self.gap = gap
-        self.status = status
+        self.status = ContactStatus.ACTIVE if status == "ACTIVE" else ContactStatus.INACTIVE
         self.p_n = 0.0
         self.z_t = np.zeros(2)
+        self.s = 0.5
+        self.t = 0.5
+        self.normal = np.array([0.0, 1.0, 0.0])
+        self.tangent1 = np.array([1.0, 0.0, 0.0])
+        self.tangent2 = np.array([0.0, 0.0, 1.0])
+        self.k_pen = 0.0
+        self.k_t = 0.0
 
 
 class _MockPair:
     def __init__(self, gap=0.0):
         self.state = _MockState(gap=gap)
+        self.nodes_a = [0, 1]
+        self.nodes_b = [2, 3]
 
 
 class _MockManager:
@@ -177,3 +189,62 @@ class TestSmoothPenaltyContactForceProcess:
         proc = SmoothPenaltyContactForceProcess(ndof=24, n_uzawa_max=10, tol_uzawa=1e-4)
         assert proc._n_uzawa_max == 10
         assert proc._tol_uzawa == 1e-4
+
+    def test_softplus_derivative_negative(self):
+        """貫入時の導関数は負（剛性への寄与は正）."""
+        dp = SmoothPenaltyContactForceProcess._softplus_derivative(-0.01, delta=100.0)
+        assert dp < 0.0
+
+    def test_softplus_derivative_zero_delta(self):
+        """δ=0 のとき step function に退化."""
+        dp_neg = SmoothPenaltyContactForceProcess._softplus_derivative(-0.5, delta=0.0)
+        assert dp_neg == pytest.approx(-1.0)
+        dp_pos = SmoothPenaltyContactForceProcess._softplus_derivative(0.5, delta=0.0)
+        assert dp_pos == pytest.approx(0.0)
+
+
+# --- create_contact_force_strategy ファクトリ ---
+
+
+class TestCreateContactForceStrategy:
+    """create_contact_force_strategy ファクトリのテスト."""
+
+    def test_ncp_default(self):
+        """デフォルトは NCP."""
+        strategy = create_contact_force_strategy(ndof=24)
+        assert isinstance(strategy, NCPContactForceProcess)
+
+    def test_ncp_explicit(self):
+        """contact_mode='ncp' → NCPContactForceProcess."""
+        strategy = create_contact_force_strategy(contact_mode="ncp", ndof=24)
+        assert isinstance(strategy, NCPContactForceProcess)
+
+    def test_smooth_penalty(self):
+        """contact_mode='smooth_penalty' → SmoothPenaltyContactForceProcess."""
+        strategy = create_contact_force_strategy(contact_mode="smooth_penalty", ndof=24)
+        assert isinstance(strategy, SmoothPenaltyContactForceProcess)
+
+    def test_compliance_propagation(self):
+        """contact_compliance パラメータの伝播."""
+        strategy = create_contact_force_strategy(
+            contact_mode="ncp", ndof=24, contact_compliance=1e-4
+        )
+        assert isinstance(strategy, NCPContactForceProcess)
+        assert strategy._contact_compliance == 1e-4
+
+    def test_smooth_delta_propagation(self):
+        """smoothing_delta パラメータの伝播."""
+        strategy = create_contact_force_strategy(
+            contact_mode="smooth_penalty", ndof=24, smoothing_delta=0.01
+        )
+        assert isinstance(strategy, SmoothPenaltyContactForceProcess)
+        assert strategy._smoothing_delta == 0.01
+
+    def test_uzawa_params_propagation(self):
+        """Uzawa パラメータの伝播."""
+        strategy = create_contact_force_strategy(
+            contact_mode="smooth_penalty", ndof=24, n_uzawa_max=10, tol_uzawa=1e-4
+        )
+        assert isinstance(strategy, SmoothPenaltyContactForceProcess)
+        assert strategy._n_uzawa_max == 10
+        assert strategy._tol_uzawa == 1e-4
