@@ -86,6 +86,16 @@ class StubContactGeometry:
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
         return 0.0
 
+    def update_geometry(
+        self, pairs: list, node_coords: np.ndarray, *, config: object | None = None
+    ) -> None:
+        pass
+
+    def build_constraint_jacobian(
+        self, pairs: list, ndof_total: int, ndof_per_node: int = 6
+    ) -> tuple[sp.csr_matrix, list[int]]:
+        return sp.csr_matrix((0, ndof_total)), []
+
 
 class StubPenalty:
     """PenaltyStrategy の最小実装."""

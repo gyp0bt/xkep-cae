@@ -15,6 +15,7 @@ from xkep_cae.process.strategies.contact_geometry import (
     LineToLineGaussProcess,
     MortarSegmentProcess,
     PointToPointProcess,
+    create_contact_geometry_strategy,
 )
 from xkep_cae.process.strategies.friction import (
     CoulombReturnMappingProcess,
@@ -73,4 +74,5 @@ __all__ = [
     "create_time_integration_strategy",
     "create_friction_strategy",
     "create_contact_force_strategy",
+    "create_contact_geometry_strategy",
 ]

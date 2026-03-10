@@ -130,6 +130,25 @@ class ContactGeometryStrategy(Protocol):
         """ギャップの計算."""
         ...
 
+    def update_geometry(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        *,
+        config: object | None = None,
+    ) -> None:
+        """全ペアの幾何情報（s, t, gap, frame）を更新."""
+        ...
+
+    def build_constraint_jacobian(
+        self,
+        pairs: list,
+        ndof_total: int,
+        ndof_per_node: int = 6,
+    ) -> tuple[sp.csr_matrix, list[int]]:
+        """制約ヤコビアン G = ∂g_n/∂u を構築."""
+        ...
+
 
 @runtime_checkable
 class PenaltyStrategy(Protocol):
