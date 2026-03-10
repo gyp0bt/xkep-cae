@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2445テスト** — 2026-03-10時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**2471テスト** — 2026-03-10時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
