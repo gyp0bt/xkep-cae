@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-10）
 
-**2310テスト** | S3フェーズ + R1 Phase 1完了 | [最新status](status/status-index.md)
+**2410テスト** | S3フェーズ + R1 Phase 2完了 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -100,7 +100,8 @@ S7 (GPU)
 AbstractProcess + Strategy分解によるソルバー契約化。10セッション計画。
 - [設計仕様書](../xkep_cae/process/process-architecture.md)（status-150）
 - ✅ Phase 1: 基盤 + Strategy Protocol（status-151、39テスト）
-- Phase 2: Strategy具象実装（solver_ncp.py からの抽出）← 次
+- ✅ Phase 2: Strategy具象実装 13クラス（status-153、100テスト）
+- Phase 3: solver_ncp.py への Strategy 注入 ← 次
 - Phase 3-4: 具体プロセス + 検証プロセス移行
 - Phase 5: バッチ・統合・クリーンアップ
 
