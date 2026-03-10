@@ -1,6 +1,6 @@
 # 使用例
 
-[← README](../README.md)
+[← README](../../README.md) | [← reference](README.md)
 
 ## 高レベルAPI（ラベルベース）
 

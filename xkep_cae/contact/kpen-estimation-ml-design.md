@@ -1,6 +1,6 @@
 # k_pen最適推定MLモデル設計仕様（v2 — GNNベース）
 
-[← README](../../README.md) | [← roadmap](../roadmap.md) | [← status-067](../status/status-067.md)
+[← README](../../README.md) | [← contact](README.md) | [← roadmap](../../docs/roadmap.md)
 
 **日付**: 2026-02-27（v2 改訂）
 **作成者**: Claude Code
@@ -417,7 +417,7 @@ def initialize_penalty_ml(manager, model, mesh, beam_params):
 - `xkep_cae/contact/pair.py`: `ContactConfig.k_pen_mode` — `"ml"` オプション追加先
 - `xkep_cae/contact/solver_hooks.py`: `newton_raphson_with_contact()` — k_pen初期化の呼び出し元
 - `xkep_cae/mesh/twisted_wire.py`: テストケース生成源
-- `docs/contact/contact-prescreening-gnn-design.md`: エンコーダ共有先の設計仕様
+- `xkep_cae/contact/contact-prescreening-gnn-design.md`: エンコーダ共有先の設計仕様
 
 ## 8. 変更履歴
 

@@ -3,7 +3,7 @@
 全プロセスの基底クラス。メタクラスにより process() を自動ラップし、
 実行トレース・プロファイリングを透過的に実現する。
 
-設計仕様: docs/design/process-architecture.md §1
+設計仕様: xkep_cae/process/process-architecture.md §1
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 ソルバー内部の直交する振る舞い軸を Protocol で規定する。
 具象実装は Phase 2 で各 strategy ファイルに配置する。
 
-設計仕様: docs/design/process-architecture.md §2.2
+設計仕様: xkep_cae/process/process-architecture.md §2.2
 """
 
 from __future__ import annotations

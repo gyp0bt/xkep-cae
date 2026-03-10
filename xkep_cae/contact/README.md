@@ -48,11 +48,12 @@ prescreening_data.py  ML用プリスクリーニングデータ
 
 | 仕様書 | 内容 |
 |--------|------|
-| [beam_beam_contact_spec_v0.1](../../docs/contact/beam_beam_contact_spec_v0.1.md) | 接触基盤設計（C0-C5） |
-| [contact-algorithm-overhaul-c6](../../docs/contact/contact-algorithm-overhaul-c6.md) | C6接触アルゴリズム全面改修 |
-| [contact-prescreening-gnn-design](../../docs/contact/contact-prescreening-gnn-design.md) | 接触プリスクリーニングGNN |
-| [kpen-estimation-ml-design](../../docs/contact/kpen-estimation-ml-design.md) | k_pen推定MLモデル |
-| [twisted_wire_contact_improvement](../../docs/contact/twisted_wire_contact_improvement.md) | 撚線接触改善 |
+| [beam_beam_contact_spec_v0.1](beam_beam_contact_spec_v0.1.md) | 接触基盤設計（C0-C5） |
+| [contact-algorithm-overhaul-c6](contact-algorithm-overhaul-c6.md) | C6接触アルゴリズム全面改修 |
+| [contact-prescreening-gnn-design](contact-prescreening-gnn-design.md) | 接触プリスクリーニングGNN |
+| [kpen-estimation-ml-design](kpen-estimation-ml-design.md) | k_pen推定MLモデル |
+| [twisted_wire_contact_improvement](twisted_wire_contact_improvement.md) | 撚線接触改善 |
+| [design-index](design-index.md) | 接触設計文書の一覧・実装状況 |
 
 ## 現在の課題
 

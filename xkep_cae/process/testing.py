@@ -2,7 +2,7 @@
 
 binds_to デコレータにより、テストクラスとプロセスを1:1で対応付ける。
 
-設計仕様: docs/design/process-architecture.md §5
+設計仕様: xkep_cae/process/process-architecture.md §5
 """
 
 from __future__ import annotations

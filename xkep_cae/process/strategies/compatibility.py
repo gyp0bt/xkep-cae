@@ -2,7 +2,7 @@
 
 検証済み組み合わせ（ホワイトリスト）と非互換組み合わせ（ブラックリスト）を管理する。
 
-設計仕様: docs/design/process-architecture.md §13.4
+設計仕様: xkep_cae/process/process-architecture.md §13.4
 """
 
 from __future__ import annotations

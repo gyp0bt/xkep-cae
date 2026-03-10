@@ -1,6 +1,6 @@
 # 過渡応答出力インターフェース 設計仕様書
 
-[← README](../README.md) | [← roadmap](roadmap.md)
+[← README](../../README.md) | [← roadmap](../../docs/roadmap.md)
 
 ## 概要
 

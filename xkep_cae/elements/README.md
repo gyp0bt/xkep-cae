@@ -52,8 +52,8 @@ FEM要素の剛性行列・内力・質量行列を実装する。
 
 | 仕様書 | 内容 |
 |--------|------|
-| [cosserat-design](../../docs/cosserat-design.md) | Cosserat rod 四元数回転・B行列定式化 |
-| [abaqus-differences](../../docs/abaqus-differences.md) | xkep-cae と Abaqus の既知の差異 |
+| [cosserat-design](cosserat-design.md) | Cosserat rod 四元数回転・B行列定式化 |
+| [abaqus-differences](../../docs/reference/abaqus-differences.md) | xkep-cae と Abaqus の既知の差異 |
 
 ## 検証
 
