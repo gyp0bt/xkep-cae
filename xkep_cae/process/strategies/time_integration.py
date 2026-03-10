@@ -1,0 +1,177 @@
+"""TimeIntegration Strategy 具象実装.
+
+時間積分方法を Strategy として実装する。
+
+設計仕様: xkep_cae/process/process-architecture.md §2.3
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import numpy as np
+import scipy.sparse as sp
+
+from xkep_cae.process.base import ProcessMeta
+from xkep_cae.process.categories import SolverProcess
+
+
+@dataclass(frozen=True)
+class TimeIntegrationInput:
+    """TimeIntegration Strategy の入力."""
+
+    u: np.ndarray
+    du: np.ndarray
+    dt: float
+
+
+@dataclass
+class TimeIntegrationOutput:
+    """TimeIntegration Strategy の出力."""
+
+    u: np.ndarray
+
+
+class QuasiStaticProcess(SolverProcess[TimeIntegrationInput, TimeIntegrationOutput]):
+    """準静的解析（荷重制御）.
+
+    時間積分なし。K_eff = K, R_eff = R をそのまま返す。
+    predict/correct は identity 操作。
+    """
+
+    meta = ProcessMeta(name="QuasiStatic", module="solve", version="0.1.0")
+
+    def predict(self, u: np.ndarray, dt: float) -> np.ndarray:
+        """予測子: 準静的では変位をそのまま返す."""
+        return u.copy()
+
+    def correct(self, u: np.ndarray, du: np.ndarray, dt: float) -> None:
+        """補正子: 準静的では何もしない."""
+
+    def effective_stiffness(self, K: sp.csr_matrix, dt: float) -> sp.csr_matrix:
+        """有効剛性行列: 準静的では K そのまま."""
+        return K
+
+    def effective_residual(self, R: np.ndarray, dt: float) -> np.ndarray:
+        """有効残差: 準静的では R そのまま."""
+        return R
+
+    def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
+        u_pred = self.predict(input_data.u, input_data.dt)
+        return TimeIntegrationOutput(u=u_pred)
+
+
+class GeneralizedAlphaProcess(SolverProcess[TimeIntegrationInput, TimeIntegrationOutput]):
+    """Generalized-α 動的解析（Chung & Hulbert 1993）.
+
+    Newmark-β の上位互換で、スペクトル半径 rho_inf によって
+    高周波の数値減衰を制御できる。
+
+    パラメータ:
+        rho_inf=1.0: Newmark 平均加速度法（エネルギー保存）
+        rho_inf=0.0: 最大数値減衰（高周波完全減衰）
+        推奨: 0.9〜1.0
+    """
+
+    meta = ProcessMeta(name="GeneralizedAlpha", module="solve", version="0.1.0")
+
+    def __init__(
+        self,
+        mass_matrix: sp.csr_matrix | np.ndarray,
+        *,
+        damping_matrix: sp.csr_matrix | np.ndarray | None = None,
+        rho_inf: float = 0.9,
+    ) -> None:
+        self.M = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
+        self.C = (
+            sp.csr_matrix(damping_matrix)
+            if damping_matrix is not None and not sp.issparse(damping_matrix)
+            else damping_matrix
+        )
+        self.rho_inf = rho_inf
+
+        # Chung & Hulbert (1993) パラメータ
+        self.alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
+        self.alpha_f = rho_inf / (rho_inf + 1.0)
+        self.gamma = 0.5 - self.alpha_m + self.alpha_f
+        self.beta = 0.25 * (1.0 - self.alpha_m + self.alpha_f) ** 2
+
+        # 状態変数
+        ndof = self.M.shape[0]
+        self.vel = np.zeros(ndof)
+        self.acc = np.zeros(ndof)
+        self._vel_old = np.zeros(ndof)
+        self._acc_old = np.zeros(ndof)
+        self._u_pred = np.zeros(ndof)
+        self._v_pred = np.zeros(ndof)
+
+    def set_initial_state(
+        self,
+        velocity: np.ndarray | None = None,
+        acceleration: np.ndarray | None = None,
+    ) -> None:
+        """初期速度・加速度を設定."""
+        if velocity is not None:
+            self.vel = velocity.copy()
+        if acceleration is not None:
+            self.acc = acceleration.copy()
+
+    def predict(self, u: np.ndarray, dt: float) -> np.ndarray:
+        """Newmark 予測子.
+
+        u_pred = u + dt*v + 0.5*dt²*(1-2β)*a
+        v_pred = v + dt*(1-γ)*a
+        """
+        self._acc_old = self.acc.copy()
+        self._vel_old = self.vel.copy()
+        self._u_pred = u + dt * self.vel + 0.5 * dt**2 * (1.0 - 2.0 * self.beta) * self.acc
+        self._v_pred = self.vel + dt * (1.0 - self.gamma) * self.acc
+        return self._u_pred.copy()
+
+    def correct(self, u: np.ndarray, du: np.ndarray, dt: float) -> None:
+        """Newmark 補正子.
+
+        Newton反復で得られた du を基に加速度・速度を更新する。
+        """
+        if dt < 1e-30:
+            return
+        c0 = 1.0 / (self.beta * dt**2)
+        # 加速度 = c0 * (u_new - u_pred)
+        self.acc = c0 * (u - self._u_pred)
+        # 速度 = v_pred + dt * gamma * a_new
+        self.vel = self._v_pred + dt * self.gamma * self.acc
+
+    def effective_stiffness(self, K: sp.csr_matrix, dt: float) -> sp.csr_matrix:
+        """有効剛性行列.
+
+        K_eff = K + (1-α_m)*c0*M + (1-α_f)*c1*C
+        """
+        if dt < 1e-30:
+            return K
+        c0 = 1.0 / (self.beta * dt**2)
+        c1 = self.gamma / (self.beta * dt)
+        K_eff = K + (1.0 - self.alpha_m) * c0 * self.M
+        if self.C is not None:
+            K_eff = K_eff + (1.0 - self.alpha_f) * c1 * self.C
+        return K_eff
+
+    def effective_residual(self, R: np.ndarray, dt: float) -> np.ndarray:
+        """有効残差.
+
+        R_eff = R + f_inertia + f_damping
+        f_inertia = M @ a_{n+1-α_m}
+        f_damping = C @ v_{n+1-α_f}
+        """
+        R_eff = R.copy()
+        # 慣性力: a_{n+1-α_m} = (1-α_m)*a_{n+1} + α_m*a_n
+        a_mid = (1.0 - self.alpha_m) * self.acc + self.alpha_m * self._acc_old
+        R_eff += self.M @ a_mid
+        if self.C is not None:
+            # 減衰力: v_{n+1-α_f} = (1-α_f)*v_{n+1} + α_f*v_n
+            v_mid = (1.0 - self.alpha_f) * self.vel + self.alpha_f * self._vel_old
+            R_eff += self.C @ v_mid
+        return R_eff
+
+    def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
+        u_pred = self.predict(input_data.u, input_data.dt)
+        return TimeIntegrationOutput(u=u_pred)
