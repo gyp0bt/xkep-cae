@@ -153,8 +153,9 @@ class TestManualPenaltyProcess:
             class _DummyUser(
                 SolverProcess[PenaltyInput, PenaltyInput],
             ):
-                meta = ProcessMeta(name="_DummyUser", module="test")
-                document_path = "../docs/penalty.md"
+                meta = ProcessMeta(
+                    name="_DummyUser", module="test", document_path="../docs/penalty.md"
+                )
                 uses = [ManualPenaltyProcess]
 
                 def process(self, input_data):

@@ -15,8 +15,7 @@ from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 
 
 class TreePreProcess(PreProcess[str, str]):
-    meta = ProcessMeta(name="Tree Pre", module="pre")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Tree Pre", module="pre", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -24,8 +23,7 @@ class TreePreProcess(PreProcess[str, str]):
 
 
 class TreeSolverProcess(SolverProcess[str, str]):
-    meta = ProcessMeta(name="Tree Solver", module="solve")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Tree Solver", module="solve", document_path="docs/dummy.md")
     uses = [TreePreProcess]
 
     def process(self, input_data: str) -> str:
@@ -35,8 +33,7 @@ class TreeSolverProcess(SolverProcess[str, str]):
 class TreeBrokenProcess(SolverProcess[str, str]):
     """uses にツリー外のプロセスを宣言するプロセス."""
 
-    meta = ProcessMeta(name="Tree Broken", module="solve")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Tree Broken", module="solve", document_path="docs/dummy.md")
     uses = [TreePreProcess]
 
     def process(self, input_data: str) -> str:

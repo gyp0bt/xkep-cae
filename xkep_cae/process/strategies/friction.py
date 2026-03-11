@@ -129,8 +129,9 @@ class NoFrictionProcess(SolverProcess[FrictionInput, FrictionOutput]):
     接触法線力のみ。摩擦力・残差はゼロベクトルを返す。
     """
 
-    meta = ProcessMeta(name="NoFriction", module="solve", version="0.1.0")
-    document_path = "docs/friction.md"
+    meta = ProcessMeta(
+        name="NoFriction", module="solve", version="0.1.0", document_path="docs/friction.md"
+    )
 
     def __init__(self, ndof: int = 0) -> None:
         self._ndof = ndof
@@ -178,8 +179,12 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
     SmoothPenaltyContactForceProcess と組み合わせること。
     """
 
-    meta = ProcessMeta(name="CoulombReturnMapping", module="solve", version="0.1.0")
-    document_path = "docs/friction.md"
+    meta = ProcessMeta(
+        name="CoulombReturnMapping",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/friction.md",
+    )
 
     def __init__(
         self,
@@ -295,8 +300,12 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
     - friction: SmoothPenaltyFrictionProcess
     """
 
-    meta = ProcessMeta(name="SmoothPenaltyFriction", module="solve", version="0.1.0")
-    document_path = "docs/friction.md"
+    meta = ProcessMeta(
+        name="SmoothPenaltyFriction",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/friction.md",
+    )
 
     def __init__(
         self,

@@ -22,8 +22,7 @@ from xkep_cae.process.categories import (
 
 
 class DummyPre(PreProcess[str, str]):
-    meta = ProcessMeta(name="Dummy Pre", module="pre")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy Pre", module="pre", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -31,8 +30,7 @@ class DummyPre(PreProcess[str, str]):
 
 
 class DummySolver(SolverProcess[str, str]):
-    meta = ProcessMeta(name="Dummy Solver", module="solve")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy Solver", module="solve", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -40,8 +38,7 @@ class DummySolver(SolverProcess[str, str]):
 
 
 class DummyPost(PostProcess[str, str]):
-    meta = ProcessMeta(name="Dummy Post", module="post")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy Post", module="post", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -49,8 +46,7 @@ class DummyPost(PostProcess[str, str]):
 
 
 class DummyVerify(VerifyProcess[str, str]):
-    meta = ProcessMeta(name="Dummy Verify", module="verify")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy Verify", module="verify", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -58,8 +54,7 @@ class DummyVerify(VerifyProcess[str, str]):
 
 
 class DummyBatch(BatchProcess[str, str]):
-    meta = ProcessMeta(name="Dummy Batch", module="batch")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy Batch", module="batch", document_path="docs/dummy.md")
     uses = [DummyPre, DummySolver, DummyPost]
 
     def process(self, input_data: str) -> str:

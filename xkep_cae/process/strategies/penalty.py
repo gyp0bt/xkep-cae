@@ -42,8 +42,9 @@ class AutoBeamEIProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         sqrt:   k_pen = scale * 12 * E * I / L³ / max(1, sqrt(n_pairs))
     """
 
-    meta = ProcessMeta(name="AutoBeamEI", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="AutoBeamEI", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,
@@ -82,8 +83,9 @@ class AutoBeamEIProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
 class AutoEALProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
     """軸剛性 EA/L ベースのペナルティ剛性自動推定."""
 
-    meta = ProcessMeta(name="AutoEAL", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="AutoEAL", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,
@@ -121,8 +123,8 @@ class ManualPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         version="0.1.0",
         deprecated=True,
         deprecated_by="AutoBeamEIProcess",
+        document_path="docs/penalty.md",
     )
-    document_path = "docs/penalty.md"
 
     def __init__(self, k_pen: float) -> None:
         self._k_pen = k_pen
@@ -149,8 +151,9 @@ class ContinuationPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
             k(step) = target * (start_fraction + (1-start_fraction)*step/ramp_steps)
     """
 
-    meta = ProcessMeta(name="ContinuationPenalty", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="ContinuationPenalty", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,

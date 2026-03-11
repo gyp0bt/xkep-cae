@@ -22,13 +22,17 @@ TOut = TypeVar("TOut")
 
 @dataclass(frozen=True)
 class ProcessMeta:
-    """プロセスのメタ情報."""
+    """プロセスのメタ情報.
+
+    document_path: ソースファイルからの相対パスで設計文書を指定。
+    """
 
     name: str
     module: str  # "pre", "solve", "post", "verify", "batch" 等
     version: str = "0.1.0"
     deprecated: bool = False
     deprecated_by: str | None = None  # 後継プロセスのクラス名
+    document_path: str = ""  # ソースファイルからの相対パス
 
 
 class ProcessMetaclass(type(ABC)):
@@ -104,7 +108,6 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
     # --- クラス変数（サブクラスで上書き） ---
     meta: ClassVar[ProcessMeta]
     uses: ClassVar[list[type[AbstractProcess]]] = []
-    document_path: ClassVar[str]  # ソースファイルからの相対パス
 
     # --- 自動管理 ---
     _registry: ClassVar[dict[str, type[AbstractProcess]]] = {}
@@ -125,14 +128,18 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         if not hasattr(cls, "meta") or not isinstance(cls.meta, ProcessMeta):
             raise TypeError(f"{cls.__name__} は ProcessMeta を定義してください")
 
-        # document_path 必須チェック
-        if not hasattr(cls, "document_path") or not isinstance(cls.document_path, str):
-            raise TypeError(f"{cls.__name__} は document_path (str) を定義してください")
+        # document_path 必須チェック（meta.document_path または旧 cls.document_path）
+        _doc_path = cls.meta.document_path
+        if not _doc_path:
+            # 旧形式の後方互換: cls.document_path があれば使用
+            _doc_path = getattr(cls, "document_path", "")
+        if not _doc_path:
+            raise TypeError(f"{cls.__name__} は meta.document_path を定義してください")
 
         # ドキュメントファイル存在チェック
         src_file = inspect.getfile(cls)
         src_dir = Path(src_file).parent
-        doc_full = (src_dir / cls.document_path).resolve()
+        doc_full = (src_dir / _doc_path).resolve()
         if not doc_full.is_file():
             raise FileNotFoundError(f"{cls.__name__}: ドキュメントが見つかりません: {doc_full}")
 
@@ -176,6 +183,25 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         }
 
     @classmethod
+    def _resolve_document_path(cls) -> str:
+        """document_path を解決（meta.document_path 優先、旧形式フォールバック）."""
+        doc_path = cls.meta.document_path
+        if not doc_path:
+            doc_path = getattr(cls, "document_path", "")
+        return doc_path
+
+    @classmethod
+    def _resolve_document_fullpath(cls) -> Path | None:
+        """ドキュメントの絶対パスを返す（存在しない場合はNone）."""
+        doc_path = cls._resolve_document_path()
+        if not doc_path:
+            return None
+        src_file = inspect.getfile(cls)
+        src_dir = Path(src_file).parent
+        full = (src_dir / doc_path).resolve()
+        return full if full.is_file() else None
+
+    @classmethod
     def document_markdown(cls) -> str:
         """Markdownドキュメント自動生成."""
         lines = [
@@ -183,8 +209,9 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
             f"- **モジュール**: {cls.meta.module}",
             f"- **バージョン**: {cls.meta.version}",
         ]
-        if hasattr(cls, "document_path"):
-            lines.append(f"- **設計文書**: `{cls.document_path}`")
+        doc_path = cls._resolve_document_path()
+        if doc_path:
+            lines.append(f"- **設計文書**: `{doc_path}`")
         if cls.meta.deprecated:
             lines.append(f"- **DEPRECATED** → {cls.meta.deprecated_by}")
         if cls.uses:
@@ -198,3 +225,48 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
             for vs in cls._verify_scripts:
                 lines.append(f"  - `{vs}`")
         return "\n".join(lines)
+
+    @classmethod
+    def get_document(cls, *, include_deps: bool = True, depth: int = 0) -> str:
+        """設計文書の内容 + ランタイム依存関係ドキュメントを返す.
+
+        バッチプロセスから呼ぶと、uses で宣言した全依存の
+        設計文書を再帰的に結合して返す。
+
+        Args:
+            include_deps: 依存プロセスのドキュメントも含めるか
+            depth: インデント深度（再帰用）
+
+        Returns:
+            設計文書内容 + 依存関係情報のMarkdown文字列
+        """
+        indent = "#" * min(depth + 2, 6)
+        sections: list[str] = []
+
+        # ヘッダ
+        sections.append(f"{indent} {cls.__name__} (v{cls.meta.version})")
+        if cls.meta.deprecated:
+            sections.append(f"> **DEPRECATED** → {cls.meta.deprecated_by}")
+        sections.append("")
+
+        # 設計文書の内容を読み込み
+        doc_full = cls._resolve_document_fullpath()
+        if doc_full is not None:
+            content = doc_full.read_text(encoding="utf-8").strip()
+            sections.append(content)
+            sections.append("")
+        else:
+            doc_path = cls._resolve_document_path()
+            if doc_path:
+                sections.append(f"*設計文書 `{doc_path}` が見つかりません*")
+                sections.append("")
+
+        # 依存関係セクション
+        if include_deps and cls.uses:
+            sections.append(f"{indent}# 依存プロセス")
+            sections.append("")
+            for dep in cls.uses:
+                dep_doc = dep.get_document(include_deps=True, depth=depth + 1)
+                sections.append(dep_doc)
+
+        return "\n".join(sections)

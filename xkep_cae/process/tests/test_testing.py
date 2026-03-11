@@ -18,8 +18,7 @@ class TestBindsTo:
         """binds_to で _test_class が設定されること."""
 
         class TargetProcess(AbstractProcess[str, str]):
-            meta = ProcessMeta(name="Target", module="test")
-            document_path = "docs/dummy.md"
+            meta = ProcessMeta(name="Target", module="test", document_path="docs/dummy.md")
             uses = []
 
             def process(self, input_data: str) -> str:
@@ -36,8 +35,7 @@ class TestBindsTo:
         """同一プロセスに2つ目のテストクラスを紐付けると ValueError."""
 
         class Target2Process(AbstractProcess[str, str]):
-            meta = ProcessMeta(name="Target2", module="test")
-            document_path = "docs/dummy.md"
+            meta = ProcessMeta(name="Target2", module="test", document_path="docs/dummy.md")
             uses = []
 
             def process(self, input_data: str) -> str:
