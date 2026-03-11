@@ -41,7 +41,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
         name="ContactSetup",
         module="pre",
         version="0.1.0",
-        document_path="xkep_cae/process/docs/process-architecture.md",
+        document_path="../docs/process-architecture.md",
     )
 
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:

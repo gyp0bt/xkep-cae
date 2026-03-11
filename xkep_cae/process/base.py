@@ -153,6 +153,11 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
                     stacklevel=2,
                 )
 
+        # _skip_registry = True のテスト用クラスはレジストリに登録しない
+        if getattr(cls, "_skip_registry", False):
+            cls._used_by = []
+            return
+
         # レジストリ登録
         cls._registry[cls.__name__] = cls
         # used_by を初期化（クラスごとに独立させる）

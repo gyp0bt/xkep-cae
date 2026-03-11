@@ -44,7 +44,7 @@ class BeamRenderProcess(PostProcess[RenderConfig, RenderResult]):
         name="BeamRender",
         module="post",
         version="0.1.0",
-        document_path="xkep_cae/process/docs/process-architecture.md",
+        document_path="../docs/process-architecture.md",
     )
 
     def process(self, input_data: RenderConfig) -> RenderResult:
