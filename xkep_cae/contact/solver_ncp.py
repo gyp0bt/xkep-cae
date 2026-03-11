@@ -1621,16 +1621,20 @@ def newton_raphson_contact_ncp(
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
 
-    # --- SolverStrategies からの Strategy 取得（status-158: process-architecture §2.4）---
+    # --- SolverStrategies からの Strategy 取得（status-158/159: process-architecture §2.4）---
     # strategies=None 時は既存ファクトリで自動構築（後方互換）
     if strategies is not None:
         _time_strategy = strategies.time_integration
         _penalty_strategy_pre = strategies.penalty
         _friction_strategy_pre = strategies.friction
+        _contact_force_strategy_pre = strategies.contact_force
+        _contact_geometry_strategy_pre = strategies.contact_geometry
     else:
         _time_strategy = None
         _penalty_strategy_pre = None
         _friction_strategy_pre = None
+        _contact_force_strategy_pre = None
+        _contact_geometry_strategy_pre = None
 
     # --- 動的解析の初期化（TimeIntegrationStrategy: status-158）---
     if _time_strategy is None:
@@ -1772,6 +1776,43 @@ def newton_raphson_contact_ncp(
 
     # Mortar 設定の解決（line contact 必須）
     _use_mortar = (use_mortar or manager.config.use_mortar) and _line_contact
+
+    # --- ContactForceStrategy（status-159: Phase 5 注入）---
+    if _contact_force_strategy_pre is not None:
+        _contact_force_strategy = _contact_force_strategy_pre
+        # ndof 更新（strategies構築時にndofが不明な場合がある）
+        if hasattr(_contact_force_strategy, "_ndof"):
+            _contact_force_strategy._ndof = ndof
+    else:
+        from xkep_cae.process.strategies.contact_force import (
+            create_contact_force_strategy,
+        )
+
+        _contact_force_strategy = create_contact_force_strategy(
+            contact_mode=contact_mode,
+            ndof=ndof,
+            ndof_per_node=ndof_per_node,
+            contact_compliance=contact_compliance,
+            smoothing_delta=_smooth_delta if _smooth else 0.0,
+            n_uzawa_max=n_uzawa_max,
+            tol_uzawa=tol_uzawa,
+        )
+
+    # --- ContactGeometryStrategy（status-159: Phase 5 注入）---
+    if _contact_geometry_strategy_pre is not None:
+        _contact_geometry_strategy = _contact_geometry_strategy_pre
+    else:
+        from xkep_cae.process.strategies.contact_geometry import (
+            create_contact_geometry_strategy,
+        )
+
+        _contact_geometry_strategy = create_contact_geometry_strategy(
+            line_contact=_line_contact,
+            use_mortar=_use_mortar,
+            n_gauss=_n_gauss,
+            exclude_same_layer=True,
+            auto_gauss=getattr(manager.config, "auto_gauss", False),
+        )
 
     # λ の初期化（warm-starting: 前ステップの λ を引き継ぎ可能, status-145）
     n_pairs = manager.n_pairs
@@ -2301,8 +2342,12 @@ def newton_raphson_contact_ncp(
                 coords_def = _deformed_coords(node_coords_ref, u, ndof_per_node)
                 manager.update_geometry(coords_def, freeze_active_set=True)
 
-                # 2. 制約ヤコビアン（幾何的 ACTIVE ペア）
-                G_mat, active_indices = _build_constraint_jacobian(manager, ndof, ndof_per_node)
+                # 2. 制約ヤコビアン（ContactGeometryStrategy 経由: status-159）
+                G_mat, active_indices = _contact_geometry_strategy.build_constraint_jacobian(
+                    manager.pairs,
+                    ndof,
+                    ndof_per_node,
+                )
                 n_geom_active = len(active_indices)
 
                 gaps = np.array([manager.pairs[i].state.gap for i in active_indices])
@@ -2422,9 +2467,9 @@ def newton_raphson_contact_ncp(
                         pair.state.k_pen = k_pen
                         pair.state.k_t = k_pen * manager.config.k_t_ratio
 
-                # 4a. 接触力ベクトル（法線）
+                # 4a. 接触力ベクトル（法線: ContactForceStrategy 経由 status-159）
                 if _use_mortar and n_geom_active > 0 and len(mortar_nodes) > 0:
-                    # Mortar 接触力
+                    # Mortar 接触力（Mortar固有データ構造のため直接呼び出し）
                     f_c = compute_mortar_contact_force(
                         manager,
                         active_indices,
@@ -2448,15 +2493,13 @@ def newton_raphson_contact_ncp(
                     manager.config.line_contact = _orig_lc
                     manager.config.n_gauss = _orig_ng
                 else:
-                    # 代表点方式: 鞍点系のgapsと整合的
+                    # ContactForceStrategy 経由（status-159: 3分岐統一の PtP ケース）
                     # δ正則化はSchur complementのみ。接触力にはδ=0。
-                    f_c = _compute_contact_force_from_lambdas(
-                        manager,
+                    f_c, _ = _contact_force_strategy.evaluate(
+                        u,
                         lam_all,
-                        ndof,
-                        ndof_per_node,
-                        k_pen=k_pen,
-                        contact_compliance=0.0,
+                        manager,
+                        k_pen,
                     )
 
                 # 4b. 摩擦力ベクトル（FrictionStrategy 経由: status-157）
