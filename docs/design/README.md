@@ -9,7 +9,17 @@
 
 | 文書 | 配置先 | 内容 | 対応Phase | 状態 |
 |------|--------|------|----------|------|
-| [process-architecture.md](../../xkep_cae/process/process-architecture.md) | `xkep_cae/process/` | プロセスアーキテクチャ設計（AbstractProcess + Strategy） | R1 | Phase 1完了 |
+| [process-architecture.md](../../xkep_cae/process/docs/process-architecture.md) | `xkep_cae/process/docs/` | プロセスアーキテクチャ設計（AbstractProcess + Strategy） | R1 | Phase 1完了 |
+
+### Strategy 設計文書
+
+| 文書 | 配置先 | 内容 | 対応Phase | 状態 |
+|------|--------|------|----------|------|
+| [penalty.md](../../xkep_cae/process/strategies/docs/penalty.md) | `xkep_cae/process/strategies/docs/` | Penalty Strategy（k_pen推定方式） | R1 Phase 3 | 完了 |
+| [contact_force.md](../../xkep_cae/process/strategies/docs/contact_force.md) | `xkep_cae/process/strategies/docs/` | ContactForce Strategy（NCP/SmoothPenalty） | R1 Phase 3 | 完了 |
+| [friction.md](../../xkep_cae/process/strategies/docs/friction.md) | `xkep_cae/process/strategies/docs/` | Friction Strategy（Coulomb/SmoothPenalty） | R1 Phase 3 | 完了 |
+| [time_integration.md](../../xkep_cae/process/strategies/docs/time_integration.md) | `xkep_cae/process/strategies/docs/` | TimeIntegration Strategy（QuasiStatic/Generalized-α） | R1 Phase 3 | 完了 |
+| [contact_geometry.md](../../xkep_cae/process/strategies/docs/contact_geometry.md) | `xkep_cae/process/strategies/docs/` | ContactGeometry Strategy（PtP/L2L/Mortar） | R1 Phase 4 | 完了 |
 | [cosserat-design.md](../../xkep_cae/elements/cosserat-design.md) | `xkep_cae/elements/` | Cosserat Rod 設計仕様（幾何学的厳密梁） | Phase 2 | 完了 |
 | [transient-output-design.md](../../xkep_cae/output/transient-output-design.md) | `xkep_cae/output/` | 過渡応答出力インターフェース設計 | Phase 5 | 完了 |
 
