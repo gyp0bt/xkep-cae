@@ -17,8 +17,7 @@ from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
 
 
 class DummyProcessA(AbstractProcess[str, str]):
-    meta = ProcessMeta(name="Dummy A", module="test")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy A", module="test", document_path="docs/dummy.md")
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -26,8 +25,7 @@ class DummyProcessA(AbstractProcess[str, str]):
 
 
 class DummyProcessB(AbstractProcess[str, str]):
-    meta = ProcessMeta(name="Dummy B", module="test")
-    document_path = "docs/dummy.md"
+    meta = ProcessMeta(name="Dummy B", module="test", document_path="docs/dummy.md")
     uses = [DummyProcessA]
 
     def __init__(self) -> None:
@@ -43,8 +41,8 @@ class DeprecatedProcess(AbstractProcess[str, str]):
         module="test",
         deprecated=True,
         deprecated_by="DummyProcessA",
+        document_path="docs/dummy.md",
     )
-    document_path = "docs/dummy.md"
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -75,7 +73,7 @@ class TestAbstractProcessAPI:
                     return ""
 
     def test_document_path_required(self) -> None:
-        """document_path 未定義は TypeError."""
+        """meta.document_path 未定義（空文字）は TypeError."""
         with pytest.raises(TypeError, match="document_path.*を定義してください"):
 
             class NoDocProcess(AbstractProcess[str, str]):
@@ -86,12 +84,13 @@ class TestAbstractProcessAPI:
                     return ""
 
     def test_document_path_missing_file(self) -> None:
-        """document_path のファイルが存在しない場合は FileNotFoundError."""
+        """meta.document_path のファイルが存在しない場合は FileNotFoundError."""
         with pytest.raises(FileNotFoundError, match="ドキュメントが見つかりません"):
 
             class BadDocProcess(AbstractProcess[str, str]):
-                meta = ProcessMeta(name="BadDoc", module="test")
-                document_path = "docs/nonexistent.md"
+                meta = ProcessMeta(
+                    name="BadDoc", module="test", document_path="docs/nonexistent.md"
+                )
                 uses = []
 
                 def process(self, input_data: str) -> str:
@@ -122,8 +121,9 @@ class TestAbstractProcessAPI:
             warnings.simplefilter("always")
 
             class UserOfDeprecated(AbstractProcess[str, str]):
-                meta = ProcessMeta(name="User of deprecated", module="test")
-                document_path = "docs/dummy.md"
+                meta = ProcessMeta(
+                    name="User of deprecated", module="test", document_path="docs/dummy.md"
+                )
                 uses = [DeprecatedProcess]
 
                 def process(self, input_data: str) -> str:
@@ -145,6 +145,26 @@ class TestAbstractProcessAPI:
         md = DummyProcessA.document_markdown()
         assert "## DummyProcessA" in md
         assert "test" in md
+
+    def test_get_document_returns_content(self) -> None:
+        """get_document() がドキュメント内容を含むこと."""
+        doc = DummyProcessA.get_document(include_deps=False)
+        assert "DummyProcessA" in doc
+        # ドキュメントファイルの内容が含まれる
+        assert len(doc) > 0
+
+    def test_get_document_includes_deps(self) -> None:
+        """get_document() が依存プロセスのドキュメントも含むこと."""
+        doc = DummyProcessB.get_document(include_deps=True)
+        assert "DummyProcessB" in doc
+        assert "DummyProcessA" in doc
+        assert "依存プロセス" in doc
+
+    def test_get_document_no_deps(self) -> None:
+        """get_document(include_deps=False) で依存を含まないこと."""
+        doc = DummyProcessB.get_document(include_deps=False)
+        assert "DummyProcessB" in doc
+        assert "依存プロセス" not in doc
 
 
 # ============================================================

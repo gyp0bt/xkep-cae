@@ -136,8 +136,12 @@ class PointToPointProcess(SolverProcess[ContactGeometryInput, ContactGeometryOut
     Phase 4: ContactManager.update_geometry() から実ロジック移植済。
     """
 
-    meta = ProcessMeta(name="PointToPoint", module="solve", version="0.1.0")
-    document_path = "docs/contact_geometry.md"
+    meta = ProcessMeta(
+        name="PointToPoint",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/contact_geometry.md",
+    )
 
     def __init__(self, *, exclude_same_layer: bool = True) -> None:
         self._exclude_same_layer = exclude_same_layer
@@ -301,8 +305,12 @@ class LineToLineGaussProcess(SolverProcess[ContactGeometryInput, ContactGeometry
     Phase 4: line_contact.py からの Gauss 積分ベース幾何更新を統合。
     """
 
-    meta = ProcessMeta(name="LineToLineGauss", module="solve", version="0.1.0")
-    document_path = "docs/contact_geometry.md"
+    meta = ProcessMeta(
+        name="LineToLineGauss",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/contact_geometry.md",
+    )
 
     def __init__(
         self,
@@ -480,8 +488,12 @@ class MortarSegmentProcess(SolverProcess[ContactGeometryInput, ContactGeometryOu
     Phase 4: mortar.py からの Mortar 射影ロジック統合。
     """
 
-    meta = ProcessMeta(name="MortarSegment", module="solve", version="0.1.0")
-    document_path = "docs/contact_geometry.md"
+    meta = ProcessMeta(
+        name="MortarSegment",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/contact_geometry.md",
+    )
 
     def __init__(
         self,

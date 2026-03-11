@@ -42,8 +42,9 @@ class AutoBeamEIProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         sqrt:   k_pen = scale * 12 * E * I / L³ / max(1, sqrt(n_pairs))
     """
 
-    meta = ProcessMeta(name="AutoBeamEI", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="AutoBeamEI", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,
@@ -82,8 +83,9 @@ class AutoBeamEIProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
 class AutoEALProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
     """軸剛性 EA/L ベースのペナルティ剛性自動推定."""
 
-    meta = ProcessMeta(name="AutoEAL", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="AutoEAL", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,
@@ -121,8 +123,8 @@ class ManualPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         version="0.1.0",
         deprecated=True,
         deprecated_by="AutoBeamEIProcess",
+        document_path="docs/penalty.md",
     )
-    document_path = "docs/penalty.md"
 
     def __init__(self, k_pen: float) -> None:
         self._k_pen = k_pen
@@ -139,11 +141,19 @@ class ContinuationPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
     """k_pen continuation: 段階的にペナルティ剛性を増加.
 
     初期ステップでは小さなペナルティ剛性で収束しやすくし、
-    ステップが進むにつれてターゲットまで線形増加する。
+    ステップが進むにつれてターゲットまで増加する。
+
+    mode:
+        "geometric" (デフォルト): 対数スケール等分割。solver_ncp.py の S3改良8 と同一。
+            k(step) = start_fraction * target * ratio^step
+            （ratio = (1/start_fraction)^(1/ramp_steps)）
+        "linear": 線形ランプ。
+            k(step) = target * (start_fraction + (1-start_fraction)*step/ramp_steps)
     """
 
-    meta = ProcessMeta(name="ContinuationPenalty", module="solve", version="0.1.0")
-    document_path = "docs/penalty.md"
+    meta = ProcessMeta(
+        name="ContinuationPenalty", module="solve", version="0.1.0", document_path="docs/penalty.md"
+    )
 
     def __init__(
         self,
@@ -151,10 +161,12 @@ class ContinuationPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         *,
         start_fraction: float = 0.01,
         ramp_steps: int = 5,
+        mode: str = "geometric",
     ) -> None:
         self.k_pen_target = k_pen_target
-        self.start_fraction = start_fraction
+        self.start_fraction = max(start_fraction, 1e-30)
         self.ramp_steps = max(1, ramp_steps)
+        self.mode = mode
 
     def compute_k_pen(self, step: int, total_steps: int) -> float:
         """現在ステップのペナルティ剛性.
@@ -164,8 +176,15 @@ class ContinuationPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         """
         if step >= self.ramp_steps:
             return self.k_pen_target
-        frac = self.start_fraction + (1.0 - self.start_fraction) * step / self.ramp_steps
-        return self.k_pen_target * frac
+
+        if self.mode == "geometric":
+            # 対数スケール等分割（solver_ncp.py S3改良8 と同一）
+            ratio = (1.0 / self.start_fraction) ** (1.0 / self.ramp_steps)
+            return min(self.k_pen_target * self.start_fraction * (ratio**step), self.k_pen_target)
+        else:
+            # 線形ランプ
+            frac = self.start_fraction + (1.0 - self.start_fraction) * step / self.ramp_steps
+            return self.k_pen_target * frac
 
     def process(self, input_data: PenaltyInput) -> PenaltyOutput:
         return PenaltyOutput(k_pen=self.compute_k_pen(input_data.step, input_data.total_steps))

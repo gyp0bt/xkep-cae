@@ -31,8 +31,9 @@ class BareProtocolPenalty:
 
 # --- SolverProcess 継承クラス（比較対象）---
 class DummySolverProcess(SolverProcess):
-    meta = ProcessMeta(name="DummySolver", module="solve", version="0.1.0")
-    document_path = "docs/benchmark.md"
+    meta = ProcessMeta(
+        name="DummySolver", module="solve", version="0.1.0", document_path="docs/benchmark.md"
+    )
 
     def __init__(self, k_pen: float) -> None:
         self._k_pen = k_pen
@@ -114,7 +115,9 @@ def main():
     print(f"\n=== NR反復での影響推定 ===")
     print(f"  NR反復/ステップ: {n_nr_iter}")
     print(f"  Strategy数: {n_strategies}")
-    print(f"  1ステップあたりの追加時間: {total_overhead_per_step:.1f} μs = {total_overhead_per_step/1000:.3f} ms")
+    print(
+        f"  1ステップあたりの追加時間: {total_overhead_per_step:.1f} μs = {total_overhead_per_step / 1000:.3f} ms"
+    )
     print(f"  （典型的NR反復の1ステップ計算時間: 数百ms〜数秒）")
 
 

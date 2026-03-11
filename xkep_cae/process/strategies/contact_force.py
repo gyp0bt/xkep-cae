@@ -52,8 +52,12 @@ class NCPContactForceProcess(SolverProcess[ContactForceInput, ContactForceOutput
     solver_ncp._compute_contact_force_from_lambdas のロジックを移植。
     """
 
-    meta = ProcessMeta(name="NCPContactForce", module="solve", version="0.1.0")
-    document_path = "docs/contact_force.md"
+    meta = ProcessMeta(
+        name="NCPContactForce",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/contact_force.md",
+    )
 
     def __init__(
         self,
@@ -154,8 +158,12 @@ class SmoothPenaltyContactForceProcess(SolverProcess[ContactForceInput, ContactF
     - NCP 鞍点系は摩擦接線剛性の符号問題で発散する
     """
 
-    meta = ProcessMeta(name="SmoothPenaltyContactForce", module="solve", version="0.1.0")
-    document_path = "docs/contact_force.md"
+    meta = ProcessMeta(
+        name="SmoothPenaltyContactForce",
+        module="solve",
+        version="0.1.0",
+        document_path="docs/contact_force.md",
+    )
 
     def __init__(
         self,
