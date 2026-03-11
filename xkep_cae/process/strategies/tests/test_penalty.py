@@ -176,11 +176,24 @@ class TestContinuationPenaltyProcess:
         proc = ContinuationPenaltyProcess(k_pen_target=1e6, start_fraction=0.01, ramp_steps=5)
         assert proc.compute_k_pen(0, 10) == pytest.approx(0.01 * 1e6, rel=1e-10)
 
-    def test_ramp_midpoint(self):
-        """ランプ途中で線形補間."""
-        proc = ContinuationPenaltyProcess(k_pen_target=1e6, start_fraction=0.0, ramp_steps=10)
+    def test_ramp_midpoint_linear(self):
+        """ランプ途中で線形補間（mode=linear）."""
+        proc = ContinuationPenaltyProcess(
+            k_pen_target=1e6, start_fraction=0.0, ramp_steps=10, mode="linear"
+        )
         k5 = proc.compute_k_pen(5, 10)
         assert k5 == pytest.approx(0.5 * 1e6, rel=1e-10)
+
+    def test_ramp_midpoint_geometric(self):
+        """ランプ途中で幾何級数（デフォルトmode=geometric）."""
+        proc = ContinuationPenaltyProcess(k_pen_target=1e6, start_fraction=0.01, ramp_steps=5)
+        # step=0: 0.01*1e6 = 1e4
+        # geometric ratio = (1/0.01)^(1/5) = 100^0.2 ≈ 2.5119
+        k0 = proc.compute_k_pen(0, 10)
+        k1 = proc.compute_k_pen(1, 10)
+        assert k0 == pytest.approx(0.01 * 1e6, rel=1e-10)
+        assert k1 > k0  # 単調増加
+        assert k1 < 1e6  # ターゲット未満
 
     def test_after_ramp(self):
         """ramp_steps 以降はターゲット値."""

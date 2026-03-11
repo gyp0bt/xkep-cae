@@ -1685,58 +1685,18 @@ def newton_raphson_contact_ncp(
         )
         adaptive_timestepping = True
 
-    # k_pen の決定（材料剛性ベース自動推定: status-140で手動モード廃止）
-    if k_pen <= 0.0:
-        if manager.config.beam_E <= 0.0:
-            # 後方互換: beam_Eが未設定の場合はk_pen_scaleをフォールバック使用
-            # （deprecated: 将来バージョンで削除予定）
-            import warnings
+    # k_pen の決定（PenaltyStrategy に委譲: status-157）
+    from xkep_cae.process.strategies.penalty import create_penalty_strategy
 
-            if manager.config.k_pen_scale >= 1.0:
-                warnings.warn(
-                    "k_pen_scale >= 1.0 はペナルティ剛性の直接指定（手動モード）です。"
-                    "beam_E, beam_I を設定して材料ベースの自動推定を使用してください。"
-                    "手動モードは将来バージョンで削除されます。",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-            k_pen = manager.config.k_pen_scale
-        else:
-            # 代表要素長の推定
-            _L_elems = []
-            for elem in connectivity:
-                n1, n2 = int(elem[0]), int(elem[1])
-                dxyz = node_coords_ref[n2] - node_coords_ref[n1]
-                _L_elems.append(float(np.linalg.norm(dxyz)))
-            _L_avg = float(np.mean(_L_elems)) if _L_elems else 1.0
-            _L_avg = max(_L_avg, 1e-30)
-
-            if manager.config.k_pen_mode == "ea_l":
-                from xkep_cae.contact.law_normal import auto_penalty_stiffness
-
-                k_pen = auto_penalty_stiffness(
-                    manager.config.beam_E,
-                    manager.config.beam_A,
-                    _L_avg,
-                    scale=manager.config.k_pen_scale,
-                )
-            else:
-                # beam_ei モード（デフォルト）
-                from xkep_cae.contact.law_normal import auto_beam_penalty_stiffness
-
-                k_pen = auto_beam_penalty_stiffness(
-                    manager.config.beam_E,
-                    manager.config.beam_I,
-                    _L_avg,
-                    n_contact_pairs=max(1, manager.n_pairs),
-                    scale=manager.config.k_pen_scale,
-                    scaling=manager.config.k_pen_scaling,
-                )
-            if show_progress:
-                print(
-                    f"  NCP auto k_pen ({manager.config.k_pen_mode}): "
-                    f"k_pen={k_pen:.2e}, L_avg={_L_avg:.4f}"
-                )
+    _penalty_strategy = create_penalty_strategy(
+        k_pen=k_pen,
+        manager=manager,
+        node_coords_ref=node_coords_ref,
+        connectivity=connectivity,
+    )
+    k_pen = _penalty_strategy.compute_k_pen(0, 1)
+    if show_progress and k_pen > 0.0:
+        print(f"  NCP k_pen ({type(_penalty_strategy).__name__}): k_pen={k_pen:.2e}")
 
     # 摩擦設定の解決（δ自動決定より前に必要）
     _use_friction = use_friction or manager.config.use_friction
@@ -1765,12 +1725,9 @@ def newton_raphson_contact_ncp(
                 f"n_uzawa_max={n_uzawa_max}, k_pen={k_pen:.2e}"
             )
 
-    # --- k_pen continuation（S3改良8）---
-    _k_pen_target = k_pen
-    _k_pen_cont = manager.config.k_pen_continuation
-    _k_pen_cont_steps = manager.config.k_pen_continuation_steps
-    if _k_pen_cont:
-        k_pen = _k_pen_target * manager.config.k_pen_continuation_start
+    # --- k_pen continuation（PenaltyStrategy 経由: status-157）---
+    # ContinuationPenaltyProcess の場合は step=0 で初期値を設定済み
+    # （create_penalty_strategy が continuation を自動検出）
     _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
 
     # line contact 設定の解決
@@ -3029,14 +2986,12 @@ def newton_raphson_contact_ncp(
 
         _prev_n_active = manager.n_active
 
-        # --- k_pen continuation（S3改良8）: ステップ進行で段階的にk_penを目標値に近づける ---
-        if _k_pen_cont and k_pen < _k_pen_target - 1e-30:
-            # 対数スケールで等分割
-            _k_pen_ratio = _k_pen_target / max(k_pen, 1e-30)
-            _k_pen_step_factor = _k_pen_ratio ** (1.0 / max(_k_pen_cont_steps, 1))
-            k_pen = min(k_pen * _k_pen_step_factor, _k_pen_target)
+        # --- k_pen continuation（PenaltyStrategy 経由: status-157）---
+        _k_pen_new = _penalty_strategy.compute_k_pen(step_display, step_display + 1)
+        if abs(_k_pen_new - k_pen) > 1e-30:
+            k_pen = _k_pen_new
             if show_progress:
-                print(f"  k_pen continuation: k_pen → {k_pen:.2e} (target={_k_pen_target:.2e})")
+                print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
 
         # 接線予測子用: 前ステップの変位増分と荷重増分を記録
         delta_frac_prev = load_frac - load_frac_prev
