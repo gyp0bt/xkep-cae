@@ -48,6 +48,21 @@ class QuasiStaticProcess(SolverProcess[TimeIntegrationInput, TimeIntegrationOutp
         document_path="docs/time_integration.md",
     )
 
+    @property
+    def is_dynamic(self) -> bool:
+        """動的解析かどうか."""
+        return False
+
+    @property
+    def vel(self) -> np.ndarray:
+        """速度: 準静的では None 相当."""
+        return np.zeros(0)
+
+    @property
+    def acc(self) -> np.ndarray:
+        """加速度: 準静的では None 相当."""
+        return np.zeros(0)
+
     def predict(self, u: np.ndarray, dt: float) -> np.ndarray:
         """予測子: 準静的では変位をそのまま返す."""
         return u.copy()
@@ -62,6 +77,12 @@ class QuasiStaticProcess(SolverProcess[TimeIntegrationInput, TimeIntegrationOutp
     def effective_residual(self, R: np.ndarray, dt: float) -> np.ndarray:
         """有効残差: 準静的では R そのまま."""
         return R
+
+    def checkpoint(self) -> None:
+        """チェックポイント保存: 準静的では何もしない."""
+
+    def restore_checkpoint(self) -> None:
+        """チェックポイント復元: 準静的では何もしない."""
 
     def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
         u_pred = self.predict(input_data.u, input_data.dt)
@@ -116,6 +137,14 @@ class GeneralizedAlphaProcess(SolverProcess[TimeIntegrationInput, TimeIntegratio
         self._acc_old = np.zeros(ndof)
         self._u_pred = np.zeros(ndof)
         self._v_pred = np.zeros(ndof)
+        # チェックポイント用
+        self._vel_ckpt: np.ndarray | None = None
+        self._acc_ckpt: np.ndarray | None = None
+
+    @property
+    def is_dynamic(self) -> bool:
+        """動的解析かどうか."""
+        return True
 
     def set_initial_state(
         self,
@@ -183,6 +212,18 @@ class GeneralizedAlphaProcess(SolverProcess[TimeIntegrationInput, TimeIntegratio
             v_mid = (1.0 - self.alpha_f) * self.vel + self.alpha_f * self._vel_old
             R_eff += self.C @ v_mid
         return R_eff
+
+    def checkpoint(self) -> None:
+        """速度・加速度のチェックポイントを保存."""
+        self._vel_ckpt = self.vel.copy()
+        self._acc_ckpt = self.acc.copy()
+
+    def restore_checkpoint(self) -> None:
+        """速度・加速度をチェックポイントから復元."""
+        if self._vel_ckpt is not None:
+            self.vel = self._vel_ckpt.copy()
+        if self._acc_ckpt is not None:
+            self.acc = self._acc_ckpt.copy()
 
     def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
         u_pred = self.predict(input_data.u, input_data.dt)

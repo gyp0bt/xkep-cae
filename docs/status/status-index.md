@@ -69,6 +69,7 @@
 | [155](status-155.md) | 2026-03-10 | プロセスアーキテクチャ Phase 4 — ContactGeometry 実ロジック移植 + ファクトリ | 2471 |
 | [156](status-156.md) | 2026-03-11 | Process document_path バリデーション追加 | 2474 |
 | [157](status-157.md) | 2026-03-11 | Phase 5 Strategy 注入 + Friction共通ロジック抽出 + document_path移動 | 2477 |
+| [158](status-158.md) | 2026-03-11 | SolverStrategies + NCPContactSolverProcess + TimeInteg完全委譲 | 2477 |
 
 ## アーカイブ（001〜096）
 

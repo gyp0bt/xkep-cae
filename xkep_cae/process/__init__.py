@@ -25,8 +25,10 @@ from xkep_cae.process.data import (
     MeshData,
     SolverInputData,
     SolverResultData,
+    SolverStrategies,
     VerifyInput,
     VerifyResult,
+    default_strategies,
 )
 from xkep_cae.process.testing import binds_to
 from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
@@ -55,6 +57,9 @@ __all__ = [
     "AssembleCallbacks",
     "SolverInputData",
     "SolverResultData",
+    "SolverStrategies",
     "VerifyInput",
     "VerifyResult",
+    # ファクトリ
+    "default_strategies",
 ]
