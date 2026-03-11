@@ -137,6 +137,7 @@ class PointToPointProcess(SolverProcess[ContactGeometryInput, ContactGeometryOut
     """
 
     meta = ProcessMeta(name="PointToPoint", module="solve", version="0.1.0")
+    document_path = "docs/contact_geometry.md"
 
     def __init__(self, *, exclude_same_layer: bool = True) -> None:
         self._exclude_same_layer = exclude_same_layer
@@ -301,6 +302,7 @@ class LineToLineGaussProcess(SolverProcess[ContactGeometryInput, ContactGeometry
     """
 
     meta = ProcessMeta(name="LineToLineGauss", module="solve", version="0.1.0")
+    document_path = "docs/contact_geometry.md"
 
     def __init__(
         self,
@@ -479,6 +481,7 @@ class MortarSegmentProcess(SolverProcess[ContactGeometryInput, ContactGeometryOu
     """
 
     meta = ProcessMeta(name="MortarSegment", module="solve", version="0.1.0")
+    document_path = "docs/contact_geometry.md"
 
     def __init__(
         self,

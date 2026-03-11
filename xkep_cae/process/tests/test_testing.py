@@ -19,6 +19,7 @@ class TestBindsTo:
 
         class TargetProcess(AbstractProcess[str, str]):
             meta = ProcessMeta(name="Target", module="test")
+            document_path = "docs/dummy.md"
             uses = []
 
             def process(self, input_data: str) -> str:
@@ -36,6 +37,7 @@ class TestBindsTo:
 
         class Target2Process(AbstractProcess[str, str]):
             meta = ProcessMeta(name="Target2", module="test")
+            document_path = "docs/dummy.md"
             uses = []
 
             def process(self, input_data: str) -> str:

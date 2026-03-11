@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-10）
+## 現在地（2026-03-11）
 
-**2471テスト** | S3フェーズ + R1 Phase 4完了 | [最新status](status/status-index.md)
+**2474テスト** | S3フェーズ + R1 Phase 4完了 + document_path検証 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
