@@ -169,6 +169,17 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         """メイン処理. サブクラスで実装."""
         ...
 
+    def effective_uses(self) -> list[type[AbstractProcess]]:
+        """静的 uses + インスタンス _runtime_uses を統合した実効依存リストを返す."""
+        static = list(self.__class__.uses)
+        runtime: list[type[AbstractProcess]] = getattr(self, "_runtime_uses", [])
+        seen = {id(c) for c in static}
+        for dep in runtime:
+            if id(dep) not in seen:
+                static.append(dep)
+                seen.add(id(dep))
+        return static
+
     def execute(self, input_data: TIn) -> TOut:
         """process() の公開エントリポイント."""
         return self.process(input_data)
