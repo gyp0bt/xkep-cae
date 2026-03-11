@@ -1730,6 +1730,20 @@ def newton_raphson_contact_ncp(
     # （create_penalty_strategy が continuation を自動検出）
     _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
 
+    # --- FrictionStrategy 作成（status-157）---
+    from xkep_cae.process.strategies.friction import create_friction_strategy
+
+    _friction_strategy = create_friction_strategy(
+        use_friction=_use_friction,
+        contact_mode="ncp",  # 両パスとも NCP-style p_n を使用
+        ndof=ndof,
+        ndof_per_node=ndof_per_node,
+        k_pen=k_pen,
+        k_t_ratio=manager.config.k_t_ratio,
+        contact_compliance=0.0,  # 摩擦計算ではδ正則化を使わない
+        mu_ramp_steps=_mu_ramp_steps,
+    )
+
     # line contact 設定の解決
     _line_contact = line_contact or manager.config.line_contact
     _n_gauss = n_gauss if n_gauss is not None else manager.config.n_gauss
@@ -2054,21 +2068,17 @@ def newton_raphson_contact_ncp(
                     )
                     f_c = f_c_smooth
 
-                    # 摩擦力（既存 return mapping、p_n はスムース関数から取得済み）
-                    _friction_tangents: dict[int, np.ndarray] = {}
+                    # 摩擦力（FrictionStrategy 経由: status-157）
                     if _use_friction:
-                        mu_eff = compute_mu_effective(_mu, step_display, _mu_ramp_steps)
-                        f_friction, _friction_tangents = _compute_friction_forces_ncp(
-                            manager,
-                            lam_all,
+                        _friction_strategy._mu_ramp_counter = step_display
+                        _friction_strategy._k_pen = k_pen
+                        f_friction, _ = _friction_strategy.evaluate(
                             u,
-                            u_ref,
-                            node_coords_ref,
-                            ndof,
-                            ndof_per_node=ndof_per_node,
-                            k_pen=k_pen,
-                            mu=mu_eff,
-                            contact_compliance=0.0,
+                            manager.pairs,
+                            _mu,
+                            lambdas=lam_all,
+                            u_ref=u_ref,
+                            node_coords_ref=node_coords_ref,
                         )
                         f_c = f_c + f_friction
 
@@ -2154,11 +2164,9 @@ def newton_raphson_contact_ncp(
                             )
                             K_T = K_T + K_coat_fric
 
-                    # 摩擦剛性
-                    if _use_friction and _friction_tangents:
-                        K_fric = _build_friction_stiffness(
-                            manager, _friction_tangents, ndof, ndof_per_node
-                        )
+                    # 摩擦剛性（FrictionStrategy 経由）
+                    if _use_friction and _friction_strategy.friction_tangents:
+                        K_fric = _friction_strategy.tangent(u, manager.pairs, _mu)
                         K_T = K_T + K_fric
 
                     # 動的解析: 質量・減衰
@@ -2444,23 +2452,18 @@ def newton_raphson_contact_ncp(
                         contact_compliance=0.0,
                     )
 
-                # 4b. 摩擦力ベクトル（ペナルティ return mapping 方式）
-                # 摩擦は法線NCP乗数ベースの return mapping で計算し、
-                # 力をR_uに、剛性をK_Tに加算。Alart-Curnier拡大鞍点系は使わない。
-                _friction_tangents: dict[int, np.ndarray] = {}
+                # 4b. 摩擦力ベクトル（FrictionStrategy 経由: status-157）
+                mu_eff = compute_mu_effective(_mu, step_display, _mu_ramp_steps)
                 if _use_friction:
-                    mu_eff = compute_mu_effective(_mu, step_display, _mu_ramp_steps)
-                    f_friction, _friction_tangents = _compute_friction_forces_ncp(
-                        manager,
-                        lam_all,
+                    _friction_strategy._mu_ramp_counter = step_display
+                    _friction_strategy._k_pen = k_pen
+                    f_friction, _ = _friction_strategy.evaluate(
                         u,
-                        u_ref,
-                        node_coords_ref,
-                        ndof,
-                        ndof_per_node=ndof_per_node,
-                        k_pen=k_pen,
-                        mu=mu_eff,
-                        contact_compliance=0.0,
+                        manager.pairs,
+                        _mu,
+                        lambdas=lam_all,
+                        u_ref=u_ref,
+                        node_coords_ref=node_coords_ref,
                     )
                     f_c = f_c + f_friction
 
@@ -2649,11 +2652,9 @@ def newton_raphson_contact_ncp(
                         K_coat_fric = manager.compute_coating_friction_stiffness(coords_def, ndof)
                         K_T = K_T + K_coat_fric
 
-                # 8c. 摩擦接線剛性をK_Tに加算（ペナルティ方式）
-                if _use_friction and _friction_tangents:
-                    K_fric = _build_friction_stiffness(
-                        manager, _friction_tangents, ndof, ndof_per_node
-                    )
+                # 8c. 摩擦接線剛性をK_Tに加算（FrictionStrategy 経由）
+                if _use_friction and _friction_strategy.friction_tangents:
+                    K_fric = _friction_strategy.tangent(u, manager.pairs, _mu)
                     K_T = K_T + K_fric
 
                 # 8d. 動的解析: 有効接線剛性に質量・減衰を加算

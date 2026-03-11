@@ -134,6 +134,12 @@ class NoFrictionProcess(SolverProcess[FrictionInput, FrictionOutput]):
 
     def __init__(self, ndof: int = 0) -> None:
         self._ndof = ndof
+        self._friction_tangents: dict[int, np.ndarray] = {}
+
+    @property
+    def friction_tangents(self) -> dict[int, np.ndarray]:
+        """常に空辞書（摩擦なし）."""
+        return self._friction_tangents
 
     def evaluate(
         self,
