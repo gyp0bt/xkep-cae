@@ -25,6 +25,7 @@ class ProcessNode:
     """実行グラフのノード."""
 
     process_class: type[AbstractProcess]
+    process_instance: AbstractProcess | None = None
     children: list[ProcessNode] = field(default_factory=list)
     node_type: NodeType = NodeType.SEQUENTIAL
     condition: Any | None = None
@@ -71,6 +72,16 @@ class ProcessTree:
                 errors.append(
                     f"{name} は {dep.__name__} を uses 宣言しているが、ツリーに含まれていない"
                 )
+
+        # 動的 _runtime_uses チェック
+        if node.process_instance is not None:
+            runtime_uses: list[type] = getattr(node.process_instance, "_runtime_uses", [])
+            for dep in runtime_uses:
+                if dep not in all_classes:
+                    errors.append(
+                        f"{name} は {dep.__name__} を _runtime_uses で参照しているが、"
+                        "ツリーに含まれていない"
+                    )
 
         for child in node.children:
             self._validate_node(child, visited.copy(), errors)

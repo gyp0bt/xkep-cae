@@ -24,6 +24,7 @@ from xkep_cae.process.categories import (
 class DummyPre(PreProcess[str, str]):
     meta = ProcessMeta(name="Dummy Pre", module="pre", document_path="docs/dummy.md")
     uses = []
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"pre:{input_data}"
@@ -32,6 +33,7 @@ class DummyPre(PreProcess[str, str]):
 class DummySolver(SolverProcess[str, str]):
     meta = ProcessMeta(name="Dummy Solver", module="solve", document_path="docs/dummy.md")
     uses = []
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"solve:{input_data}"
@@ -40,6 +42,7 @@ class DummySolver(SolverProcess[str, str]):
 class DummyPost(PostProcess[str, str]):
     meta = ProcessMeta(name="Dummy Post", module="post", document_path="docs/dummy.md")
     uses = []
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"post:{input_data}"
@@ -48,6 +51,7 @@ class DummyPost(PostProcess[str, str]):
 class DummyVerify(VerifyProcess[str, str]):
     meta = ProcessMeta(name="Dummy Verify", module="verify", document_path="docs/dummy.md")
     uses = []
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"verify:{input_data}"
@@ -56,6 +60,7 @@ class DummyVerify(VerifyProcess[str, str]):
 class DummyBatch(BatchProcess[str, str]):
     meta = ProcessMeta(name="Dummy Batch", module="batch", document_path="docs/dummy.md")
     uses = [DummyPre, DummySolver, DummyPost]
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"batch:{input_data}"
@@ -80,10 +85,10 @@ class TestCategoriesAPI:
         for cls in (DummyPre, DummySolver, DummyPost, DummyVerify, DummyBatch):
             assert issubclass(cls, AbstractProcess)
 
-    def test_concrete_registered(self) -> None:
-        """具象クラスがレジストリに登録されること."""
+    def test_skip_registry_excludes_test_fixtures(self) -> None:
+        """_skip_registry = True のテスト用クラスはレジストリに登録されないこと."""
         for name in ("DummyPre", "DummySolver", "DummyPost", "DummyVerify", "DummyBatch"):
-            assert name in AbstractProcess._registry
+            assert name not in AbstractProcess._registry
 
     def test_concrete_execution(self) -> None:
         """各カテゴリの具象クラスが正しく実行されること."""

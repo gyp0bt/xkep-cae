@@ -70,6 +70,8 @@
 | [156](status-156.md) | 2026-03-11 | Process document_path バリデーション追加 | 2474 |
 | [157](status-157.md) | 2026-03-11 | Phase 5 Strategy 注入 + Friction共通ロジック抽出 + document_path移動 | 2477 |
 | [158](status-158.md) | 2026-03-11 | SolverStrategies + NCPContactSolverProcess + TimeInteg完全委譲 | 2477 |
+| [159](status-159.md) | 2026-03-11 | Phase 5 完了: ContactForce/Geometry Strategy注入 + Phase 6 concrete具象プロセス | 2477 |
+| [160](status-160.md) | 2026-03-11 | AIセッション脱線防止 — 構造対策3件（document_path修正/フォーカスガード/レジストリ汚染除去）| 2477 |
 
 ## アーカイブ（001〜096）
 
@@ -108,7 +110,7 @@ GNN/PINN PoC:  1629  (2026-02-26)
 Phase C6:       1850  (2026-02-28)
 S1-S2:          1822  (2026-02-28)
 S2++/S3基盤:    1886  (2026-03-01)
-現在:           2477  (2026-03-11)  ← status-157
+現在:           2477  (2026-03-11)  ← status-160
 ```
 
 ## 備考

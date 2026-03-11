@@ -17,6 +17,7 @@ from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 class TreePreProcess(PreProcess[str, str]):
     meta = ProcessMeta(name="Tree Pre", module="pre", document_path="docs/dummy.md")
     uses = []
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"pre:{input_data}"
@@ -25,6 +26,7 @@ class TreePreProcess(PreProcess[str, str]):
 class TreeSolverProcess(SolverProcess[str, str]):
     meta = ProcessMeta(name="Tree Solver", module="solve", document_path="docs/dummy.md")
     uses = [TreePreProcess]
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return f"solve:{input_data}"
@@ -35,6 +37,7 @@ class TreeBrokenProcess(SolverProcess[str, str]):
 
     meta = ProcessMeta(name="Tree Broken", module="solve", document_path="docs/dummy.md")
     uses = [TreePreProcess]
+    _skip_registry = True
 
     def process(self, input_data: str) -> str:
         return ""
@@ -99,3 +102,37 @@ class TestProcessTree:
             node_type=NodeType.PARALLEL,
         )
         assert node.node_type == NodeType.PARALLEL
+
+    def test_runtime_uses_validated_when_instance_provided(self) -> None:
+        """_runtime_uses のツリー外依存がエラーとして検出されること."""
+        instance = TreeSolverProcess()
+        instance._runtime_uses = [TreeBrokenProcess]  # ツリーに含まれない
+        node = ProcessNode(
+            process_class=TreeSolverProcess,
+            process_instance=instance,
+            children=[ProcessNode(process_class=TreePreProcess)],
+        )
+        tree = ProcessTree(root=node, name="RuntimeUsesTest")
+        errors = tree.validate()
+        assert any("_runtime_uses" in e and "TreeBrokenProcess" in e for e in errors)
+
+    def test_runtime_uses_no_error_when_in_tree(self) -> None:
+        """_runtime_uses の依存がツリー内にあればエラーなし."""
+        instance = TreeSolverProcess()
+        instance._runtime_uses = [TreePreProcess]  # ツリーに含まれる
+        pre_node = ProcessNode(process_class=TreePreProcess)
+        solver_node = ProcessNode(
+            process_class=TreeSolverProcess,
+            process_instance=instance,
+            children=[pre_node],
+        )
+        tree = ProcessTree(root=solver_node, name="RuntimeUsesOK")
+        errors = tree.validate()
+        assert errors == []
+
+    def test_runtime_uses_skipped_when_no_instance(self) -> None:
+        """process_instance=None なら _runtime_uses チェックは行われない."""
+        # TreeSolverProcess は uses=[TreePreProcess] だが、ツリーに含めている
+        tree = self._build_valid_tree()
+        errors = tree.validate()
+        assert errors == []

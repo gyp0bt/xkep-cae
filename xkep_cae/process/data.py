@@ -96,11 +96,23 @@ def default_strategies(
     use_friction: bool = True,
     mu: float = 0.15,
     contact_mode: str = "smooth_penalty",
+    line_contact: bool = False,
+    use_mortar: bool = False,
+    n_gauss: int = 2,
+    contact_compliance: float = 0.0,
+    smoothing_delta: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
     NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
+    5軸 Strategy 全生成（status-159: Phase 5 完了）。
     """
+    from xkep_cae.process.strategies.contact_force import (
+        create_contact_force_strategy,
+    )
+    from xkep_cae.process.strategies.contact_geometry import (
+        create_contact_geometry_strategy,
+    )
     from xkep_cae.process.strategies.friction import create_friction_strategy
     from xkep_cae.process.strategies.penalty import create_penalty_strategy
     from xkep_cae.process.strategies.time_integration import (
@@ -128,6 +140,18 @@ def default_strategies(
             rho_inf=rho_inf,
             velocity=velocity,
             acceleration=acceleration,
+        ),
+        contact_force=create_contact_force_strategy(
+            contact_mode=contact_mode,
+            ndof=ndof,
+            ndof_per_node=ndof_per_node,
+            contact_compliance=contact_compliance,
+            smoothing_delta=smoothing_delta,
+        ),
+        contact_geometry=create_contact_geometry_strategy(
+            line_contact=line_contact,
+            use_mortar=use_mortar,
+            n_gauss=n_gauss,
         ),
     )
 
