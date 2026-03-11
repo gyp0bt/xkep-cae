@@ -1527,6 +1527,8 @@ def newton_raphson_contact_ncp(
     rho_inf: float = 1.0,
     velocity: np.ndarray | None = None,
     acceleration: np.ndarray | None = None,
+    # --- プロセスアーキテクチャ統合（status-158）---
+    strategies: object | None = None,  # SolverStrategies（循環参照回避で object）
 ) -> NCPSolveResult:
     """Semi-smooth Newton 法による接触解析（AL-NCP + 鞍点定式化）.
 
@@ -1619,24 +1621,33 @@ def newton_raphson_contact_ncp(
     fixed_dofs = np.asarray(fixed_dofs, dtype=int)
     u = u0.copy() if u0 is not None else np.zeros(ndof, dtype=float)
 
-    # --- 動的解析の初期化 ---
-    _dynamics = mass_matrix is not None and dt_physical > 0.0
-    if _dynamics:
-        _M = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
-        _C = sp.csr_matrix(damping_matrix) if damping_matrix is not None else None
-        _vel = velocity.copy() if velocity is not None else np.zeros(ndof)
-        _acc = acceleration.copy() if acceleration is not None else np.zeros(ndof)
-        # Generalized-α パラメータ（Chung & Hulbert 1993）
-        _alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
-        _alpha_f = rho_inf / (rho_inf + 1.0)
-        _nm_gamma = 0.5 - _alpha_m + _alpha_f
-        _nm_beta = 0.25 * (1.0 - _alpha_m + _alpha_f) ** 2
-        # サブステップ用の一時変数（step ループ内で更新）
-        _u_pred = np.zeros(ndof)
-        _v_pred = np.zeros(ndof)
-        _acc_old = _acc.copy()
-        _vel_old = _vel.copy()
-        _dt_sub = dt_physical  # 初期値（適応Δtで更新される）
+    # --- SolverStrategies からの Strategy 取得（status-158: process-architecture §2.4）---
+    # strategies=None 時は既存ファクトリで自動構築（後方互換）
+    if strategies is not None:
+        _time_strategy = strategies.time_integration
+        _penalty_strategy_pre = strategies.penalty
+        _friction_strategy_pre = strategies.friction
+    else:
+        _time_strategy = None
+        _penalty_strategy_pre = None
+        _friction_strategy_pre = None
+
+    # --- 動的解析の初期化（TimeIntegrationStrategy: status-158）---
+    if _time_strategy is None:
+        from xkep_cae.process.strategies.time_integration import (
+            create_time_integration_strategy,
+        )
+
+        _time_strategy = create_time_integration_strategy(
+            mass_matrix=mass_matrix,
+            damping_matrix=damping_matrix,
+            dt_physical=dt_physical,
+            rho_inf=rho_inf,
+            velocity=velocity,
+            acceleration=acceleration,
+        )
+    _dynamics = _time_strategy.is_dynamic
+    _dt_sub = dt_physical if _dynamics else 0.0  # 適応Δtで更新される
 
     # --- n_load_steps → dt_initial_fraction 自動変換 ---
     # n_load_steps は deprecated。adaptive_timestepping の初期増分として変換する。
@@ -1685,15 +1696,18 @@ def newton_raphson_contact_ncp(
         )
         adaptive_timestepping = True
 
-    # k_pen の決定（PenaltyStrategy に委譲: status-157）
-    from xkep_cae.process.strategies.penalty import create_penalty_strategy
+    # k_pen の決定（PenaltyStrategy: status-157, strategies統合: status-158）
+    if _penalty_strategy_pre is not None:
+        _penalty_strategy = _penalty_strategy_pre
+    else:
+        from xkep_cae.process.strategies.penalty import create_penalty_strategy
 
-    _penalty_strategy = create_penalty_strategy(
-        k_pen=k_pen,
-        manager=manager,
-        node_coords_ref=node_coords_ref,
-        connectivity=connectivity,
-    )
+        _penalty_strategy = create_penalty_strategy(
+            k_pen=k_pen,
+            manager=manager,
+            node_coords_ref=node_coords_ref,
+            connectivity=connectivity,
+        )
     k_pen = _penalty_strategy.compute_k_pen(0, 1)
     if show_progress and k_pen > 0.0:
         print(f"  NCP k_pen ({type(_penalty_strategy).__name__}): k_pen={k_pen:.2e}")
@@ -1730,19 +1744,27 @@ def newton_raphson_contact_ncp(
     # （create_penalty_strategy が continuation を自動検出）
     _mu_ramp_steps = mu_ramp_steps if mu_ramp_steps is not None else manager.config.mu_ramp_steps
 
-    # --- FrictionStrategy 作成（status-157）---
-    from xkep_cae.process.strategies.friction import create_friction_strategy
+    # --- FrictionStrategy（status-157, strategies統合: status-158）---
+    if _friction_strategy_pre is not None:
+        _friction_strategy = _friction_strategy_pre
+        # strategies経由の場合もk_pen/k_t_ratioを更新
+        if hasattr(_friction_strategy, "_k_pen"):
+            _friction_strategy._k_pen = k_pen
+        if hasattr(_friction_strategy, "_k_t_ratio"):
+            _friction_strategy._k_t_ratio = manager.config.k_t_ratio
+    else:
+        from xkep_cae.process.strategies.friction import create_friction_strategy
 
-    _friction_strategy = create_friction_strategy(
-        use_friction=_use_friction,
-        contact_mode="ncp",  # 両パスとも NCP-style p_n を使用
-        ndof=ndof,
-        ndof_per_node=ndof_per_node,
-        k_pen=k_pen,
-        k_t_ratio=manager.config.k_t_ratio,
-        contact_compliance=0.0,  # 摩擦計算ではδ正則化を使わない
-        mu_ramp_steps=_mu_ramp_steps,
-    )
+        _friction_strategy = create_friction_strategy(
+            use_friction=_use_friction,
+            contact_mode="ncp",  # 両パスとも NCP-style p_n を使用
+            ndof=ndof,
+            ndof_per_node=ndof_per_node,
+            k_pen=k_pen,
+            k_t_ratio=manager.config.k_t_ratio,
+            contact_compliance=0.0,  # 摩擦計算ではδ正則化を使わない
+            mu_ramp_steps=_mu_ramp_steps,
+        )
 
     # line contact 設定の解決
     _line_contact = line_contact or manager.config.line_contact
@@ -1855,10 +1877,8 @@ def newton_raphson_contact_ncp(
     _ul_frac_base_ckpt = _ul_frac_base
     if _ul:
         ul_assembler.checkpoint()
-    # 動的解析チェックポイント
-    if _dynamics:
-        _vel_ckpt = _vel.copy()
-        _acc_ckpt = _acc.copy()
+    # 動的解析チェックポイント（TimeIntegrationStrategy: status-158）
+    _time_strategy.checkpoint()
 
     # 接線予測子用: 前ステップの変位増分を記録
     u_prev_converged = u.copy()
@@ -1955,15 +1975,9 @@ def newton_raphson_contact_ncp(
         # --- 接線予測子（前ステップの変位増分から外挿） ---
         delta_frac = load_frac - load_frac_prev
         if _dynamics:
-            # 動的解析: Newmark 予測子で初期推定
+            # 動的解析: Newmark 予測子（TimeIntegrationStrategy: status-158）
             _dt_sub = dt_physical * delta_frac
-            _c0 = 1.0 / (_nm_beta * _dt_sub**2) if _dt_sub > 1e-30 else 0.0
-            _c1 = _nm_gamma / (_nm_beta * _dt_sub) if _dt_sub > 1e-30 else 0.0
-            _u_pred = _dt_sub * _vel + 0.5 * _dt_sub**2 * (1.0 - 2.0 * _nm_beta) * _acc
-            _v_pred = _vel + _dt_sub * (1.0 - _nm_gamma) * _acc
-            _acc_old = _acc.copy()
-            _vel_old = _vel.copy()
-            u = _u_pred.copy()
+            u = _time_strategy.predict(u, _dt_sub)
         elif delta_frac_prev > 1e-30 and delta_frac > 1e-30:
             du_prev = u - u_prev_converged
             du_prev_norm = float(np.linalg.norm(du_prev))
@@ -2097,15 +2111,10 @@ def newton_raphson_contact_ncp(
                     f_int = assemble_internal_force(u)
                     R_u = f_int + f_c - f_ext
 
-                    # 動的解析: 慣性力・減衰力
+                    # 動的解析: 慣性力・減衰力（TimeIntegrationStrategy: status-158）
                     if _dynamics and _dt_sub > 1e-30:
-                        _acc_new = _c0 * (u - _u_pred)
-                        _vel_new = _v_pred + _dt_sub * _nm_gamma * _acc_new
-                        _acc_alpha = (1.0 - _alpha_m) * _acc_new + _alpha_m * _acc_old
-                        _vel_alpha = (1.0 - _alpha_f) * _vel_new + _alpha_f * _vel_old
-                        R_u = R_u + _M @ _acc_alpha
-                        if _C is not None:
-                            R_u = R_u + _C @ _vel_alpha
+                        _time_strategy.correct(u, np.zeros_like(u), _dt_sub)
+                        R_u = _time_strategy.effective_residual(R_u, _dt_sub)
 
                     R_u[fixed_dofs] = 0.0
 
@@ -2169,11 +2178,9 @@ def newton_raphson_contact_ncp(
                         K_fric = _friction_strategy.tangent(u, manager.pairs, _mu)
                         K_T = K_T + K_fric
 
-                    # 動的解析: 質量・減衰
+                    # 動的解析: 質量・減衰（TimeIntegrationStrategy: status-158）
                     if _dynamics and _dt_sub > 1e-30:
-                        K_T = K_T + (1.0 - _alpha_m) * _c0 * _M
-                        if _C is not None:
-                            K_T = K_T + (1.0 - _alpha_f) * _c1 * _C
+                        K_T = _time_strategy.effective_stiffness(K_T, _dt_sub)
 
                     # 6. 標準線形ソルブ（鞍点系不要）
                     K_eff = K_T.tocsc()
@@ -2486,19 +2493,10 @@ def newton_raphson_contact_ncp(
                 f_int = assemble_internal_force(u)
                 R_u = f_int + f_c - f_ext
 
-                # 5d. 動的解析: 慣性力・減衰力を残差に加算
+                # 5d. 動的解析: 慣性力・減衰力（TimeIntegrationStrategy: status-158）
                 if _dynamics and _dt_sub > 1e-30:
-                    # Newmark 更新: 加速度・速度を現在の u から計算
-                    _acc_new = _c0 * (u - _u_pred)
-                    _vel_new = _v_pred + _dt_sub * _nm_gamma * _acc_new
-                    # Generalized-α 中間時刻補間
-                    _acc_alpha = (1.0 - _alpha_m) * _acc_new + _alpha_m * _acc_old
-                    _vel_alpha = (1.0 - _alpha_f) * _vel_new + _alpha_f * _vel_old
-                    # 慣性力: M·a_{n+1-α_m}
-                    R_u = R_u + _M @ _acc_alpha
-                    # 減衰力: C·v_{n+1-α_f}
-                    if _C is not None:
-                        R_u = R_u + _C @ _vel_alpha
+                    _time_strategy.correct(u, np.zeros_like(u), _dt_sub)
+                    R_u = _time_strategy.effective_residual(R_u, _dt_sub)
 
                 R_u[fixed_dofs] = 0.0
 
@@ -2657,11 +2655,9 @@ def newton_raphson_contact_ncp(
                     K_fric = _friction_strategy.tangent(u, manager.pairs, _mu)
                     K_T = K_T + K_fric
 
-                # 8d. 動的解析: 有効接線剛性に質量・減衰を加算
+                # 8d. 動的解析: 有効接線剛性（TimeIntegrationStrategy: status-158）
                 if _dynamics and _dt_sub > 1e-30:
-                    K_T = K_T + (1.0 - _alpha_m) * _c0 * _M
-                    if _C is not None:
-                        K_T = K_T + (1.0 - _alpha_f) * _c1 * _C
+                    K_T = _time_strategy.effective_stiffness(K_T, _dt_sub)
 
                 # 9-10. 鞍点系で解く（Mortar / 摩擦 / 法線のみ で分岐）
                 if _use_mortar and len(mortar_nodes) > 0 and n_ncp_active > 0:
@@ -2873,10 +2869,9 @@ def newton_raphson_contact_ncp(
                 if _ul:
                     ul_assembler.rollback()
                     node_coords_ref = ul_assembler.coords_ref
-                # 動的解析: 速度・加速度をチェックポイントに復元
+                # 動的解析: チェックポイント復元（TimeIntegrationStrategy: status-158）
                 if _dynamics:
-                    _vel = _vel_ckpt.copy()
-                    _acc = _acc_ckpt.copy()
+                    _time_strategy.restore_checkpoint()
                 # 予測子もリセット（ロールバック後は外挿しない）
                 delta_frac_prev = 0.0
                 _consecutive_good = 0  # カットバック発生→積極成長モードに復帰
@@ -2912,8 +2907,8 @@ def newton_raphson_contact_ncp(
                     contact_force_history=contact_force_history,
                     graph_history=graph_history,
                     diagnostics=_diag,
-                    velocity=_vel.copy() if _dynamics else None,
-                    acceleration=_acc.copy() if _dynamics else None,
+                    velocity=_time_strategy.vel.copy() if _dynamics else None,
+                    acceleration=_time_strategy.acc.copy() if _dynamics else None,
                 )
 
         # ステップ完了 — キューから消費
@@ -2924,10 +2919,9 @@ def newton_raphson_contact_ncp(
             for pair in manager.pairs:
                 pair.state.coating_compression_prev = pair.state.coating_compression
 
-        # --- 動的解析: 収束後の速度・加速度更新 ---
+        # --- 動的解析: 収束後の速度・加速度更新（TimeIntegrationStrategy: status-158）---
         if _dynamics and _dt_sub > 1e-30:
-            _acc = _c0 * (u - _u_pred)
-            _vel = _v_pred + _dt_sub * _nm_gamma * _acc
+            _time_strategy.correct(u, np.zeros_like(u), _dt_sub)
 
         # --- Updated Lagrangian: 参照配置更新 & 変位リセット ---
         if _ul:
@@ -3054,8 +3048,7 @@ def newton_raphson_contact_ncp(
         if _ul:
             ul_assembler.checkpoint()
         if _dynamics:
-            _vel_ckpt = _vel.copy()
-            _acc_ckpt = _acc.copy()
+            _time_strategy.checkpoint()
 
         load_history.append(load_frac)
         _u_hist = ul_assembler.u_total_accum + u if _ul else u.copy()
@@ -3082,6 +3075,6 @@ def newton_raphson_contact_ncp(
         displacement_history=disp_history,
         contact_force_history=contact_force_history,
         graph_history=graph_history,
-        velocity=_vel.copy() if _dynamics else None,
-        acceleration=_acc.copy() if _dynamics else None,
+        velocity=_time_strategy.vel.copy() if _dynamics else None,
+        acceleration=_time_strategy.acc.copy() if _dynamics else None,
     )

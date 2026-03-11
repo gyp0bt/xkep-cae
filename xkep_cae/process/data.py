@@ -1,7 +1,8 @@
 """プロセス間 Input/Output データ契約.
 
 dataclass(frozen=True) で不変性を保証する。
-既存 NCPSolverInput/NCPSolveResult へのラッパー変換は Phase 3 で実装。
+SolverStrategies: ソルバー内部の振る舞いを合成するStrategy群。
+設計仕様: process-architecture.md §2.4
 
 """
 
@@ -56,18 +57,93 @@ class AssembleCallbacks:
     ul_assembler: object | None = None
 
 
+@dataclass
+class SolverStrategies:
+    """ソルバー内部の振る舞いを合成するStrategy群.
+
+    各フィールドは対応するStrategy Processインスタンス。
+    設計仕様: process-architecture.md §2.4
+
+    フィールド型は object（循環参照回避）。実体は:
+    - contact_force: NCPContactForceProcess | SmoothPenaltyContactForceProcess
+    - friction: NoFrictionProcess | CoulombReturnMappingProcess | SmoothPenaltyFrictionProcess
+    - time_integration: QuasiStaticProcess | GeneralizedAlphaProcess
+    - contact_geometry: PointToPointProcess | LineToLineGaussProcess | MortarSegmentProcess
+    - penalty: AutoBeamEIProcess | AutoEALProcess | ManualPenaltyProcess | ContinuationPenaltyProcess
+    """
+
+    penalty: object
+    friction: object
+    time_integration: object
+    contact_force: object | None = None  # Phase 5後半で注入
+    contact_geometry: object | None = None  # Phase 5後半で注入
+
+
+def default_strategies(
+    *,
+    ndof: int = 0,
+    ndof_per_node: int = 6,
+    mass_matrix: object = None,
+    damping_matrix: object = None,
+    dt_physical: float = 0.0,
+    rho_inf: float = 0.9,
+    velocity: object = None,
+    acceleration: object = None,
+    k_pen: float = 1.0,
+    beam_E: float = 0.0,
+    beam_I: float = 0.0,
+    beam_L: float = 0.0,
+    use_friction: bool = True,
+    mu: float = 0.15,
+    contact_mode: str = "smooth_penalty",
+) -> SolverStrategies:
+    """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
+
+    NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
+    """
+    from xkep_cae.process.strategies.friction import create_friction_strategy
+    from xkep_cae.process.strategies.penalty import create_penalty_strategy
+    from xkep_cae.process.strategies.time_integration import (
+        create_time_integration_strategy,
+    )
+
+    return SolverStrategies(
+        penalty=create_penalty_strategy(
+            k_pen=k_pen,
+            beam_E=beam_E,
+            beam_I=beam_I,
+            beam_L=beam_L,
+        ),
+        friction=create_friction_strategy(
+            use_friction=use_friction,
+            contact_mode=contact_mode,
+            ndof=ndof,
+            ndof_per_node=ndof_per_node,
+            mu=mu,
+        ),
+        time_integration=create_time_integration_strategy(
+            mass_matrix=mass_matrix,
+            damping_matrix=damping_matrix,
+            dt_physical=dt_physical,
+            rho_inf=rho_inf,
+            velocity=velocity,
+            acceleration=acceleration,
+        ),
+    )
+
+
 @dataclass(frozen=True)
 class SolverInputData:
     """NCPContactSolverProcess への統合入力.
 
     内部で NCPSolverInput に変換して既存ソルバーを呼び出す（ラッパー方式）。
-    変換メソッドは Phase 3 で実装。
     """
 
     mesh: MeshData
     boundary: BoundaryData
     contact: ContactSetupData
     callbacks: AssembleCallbacks
+    strategies: SolverStrategies | None = None
 
 
 @dataclass
