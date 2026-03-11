@@ -18,6 +18,7 @@ from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
 
 class DummyProcessA(AbstractProcess[str, str]):
     meta = ProcessMeta(name="Dummy A", module="test")
+    document_path = "docs/dummy.md"
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -26,6 +27,7 @@ class DummyProcessA(AbstractProcess[str, str]):
 
 class DummyProcessB(AbstractProcess[str, str]):
     meta = ProcessMeta(name="Dummy B", module="test")
+    document_path = "docs/dummy.md"
     uses = [DummyProcessA]
 
     def __init__(self) -> None:
@@ -42,6 +44,7 @@ class DeprecatedProcess(AbstractProcess[str, str]):
         deprecated=True,
         deprecated_by="DummyProcessA",
     )
+    document_path = "docs/dummy.md"
     uses = []
 
     def process(self, input_data: str) -> str:
@@ -71,6 +74,34 @@ class TestAbstractProcessAPI:
                 def process(self, input_data: str) -> str:
                     return ""
 
+    def test_document_path_required(self) -> None:
+        """document_path 未定義は TypeError."""
+        with pytest.raises(TypeError, match="document_path.*を定義してください"):
+
+            class NoDocProcess(AbstractProcess[str, str]):
+                meta = ProcessMeta(name="NoDoc", module="test")
+                uses = []
+
+                def process(self, input_data: str) -> str:
+                    return ""
+
+    def test_document_path_missing_file(self) -> None:
+        """document_path のファイルが存在しない場合は FileNotFoundError."""
+        with pytest.raises(FileNotFoundError, match="ドキュメントが見つかりません"):
+
+            class BadDocProcess(AbstractProcess[str, str]):
+                meta = ProcessMeta(name="BadDoc", module="test")
+                document_path = "docs/nonexistent.md"
+                uses = []
+
+                def process(self, input_data: str) -> str:
+                    return ""
+
+    def test_document_path_in_markdown(self) -> None:
+        """document_markdown() に設計文書パスが含まれること."""
+        md = DummyProcessA.document_markdown()
+        assert "docs/dummy.md" in md
+
     def test_process_execution(self) -> None:
         """process() が正しく実行されること."""
         a = DummyProcessA()
@@ -92,6 +123,7 @@ class TestAbstractProcessAPI:
 
             class UserOfDeprecated(AbstractProcess[str, str]):
                 meta = ProcessMeta(name="User of deprecated", module="test")
+                document_path = "docs/dummy.md"
                 uses = [DeprecatedProcess]
 
                 def process(self, input_data: str) -> str:

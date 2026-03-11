@@ -32,6 +32,7 @@ class BareProtocolPenalty:
 # --- SolverProcess 継承クラス（比較対象）---
 class DummySolverProcess(SolverProcess):
     meta = ProcessMeta(name="DummySolver", module="solve", version="0.1.0")
+    document_path = "docs/benchmark.md"
 
     def __init__(self, k_pen: float) -> None:
         self._k_pen = k_pen

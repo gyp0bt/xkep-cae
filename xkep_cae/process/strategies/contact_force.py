@@ -53,6 +53,7 @@ class NCPContactForceProcess(SolverProcess[ContactForceInput, ContactForceOutput
     """
 
     meta = ProcessMeta(name="NCPContactForce", module="solve", version="0.1.0")
+    document_path = "docs/contact_force.md"
 
     def __init__(
         self,
@@ -154,6 +155,7 @@ class SmoothPenaltyContactForceProcess(SolverProcess[ContactForceInput, ContactF
     """
 
     meta = ProcessMeta(name="SmoothPenaltyContactForce", module="solve", version="0.1.0")
+    document_path = "docs/contact_force.md"
 
     def __init__(
         self,

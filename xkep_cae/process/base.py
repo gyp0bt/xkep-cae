@@ -8,10 +8,12 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import time
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
 TIn = TypeVar("TIn")
@@ -102,6 +104,7 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
     # --- クラス変数（サブクラスで上書き） ---
     meta: ClassVar[ProcessMeta]
     uses: ClassVar[list[type[AbstractProcess]]] = []
+    document_path: ClassVar[str]  # ソースファイルからの相対パス
 
     # --- 自動管理 ---
     _registry: ClassVar[dict[str, type[AbstractProcess]]] = {}
@@ -121,6 +124,17 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         # meta 必須チェック
         if not hasattr(cls, "meta") or not isinstance(cls.meta, ProcessMeta):
             raise TypeError(f"{cls.__name__} は ProcessMeta を定義してください")
+
+        # document_path 必須チェック
+        if not hasattr(cls, "document_path") or not isinstance(cls.document_path, str):
+            raise TypeError(f"{cls.__name__} は document_path (str) を定義してください")
+
+        # ドキュメントファイル存在チェック
+        src_file = inspect.getfile(cls)
+        src_dir = Path(src_file).parent
+        doc_full = (src_dir / cls.document_path).resolve()
+        if not doc_full.is_file():
+            raise FileNotFoundError(f"{cls.__name__}: ドキュメントが見つかりません: {doc_full}")
 
         # deprecated チェック
         for dep in cls.uses:
@@ -169,6 +183,8 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
             f"- **モジュール**: {cls.meta.module}",
             f"- **バージョン**: {cls.meta.version}",
         ]
+        if hasattr(cls, "document_path"):
+            lines.append(f"- **設計文書**: `{cls.document_path}`")
         if cls.meta.deprecated:
             lines.append(f"- **DEPRECATED** → {cls.meta.deprecated_by}")
         if cls.uses:

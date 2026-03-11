@@ -42,6 +42,7 @@ class QuasiStaticProcess(SolverProcess[TimeIntegrationInput, TimeIntegrationOutp
     """
 
     meta = ProcessMeta(name="QuasiStatic", module="solve", version="0.1.0")
+    document_path = "docs/time_integration.md"
 
     def predict(self, u: np.ndarray, dt: float) -> np.ndarray:
         """予測子: 準静的では変位をそのまま返す."""
@@ -76,6 +77,7 @@ class GeneralizedAlphaProcess(SolverProcess[TimeIntegrationInput, TimeIntegratio
     """
 
     meta = ProcessMeta(name="GeneralizedAlpha", module="solve", version="0.1.0")
+    document_path = "docs/time_integration.md"
 
     def __init__(
         self,
