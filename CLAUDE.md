@@ -75,26 +75,29 @@
 
 ### 次の課題
 
-**S3: 19本NCP収束達成** → 37本以上 → S4 → S5: ML → S6: 1000本6時間 → S7: GPU
+**R1 Phase 7: Process Architecture 完遂** — BatchProcess + VerifyProcess + 1:1テスト + C3-C12契約違反検知
 
-詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ### やるべきこと
-- **S3 スケーリング**（19本→37本→61本→91本 NCP 収束）
-- ソルバー性能改善（スパース最適化、並列化、メモリ削減）
-- scripts/ での収束検証 → tests/ への移行
+- **Process フレームワーク Phase 7 完遂**（BatchProcess, VerifyProcess, 1:1テスト）
+- process-architecture.md §13 の C3-C12 契約違反検知の厳格実装
+- `scripts/validate_process_contracts.py` のエラーをゼロにする
+- concrete/ の 1:1 テスト追加
+- コンテキスト整理（ドキュメント構造の明確化）
 
 ### やってはいけないこと
-- **Process フレームワークのリファクタリング**（Phase 7 は凍結中）
-- process-architecture.md §13 の C3-C12 対応（Phase 7 解凍まで着手禁止）
-- 既存テストの大規模リファクタリング
-- フォルダ構造の変更
+- **S3 スケーリング作業**（NCP 収束改善、37本以上の収束テスト — 凍結中）
+- ソルバー性能改善（スパース最適化、並列化、メモリ削減）
+- scripts/ での新規収束検証スクリプト作成
+- NCP ソルバー（solver_ncp.py）の収束ロジック変更
 
 ### セッション開始時の確認手順
 1. `docs/status/status-index.md` → 最新 status 番号を確認
 2. 最新 `docs/status/status-{N}.md` を読む
-3. 上の「やるべきこと」に合致する作業のみ実施
+3. `python scripts/validate_process_contracts.py` を実行し、エラー一覧を確認
+4. 上の「やるべきこと」に合致する作業のみ実施
