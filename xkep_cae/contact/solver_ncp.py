@@ -487,48 +487,14 @@ def _build_friction_stiffness(
     この関数は摩擦接線剛性のみを構築する。
 
     K_f = Σ D_t[a1,a2] * g_t[a1] * g_t[a2]^T
+
+    Note: assembly.assemble_friction_tangent_stiffness() に委譲。
     """
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[float] = []
+    from xkep_cae.contact.assembly import assemble_friction_tangent_stiffness
 
-    for pair_idx, pair in enumerate(manager.pairs):
-        if pair.state.status == ContactStatus.INACTIVE:
-            continue
-        if pair_idx not in friction_tangents:
-            continue
-
-        D_t = friction_tangents[pair_idx]
-        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-        gdofs = np.empty(12, dtype=int)
-        for k, node in enumerate(nodes):
-            for d in range(3):
-                gdofs[k * 3 + d] = node * ndof_per_node + d
-
-        g_t = [
-            _contact_tangent_shape_vector(pair, 0),
-            _contact_tangent_shape_vector(pair, 1),
-        ]
-        for a1 in range(2):
-            for a2 in range(2):
-                d_val = D_t[a1, a2]
-                if abs(d_val) < 1e-30:
-                    continue
-                for i in range(12):
-                    for j in range(12):
-                        val = d_val * g_t[a1][i] * g_t[a2][j]
-                        if abs(val) > 1e-30:
-                            rows.append(gdofs[i])
-                            cols.append(gdofs[j])
-                            data.append(val)
-
-    if len(data) == 0:
-        return sp.csr_matrix((ndof_total, ndof_total))
-
-    return sp.coo_matrix(
-        (data, (rows, cols)),
-        shape=(ndof_total, ndof_total),
-    ).tocsr()
+    return assemble_friction_tangent_stiffness(
+        manager.pairs, friction_tangents, ndof_total, ndof_per_node
+    )
 
 
 def _build_constraint_jacobian(

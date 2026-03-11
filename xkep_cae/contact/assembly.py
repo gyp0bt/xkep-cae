@@ -791,3 +791,113 @@ def assemble_smooth_contact(
         K_contact.sum_duplicates()
 
     return f_contact, K_contact, p_n_all
+
+
+# ============================================================
+# 摩擦共通ヘルパー（Strategy 重複除去用）
+# ============================================================
+
+
+def assemble_friction_force(
+    contact_pairs: list,
+    friction_forces_local: dict[int, np.ndarray],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> np.ndarray:
+    """局所摩擦力ベクトルをグローバルに組み立て.
+
+    evaluate() 内で各ペアの return mapping 後に呼ばれる
+    摩擦力アセンブリループの共通化。
+
+    Args:
+        contact_pairs: 接触ペアリスト
+        friction_forces_local: {pair_idx: q(2,)} 局所摩擦力
+        ndof_total: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+
+    Returns:
+        f_friction: (ndof_total,) 全体摩擦力ベクトル
+    """
+    f_friction = np.zeros(ndof_total)
+
+    for pair_idx, q in friction_forces_local.items():
+        pair = contact_pairs[pair_idx]
+        dofs = _contact_dofs(pair, ndof_per_node)
+        for axis in range(2):
+            if abs(q[axis]) < 1e-30:
+                continue
+            g_t = _contact_tangent_shape_vector(pair, axis)
+            for k in range(4):
+                for d in range(3):
+                    f_friction[dofs[k * ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
+
+    return f_friction
+
+
+def assemble_friction_tangent_stiffness(
+    contact_pairs: list,
+    friction_tangents: dict[int, np.ndarray],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """摩擦接線剛性行列を組み立て.
+
+    CoulombReturnMapping / SmoothPenaltyFriction / solver_ncp._build_friction_stiffness
+    の3箇所で重複していたロジックを統一する共通関数。
+
+    K_f = Σ D_t[a1,a2] * g_t[a1] * g_t[a2]^T
+
+    Args:
+        contact_pairs: 接触ペアリスト
+        friction_tangents: {pair_idx: D_t (2,2)} 摩擦接線剛性マップ
+        ndof_total: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+
+    Returns:
+        K_friction: (ndof_total, ndof_total) 摩擦接線剛性行列
+    """
+    from xkep_cae.contact.pair import ContactStatus
+
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+
+    for pair_idx, pair in enumerate(contact_pairs):
+        if not hasattr(pair, "state"):
+            continue
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+        if pair_idx not in friction_tangents:
+            continue
+
+        D_t = friction_tangents[pair_idx]
+        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        gdofs = np.empty(12, dtype=int)
+        for k, node in enumerate(nodes):
+            for d in range(3):
+                gdofs[k * 3 + d] = node * ndof_per_node + d
+
+        g_t = [
+            _contact_tangent_shape_vector(pair, 0),
+            _contact_tangent_shape_vector(pair, 1),
+        ]
+        for a1 in range(2):
+            for a2 in range(2):
+                d_val = D_t[a1, a2]
+                if abs(d_val) < 1e-30:
+                    continue
+                for i in range(12):
+                    for j in range(12):
+                        val = d_val * g_t[a1][i] * g_t[a2][j]
+                        if abs(val) > 1e-30:
+                            rows.append(gdofs[i])
+                            cols.append(gdofs[j])
+                            data.append(val)
+
+    if len(data) == 0:
+        return sp.csr_matrix((ndof_total, ndof_total))
+
+    return sp.coo_matrix(
+        (data, (rows, cols)),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()

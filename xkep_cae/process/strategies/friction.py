@@ -6,6 +6,11 @@ Phase 3 統合:
 - CoulombReturnMappingProcess: solver_ncp._compute_friction_forces_ncp を移植
 - _build_friction_stiffness ロジックを tangent() に移植
 - create_friction_strategy() ファクトリで solver_ncp.py の摩擦設定を Strategy に移譲
+
+Phase 5 リファクタリング（status-157）:
+- tangent() → assembly.assemble_friction_tangent_stiffness() に統一
+- evaluate() 内の力アセンブリ → assembly.assemble_friction_force() に統一
+- evaluate() の return mapping ループ → _friction_return_mapping_loop() に統一
 """
 
 from __future__ import annotations
@@ -34,6 +39,88 @@ class FrictionOutput:
 
     friction_force: np.ndarray
     friction_residual: np.ndarray
+
+
+def _friction_return_mapping_loop(
+    contact_pairs: list,
+    u: np.ndarray,
+    u_ref: np.ndarray,
+    node_coords_ref: np.ndarray,
+    ndof: int,
+    ndof_per_node: int,
+    k_pen: float,
+    k_t_ratio: float,
+    mu_eff: float,
+    compute_p_n: callable,
+) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray]]:
+    """摩擦 return mapping ループの共通実装.
+
+    CoulombReturnMapping と SmoothPenaltyFriction の evaluate() で
+    重複していたループ本体を抽出した共通関数。
+
+    Args:
+        contact_pairs: 接触ペアリスト
+        u: 現在の変位
+        u_ref: 参照変位
+        node_coords_ref: 参照座標
+        ndof: 全体 DOF 数
+        ndof_per_node: 1節点あたりの DOF 数
+        k_pen: ペナルティ剛性
+        k_t_ratio: 接線/法線ペナルティ比
+        mu_eff: 実効摩擦係数
+        compute_p_n: pair index → p_n を返すコールバック
+
+    Returns:
+        f_friction: 摩擦力ベクトル
+        friction_residual: 残差配列
+        friction_tangents: {pair_idx: D_t (2,2)}
+    """
+    from xkep_cae.contact.assembly import assemble_friction_force
+    from xkep_cae.contact.law_friction import (
+        compute_tangential_displacement,
+        friction_return_mapping,
+        friction_tangent_2x2,
+    )
+
+    friction_forces_local: dict[int, np.ndarray] = {}
+    friction_tangents: dict[int, np.ndarray] = {}
+    residuals: list[float] = []
+
+    for i, pair in enumerate(contact_pairs):
+        if not hasattr(pair, "state"):
+            continue
+
+        p_n = compute_p_n(i, pair)
+        if p_n <= 0.0 or mu_eff <= 0.0:
+            continue
+
+        # ペナルティ剛性の初期化（未設定時）
+        if pair.state.k_pen <= 0.0:
+            pair.state.k_pen = k_pen
+            pair.state.k_t = k_pen * k_t_ratio
+
+        # 接線変位
+        delta_ut = compute_tangential_displacement(pair, u, u_ref, node_coords_ref, ndof_per_node)
+
+        # Coulomb return mapping
+        q = friction_return_mapping(pair, delta_ut, mu_eff)
+
+        q_norm = float(np.linalg.norm(q))
+        if q_norm < 1e-30:
+            continue
+
+        residuals.append(max(0.0, q_norm - mu_eff * p_n))
+        friction_forces_local[i] = q
+
+        # 摩擦接線剛性
+        D_t = friction_tangent_2x2(pair, mu_eff)
+        friction_tangents[i] = D_t
+
+    # 力アセンブリ
+    f_friction = assemble_friction_force(contact_pairs, friction_forces_local, ndof, ndof_per_node)
+
+    friction_residual = np.array(residuals) if residuals else np.zeros(0)
+    return f_friction, friction_residual, friction_tangents
 
 
 class NoFrictionProcess(SolverProcess[FrictionInput, FrictionOutput]):
@@ -129,31 +216,10 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         solver_ncp._compute_friction_forces_ncp のロジックを移植。
         基本 Protocol シグネチャ (u, contact_pairs, mu) に加えて
         追加パラメータを keyword-only で受け取る。
-
-        Args:
-            u: 現在の変位
-            contact_pairs: 接触ペアリスト（manager.pairs）
-            mu: 摩擦係数
-            lambdas: ラグランジュ乗数
-            u_ref: 参照変位（前ステップ収束解）
-            node_coords_ref: 参照座標
-            manager: ContactManager（k_t_ratio 等の設定参照用）
-
-        Returns:
-            (friction_force, friction_residual)
         """
-        from xkep_cae.contact.law_friction import (
-            compute_mu_effective,
-            compute_tangential_displacement,
-            friction_return_mapping,
-            friction_tangent_2x2,
-        )
+        from xkep_cae.contact.law_friction import compute_mu_effective
 
         mu_eff = compute_mu_effective(mu, self._mu_ramp_counter, self._mu_ramp_steps)
-        f_friction = np.zeros(self._ndof)
-        self._friction_tangents = {}
-        residuals = []
-        _delta = self._contact_compliance
 
         if lambdas is None:
             lambdas = np.zeros(len(contact_pairs))
@@ -162,63 +228,33 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         if node_coords_ref is None:
             node_coords_ref = np.zeros((self._ndof // self._ndof_per_node, 3))
 
-        for i, pair in enumerate(contact_pairs):
-            if not hasattr(pair, "state"):
-                continue
+        _delta = self._contact_compliance
+        _k_pen = self._k_pen
 
+        def compute_p_n(i: int, pair: object) -> float:
             from xkep_cae.contact.pair import ContactStatus
 
             if pair.state.status == ContactStatus.INACTIVE:
-                continue
-
+                return 0.0
             lam_i = lambdas[i] if i < len(lambdas) else 0.0
             g_i = pair.state.gap
             g_eff = g_i + _delta * lam_i if _delta > 0.0 else g_i
-            p_n = max(0.0, lam_i + self._k_pen * (-g_eff))
+            p_n = max(0.0, lam_i + _k_pen * (-g_eff))
             pair.state.p_n = p_n
+            return p_n
 
-            if p_n <= 0.0 or mu_eff <= 0.0:
-                continue
-
-            # ペナルティ剛性の初期化（未設定時）
-            if pair.state.k_pen <= 0.0:
-                pair.state.k_pen = self._k_pen
-                pair.state.k_t = self._k_pen * self._k_t_ratio
-
-            # 接線変位
-            delta_ut = compute_tangential_displacement(
-                pair, u, u_ref, node_coords_ref, self._ndof_per_node
-            )
-
-            # Coulomb return mapping
-            q = friction_return_mapping(pair, delta_ut, mu_eff)
-
-            q_norm = float(np.linalg.norm(q))
-            if q_norm < 1e-30:
-                continue
-
-            residuals.append(max(0.0, q_norm - mu_eff * p_n))
-
-            # 摩擦力アセンブリ
-            from xkep_cae.contact.assembly import (
-                _contact_dofs,
-                _contact_tangent_shape_vector,
-            )
-
-            dofs = _contact_dofs(pair, self._ndof_per_node)
-            for axis in range(2):
-                if abs(q[axis]) < 1e-30:
-                    continue
-                g_t = _contact_tangent_shape_vector(pair, axis)
-                for k in range(4):
-                    for d in range(3):
-                        f_friction[dofs[k * self._ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
-
-            # 摩擦接線剛性
-            D_t = friction_tangent_2x2(pair, mu_eff)
-            self._friction_tangents[i] = D_t
-
-        friction_residual = np.array(residuals) if residuals else np.zeros(0)
+        f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
+            contact_pairs,
+            u,
+            u_ref,
+            node_coords_ref,
+            self._ndof,
+            self._ndof_per_node,
+            self._k_pen,
+            self._k_t_ratio,
+            mu_eff,
+            compute_p_n,
+        )
         return f_friction, friction_residual
 
     def tangent(
@@ -227,57 +263,12 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         contact_pairs: list,
         mu: float,
     ) -> sp.csr_matrix:
-        """摩擦接線剛性行列を構築.
+        """摩擦接線剛性行列を構築."""
+        from xkep_cae.contact.assembly import assemble_friction_tangent_stiffness
 
-        solver_ncp._build_friction_stiffness のロジックを移植。
-        evaluate() で計算された friction_tangents を使用する。
-        """
-        from xkep_cae.contact.assembly import _contact_tangent_shape_vector
-        from xkep_cae.contact.pair import ContactStatus
-
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[float] = []
-
-        for pair_idx, pair in enumerate(contact_pairs):
-            if not hasattr(pair, "state"):
-                continue
-            if pair.state.status == ContactStatus.INACTIVE:
-                continue
-            if pair_idx not in self._friction_tangents:
-                continue
-
-            D_t = self._friction_tangents[pair_idx]
-            nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-            gdofs = np.empty(12, dtype=int)
-            for k, node in enumerate(nodes):
-                for d in range(3):
-                    gdofs[k * 3 + d] = node * self._ndof_per_node + d
-
-            g_t = [
-                _contact_tangent_shape_vector(pair, 0),
-                _contact_tangent_shape_vector(pair, 1),
-            ]
-            for a1 in range(2):
-                for a2 in range(2):
-                    d_val = D_t[a1, a2]
-                    if abs(d_val) < 1e-30:
-                        continue
-                    for i in range(12):
-                        for j in range(12):
-                            val = d_val * g_t[a1][i] * g_t[a2][j]
-                            if abs(val) > 1e-30:
-                                rows.append(gdofs[i])
-                                cols.append(gdofs[j])
-                                data.append(val)
-
-        if len(data) == 0:
-            return sp.csr_matrix((self._ndof, self._ndof))
-
-        return sp.coo_matrix(
-            (data, (rows, cols)),
-            shape=(self._ndof, self._ndof),
-        ).tocsr()
+        return assemble_friction_tangent_stiffness(
+            contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
+        )
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)
@@ -338,70 +329,33 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差を評価（smooth penalty 版）.
 
-        CoulombReturnMapping と同じロジックだが、
-        smooth penalty 接触力モデルと組み合わせて使用する。
+        CoulombReturnMapping と同じ return mapping だが、
+        p_n は pair.state.p_n から取得（smooth penalty 接触力で事前計算済み）。
         """
-        from xkep_cae.contact.law_friction import (
-            compute_mu_effective,
-            compute_tangential_displacement,
-            friction_return_mapping,
-            friction_tangent_2x2,
-        )
+        from xkep_cae.contact.law_friction import compute_mu_effective
 
         mu_eff = compute_mu_effective(mu, self._mu_ramp_counter, self._mu_ramp_steps)
-        f_friction = np.zeros(self._ndof)
-        self._friction_tangents = {}
-        residuals = []
 
-        if lambdas is None:
-            lambdas = np.zeros(len(contact_pairs))
         if u_ref is None:
             u_ref = np.zeros_like(u)
         if node_coords_ref is None:
             node_coords_ref = np.zeros((self._ndof // self._ndof_per_node, 3))
 
-        for i, pair in enumerate(contact_pairs):
-            if not hasattr(pair, "state"):
-                continue
+        def compute_p_n(i: int, pair: object) -> float:
+            return getattr(pair.state, "p_n", 0.0)
 
-            p_n = getattr(pair.state, "p_n", 0.0)
-            if p_n <= 0.0 or mu_eff <= 0.0:
-                continue
-
-            # ペナルティ剛性の初期化
-            if pair.state.k_pen <= 0.0:
-                pair.state.k_pen = self._k_pen
-                pair.state.k_t = self._k_pen * self._k_t_ratio
-
-            delta_ut = compute_tangential_displacement(
-                pair, u, u_ref, node_coords_ref, self._ndof_per_node
-            )
-            q = friction_return_mapping(pair, delta_ut, mu_eff)
-
-            q_norm = float(np.linalg.norm(q))
-            if q_norm < 1e-30:
-                continue
-
-            residuals.append(max(0.0, q_norm - mu_eff * p_n))
-
-            from xkep_cae.contact.assembly import (
-                _contact_dofs,
-                _contact_tangent_shape_vector,
-            )
-
-            dofs = _contact_dofs(pair, self._ndof_per_node)
-            for axis in range(2):
-                if abs(q[axis]) < 1e-30:
-                    continue
-                g_t = _contact_tangent_shape_vector(pair, axis)
-                for k in range(4):
-                    for d in range(3):
-                        f_friction[dofs[k * self._ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
-
-            D_t = friction_tangent_2x2(pair, mu_eff)
-            self._friction_tangents[i] = D_t
-
-        friction_residual = np.array(residuals) if residuals else np.zeros(0)
+        f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
+            contact_pairs,
+            u,
+            u_ref,
+            node_coords_ref,
+            self._ndof,
+            self._ndof_per_node,
+            self._k_pen,
+            self._k_t_ratio,
+            mu_eff,
+            compute_p_n,
+        )
         return f_friction, friction_residual
 
     def tangent(
@@ -410,53 +364,12 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
         contact_pairs: list,
         mu: float,
     ) -> sp.csr_matrix:
-        """摩擦接線剛性行列（CoulombReturnMapping と同一ロジック）."""
-        from xkep_cae.contact.assembly import _contact_tangent_shape_vector
-        from xkep_cae.contact.pair import ContactStatus
+        """摩擦接線剛性行列（共通アセンブリ関数を使用）."""
+        from xkep_cae.contact.assembly import assemble_friction_tangent_stiffness
 
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[float] = []
-
-        for pair_idx, pair in enumerate(contact_pairs):
-            if not hasattr(pair, "state"):
-                continue
-            if pair.state.status == ContactStatus.INACTIVE:
-                continue
-            if pair_idx not in self._friction_tangents:
-                continue
-
-            D_t = self._friction_tangents[pair_idx]
-            nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-            gdofs = np.empty(12, dtype=int)
-            for k, node in enumerate(nodes):
-                for d in range(3):
-                    gdofs[k * 3 + d] = node * self._ndof_per_node + d
-
-            g_t = [
-                _contact_tangent_shape_vector(pair, 0),
-                _contact_tangent_shape_vector(pair, 1),
-            ]
-            for a1 in range(2):
-                for a2 in range(2):
-                    d_val = D_t[a1, a2]
-                    if abs(d_val) < 1e-30:
-                        continue
-                    for i in range(12):
-                        for j in range(12):
-                            val = d_val * g_t[a1][i] * g_t[a2][j]
-                            if abs(val) > 1e-30:
-                                rows.append(gdofs[i])
-                                cols.append(gdofs[j])
-                                data.append(val)
-
-        if len(data) == 0:
-            return sp.csr_matrix((self._ndof, self._ndof))
-
-        return sp.coo_matrix(
-            (data, (rows, cols)),
-            shape=(self._ndof, self._ndof),
-        ).tocsr()
+        return assemble_friction_tangent_stiffness(
+            contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
+        )
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)
