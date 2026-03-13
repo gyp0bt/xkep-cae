@@ -67,7 +67,7 @@
 
 ## 現在の状態
 
-**2477テスト** — 2026-03-13
+**2477テスト + 314 processテスト** — 2026-03-13
 
 ### ターゲット
 
@@ -75,7 +75,7 @@
 
 ### 次の課題
 
-**R1 Phase 8 設計完了（status-163）** — Phase 7 完了記録 + CI process テスト統合 + Phase 8 設計文書策定済み。次は Phase 8 実装（ProcessRunner, StrategySlot, Preset first-class）。
+**R1 Phase 8 実装完了（status-164）** — ProcessRunner / StrategySlot / CompatibilityProcess / SolverPreset / C13チェック 全実装。314 processテスト。
 
 S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,7 +84,7 @@ S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/s
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ### やるべきこと
-- **Phase 8 実装**: ProcessRunner / StrategySlot / Preset first-class（[設計文書](xkep_cae/process/docs/phase8-design.md)）
+- **Phase 9 以降の計画**: Phase 8 完了を受けて次ステップを検討
 - `scripts/validate_process_contracts.py` のエラーをゼロに**維持**する
 - コンテキスト整理（ドキュメント構造の明確化）
 

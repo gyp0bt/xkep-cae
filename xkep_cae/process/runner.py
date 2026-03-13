@@ -144,10 +144,7 @@ class ProcessRunner:
         for dep in effective:
             dep_name = dep.__name__
             if dep_name not in registry:
-                logger.warning(
-                    f"{type(process).__name__} の依存 {dep_name} が"
-                    "レジストリに未登録"
-                )
+                logger.warning(f"{type(process).__name__} の依存 {dep_name} がレジストリに未登録")
 
     def _record(
         self,

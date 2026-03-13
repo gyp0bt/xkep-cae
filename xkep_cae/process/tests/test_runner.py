@@ -43,7 +43,9 @@ class _NumpyInput:
 class _MutatingProcess(PreProcess[_NumpyInput, _DummyOutput]):
     """入力の numpy 配列を書き換える違反プロセス."""
 
-    meta = ProcessMeta(name="Mutating", module="pre", document_path="../docs/process-architecture.md")
+    meta = ProcessMeta(
+        name="Mutating", module="pre", document_path="../docs/process-architecture.md"
+    )
     _skip_registry = True
 
     def process(self, input_data: _NumpyInput) -> _DummyOutput:
@@ -114,10 +116,12 @@ class TestProcessRunner:
         runner = ProcessRunner()
         proc1 = _AddOneProcess()
         proc2 = _AddOneProcess()
-        results = runner.run_pipeline([
-            (proc1, _DummyInput(value=1)),
-            (proc2, _DummyInput(value=2)),
-        ])
+        results = runner.run_pipeline(
+            [
+                (proc1, _DummyInput(value=1)),
+                (proc2, _DummyInput(value=2)),
+            ]
+        )
         assert len(results) == 2
         assert results[0].result == 2
         assert results[1].result == 3
@@ -158,10 +162,12 @@ class TestProcessRunner:
         ctx = ExecutionContext(dry_run=True)
         runner = ProcessRunner(context=ctx)
         proc = _AddOneProcess()
-        results = runner.run_pipeline([
-            (proc, _DummyInput(value=1)),
-            (proc, _DummyInput(value=2)),
-        ])
+        results = runner.run_pipeline(
+            [
+                (proc, _DummyInput(value=1)),
+                (proc, _DummyInput(value=2)),
+            ]
+        )
         assert all(r is None for r in results)
         assert len(runner._execution_log) == 2
 

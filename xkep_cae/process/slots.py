@@ -54,8 +54,7 @@ class StrategySlot(Generic[T]):
         if val is _SENTINEL:
             if self.required:
                 raise AttributeError(
-                    f"{type(obj).__name__}.{self._public_name} は未設定 "
-                    f"(required StrategySlot)"
+                    f"{type(obj).__name__}.{self._public_name} は未設定 (required StrategySlot)"
                 )
             return None
         return val
