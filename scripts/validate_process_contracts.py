@@ -70,6 +70,7 @@ def _import_all_modules() -> None:
         "xkep_cae.process.verify.convergence",
         "xkep_cae.process.verify.energy",
         "xkep_cae.process.verify.contact",
+        "xkep_cae.process.batch.strand_bending",
     ]
     # strategy プロセス
     strategy_modules = [
