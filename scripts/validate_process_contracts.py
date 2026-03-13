@@ -31,6 +31,33 @@ sys.path.insert(0, str(_project_root))
 from xkep_cae.process.base import AbstractProcess  # noqa: E402
 
 
+def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
+    """pytest 未インストール環境用: AST で @binds_to(XxxProcess) を検出し紐付け."""
+    try:
+        source = py_file.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+    except (SyntaxError, OSError):
+        return
+
+    reg = registry if registry is not None else AbstractProcess._registry
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for deco in node.decorator_list:
+            # @binds_to(XxxProcess) パターンを検出
+            if isinstance(deco, ast.Call) and isinstance(deco.func, ast.Name):
+                if deco.func.id == "binds_to" and deco.args:
+                    arg = deco.args[0]
+                    if isinstance(arg, ast.Name):
+                        process_name = arg.id
+                        if process_name in reg and reg[process_name]._test_class is None:
+                            mod_path = py_file.relative_to(_project_root).with_suffix("")
+                            mod_name = str(mod_path).replace("/", ".")
+                            test_path = f"{mod_name}::{node.name}"
+                            reg[process_name]._test_class = test_path
+
+
 def _import_all_modules() -> None:
     """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築."""
     # concrete プロセス
@@ -57,9 +84,13 @@ def _import_all_modules() -> None:
             print(f"  警告: {mod_name} のインポートに失敗: {e}")
 
     # テストモジュール（@binds_to 発動用）を動的インポート
+    # pytest がない環境では AST で @binds_to を検出してフォールバック
     test_dirs = [
         _project_root / "xkep_cae" / "process" / "tests",
         _project_root / "xkep_cae" / "process" / "strategies" / "tests",
+        _project_root / "xkep_cae" / "process" / "concrete" / "tests",
+        _project_root / "xkep_cae" / "process" / "verify" / "tests",
+        _project_root / "xkep_cae" / "process" / "batch" / "tests",
     ]
     for test_dir in test_dirs:
         if not test_dir.is_dir():
@@ -69,8 +100,9 @@ def _import_all_modules() -> None:
             mod_name = str(mod_path).replace("/", ".")
             try:
                 importlib.import_module(mod_name)
-            except Exception as e:
-                print(f"  警告: {mod_name} のインポートに失敗: {e}")
+            except Exception:
+                # pytest 未インストール等でインポート失敗時は AST フォールバック
+                _ast_fallback_binds_to(py_file, registry=None)
 
 
 def _is_test_fixture(cls: type) -> bool:
