@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
-
 from xkep_cae.process.base import ProcessMeta
 from xkep_cae.process.categories import VerifyProcess
 from xkep_cae.process.data import SolverResultData, VerifyResult

@@ -65,7 +65,7 @@ class EnergyBalanceVerifyProcess(VerifyProcess[EnergyBalanceVerifyInput, VerifyR
         passed = all(ok for _, _, ok in checks.values())
 
         lines = ["# エネルギー収支検証レポート", ""]
-        for name, (actual, expected, ok) in checks.items():
+        for name, (actual, _expected, ok) in checks.items():
             status = "PASS" if ok else "FAIL"
             lines.append(f"- {name}: {status} (value={actual:.6e})")
 

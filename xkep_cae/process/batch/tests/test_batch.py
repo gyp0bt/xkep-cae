@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
-
 from xkep_cae.process.batch.strand_bending import (
-    BatchConfig,
-    BatchResult,
     StrandBendingBatchProcess,
 )
 from xkep_cae.process.testing import binds_to

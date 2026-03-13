@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from xkep_cae.process.concrete.pre_contact import (
     ContactSetupConfig,

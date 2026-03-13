@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from xkep_cae.process.concrete.pre_mesh import (
     StrandMeshConfig,
     StrandMeshProcess,

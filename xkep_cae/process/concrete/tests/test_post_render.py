@@ -5,7 +5,6 @@ from __future__ import annotations
 import tempfile
 
 import numpy as np
-import pytest
 
 from xkep_cae.process.concrete.post_render import (
     BeamRenderProcess,

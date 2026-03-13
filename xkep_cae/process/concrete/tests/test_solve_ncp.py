@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from xkep_cae.process.concrete.solve_ncp import NCPContactSolverProcess
 from xkep_cae.process.testing import binds_to
 
