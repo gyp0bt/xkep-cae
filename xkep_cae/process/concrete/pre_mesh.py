@@ -58,13 +58,22 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
         """メッシュ生成の実行."""
         from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
+        # wire_diameter = 2 * wire_radius
+        wire_diameter = input_data.wire_radius * 2.0
+        # length = pitch_length * n_pitches
+        length = input_data.pitch_length * input_data.n_pitches
+        # n_elems_per_strand = n_elements_per_pitch * n_pitches
+        n_elems = int(input_data.n_elements_per_pitch * input_data.n_pitches)
+
         mesh = make_twisted_wire_mesh(
             n_strands=input_data.n_strands,
-            wire_radius=input_data.wire_radius,
-            pitch_length=input_data.pitch_length,
+            wire_diameter=wire_diameter,
+            pitch=input_data.pitch_length,
+            length=length,
+            n_elems_per_strand=n_elems,
             gap=input_data.gap,
-            n_elements_per_pitch=input_data.n_elements_per_pitch,
             n_pitches=input_data.n_pitches,
+            coating_thickness=input_data.coating_thickness,
         )
 
         return StrandMeshResult(

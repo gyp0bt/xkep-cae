@@ -100,11 +100,12 @@ class TestContractC3TestBinding:
 
 
 def _strategy_processes_for(suffix: str) -> list[tuple[str, type]]:
-    """指定サフィックスに一致する Strategy 具象クラスを返す."""
+    """指定サフィックスに一致する Strategy 具象クラスを返す.
+
+    "Penalty" は "PenaltyProcess" で終わるクラスのみ（SmoothPenaltyContactForce を除外）。
+    """
     return [
-        (name, cls)
-        for name, cls in _all_concrete_processes()
-        if suffix in name and name.endswith("Process")
+        (name, cls) for name, cls in _all_concrete_processes() if name.endswith(f"{suffix}Process")
     ]
 
 
@@ -122,10 +123,14 @@ class TestContractC6StrategySemantics:
     )
     def test_contact_force_zero_displacement_gives_zero_force(self, name: str, cls: type) -> None:
         """ゼロ変位でゼロ接触力を返すこと."""
-        instance = cls()
+        ndof = 12
+        # NCPContactForceProcess は ndof が必須引数
+        try:
+            instance = cls()
+        except TypeError:
+            instance = cls(ndof=ndof)
         if not hasattr(instance, "evaluate"):
             pytest.skip(f"{name} に evaluate メソッドがない")
-        ndof = 12
         u = np.zeros(ndof)
         lambdas = np.zeros(ndof)
 
@@ -148,7 +153,15 @@ class TestContractC6StrategySemantics:
     )
     def test_penalty_returns_positive(self, name: str, cls: type) -> None:
         """ペナルティ剛性が正の値を返すこと."""
-        instance = cls()
+        # Penalty クラスは必須引数を持つものがある
+        try:
+            instance = cls()
+        except TypeError:
+            # ManualPenaltyProcess(k_pen), ContinuationPenaltyProcess(k_pen_target)
+            try:
+                instance = cls(k_pen=1e6)
+            except TypeError:
+                instance = cls(k_pen_target=1e6)
         if not hasattr(instance, "compute_k_pen"):
             pytest.skip(f"{name} に compute_k_pen メソッドがない")
         try:

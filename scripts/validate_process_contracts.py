@@ -304,6 +304,9 @@ def check_c11_transitive_deps(registry: dict[str, type]) -> list[str]:
     errors = []
 
     for name, cls in sorted(registry.items()):
+        # テスト用フィクスチャは検査対象外
+        if _is_test_fixture(cls):
+            continue
         method = getattr(cls, "process", None)
         if method is None:
             continue
