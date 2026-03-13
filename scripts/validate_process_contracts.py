@@ -31,6 +31,33 @@ sys.path.insert(0, str(_project_root))
 from xkep_cae.process.base import AbstractProcess  # noqa: E402
 
 
+def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
+    """pytest 未インストール環境用: AST で @binds_to(XxxProcess) を検出し紐付け."""
+    try:
+        source = py_file.read_text(encoding="utf-8")
+        tree = ast.parse(source)
+    except (SyntaxError, OSError):
+        return
+
+    reg = registry if registry is not None else AbstractProcess._registry
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for deco in node.decorator_list:
+            # @binds_to(XxxProcess) パターンを検出
+            if isinstance(deco, ast.Call) and isinstance(deco.func, ast.Name):
+                if deco.func.id == "binds_to" and deco.args:
+                    arg = deco.args[0]
+                    if isinstance(arg, ast.Name):
+                        process_name = arg.id
+                        if process_name in reg and reg[process_name]._test_class is None:
+                            mod_path = py_file.relative_to(_project_root).with_suffix("")
+                            mod_name = str(mod_path).replace("/", ".")
+                            test_path = f"{mod_name}::{node.name}"
+                            reg[process_name]._test_class = test_path
+
+
 def _import_all_modules() -> None:
     """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築."""
     # concrete プロセス
@@ -40,6 +67,10 @@ def _import_all_modules() -> None:
         "xkep_cae.process.concrete.solve_ncp",
         "xkep_cae.process.concrete.post_export",
         "xkep_cae.process.concrete.post_render",
+        "xkep_cae.process.verify.convergence",
+        "xkep_cae.process.verify.energy",
+        "xkep_cae.process.verify.contact",
+        "xkep_cae.process.batch.strand_bending",
     ]
     # strategy プロセス
     strategy_modules = [
@@ -57,9 +88,13 @@ def _import_all_modules() -> None:
             print(f"  警告: {mod_name} のインポートに失敗: {e}")
 
     # テストモジュール（@binds_to 発動用）を動的インポート
+    # pytest がない環境では AST で @binds_to を検出してフォールバック
     test_dirs = [
         _project_root / "xkep_cae" / "process" / "tests",
         _project_root / "xkep_cae" / "process" / "strategies" / "tests",
+        _project_root / "xkep_cae" / "process" / "concrete" / "tests",
+        _project_root / "xkep_cae" / "process" / "verify" / "tests",
+        _project_root / "xkep_cae" / "process" / "batch" / "tests",
     ]
     for test_dir in test_dirs:
         if not test_dir.is_dir():
@@ -69,8 +104,9 @@ def _import_all_modules() -> None:
             mod_name = str(mod_path).replace("/", ".")
             try:
                 importlib.import_module(mod_name)
-            except Exception as e:
-                print(f"  警告: {mod_name} のインポートに失敗: {e}")
+            except Exception:
+                # pytest 未インストール等でインポート失敗時は AST フォールバック
+                _ast_fallback_binds_to(py_file, registry=None)
 
 
 def _is_test_fixture(cls: type) -> bool:
@@ -140,7 +176,16 @@ def check_c7_metaclass_wrap(registry: dict[str, type]) -> list[str]:
 
 
 def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
-    """C8: _runtime_uses が静的 uses でカバーされていないケースを検出."""
+    """C8: _runtime_uses を使うクラスのデフォルトインスタンス化と effective_uses() を検証.
+
+    設計方針: NCPContactSolverProcess のように strategy 注入で動的依存を持つクラスは
+    静的 uses = [] とし、_runtime_uses + effective_uses() で依存を追跡する（C8対策）。
+    ここでは:
+    1. デフォルト引数でインスタンス化が成功すること
+    2. _runtime_uses が空でないこと（strategy が正しく注入されていること）
+    3. effective_uses() が _runtime_uses を含むこと
+    を検証する。
+    """
     errors = []
     for name, cls in sorted(registry.items()):
         # _runtime_uses を設定するクラスかチェック
@@ -159,14 +204,20 @@ def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
             continue
 
         runtime = getattr(instance, "_runtime_uses", [])
-        static_names = {dep.__name__ for dep in cls.uses}
+        if not runtime:
+            errors.append(f"C8: {name}._runtime_uses が空（strategy 注入に失敗している可能性）")
+            continue
 
-        for dep in runtime:
-            dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
-            if dep_name not in static_names:
-                errors.append(
-                    f"C8: {name}._runtime_uses に {dep_name} があるが、静的 uses に含まれていない"
-                )
+        # effective_uses() が _runtime_uses を含むか
+        if hasattr(instance, "effective_uses"):
+            effective = instance.effective_uses()
+            effective_ids = {id(dep) for dep in effective}
+            for dep in runtime:
+                if id(dep) not in effective_ids:
+                    dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
+                    errors.append(
+                        f"C8: {name}._runtime_uses の {dep_name} が effective_uses() に含まれていない"
+                    )
     return errors
 
 
@@ -179,27 +230,43 @@ def check_c6_strategy_semantics(registry: dict[str, type]) -> list[str]:
     """
     errors = []
 
-    # Strategy Protocol 名 → 期待される具象クラスのサフィックス
-    strategy_protocols = {
-        "ContactForceStrategy": "ContactForce",
-        "FrictionStrategy": "Friction",
-        "TimeIntegrationStrategy": "TimeIntegration",
-        "ContactGeometryStrategy": "ContactGeometry",
-        "PenaltyStrategy": "Penalty",
+    try:
+        from xkep_cae.process.strategies.protocols import (
+            ContactForceStrategy,
+            ContactGeometryStrategy,
+            FrictionStrategy,
+            PenaltyStrategy,
+            TimeIntegrationStrategy,
+        )
+    except ImportError:
+        errors.append("C6: strategies.protocols のインポートに失敗")
+        return errors
+
+    strategy_protocols: dict[str, type] = {
+        "ContactForceStrategy": ContactForceStrategy,
+        "FrictionStrategy": FrictionStrategy,
+        "TimeIntegrationStrategy": TimeIntegrationStrategy,
+        "ContactGeometryStrategy": ContactGeometryStrategy,
+        "PenaltyStrategy": PenaltyStrategy,
     }
 
-    for protocol_name, suffix in strategy_protocols.items():
-        # 該当する具象クラスを検出
-        matching = [
-            name for name, cls in registry.items() if suffix in name and name.endswith("Process")
-        ]
+    for protocol_name, protocol_cls in strategy_protocols.items():
+        # Protocol を実装する具象クラスを isinstance で検出
+        matching = []
+        for name, cls in registry.items():
+            try:
+                instance = cls.__new__(cls)
+                if isinstance(instance, protocol_cls):
+                    matching.append(name)
+            except Exception:
+                continue
+
         if not matching:
             errors.append(f"C6: {protocol_name} の具象クラスがレジストリに存在しない")
             continue
 
         for name in matching:
             cls = registry[name]
-            # 意味論テストの紐付けチェック（C3 とは別に C6 専用チェック）
             if cls._test_class is None:
                 errors.append(f"C6: {name} ({protocol_name} 実装) に意味論テストがない")
 

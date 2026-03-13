@@ -8,11 +8,12 @@
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
 import time
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
@@ -33,6 +34,8 @@ class ProcessMeta:
     deprecated: bool = False
     deprecated_by: str | None = None  # 後継プロセスのクラス名
     document_path: str = ""  # ソースファイルからの相対パス
+    stability: str = "stable"  # experimental / stable / frozen / deprecated
+    support_tier: str = "ci-required"  # ci-required / compat-only / dev-only
 
 
 class ProcessMetaclass(type(ABC)):
@@ -185,9 +188,33 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
                 seen.add(id(dep))
         return static
 
+    @staticmethod
+    def _compute_checksum(data: Any) -> str | None:
+        """入力データの numpy 配列チェックサムを計算（C9: 不変性検証用）."""
+        import numpy as np
+
+        if not hasattr(data, "__dataclass_fields__"):
+            return None
+        h = hashlib.md5(usedforsecurity=False)
+        for f in fields(data):
+            val = getattr(data, f.name, None)
+            if isinstance(val, np.ndarray):
+                h.update(val.tobytes())
+        return h.hexdigest()
+
     def execute(self, input_data: TIn) -> TOut:
-        """process() の公開エントリポイント."""
-        return self.process(input_data)
+        """process() の公開エントリポイント（C9: 入力不変性チェック付き）."""
+        if __debug__:
+            checksum_before = self._compute_checksum(input_data)
+        result = self.process(input_data)
+        if __debug__ and checksum_before is not None:
+            checksum_after = self._compute_checksum(input_data)
+            assert checksum_before == checksum_after, (
+                f"{type(self).__name__}.process() が入力データの numpy 配列を変更しました。"
+                "frozen dataclass の numpy 配列は in-place 変更可能ですが、"
+                "process() は入力を不変に保つ契約です。"
+            )
+        return result
 
     @classmethod
     def get_dependency_tree(cls) -> dict:
