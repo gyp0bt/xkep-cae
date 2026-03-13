@@ -6,10 +6,11 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C5: process() 内の未宣言依存（AST解析）
 - C6: Strategy Protocol の意味論的契約違反（具象クラス未検証）
 - C7: process() のメタクラスラップ漏れ
-- C8: _runtime_uses の静的 uses 未カバー
+- C8: _runtime_uses / StrategySlot の動的依存カバー
 - C9: frozen dataclass numpy 配列変更検出（execute() チェックサム未実装）
 - C11: uses チェーンの推移的依存漏れ
 - C12: BatchProcess 具象クラスの順序依存検証
+- C13: active プロセスが CompatibilityProcess を uses している場合はエラー
 
 使用方法:
     python scripts/validate_process_contracts.py 2>&1 | tee /tmp/log-$(date +%s).log
@@ -176,14 +177,16 @@ def check_c7_metaclass_wrap(registry: dict[str, type]) -> list[str]:
 
 
 def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
-    """C8: _runtime_uses を使うクラスのデフォルトインスタンス化と effective_uses() を検証.
+    """C8: _runtime_uses / StrategySlot の動的依存カバーを検証.
 
     設計方針: NCPContactSolverProcess のように strategy 注入で動的依存を持つクラスは
     静的 uses = [] とし、_runtime_uses + effective_uses() で依存を追跡する（C8対策）。
+    Phase 8-B で StrategySlot が追加され、collect_strategy_types() で型情報を取得可能。
     ここでは:
     1. デフォルト引数でインスタンス化が成功すること
     2. _runtime_uses が空でないこと（strategy が正しく注入されていること）
     3. effective_uses() が _runtime_uses を含むこと
+    4. StrategySlot があれば collect_strategy_types() と _runtime_uses が一致すること
     を検証する。
     """
     errors = []
@@ -218,6 +221,24 @@ def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
                     errors.append(
                         f"C8: {name}._runtime_uses の {dep_name} が effective_uses() に含まれていない"
                     )
+
+        # StrategySlot 整合性チェック（Phase 8-B/E）
+        try:
+            from xkep_cae.process.slots import collect_strategy_slots, collect_strategy_types
+
+            slots = collect_strategy_slots(cls)
+            if slots:
+                slot_types = set(collect_strategy_types(instance))
+                runtime_types = set(runtime)
+                if slot_types != runtime_types:
+                    errors.append(
+                        f"C8: {name} の StrategySlot 型と _runtime_uses が不一致 "
+                        f"(slot: {sorted(t.__name__ for t in slot_types)}, "
+                        f"runtime: {sorted(t.__name__ for t in runtime_types)})"
+                    )
+        except ImportError:
+            pass  # slots モジュール未インストール時はスキップ
+
     return errors
 
 
@@ -377,10 +398,43 @@ def check_c12_batch_order(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c13_compatibility_uses(registry: dict[str, type]) -> list[str]:
+    """C13: active プロセスが CompatibilityProcess を uses している場合はエラー.
+
+    CompatibilityProcess は deprecated プロセスの隔離カテゴリ。
+    新規コード（active プロセス）からの uses 宣言を禁止する。
+    """
+    errors = []
+
+    try:
+        from xkep_cae.process.categories import CompatibilityProcess
+    except ImportError:
+        return errors  # CompatibilityProcess 未定義時はスキップ
+
+    for name, cls in sorted(registry.items()):
+        # deprecated プロセス自身はチェック対象外
+        if hasattr(cls, "meta") and cls.meta.deprecated:
+            continue
+        # CompatibilityProcess 自身のサブクラスもチェック対象外
+        if issubclass(cls, CompatibilityProcess):
+            continue
+        # テスト用フィクスチャは対象外
+        if _is_test_fixture(cls):
+            continue
+
+        for dep in cls.uses:
+            if issubclass(dep, CompatibilityProcess):
+                errors.append(
+                    f"C13: {name} が CompatibilityProcess である {dep.__name__} を uses に宣言"
+                )
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C12）")
+    print("プロセス契約違反検出スクリプト（C3-C13）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -403,6 +457,7 @@ def main() -> int:
         ("C9: frozen不変性", check_c9_frozen_immutability),
         ("C11: 推移的依存", check_c11_transitive_deps),
         ("C12: BatchProcess順序", check_c12_batch_order),
+        ("C13: CompatibilityProcess uses禁止", check_c13_compatibility_uses),
     ]
 
     for label, check_fn in checks:
@@ -423,6 +478,7 @@ def main() -> int:
         print("  C6  → test_contracts.py の意味論テストを実装で解消")
         print("  C9  → base.py execute() にチェックサム検証を追加")
         print("  C12 → batch/ に BatchProcess 具象クラスを実装")
+        print("  C13 → active プロセスから CompatibilityProcess への uses を削除")
         return 1
     else:
         print("契約違反なし")
