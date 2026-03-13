@@ -122,16 +122,12 @@ def default_strategies(
     return SolverStrategies(
         penalty=create_penalty_strategy(
             k_pen=k_pen,
-            beam_E=beam_E,
-            beam_I=beam_I,
-            beam_L=beam_L,
         ),
         friction=create_friction_strategy(
             use_friction=use_friction,
             contact_mode=contact_mode,
             ndof=ndof,
             ndof_per_node=ndof_per_node,
-            mu=mu,
         ),
         time_integration=create_time_integration_strategy(
             mass_matrix=mass_matrix,

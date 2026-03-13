@@ -176,7 +176,16 @@ def check_c7_metaclass_wrap(registry: dict[str, type]) -> list[str]:
 
 
 def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
-    """C8: _runtime_uses が静的 uses でカバーされていないケースを検出."""
+    """C8: _runtime_uses を使うクラスのデフォルトインスタンス化と effective_uses() を検証.
+
+    設計方針: NCPContactSolverProcess のように strategy 注入で動的依存を持つクラスは
+    静的 uses = [] とし、_runtime_uses + effective_uses() で依存を追跡する（C8対策）。
+    ここでは:
+    1. デフォルト引数でインスタンス化が成功すること
+    2. _runtime_uses が空でないこと（strategy が正しく注入されていること）
+    3. effective_uses() が _runtime_uses を含むこと
+    を検証する。
+    """
     errors = []
     for name, cls in sorted(registry.items()):
         # _runtime_uses を設定するクラスかチェック
@@ -195,14 +204,20 @@ def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
             continue
 
         runtime = getattr(instance, "_runtime_uses", [])
-        static_names = {dep.__name__ for dep in cls.uses}
+        if not runtime:
+            errors.append(f"C8: {name}._runtime_uses が空（strategy 注入に失敗している可能性）")
+            continue
 
-        for dep in runtime:
-            dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
-            if dep_name not in static_names:
-                errors.append(
-                    f"C8: {name}._runtime_uses に {dep_name} があるが、静的 uses に含まれていない"
-                )
+        # effective_uses() が _runtime_uses を含むか
+        if hasattr(instance, "effective_uses"):
+            effective = instance.effective_uses()
+            effective_ids = {id(dep) for dep in effective}
+            for dep in runtime:
+                if id(dep) not in effective_ids:
+                    dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
+                    errors.append(
+                        f"C8: {name}._runtime_uses の {dep_name} が effective_uses() に含まれていない"
+                    )
     return errors
 
 
@@ -215,27 +230,43 @@ def check_c6_strategy_semantics(registry: dict[str, type]) -> list[str]:
     """
     errors = []
 
-    # Strategy Protocol 名 → 期待される具象クラスのサフィックス
-    strategy_protocols = {
-        "ContactForceStrategy": "ContactForce",
-        "FrictionStrategy": "Friction",
-        "TimeIntegrationStrategy": "TimeIntegration",
-        "ContactGeometryStrategy": "ContactGeometry",
-        "PenaltyStrategy": "Penalty",
+    try:
+        from xkep_cae.process.strategies.protocols import (
+            ContactForceStrategy,
+            ContactGeometryStrategy,
+            FrictionStrategy,
+            PenaltyStrategy,
+            TimeIntegrationStrategy,
+        )
+    except ImportError:
+        errors.append("C6: strategies.protocols のインポートに失敗")
+        return errors
+
+    strategy_protocols: dict[str, type] = {
+        "ContactForceStrategy": ContactForceStrategy,
+        "FrictionStrategy": FrictionStrategy,
+        "TimeIntegrationStrategy": TimeIntegrationStrategy,
+        "ContactGeometryStrategy": ContactGeometryStrategy,
+        "PenaltyStrategy": PenaltyStrategy,
     }
 
-    for protocol_name, suffix in strategy_protocols.items():
-        # 該当する具象クラスを検出
-        matching = [
-            name for name, cls in registry.items() if suffix in name and name.endswith("Process")
-        ]
+    for protocol_name, protocol_cls in strategy_protocols.items():
+        # Protocol を実装する具象クラスを isinstance で検出
+        matching = []
+        for name, cls in registry.items():
+            try:
+                instance = cls.__new__(cls)
+                if isinstance(instance, protocol_cls):
+                    matching.append(name)
+            except Exception:
+                continue
+
         if not matching:
             errors.append(f"C6: {protocol_name} の具象クラスがレジストリに存在しない")
             continue
 
         for name in matching:
             cls = registry[name]
-            # 意味論テストの紐付けチェック（C3 とは別に C6 専用チェック）
             if cls._test_class is None:
                 errors.append(f"C6: {name} ({protocol_name} 実装) に意味論テストがない")
 
