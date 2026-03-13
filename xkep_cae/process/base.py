@@ -33,6 +33,8 @@ class ProcessMeta:
     deprecated: bool = False
     deprecated_by: str | None = None  # 後継プロセスのクラス名
     document_path: str = ""  # ソースファイルからの相対パス
+    stability: str = "stable"  # experimental / stable / frozen / deprecated
+    support_tier: str = "ci-required"  # ci-required / compat-only / dev-only
 
 
 class ProcessMetaclass(type(ABC)):

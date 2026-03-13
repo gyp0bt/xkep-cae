@@ -124,6 +124,8 @@ class ManualPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         deprecated=True,
         deprecated_by="AutoBeamEIProcess",
         document_path="docs/penalty.md",
+        stability="deprecated",
+        support_tier="compat-only",
     )
 
     def __init__(self, k_pen: float) -> None:
