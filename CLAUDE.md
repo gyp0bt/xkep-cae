@@ -75,7 +75,7 @@
 
 ### 次の課題
 
-**R1 Phase 7 完了（status-162）** — 契約違反31→0件。次は Phase 8 候補（ProcessRunner, Strategy slot, Preset first-class）の設計。
+**R1 Phase 8 設計完了（status-163）** — Phase 7 完了記録 + CI process テスト統合 + Phase 8 設計文書策定済み。次は Phase 8 実装（ProcessRunner, StrategySlot, Preset first-class）。
 
 S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,11 +84,9 @@ S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/s
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ### やるべきこと
-- **Phase 7 完了** ✅ — 契約違反0件（status-162）
-- Phase 8 設計: ProcessRunner / Strategy slot / Preset first-class
+- **Phase 8 実装**: ProcessRunner / StrategySlot / Preset first-class（[設計文書](xkep_cae/process/docs/phase8-design.md)）
 - `scripts/validate_process_contracts.py` のエラーをゼロに**維持**する
 - コンテキスト整理（ドキュメント構造の明確化）
-- process-architecture.md §10 の Phase 7 完了記録
 
 ### やってはいけないこと
 - **S3 スケーリング作業**（NCP 収束改善、37本以上の収束テスト — 凍結中）
