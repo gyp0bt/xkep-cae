@@ -67,6 +67,9 @@ def _import_all_modules() -> None:
         "xkep_cae.process.concrete.solve_ncp",
         "xkep_cae.process.concrete.post_export",
         "xkep_cae.process.concrete.post_render",
+        "xkep_cae.process.verify.convergence",
+        "xkep_cae.process.verify.energy",
+        "xkep_cae.process.verify.contact",
     ]
     # strategy プロセス
     strategy_modules = [
