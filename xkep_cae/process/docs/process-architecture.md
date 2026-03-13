@@ -1077,9 +1077,12 @@ xkep_cae/process/
 
 ---
 
-## 10. リファクタリングロードマップ（10セッション計画）
+## 10. リファクタリングロードマップ（実績 + 計画）
 
-### Phase 1: 基盤 + Strategy Protocol（セッション1-2）
+> 当初10セッション計画 → 実際は Phase 1-7 を7セッション（status-151〜162）で完遂。
+> Phase 8 以降は設計フェーズとして別途計画。
+
+### Phase 1: 基盤 + Strategy Protocol — ✅ 完了（status-151, 2026-03-10）
 1. `xkep_cae/process/base.py` + `test_base.py` — AbstractProcess, ProcessMeta
 2. `xkep_cae/process/categories.py` + `test_categories.py` — 5カテゴリクラス
 3. `xkep_cae/process/strategies/protocols.py` + `test_protocols.py` — 5つのStrategy Protocol
@@ -1087,35 +1090,49 @@ xkep_cae/process/
 5. `xkep_cae/process/tree.py` + `test_tree.py` — ProcessTree
 6. `xkep_cae/process/testing.py` — binds_to（1:1制約つき）
 
-### Phase 2: Strategy実装（セッション3-4）
+### Phase 2: Strategy 具象実装 13クラス — ✅ 完了（status-153, 2026-03-10）
 7. `strategies/contact_ncp.py` — NCPContactForce（solver_ncp.py のNCP部分を抽出）
 8. `strategies/contact_smooth.py` — SmoothPenaltyContactForce（smooth_penalty部分を抽出）
 9. `strategies/friction_*.py` — 摩擦3バリアント
 10. `strategies/time_*.py` — 準静的 + Generalized-α
 11. `strategies/geometry_*.py` — PtP + L2L + Mortar
 12. `strategies/penalty_*.py` — 自動推定 + コンティニュエーション
-13. 各strategyの1:1テスト
+13. 各strategyの1:1テスト（2410テスト到達）
 
-### Phase 3: 具体プロセス実装（セッション5-6）
+### Phase 3: Strategy 実ロジック移植 + ファクトリ — ✅ 完了（status-154, 2026-03-10）
 14. `concrete/solve_ncp.py` — NCPContactSolverProcess（strategies注入、NCPSolverInputラッパー）
 15. `concrete/pre_mesh.py` — StrandMeshProcess
 16. `concrete/pre_contact.py` — ContactSetupProcess
-17. `concrete/post_*.py` — 後処理プロセス群
-18. `concrete/solve_legacy.py` — LegacyALSolverProcess（deprecated宣言）
+17. `concrete/post_*.py` — 後処理プロセス群（2445テスト到達）
 
-### Phase 4: 検証プロセス移行（セッション7-8）
-19. `verify/convergence.py` — scripts/verify_*.pyの契約化
-20. `verify/physics.py` — 物理テスト紐付け
-21. `verify/analytical.py` — 解析解比較紐付け
-22. 既存テストに`@binds_to`デコレータ追加
+### Phase 4: ContactGeometry 実ロジック移植 + ファクトリ — ✅ 完了（status-155, 2026-03-10）
+18. ContactGeometry Strategy 3実装の実ロジック移植
+19. Strategy ファクトリパターン整備（2471テスト到達）
 
-### Phase 5: バッチプロセス・統合・クリーンアップ（セッション9-10）
-23. `batch/strand_bending.py` — 撚線曲げ揺動フルパイプライン（プロセス横断テスト）
-24. `scripts/validate_process_deps.py` — ハイブリッドバリデーション
-25. 旧ソルバーテストの整理（deprecated移動 or 削除）
-26. 重複verify_スクリプトの統合
-27. docs/verification/ の階層整理
-28. README, roadmap, status 最終更新
+### Phase 5: Strategy 注入 + Friction共通ロジック抽出 — ✅ 完了（status-157〜159, 2026-03-11）
+20. NCPContactSolverProcess への Strategy 完全注入
+21. ContactForce/Geometry Strategy 注入
+22. SolverStrategies + TimeInteg 完全委譲
+23. concrete具象プロセス Phase 6 実装（2477テスト到達）
+
+### Phase 6: 構造対策 — ✅ 完了（status-160〜161, 2026-03-11）
+24. document_path修正 / フォーカスガード導入 / レジストリ汚染除去
+25. `scripts/validate_process_contracts.py` 契約違反テスト基盤
+
+### Phase 7: 契約違反ゼロ達成 — ✅ 完了（status-162, 2026-03-13）
+26. ProcessMeta 拡張（stability / support_tier フィールド）
+27. concrete/ 1:1テスト追加（5プロセス）
+28. VerifyProcess 3クラス実装（Convergence / EnergyBalance / Contact）
+29. StrandBendingBatchProcess 実装
+30. C6/C8/C9 契約違反修正
+31. **契約違反 31件 → 0件**（23プロセス登録済み）
+
+### Phase 8: 設計改善（計画中）
+- [ ] ProcessRunner / ExecutionContext 導入（依存チェックをrunner側に移動）
+- [ ] Strategy slot 型宣言の正式化（_runtime_uses 置き換え）
+- [ ] CompatibilityProcess カテゴリ追加（legacy solver 隔離用）
+- [ ] Preset クラスの first-class 化（SolverStrategies の進化系）
+- [ ] CI process テスト統合
 
 ---
 
