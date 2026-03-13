@@ -34,3 +34,14 @@ class VerifyProcess(AbstractProcess[TIn, TOut], ABC):
 
 class BatchProcess(AbstractProcess[TIn, TOut], ABC):
     """バッチ: 複数プロセスの直列/並列実行."""
+
+
+class CompatibilityProcess(AbstractProcess[TIn, TOut], ABC):
+    """後方互換プロセス.
+
+    deprecated プロセスを明示的に隔離するカテゴリ。
+    新規コードからの uses 宣言を禁止する（C13 チェック）。
+    既存テスト維持のみに使用する。
+
+    設計仕様: phase8-design.md §C
+    """

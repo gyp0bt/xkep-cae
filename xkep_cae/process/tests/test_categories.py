@@ -10,6 +10,7 @@ import pytest
 from xkep_cae.process.base import AbstractProcess, ProcessMeta
 from xkep_cae.process.categories import (
     BatchProcess,
+    CompatibilityProcess,
     PostProcess,
     PreProcess,
     SolverProcess,
@@ -76,7 +77,14 @@ class TestCategoriesAPI:
 
     def test_categories_are_abstract(self) -> None:
         """カテゴリクラスは直接インスタンス化できない."""
-        for cls in (PreProcess, SolverProcess, PostProcess, VerifyProcess, BatchProcess):
+        for cls in (
+            PreProcess,
+            SolverProcess,
+            PostProcess,
+            VerifyProcess,
+            BatchProcess,
+            CompatibilityProcess,
+        ):
             with pytest.raises(TypeError):
                 cls()  # type: ignore[abstract]
 
@@ -104,3 +112,7 @@ class TestCategoriesAPI:
         assert DummyPre in DummyBatch.uses
         assert DummySolver in DummyBatch.uses
         assert DummyPost in DummyBatch.uses
+
+    def test_compatibility_process_is_abstract(self) -> None:
+        """CompatibilityProcess は AbstractProcess のサブクラス."""
+        assert issubclass(CompatibilityProcess, AbstractProcess)
