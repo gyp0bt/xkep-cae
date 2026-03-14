@@ -154,7 +154,7 @@ def _build_cyclic_model(n_strands=3, load_type="tension"):
     return f_ext_unit, fd, at, ai, mesh, ndof
 
 
-def _run_ncp_cyclic(
+def _run_cyclic(
     f_ext_max,
     fixed_dofs,
     assemble_tangent,
@@ -227,15 +227,15 @@ def _run_ncp_cyclic(
 # ====================================================================
 
 
-class TestNCPCyclicBasic:
+class TestCyclicBasic:
     """NCP版: サイクリック荷重の基本動作テスト."""
 
-    def test_single_phase_ncp(self):
+    def test_single_phase(self):
         """1フェーズ（0→1）でNCP収束."""
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager()
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,
@@ -255,7 +255,7 @@ class TestNCPCyclicBasic:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager()
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,
@@ -276,7 +276,7 @@ class TestNCPCyclicBasic:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager()
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 20.0,
             fd,
             at,
@@ -298,7 +298,7 @@ class TestNCPCyclicBasic:
 # ====================================================================
 
 
-class TestNCPTwistedWireHysteresis:
+class TestTwistedWireHysteresis:
     """NCP版: 3本撚りの摩擦付き往復荷重テスト."""
 
     def test_tension_hysteresis_converges(self):
@@ -306,7 +306,7 @@ class TestNCPTwistedWireHysteresis:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager(use_friction=True, mu=0.3)
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,
@@ -324,7 +324,7 @@ class TestNCPTwistedWireHysteresis:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "bending")
         mgr = _make_contact_manager(use_friction=True, mu=0.3)
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 0.03,
             fd,
             at,
@@ -342,7 +342,7 @@ class TestNCPTwistedWireHysteresis:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "torsion")
         mgr = _make_contact_manager(use_friction=True, mu=0.3)
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 0.005,
             fd,
             at,
@@ -361,7 +361,7 @@ class TestNCPTwistedWireHysteresis:
 # ====================================================================
 
 
-class TestNCPHysteresisPhysics:
+class TestHysteresisPhysics:
     """NCP版: ヒステリシスの物理的性質検証."""
 
     def test_max_displacement_at_peak_load(self):
@@ -369,7 +369,7 @@ class TestNCPHysteresisPhysics:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager(use_friction=True, mu=0.3)
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,
@@ -392,7 +392,7 @@ class TestNCPHysteresisPhysics:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager()
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,
@@ -415,7 +415,7 @@ class TestNCPHysteresisPhysics:
         f_unit, fd, at, ai, mesh, ndof = _build_cyclic_model(3, "tension")
         mgr = _make_contact_manager()
 
-        lfs, disps, converged = _run_ncp_cyclic(
+        lfs, disps, converged = _run_cyclic(
             f_unit * 100.0,
             fd,
             at,

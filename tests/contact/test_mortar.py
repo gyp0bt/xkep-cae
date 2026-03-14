@@ -27,7 +27,7 @@ def _make_spring_system(
     z_sep: float = 0.041,
     radii: float = 0.04,
 ):
-    """2本の直交ばね梁モデル（test_solver_ncp.py と同一）."""
+    """2本の直交ばね梁モデル（test_solver_contact.py と同一）."""
     node_coords_ref = np.array(
         [
             [0.0, 0.0, z_sep],

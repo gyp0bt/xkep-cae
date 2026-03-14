@@ -150,7 +150,7 @@ def _fix_all_strand_starts(mesh: TwistedWireMesh) -> np.ndarray:
     return np.array(sorted(fixed), dtype=int)
 
 
-def _solve_twisted_wire_ncp(
+def _solve_twisted_wire(
     n_strands: int,
     load_type: str,
     load_value: float,
@@ -288,22 +288,22 @@ def _max_penetration_ratio(mgr: ContactManager) -> float:
 # ====================================================================
 
 
-class TestThreeStrandBasicContactNCP:
+class TestThreeStrandBasicContact:
     """3本撚りの基本接触テスト（NCP版）."""
 
     def test_tension_converges(self):
         """3本: 引張荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(3, "tension", 100.0)
+        result, mgr, _ = _solve_twisted_wire(3, "tension", 100.0)
         assert result.converged, "3本引張が収束しなかった"
 
     def test_lateral_converges(self):
         """3本: 横力荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(3, "lateral", 10.0)
+        result, mgr, _ = _solve_twisted_wire(3, "lateral", 10.0)
         assert result.converged, "3本横力が収束しなかった"
 
     def test_bending_converges(self):
         """3本: 曲げ荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(3, "bending", 0.1)
+        result, mgr, _ = _solve_twisted_wire(3, "bending", 0.1)
         assert result.converged, "3本曲げが収束しなかった"
 
 
@@ -312,12 +312,12 @@ class TestThreeStrandBasicContactNCP:
 # ====================================================================
 
 
-class TestThreeStrandFrictionNCP:
+class TestThreeStrandFriction:
     """3本撚りの摩擦付き接触テスト（NCP版）."""
 
     def test_friction_tension(self):
         """3本: 摩擦付き引張で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "tension",
             100.0,
@@ -328,7 +328,7 @@ class TestThreeStrandFrictionNCP:
 
     def test_friction_lateral(self):
         """3本: 摩擦付き横力で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "lateral",
             10.0,
@@ -339,7 +339,7 @@ class TestThreeStrandFrictionNCP:
 
     def test_friction_bending(self):
         """3本: 摩擦付き曲げで収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "bending",
             0.1,
@@ -354,12 +354,12 @@ class TestThreeStrandFrictionNCP:
 # ====================================================================
 
 
-class TestThreeStrandLineContactNCP:
+class TestThreeStrandLineContact:
     """3本撚りのLine-to-line Gauss積分テスト（NCP版）."""
 
     def test_line_contact_tension(self):
         """3本: Line contact引張で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "tension",
             100.0,
@@ -370,7 +370,7 @@ class TestThreeStrandLineContactNCP:
 
     def test_line_contact_bending(self):
         """3本: Line contact曲げで収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "bending",
             0.1,
@@ -381,7 +381,7 @@ class TestThreeStrandLineContactNCP:
 
     def test_line_contact_friction(self):
         """3本: Line contact + 摩擦で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             3,
             "tension",
             100.0,
@@ -398,7 +398,7 @@ class TestThreeStrandLineContactNCP:
 # ====================================================================
 
 
-class TestSevenStrandNCP:
+class TestSevenStrand:
     """7本撚りのNCP版テスト.
 
     旧ソルバーのTestSevenStrandImprovedSolverの移行版。
@@ -407,7 +407,7 @@ class TestSevenStrandNCP:
 
     def test_7strand_tension(self):
         """7本: 引張荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "tension",
             100.0,
@@ -417,7 +417,7 @@ class TestSevenStrandNCP:
 
     def test_7strand_torsion(self):
         """7本: ねじり荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "torsion",
             0.1,
@@ -427,7 +427,7 @@ class TestSevenStrandNCP:
 
     def test_7strand_bending(self):
         """7本: 曲げ荷重で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "bending",
             0.05,
@@ -441,12 +441,12 @@ class TestSevenStrandNCP:
 # ====================================================================
 
 
-class TestContactForceVerificationNCP:
+class TestContactForceVerification:
     """接触力の物理的妥当性検証（NCP版）."""
 
     def test_contact_force_positive(self):
         """3本引張時の法線接触力が正（圧縮のみ）."""
-        result, mgr, _ = _solve_twisted_wire_ncp(3, "tension", 100.0)
+        result, mgr, _ = _solve_twisted_wire(3, "tension", 100.0)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -455,7 +455,7 @@ class TestContactForceVerificationNCP:
 
     def test_penetration_bounded(self):
         """3本引張時の貫入量が2%以下."""
-        result, mgr, _ = _solve_twisted_wire_ncp(3, "tension", 100.0)
+        result, mgr, _ = _solve_twisted_wire(3, "tension", 100.0)
         assert result.converged
 
         pen_ratio = _max_penetration_ratio(mgr)
@@ -463,7 +463,7 @@ class TestContactForceVerificationNCP:
 
     def test_7strand_contact_detected(self):
         """7本引張時に接触ペアが検出される."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "tension",
             100.0,
@@ -479,12 +479,12 @@ class TestContactForceVerificationNCP:
 # ====================================================================
 
 
-class TestSevenStrandLineContactNCP:
+class TestSevenStrandLineContact:
     """7本撚りのLine-to-line Gauss積分テスト（NCP版）."""
 
     def test_line_contact_tension(self):
         """7本: Line contact引張で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "tension",
             100.0,
@@ -500,12 +500,12 @@ class TestSevenStrandLineContactNCP:
 # ====================================================================
 
 
-class TestSevenStrandFrictionNCP:
+class TestSevenStrandFriction:
     """7本撚りの摩擦付き接触テスト（NCP版）."""
 
     def test_friction_tension(self):
         """7本: 摩擦付き引張で収束."""
-        result, mgr, _ = _solve_twisted_wire_ncp(
+        result, mgr, _ = _solve_twisted_wire(
             7,
             "tension",
             100.0,

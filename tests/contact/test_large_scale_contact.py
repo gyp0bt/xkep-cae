@@ -115,7 +115,7 @@ def _fixed_dofs_large(n_nodes_a, n_nodes_b):
     return np.array(sorted(fixed), dtype=int)
 
 
-def _solve_large_problem_ncp(
+def _solve_large_problem(
     n_seg_a=16,
     n_seg_b=16,
     f_x=10.0,
@@ -192,7 +192,7 @@ def _solve_large_problem_ncp(
 # ====================================================================
 
 
-class TestDOFScalingNCP:
+class TestDOFScaling:
     """DOF数のスケーリングを検証."""
 
     def test_dof_count_scales_linearly(self):
@@ -217,12 +217,12 @@ class TestDOFScalingNCP:
 # ====================================================================
 
 
-class TestBroadphaseEfficiencyNCP:
+class TestBroadphaseEfficiency:
     """Broadphaseによる候補ペアフィルタリングの効率検証（NCP版）."""
 
     def test_16seg_broadphase_filters(self):
         """16セグメントで候補ペア数が全組み合わせ未満."""
-        result, mgr, _ = _solve_large_problem_ncp(n_seg_a=16, n_seg_b=16)
+        result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         n_total_possible = 16 * 16
         n_pairs = mgr.n_pairs
         assert n_pairs < n_total_possible, f"候補ペア数 {n_pairs} >= 全ペア数 {n_total_possible}"
@@ -262,23 +262,23 @@ class TestBroadphaseEfficiencyNCP:
 # ====================================================================
 
 
-class TestLargeScale16SegmentNCP:
+class TestLargeScale16Segment:
     """16セグメント交差梁の接触テスト（NCP版）."""
 
     def test_16seg_converges(self):
         """16セグメント梁でNCPソルバーが収束する."""
-        result, mgr, _ = _solve_large_problem_ncp(n_seg_a=16, n_seg_b=16)
+        result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged, "16セグメントでNCPソルバーが収束しなかった"
 
     def test_16seg_contact_detected(self):
         """16セグメント梁で接触が検出される."""
-        result, mgr, _ = _solve_large_problem_ncp(n_seg_a=16, n_seg_b=16)
+        result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
         assert mgr.n_active > 0, "接触が検出されなかった"
 
     def test_16seg_active_pairs_localized(self):
         """接触ペアは交差点近傍に局在する."""
-        result, mgr, _ = _solve_large_problem_ncp(n_seg_a=16, n_seg_b=16)
+        result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
         n_total = mgr.n_pairs
         n_active = mgr.n_active
@@ -288,7 +288,7 @@ class TestLargeScale16SegmentNCP:
 
     def test_16seg_normal_force_positive(self):
         """接触法線力が非負."""
-        result, mgr, _ = _solve_large_problem_ncp(n_seg_a=16, n_seg_b=16)
+        result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
         for pair in mgr.pairs:
             if pair.is_active():
@@ -300,13 +300,13 @@ class TestLargeScale16SegmentNCP:
 # ====================================================================
 
 
-class TestScalabilityNCP:
+class TestScalability:
     """セグメント数の増加に対する動作検証（NCP版）."""
 
     def test_all_converge_4_8_16(self):
         """4, 8, 16 セグメント全てで収束する."""
         for n_seg in [4, 8, 16]:
-            result, mgr, _ = _solve_large_problem_ncp(
+            result, mgr, _ = _solve_large_problem(
                 n_seg_a=n_seg,
                 n_seg_b=n_seg,
             )
@@ -316,7 +316,7 @@ class TestScalabilityNCP:
     def test_contact_force_positive_all_scales(self):
         """4, 8, 16 全スケールで接触力が正値."""
         for n_seg in [4, 8, 16]:
-            result, mgr, _ = _solve_large_problem_ncp(
+            result, mgr, _ = _solve_large_problem(
                 n_seg_a=n_seg,
                 n_seg_b=n_seg,
             )

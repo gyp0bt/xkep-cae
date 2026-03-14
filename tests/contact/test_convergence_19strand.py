@@ -138,10 +138,10 @@ def _count_active(mgr):
 # ====================================================================
 
 
-class TestNCP7Strand:
+class Test7Strand:
     """NCP ソルバーで7本撚線の収束を確認（ベースライン）."""
 
-    def test_ncp_7strand_basic(self):
+    def test_7strand_basic(self):
         """7本: デフォルトパラメータで収束."""
         mesh = make_twisted_wire_mesh(
             7,
@@ -182,7 +182,7 @@ class TestNCP7Strand:
         )
         assert result.converged, "7本 NCP が収束しなかった"
 
-    def test_ncp_7strand_with_adaptive_omega(self):
+    def test_7strand_with_adaptive_omega(self):
         """7本: adaptive omega 有効でも収束を維持."""
         mesh = make_twisted_wire_mesh(
             7,
@@ -228,7 +228,7 @@ class TestNCP7Strand:
         )
         assert result.converged, "7本 NCP (adaptive omega) が収束しなかった"
 
-    def test_ncp_7strand_with_bisection(self):
+    def test_7strand_with_bisection(self):
         """7本: ステップ二分法が正常動作."""
         mesh = make_twisted_wire_mesh(
             7,
@@ -278,13 +278,13 @@ class TestNCP7Strand:
 # ====================================================================
 
 
-class TestNCP19Strand:
+class Test19Strand:
     """NCP ソルバーで19本撚線の収束を検証.
 
     S3マイルストーン: NCPソルバーで19本以上の収束達成。
     """
 
-    def test_ncp_19strand_adaptive(self):
+    def test_19strand_adaptive(self):
         """19本: adaptive omega + active-set freezing + du cap で収束を試行."""
         mesh = make_twisted_wire_mesh(
             19,
@@ -336,7 +336,7 @@ class TestNCP19Strand:
         # 現時点では収束を必須にしない（S3改善進行中）
         assert result.total_newton_iterations > 0, "NR反復が実行されていない"
 
-    def test_ncp_19strand_relaxed_tol(self):
+    def test_19strand_relaxed_tol(self):
         """19本: 緩い公差 + active-set freezing で収束を確認."""
         mesh = make_twisted_wire_mesh(
             19,
@@ -383,7 +383,7 @@ class TestNCP19Strand:
         )
         assert result.total_newton_iterations > 0
 
-    def test_ncp_19strand_s3_improvements(self):
+    def test_19strand_s3_improvements(self):
         """19本: S3改良1-5を全て有効化して収束を試行.
 
         改良1: ILU drop_tol 適応制御
@@ -635,10 +635,10 @@ class TestLambdaWarmstartEffect:
 # ====================================================================
 
 
-class TestNCP19StrandS3Full:
+class Test19StrandS3Full:
     """S3改良1-8を全有効化した19本NCP収束テスト."""
 
-    def test_ncp_19strand_all_s3_improvements(self):
+    def test_19strand_all_s3_improvements(self):
         """19本: S3改良1-8を全て有効化して収束を試行.
 
         改良1: ILU drop_tol 適応制御
@@ -744,7 +744,7 @@ class TestNCP19StrandS3Full:
         # 全改良有効化で反復が実行されていること
         assert result.total_newton_iterations > 0, "NR反復が実行されていない"
 
-    def test_ncp_19strand_adaptive_dt_only(self):
+    def test_19strand_adaptive_dt_only(self):
         """19本: 適応Δtのみ有効化."""
         mesh = make_twisted_wire_mesh(
             19,
@@ -791,7 +791,7 @@ class TestNCP19StrandS3Full:
         )
         assert result.total_newton_iterations > 0
 
-    def test_ncp_19strand_kpen_continuation_only(self):
+    def test_19strand_kpen_continuation_only(self):
         """19本: k_pen continuation のみ有効化."""
         mesh = make_twisted_wire_mesh(
             19,
@@ -907,7 +907,7 @@ def _fixed_dofs_with_center(mesh):
     return np.array(sorted(fixed), dtype=int)
 
 
-class TestNCP19StrandRadialCompression:
+class Test19StrandRadialCompression:
     """径方向圧縮による19本NCP接触活性化テスト.
 
     中心素線を固定し、Layer 1 素線に径方向力を付与して
@@ -920,7 +920,7 @@ class TestNCP19StrandRadialCompression:
         reason="19本NCP径方向圧縮: CI環境でタイムアウト (status-127)",
         strict=False,
     )
-    def test_ncp_19strand_radial_with_active_contacts(self):
+    def test_19strand_radial_with_active_contacts(self):
         """19本: 径方向圧縮で接触活性化 + NCP収束."""
         mesh = make_twisted_wire_mesh(
             19,
@@ -1019,7 +1019,7 @@ class TestNCP19StrandRadialCompression:
 # ====================================================================
 
 
-class TestNCP37StrandRadialCompression:
+class Test37StrandRadialCompression:
     """37本撚線(1+6+12+18)の径方向圧縮NCP収束テスト.
 
     19本収束達成(status-112)に基づき、37本(layer 0-3)への拡張。
@@ -1027,7 +1027,7 @@ class TestNCP37StrandRadialCompression:
     """
 
     @pytest.mark.xfail(reason="CI timeout >600s — 高速化後に再評価", strict=False)
-    def test_ncp_37strand_radial_layer1(self):
+    def test_37strand_radial_layer1(self):
         """37本: Layer 1のみ径方向圧縮でNCP収束."""
         mesh = make_twisted_wire_mesh(
             37,
@@ -1124,7 +1124,7 @@ class TestNCP37StrandRadialCompression:
             assert n_active > 0, "収束したが接触ペアが活性化されていない"
 
     @pytest.mark.xfail(reason="CI timeout >600s — 高速化後に再評価", strict=False)
-    def test_ncp_37strand_radial_layer1_2(self):
+    def test_37strand_radial_layer1_2(self):
         """37本: Layer 1+2 径方向圧縮でNCP収束.
 
         改良点（status-126）:
@@ -1232,7 +1232,7 @@ class TestNCP37StrandRadialCompression:
 # ====================================================================
 
 
-class TestNCP61StrandRadialCompression:
+class Test61StrandRadialCompression:
     """61本撚線(1+6+12+18+24)の径方向圧縮NCP収束テスト.
 
     37本収束に基づき、61本(layer 0-4)への拡張。
@@ -1240,7 +1240,7 @@ class TestNCP61StrandRadialCompression:
     """
 
     @pytest.mark.xfail(reason="CI timeout >600s — 高速化後に再評価", strict=False)
-    def test_ncp_61strand_radial_layer1(self):
+    def test_61strand_radial_layer1(self):
         """61本: Layer 1のみ径方向圧縮でNCP収束を試行."""
         mesh = make_twisted_wire_mesh(
             61,
@@ -1335,7 +1335,7 @@ class TestNCP61StrandRadialCompression:
         assert result.total_newton_iterations > 0, "NR反復が実行されていない"
 
 
-class TestNCP91StrandRadialCompression:
+class Test91StrandRadialCompression:
     """91本撚線(1+6+12+18+24+30)の径方向圧縮NCP収束テスト.
 
     61本収束に基づき、91本(layer 0-5)への拡張。
@@ -1343,7 +1343,7 @@ class TestNCP91StrandRadialCompression:
     """
 
     @pytest.mark.xfail(reason="CI timeout >600s — 高速化後に再評価", strict=False)
-    def test_ncp_91strand_radial_layer1(self):
+    def test_91strand_radial_layer1(self):
         """91本: Layer 1のみ径方向圧縮でNCP収束を試行."""
         mesh = make_twisted_wire_mesh(
             91,

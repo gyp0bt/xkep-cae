@@ -196,7 +196,7 @@ def _apply_load(
 # ====================================================================
 
 
-def _solve_twisted_wire_ncp(
+def _solve_twisted_wire(
     mesh: TwistedWireMesh,
     mode: str,
     load_value: float,
@@ -359,7 +359,7 @@ class TestS4CoatingStiffness:
     def _solve_mode(self, mode: str, load_value: float):
         """指定モードで被膜付き撚線を解く."""
         mesh = _make_mesh()
-        result, mgr, ndof = _solve_twisted_wire_ncp(
+        result, mgr, ndof = _solve_twisted_wire(
             mesh, mode, load_value, coating=_COATING, n_load_steps=8
         )
         return result, mgr, mesh, ndof
@@ -367,7 +367,7 @@ class TestS4CoatingStiffness:
     def _solve_bare(self, mode: str, load_value: float):
         """指定モードで裸撚線（被膜なし）を解く."""
         mesh = _make_mesh()
-        result, mgr, ndof = _solve_twisted_wire_ncp(
+        result, mgr, ndof = _solve_twisted_wire(
             mesh, mode, load_value, coating=None, n_load_steps=8
         )
         return result, mgr, mesh, ndof
@@ -555,7 +555,7 @@ class TestS4SheathStiffness:
         mesh = _make_mesh()
 
         # 裸撚線を NCP で解く
-        result_b, mgr_b, ndof_b = _solve_twisted_wire_ncp(
+        result_b, mgr_b, ndof_b = _solve_twisted_wire(
             mesh, "tension", P, coating=None, n_load_steps=8
         )
         assert result_b.converged, "裸撚線引張が収束しない"
@@ -590,7 +590,7 @@ class TestS4SheathStiffness:
         P = 1.0
         mesh = _make_mesh()
 
-        result_b, _, ndof_b = _solve_twisted_wire_ncp(
+        result_b, _, ndof_b = _solve_twisted_wire(
             mesh, "bending", P, coating=None, n_load_steps=8
         )
         assert result_b.converged, "裸撚線曲げが収束しない"
@@ -620,7 +620,7 @@ class TestS4SheathStiffness:
         M = 0.001  # N·m
         mesh = _make_mesh()
 
-        result_b, _, ndof_b = _solve_twisted_wire_ncp(
+        result_b, _, ndof_b = _solve_twisted_wire(
             mesh, "torsion", M, coating=None, n_load_steps=8
         )
         assert result_b.converged, "裸撚線ねじりが収束しない"
@@ -649,7 +649,7 @@ class TestS4SheathStiffness:
         P = 20.0
         mesh = _make_mesh()
 
-        result_b, _, ndof_b = _solve_twisted_wire_ncp(
+        result_b, _, ndof_b = _solve_twisted_wire(
             mesh, "compression", P, coating=None, n_load_steps=8
         )
         assert result_b.converged, "裸撚線圧縮が収束しない"

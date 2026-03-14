@@ -118,7 +118,7 @@ def _fixed_dofs_validation(n_nodes, ndof_per_node=6, free_nodes=None, free_dirs=
     return np.array(fixed, dtype=int)
 
 
-def _solve_ncp_friction_problem(
+def _solve_friction_problem(
     f_z: float = 50.0,
     f_t_x: float = 0.0,
     f_t_y: float = 0.0,
@@ -191,12 +191,12 @@ def _solve_ncp_friction_problem(
 # ====================================================================
 
 
-class TestNCPFrictionCoulombCondition:
+class TestFrictionCoulombCondition:
     """NCP版: Coulomb条件の物理バリデーション."""
 
     def test_coulomb_limit_satisfied(self):
         """全ペアで Coulomb 条件 ||q_t|| <= μ·p_n が成立する."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=20.0, mu=0.3)
+        result, mgr, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=20.0, mu=0.3)
         assert result.converged, "NCP+friction solver did not converge"
 
         for pair in mgr.pairs:
@@ -211,7 +211,7 @@ class TestNCPFrictionCoulombCondition:
     def test_slip_friction_equals_mu_pn(self):
         """slip 状態で摩擦力 ≈ μ·p_n（Coulomb限界）."""
         # 大法線力 + 中接線荷重で確実にslipを起こしつつ収束させる
-        result, mgr, _, _ = _solve_ncp_friction_problem(
+        result, mgr, _, _ = _solve_friction_problem(
             f_z=80.0, f_t_x=30.0, mu=0.2, n_load_steps=30, tol=1e-5
         )
         assert result.converged
@@ -236,7 +236,7 @@ class TestNCPFrictionCoulombCondition:
     )
     def test_stick_condition_small_tangential_load(self):
         """小さい接線荷重で stick 状態が保持される."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=100.0, f_t_x=1.0, mu=0.3)
+        result, mgr, _, _ = _solve_friction_problem(f_z=100.0, f_t_x=1.0, mu=0.3)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -246,7 +246,7 @@ class TestNCPFrictionCoulombCondition:
 
     def test_friction_cone_two_axes(self):
         """2軸接線荷重で Coulomb 円錐内に収まる."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=15.0, f_t_y=15.0, mu=0.3)
+        result, mgr, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=15.0, f_t_y=15.0, mu=0.3)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -262,12 +262,12 @@ class TestNCPFrictionCoulombCondition:
 # ====================================================================
 
 
-class TestNCPFrictionForceBalance:
+class TestFrictionForceBalance:
     """NCP版: 平衡状態での力のバランス検証."""
 
     def test_normal_force_positive_at_contact(self):
         """接触中の法線力が正値（引張なし）."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=5.0, mu=0.3)
+        result, mgr, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=5.0, mu=0.3)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -276,7 +276,7 @@ class TestNCPFrictionForceBalance:
 
     def test_lambda_nonneg(self):
         """NCP解でλが全て非負."""
-        result, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.3)
+        result, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.3)
         assert result.converged
         assert np.all(result.lambdas >= -1e-10), f"Negative lambda: min={result.lambdas.min():.6e}"
 
@@ -286,7 +286,7 @@ class TestNCPFrictionForceBalance:
 # ====================================================================
 
 
-class TestNCPStickSlipTransition:
+class TestStickSlipTransition:
     """NCP版: stick → slip 遷移のバリデーション."""
 
     @pytest.mark.xfail(
@@ -295,8 +295,8 @@ class TestNCPStickSlipTransition:
     )
     def test_increasing_tangential_load_causes_larger_displacement(self):
         """接線荷重を増加させると、接線変位が増加する."""
-        result_small, _, _, _ = _solve_ncp_friction_problem(f_z=80.0, f_t_x=5.0, mu=0.3)
-        result_large, _, _, _ = _solve_ncp_friction_problem(
+        result_small, _, _, _ = _solve_friction_problem(f_z=80.0, f_t_x=5.0, mu=0.3)
+        result_large, _, _, _ = _solve_friction_problem(
             f_z=80.0, f_t_x=20.0, mu=0.3, n_load_steps=30
         )
         assert result_small.converged
@@ -314,8 +314,8 @@ class TestNCPStickSlipTransition:
     )
     def test_large_tangential_displacement_exceeds_small(self):
         """大きな接線荷重での変位は小さな荷重より大きい."""
-        result_small, _, _, _ = _solve_ncp_friction_problem(f_z=100.0, f_t_x=1.0, mu=0.3)
-        result_large, _, _, _ = _solve_ncp_friction_problem(
+        result_small, _, _, _ = _solve_friction_problem(f_z=100.0, f_t_x=1.0, mu=0.3)
+        result_large, _, _, _ = _solve_friction_problem(
             f_z=100.0, f_t_x=20.0, mu=0.3, n_load_steps=30
         )
         assert result_small.converged
@@ -333,7 +333,7 @@ class TestNCPStickSlipTransition:
 # ====================================================================
 
 
-class TestNCPFrictionEnergyDissipation:
+class TestFrictionEnergyDissipation:
     """NCP版: 摩擦エネルギー散逸のバリデーション."""
 
     @pytest.mark.xfail(
@@ -342,9 +342,7 @@ class TestNCPFrictionEnergyDissipation:
     )
     def test_tangential_load_causes_dissipation(self):
         """接線荷重で散逸が非負."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(
-            f_z=80.0, f_t_x=20.0, mu=0.3, n_load_steps=30
-        )
+        result, mgr, _, _ = _solve_friction_problem(f_z=80.0, f_t_x=20.0, mu=0.3, n_load_steps=30)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -355,7 +353,7 @@ class TestNCPFrictionEnergyDissipation:
 
     def test_dissipation_nonnegative(self):
         """全ペアで散逸が非負（熱力学的整合性）."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=20.0, mu=0.3)
+        result, mgr, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=20.0, mu=0.3)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -370,7 +368,7 @@ class TestNCPFrictionEnergyDissipation:
 # ====================================================================
 
 
-class TestNCPFrictionSymmetry:
+class TestFrictionSymmetry:
     """NCP版: 摩擦接触の対称性バリデーション."""
 
     @pytest.mark.xfail(
@@ -379,8 +377,8 @@ class TestNCPFrictionSymmetry:
     )
     def test_opposite_tangential_load_gives_opposite_displacement(self):
         """反対方向の接線荷重で反対方向の変位."""
-        result_pos, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.3)
-        result_neg, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=-10.0, mu=0.3)
+        result_pos, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.3)
+        result_neg, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=-10.0, mu=0.3)
         assert result_pos.converged
         assert result_neg.converged
 
@@ -397,7 +395,7 @@ class TestNCPFrictionSymmetry:
 
     def test_no_tangential_load_gives_zero_tangential_displacement(self):
         """接線荷重なしで接線変位がゼロ."""
-        result, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=0.0, f_t_y=0.0, mu=0.3)
+        result, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=0.0, f_t_y=0.0, mu=0.3)
         assert result.converged
 
         ux_node1 = abs(result.u[1 * 6 + 0])
@@ -411,12 +409,12 @@ class TestNCPFrictionSymmetry:
 # ====================================================================
 
 
-class TestNCPFrictionMuDependence:
+class TestFrictionMuDependence:
     """NCP版: 摩擦係数 μ の影響バリデーション."""
 
     def test_zero_friction_no_tangential_resistance(self):
         """μ=0 で摩擦力がゼロ."""
-        result, mgr, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.0)
+        result, mgr, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.0)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -430,8 +428,8 @@ class TestNCPFrictionMuDependence:
     )
     def test_higher_mu_gives_less_tangential_displacement(self):
         """μ が大きいほど接線変位が小さい."""
-        result_low, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.1)
-        result_high, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.5)
+        result_low, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.1)
+        result_high, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=10.0, mu=0.5)
         assert result_low.converged
         assert result_high.converged
 
@@ -447,8 +445,8 @@ class TestNCPFrictionMuDependence:
     )
     def test_higher_mu_gives_less_or_equal_tangential_displacement(self):
         """高μでは低μ以下の接線変位."""
-        result_low, _, _, _ = _solve_ncp_friction_problem(f_z=80.0, f_t_x=15.0, mu=0.1)
-        result_high, _, _, _ = _solve_ncp_friction_problem(f_z=80.0, f_t_x=15.0, mu=0.5)
+        result_low, _, _, _ = _solve_friction_problem(f_z=80.0, f_t_x=15.0, mu=0.1)
+        result_high, _, _, _ = _solve_friction_problem(f_z=80.0, f_t_x=15.0, mu=0.5)
         assert result_low.converged
         assert result_high.converged
 
@@ -464,13 +462,13 @@ class TestNCPFrictionMuDependence:
 # ====================================================================
 
 
-class TestNCPFrictionContactPenetration:
+class TestFrictionContactPenetration:
     """NCP版: 摩擦の有無による貫通量への影響."""
 
     def test_friction_does_not_increase_penetration(self):
         """法線方向のみの押し付けで、摩擦の有無でギャップがほぼ同じ."""
-        result_nf, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=0.0, mu=0.0)
-        result_f, _, _, _ = _solve_ncp_friction_problem(f_z=50.0, f_t_x=0.0, mu=0.3)
+        result_nf, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=0.0, mu=0.0)
+        result_f, _, _, _ = _solve_friction_problem(f_z=50.0, f_t_x=0.0, mu=0.3)
         assert result_nf.converged
         assert result_f.converged
 

@@ -195,7 +195,7 @@ def _fixed_dofs_multi_segment(n_nodes_a, n_nodes_b):
     return np.array(sorted(fixed), dtype=int)
 
 
-def _solve_penetration_problem_ncp(
+def _solve_penetration_problem(
     f_x: float = 10.0,
     f_y: float = 5.0,
     f_z: float = 50.0,
@@ -264,7 +264,7 @@ def _solve_penetration_problem_ncp(
     return result, mgr, ndof_total, node_coords_ref
 
 
-def _solve_multi_segment_problem_ncp(
+def _solve_multi_segment_problem(
     n_seg_a: int = 4,
     n_seg_b: int = 4,
     f_x: float = 10.0,
@@ -359,18 +359,18 @@ def _max_penetration_ratio(mgr):
 # ====================================================================
 
 
-class TestBeamContactDetectionNCP:
+class TestBeamContactDetection:
     """梁梁接触の検出検証（NCP版）."""
 
     def test_contact_detected_with_push_down(self):
         """z方向押し下げ力で接触が検出される."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(f_z=50.0)
+        result, mgr, _, _ = _solve_penetration_problem(f_z=50.0)
         assert result.converged, "NCPソルバーが収束しなかった"
         assert mgr.n_active > 0, "接触が検出されなかった"
 
     def test_no_contact_without_push_down(self):
         """押し下げ力がなければ接触は検出されない."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(f_z=0.0)
+        result, mgr, _, _ = _solve_penetration_problem(f_z=0.0)
         assert result.converged
         assert mgr.n_active == 0, "力なしで接触が検出された"
 
@@ -380,12 +380,12 @@ class TestBeamContactDetectionNCP:
 # ====================================================================
 
 
-class TestPenetrationBoundNCP:
+class TestPenetrationBound:
     """貫入量の制限検証（NCP版）."""
 
     def test_penetration_within_tolerance(self):
         """貫入量が search_radius の 2% 以下."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(
+        result, mgr, _, _ = _solve_penetration_problem(
             f_z=50.0,
             k_pen=1e5,
         )
@@ -398,7 +398,7 @@ class TestPenetrationBoundNCP:
 
     def test_penetration_with_large_force(self):
         """大きな押し下げ力でも貫入量が許容範囲内."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(
+        result, mgr, _, _ = _solve_penetration_problem(
             f_z=200.0,
             k_pen=1e5,
             n_load_steps=30,
@@ -414,7 +414,7 @@ class TestPenetrationBoundNCP:
         """ペナルティ剛性が高いほど貫入が小さい."""
         penetrations = {}
         for k in [1e4, 1e5, 1e6]:
-            result, mgr, _, _ = _solve_penetration_problem_ncp(
+            result, mgr, _, _ = _solve_penetration_problem(
                 f_z=50.0,
                 k_pen=k,
             )
@@ -443,12 +443,12 @@ class TestPenetrationBoundNCP:
 # ====================================================================
 
 
-class TestNormalForceNCP:
+class TestNormalForce:
     """接触法線力の検証（NCP版）."""
 
     def test_normal_force_positive(self):
         """接触中の法線力が正値（圧縮のみ）."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(f_z=50.0)
+        result, mgr, _, _ = _solve_penetration_problem(f_z=50.0)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -459,7 +459,7 @@ class TestNormalForceNCP:
         """押し下げ力が大きいほど法線力が大きい."""
         pn_values = {}
         for f_z in [30.0, 50.0, 100.0]:
-            result, mgr, _, _ = _solve_penetration_problem_ncp(f_z=f_z)
+            result, mgr, _, _ = _solve_penetration_problem(f_z=f_z)
             assert result.converged
 
             for pair in mgr.pairs:
@@ -483,12 +483,12 @@ class TestNormalForceNCP:
 # ====================================================================
 
 
-class TestFrictionPenetrationEffectNCP:
+class TestFrictionPenetrationEffect:
     """摩擦の有無による貫入量への影響（NCP版）."""
 
     def test_penetration_bounded_with_friction(self):
         """摩擦ありでも貫入量が許容範囲内."""
-        result, mgr, _, _ = _solve_penetration_problem_ncp(
+        result, mgr, _, _ = _solve_penetration_problem(
             f_z=50.0,
             use_friction=True,
             mu=0.3,
@@ -501,11 +501,11 @@ class TestFrictionPenetrationEffectNCP:
 
     def test_friction_does_not_worsen_penetration(self):
         """摩擦の有無で法線方向の貫入に大差がない."""
-        result_nf, mgr_nf, _, _ = _solve_penetration_problem_ncp(
+        result_nf, mgr_nf, _, _ = _solve_penetration_problem(
             f_z=50.0,
             use_friction=False,
         )
-        result_f, mgr_f, _, _ = _solve_penetration_problem_ncp(
+        result_f, mgr_f, _, _ = _solve_penetration_problem(
             f_z=50.0,
             use_friction=True,
             mu=0.3,
@@ -535,12 +535,12 @@ class TestFrictionPenetrationEffectNCP:
 # ====================================================================
 
 
-class TestDisplacementHistoryNCP:
+class TestDisplacementHistory:
     """荷重ステップごとの変位履歴検証（NCP版）."""
 
     def test_z_displacement_progresses_downward(self):
         """梁B端部のz方向変位が下方に進行する."""
-        result, _, _, _ = _solve_penetration_problem_ncp(
+        result, _, _, _ = _solve_penetration_problem(
             f_z=50.0,
             n_load_steps=10,
         )
@@ -553,7 +553,7 @@ class TestDisplacementHistoryNCP:
 
     def test_x_tension_positive(self):
         """梁A端部のx方向変位が正（張力方向）."""
-        result, _, _, _ = _solve_penetration_problem_ncp(f_x=10.0, f_z=50.0)
+        result, _, _, _ = _solve_penetration_problem(f_x=10.0, f_z=50.0)
         assert result.converged
 
         ux_node1 = result.u[1 * _NDOF_PER_NODE + 0]
@@ -565,12 +565,12 @@ class TestDisplacementHistoryNCP:
 # ====================================================================
 
 
-class TestMultiSegmentBeamPenetrationNCP:
+class TestMultiSegmentBeamPenetration:
     """マルチセグメント梁での貫入テスト（NCP版）."""
 
     def test_multi_segment_contact_detected(self):
         """マルチセグメント梁で接触が検出される."""
-        result, mgr, _ = _solve_multi_segment_problem_ncp(
+        result, mgr, _ = _solve_multi_segment_problem(
             n_seg_a=4,
             n_seg_b=4,
             f_z=50.0,
@@ -580,7 +580,7 @@ class TestMultiSegmentBeamPenetrationNCP:
 
     def test_multi_segment_penetration_within_tolerance(self):
         """マルチセグメント梁でも貫入量が許容範囲内."""
-        result, mgr, _ = _solve_multi_segment_problem_ncp(
+        result, mgr, _ = _solve_multi_segment_problem(
             n_seg_a=4,
             n_seg_b=4,
             f_z=50.0,
@@ -593,7 +593,7 @@ class TestMultiSegmentBeamPenetrationNCP:
 
     def test_multi_segment_large_force(self):
         """マルチセグメント梁で大荷重でも貫入が許容範囲内."""
-        result, mgr, _ = _solve_multi_segment_problem_ncp(
+        result, mgr, _ = _solve_multi_segment_problem(
             n_seg_a=4,
             n_seg_b=4,
             f_z=100.0,
@@ -613,10 +613,10 @@ class TestMultiSegmentBeamPenetrationNCP:
 # ====================================================================
 
 
-class TestSlidingContactNCP:
+class TestSlidingContact:
     """横スライド接触テスト（NCP版）."""
 
-    def _solve_sliding_problem_ncp(
+    def _solve_sliding_problem(
         self,
         f_z: float = 50.0,
         f_slide_x: float = 20.0,
@@ -698,13 +698,13 @@ class TestSlidingContactNCP:
 
     def test_sliding_contact_detected(self):
         """横スライド時に接触が検出される."""
-        result, mgr, _ = self._solve_sliding_problem_ncp()
+        result, mgr, _ = self._solve_sliding_problem()
         assert result.converged, "スライドNCPが収束しなかった"
         assert mgr.n_active > 0, "スライド時に接触が検出されなかった"
 
     def test_sliding_penetration_within_tolerance(self):
         """横スライド中も貫入量が許容範囲内."""
-        result, mgr, _ = self._solve_sliding_problem_ncp()
+        result, mgr, _ = self._solve_sliding_problem()
         assert result.converged
 
         pen_ratio = _max_penetration_ratio(mgr)
@@ -712,7 +712,7 @@ class TestSlidingContactNCP:
 
     def test_sliding_displacement_has_x_component(self):
         """スライド時にx方向変位が生じる."""
-        result, _, ndof_total = self._solve_sliding_problem_ncp(f_slide_x=20.0)
+        result, _, ndof_total = self._solve_sliding_problem(f_slide_x=20.0)
         assert result.converged
 
         ux_node3 = result.u[3 * _NDOF_PER_NODE + 0]
@@ -720,11 +720,11 @@ class TestSlidingContactNCP:
 
     def test_sliding_friction_both_converge(self):
         """摩擦なし/ありの両方でスライド解が収束する."""
-        result_nf, _, _ = self._solve_sliding_problem_ncp(
+        result_nf, _, _ = self._solve_sliding_problem(
             use_friction=False,
             f_slide_x=20.0,
         )
-        result_f, _, _ = self._solve_sliding_problem_ncp(
+        result_f, _, _ = self._solve_sliding_problem(
             use_friction=True,
             mu=0.3,
             f_slide_x=20.0,

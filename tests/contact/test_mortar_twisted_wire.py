@@ -116,7 +116,7 @@ def _max_penetration_ratio(mgr: ContactManager) -> float:
     return max_pen
 
 
-def _solve_7strand_ncp_mortar(
+def _solve_7strand_mortar(
     load_type: str = "tension",
     load_value: float = 100.0,
     *,
@@ -215,7 +215,7 @@ class TestSevenStrandMortarConvergence:
 
     def test_7strand_mortar_tension_converges(self):
         """7本撚り引張 + Mortar + 同層除外で NCP 収束."""
-        result, mgr, mesh = _solve_7strand_ncp_mortar(
+        result, mgr, mesh = _solve_7strand_mortar(
             load_type="tension",
             load_value=50.0,
             n_load_steps=5,
@@ -231,7 +231,7 @@ class TestSevenStrandMortarConvergence:
 
         status-087: K_line/Mortar接触剛性の二重カウント修正後に収束達成。
         """
-        result, mgr, mesh = _solve_7strand_ncp_mortar(
+        result, mgr, mesh = _solve_7strand_mortar(
             load_type="bending",
             load_value=0.01,
             n_load_steps=10,
@@ -245,14 +245,14 @@ class TestSevenStrandMortarConvergence:
     def test_7strand_mortar_vs_ptp_direction(self):
         """Mortar と PtP（line contact のみ）で変位方向が一致."""
         # Mortar
-        result_m, _, _ = _solve_7strand_ncp_mortar(
+        result_m, _, _ = _solve_7strand_mortar(
             load_type="tension",
             load_value=50.0,
             n_load_steps=5,
             use_mortar=True,
         )
         # PtP (line contact only)
-        result_ptp, _, _ = _solve_7strand_ncp_mortar(
+        result_ptp, _, _ = _solve_7strand_mortar(
             load_type="tension",
             load_value=50.0,
             n_load_steps=5,
@@ -275,7 +275,7 @@ class TestSevenStrandMortarPenetration:
         NCP + Mortar の多ペア環境では PtP より貫入制御が緩い傾向がある。
         現状 ~3% 程度。S2 以降のチューニングで改善予定。
         """
-        result, mgr, mesh = _solve_7strand_ncp_mortar(
+        result, mgr, mesh = _solve_7strand_mortar(
             load_type="tension",
             load_value=50.0,
             n_load_steps=5,
@@ -291,7 +291,7 @@ class TestSevenStrandMortarFriction:
 
     def test_7strand_mortar_friction_converges(self):
         """7本撚り + Mortar + 摩擦で NCP 収束."""
-        result, mgr, mesh = _solve_7strand_ncp_mortar(
+        result, mgr, mesh = _solve_7strand_mortar(
             load_type="tension",
             load_value=50.0,
             n_load_steps=8,

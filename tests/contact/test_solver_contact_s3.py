@@ -170,7 +170,7 @@ class TestLambdaWarmstart:
 
     def test_warmstart_does_not_break_basic_solve(self):
         """ウォームスタート有効でも基本的な解析が成功すること."""
-        # 既存の test_solver_ncp のセットアップを流用（接触が発生する構成）
+        # 既存の test_solver_contact のセットアップを流用（接触が発生する構成）
         setup = _make_crossing_beams_setup()
         config = ContactConfig(
             k_pen_scale=1e4,
