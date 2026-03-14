@@ -17,6 +17,8 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
+from xkep_cae.process.registry import ProcessRegistry, RegistryProxy
+
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")
 
@@ -113,7 +115,7 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
     uses: ClassVar[list[type[AbstractProcess]]] = []
 
     # --- 自動管理 ---
-    _registry: ClassVar[dict[str, type[AbstractProcess]]] = {}
+    _registry: ClassVar[dict[str, type[AbstractProcess]]] = RegistryProxy(ProcessRegistry.default)  # type: ignore[assignment]
     _used_by: ClassVar[list[type[AbstractProcess]]] = []
     _test_class: ClassVar[str | None] = None
     _verify_scripts: ClassVar[list[str]] = []
@@ -162,7 +164,7 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
             return
 
         # レジストリ登録
-        cls._registry[cls.__name__] = cls
+        ProcessRegistry.default().register(cls)
         # used_by を初期化（クラスごとに独立させる）
         cls._used_by = []
 

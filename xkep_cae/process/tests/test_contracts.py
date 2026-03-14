@@ -21,6 +21,7 @@ import numpy as np
 import pytest
 
 from xkep_cae.process.base import AbstractProcess
+from xkep_cae.process.registry import ProcessRegistry
 
 # ============================================================
 # レジストリ構築（全モジュールをインポート）
@@ -57,7 +58,7 @@ def _all_concrete_processes() -> list[tuple[str, type]]:
     """レジストリから全具象プロセス（テストフィクスチャ除外）を返す."""
     return [
         (name, cls)
-        for name, cls in sorted(AbstractProcess._registry.items())
+        for name, cls in sorted(ProcessRegistry.default().items())
         if not _is_test_fixture(cls)
     ]
 

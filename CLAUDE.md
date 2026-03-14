@@ -68,7 +68,7 @@
 
 ## 現在の状態
 
-**2477テスト + 314 processテスト** — 2026-03-14
+**2477テスト + 327 processテスト** — 2026-03-14
 
 ### ターゲット
 
@@ -76,7 +76,7 @@
 
 ### 次の課題
 
-**R1 Phase 9-A/B 完了（status-165）** — _import_all_modules 走査化 + _runtime_uses 廃止 + StrategySlot 完全移行。全9契約チェック稼働中。314 processテスト。
+**R1 ProcessRegistry 導入完了（status-166）** — _registry dict → ProcessRegistry クラス昇格。全9契約チェック稼働中。327 processテスト。
 
 S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

@@ -31,6 +31,7 @@ from xkep_cae.process.data import (
     VerifyResult,
     default_strategies,
 )
+from xkep_cae.process.registry import ProcessRegistry
 from xkep_cae.process.runner import ExecutionContext, ProcessRunner
 from xkep_cae.process.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
 from xkep_cae.process.testing import binds_to
@@ -64,6 +65,8 @@ __all__ = [
     "SolverStrategies",
     "VerifyInput",
     "VerifyResult",
+    # レジストリ
+    "ProcessRegistry",
     # 実行管理
     "ProcessRunner",
     "ExecutionContext",
