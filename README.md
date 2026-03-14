@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**2477テスト + 315 processテスト** — 2026-03-14時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**2477テスト + 314 processテスト** — 2026-03-14時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|

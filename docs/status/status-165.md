@@ -1,74 +1,73 @@
-# status-165: Phase 8 完遂 — ManualPenaltyProcess CompatibilityProcess 移行 + Phase 9 計画
+# status-165: Phase 8 完遂 + Phase 9-A/B 実装 — CompatibilityProcess 移行 + 走査化 + StrategySlot 完全移行
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← status-164](status-164.md)
 
 **日付**: 2026-03-14
-**テスト数**: 2477（回帰テスト変更なし）+ 315 process テスト（314→315: +1テスト）
+**テスト数**: 2477 + 314 process テスト
 
 ## 概要
 
-status-164 の TODO 3件を全て消化。ManualPenaltyProcess の CompatibilityProcess 移行により
-C13 チェックが実効化。機械的ガードの現状評価を実施し、Phase 9 計画を策定。
+status-164 の TODO 3件を消化し Phase 8 を完遂。さらに Phase 9-A/9-B を実装完了。
+
+1. ManualPenaltyProcess の CompatibilityProcess 移行 → C13 実効化
+2. `_import_all_modules()` ファイルシステム走査化 → モジュールリストのハードコード廃止
+3. `_runtime_uses` 廃止 → `StrategySlot` + `collect_strategy_types()` に完全移行
 
 ## 実施内容
 
-### ManualPenaltyProcess → CompatibilityProcess 移行
+### Phase 8 完遂: ManualPenaltyProcess → CompatibilityProcess 移行
 
 - `penalty.py`: 基底クラスを `SolverProcess` → `CompatibilityProcess` に変更
-- `test_penalty.py`: `test_is_compatibility_process` テスト追加（+1テスト）
-- 影響分析: 本番コードで ManualPenaltyProcess を `uses` に宣言しているプロセスは0件
-- `validate_process_contracts.py` 実行: **契約違反 0件**を確認
-
-### CI コメント更新
-
+- `test_penalty.py`: `test_is_compatibility_process` テスト追加
 - `ci.yml`: test-process ジョブのテスト数コメントを `~277` → `~315` に修正
+- 契約違反 0件確認（C13 実効化）
 
-### 機械的ガードの現状評価
+### Phase 9-A: _import_all_modules() ファイルシステム走査化
 
-| チェック | 状態 | 機械的強制力 | 残りの穴 |
-|---------|------|------------|---------|
-| C3 テスト紐付け | OK | @binds_to 強制 | deprecated はスキップ（意図的） |
-| C5 未宣言依存 | OK | AST 解析 | 動的 import/getattr 検出不可（現状未使用） |
-| C6 Strategy 意味論 | OK | テスト存在確認 | テストの「質」は検証不可 |
-| C7 メタクラスラップ | OK | 自動検出 | — |
-| C8 動的依存 | OK | StrategySlot 整合性 | NCPContactSolverProcess のみ対象 |
-| C9 frozen 不変性 | OK | execute() チェックサム | ランタイム検証は機能中 |
-| C11 推移的依存 | OK | ヒューリスティック | 間接呼び出し検出不可 |
-| C12 Batch 順序 | OK | uses 宣言検証 | — |
-| C13 Compat uses 禁止 | OK | **今回実効化** | ManualPenaltyProcess 移行完了 |
+- `validate_process_contracts.py`: ハードコードされたモジュールリスト（14件）を
+  `xkep_cae/process/` 配下の全 `.py` ファイルの `rglob` 走査に置換
+- 除外対象: `__init__.py`, `base.py`, `categories.py`, `data.py`, `slots.py`, `tree.py`, `runner.py`, テストファイル
+- テストファイルは `test_*.py` パターンで `rglob` 走査（既存と同じ）
+- **効果**: 新規プロセス追加時にモジュールリスト更新忘れで契約チェック対象外になる問題を根絶
 
-**最大の穴**: `_import_all_modules()` のモジュールリストがハードコード。新規プロセス追加時に登録忘れるとチェック対象外になる → Phase 9-A で対策。
+### Phase 9-B: _runtime_uses → StrategySlot 完全移行
 
-### Phase 9 計画策定
+`_runtime_uses` 属性を廃止し、`effective_uses()` が `collect_strategy_types()` を直接利用する方式に移行。
 
-- **9-A**: `_import_all_modules()` をファイルシステム走査ベースに変更（ハードコード廃止）
-- **9-B**: `_runtime_uses` → `StrategySlot` 完全移行（後方互換コード除去）
-- **9-C**: S3 凍結解除判断（Phase 8 完了により基盤整備完了）
-- **9-D**: BatchProcess パイプライン改善（S3 再開しない場合の代替）
-
-## 変更ファイル一覧
+**変更ファイル:**
 
 | ファイル | 変更内容 |
 |---------|---------|
-| `xkep_cae/process/strategies/penalty.py` | ManualPenaltyProcess 基底クラス変更 |
-| `xkep_cae/process/strategies/tests/test_penalty.py` | test_is_compatibility_process 追加 |
-| `.github/workflows/ci.yml` | test-process テスト数コメント修正 |
-| `docs/roadmap.md` | Phase 9 計画追記 |
-| `README.md` | テスト数・状態更新 |
-| `CLAUDE.md` | テスト数・フォーカスガード更新 |
-| `docs/status/status-165.md` | 本ファイル |
-| `docs/status/status-index.md` | インデックス追加 |
+| `base.py` | `effective_uses()`: `_runtime_uses` → `collect_strategy_types()` 直接呼び出し |
+| `solve_ncp.py` | `self._runtime_uses = ...` 行を削除。`get_instance_dependency_tree()` も直接呼び出しに |
+| `tree.py` | `_runtime_uses` チェックを `effective_uses()` に統合。uses/StrategySlot の出自を明記 |
+| `validate_process_contracts.py` | C8 チェックを `check_c8_strategy_slot()` に改名・簡素化 |
+| `slots.py` | docstring 更新（_runtime_uses 廃止を反映） |
+| `test_solve_ncp.py` | `_runtime_uses` テスト → `effective_uses_from_slots` + `no_runtime_uses_attribute` に置換 |
+| `test_tree.py` | `_runtime_uses` 直接設定テスト → `effective_uses` ベースに書き換え |
+
+### 機械的ガードの現状評価
+
+| チェック | 状態 | 残りの穴 |
+|---------|------|---------|
+| C3 テスト紐付け | OK | deprecated はスキップ（意図的） |
+| C5 未宣言依存 | OK | 動的 import 検出不可（現状未使用） |
+| C6 Strategy 意味論 | OK | テストの「質」は検証不可 |
+| C7 メタクラスラップ | OK | — |
+| C8 StrategySlot | OK | **Phase 9-B で簡素化完了** |
+| C9 frozen 不変性 | OK | — |
+| C11 推移的依存 | OK | 間接呼び出し検出不可 |
+| C12 Batch 順序 | OK | — |
+| C13 Compat uses 禁止 | OK | **Phase 8 で実効化** |
 
 ## TODO（次セッション）
 
-- [ ] Phase 9-A 実装: `_import_all_modules()` ファイルシステム走査化
-- [ ] Phase 9-B 実装: `_runtime_uses` → `StrategySlot` 完全移行
 - [ ] S3 凍結解除判断（9-C）
+- [ ] Phase 9-D: BatchProcess パイプライン改善（S3 再開しない場合）
 
-## 運用メモ
+## 互換ヒストリー
 
-- ManualPenaltyProcess の CompatibilityProcess 移行は C13 チェックの「実弾装填」に相当。
-  これにより、新規プロセスが deprecated な ManualPenaltyProcess を uses に宣言すると
-  CI で即座に検出される。
-- 機械的ガード全9項目が全て実効化した状態になった。
-  残る弱点は `_import_all_modules()` のハードコードのみ。
+| 旧機能 | 新機能 | 移行 |
+|--------|--------|------|
+| `_runtime_uses` | `collect_strategy_types()` + `effective_uses()` | Phase 9-B（本status） |
+| ハードコードモジュールリスト | `rglob` ファイルシステム走査 | Phase 9-A（本status） |
