@@ -8,7 +8,7 @@ import warnings
 import pytest
 
 from xkep_cae.process.base import ProcessMeta
-from xkep_cae.process.categories import SolverProcess
+from xkep_cae.process.categories import CompatibilityProcess, SolverProcess
 from xkep_cae.process.strategies.penalty import (
     AutoBeamEIProcess,
     AutoEALProcess,
@@ -139,6 +139,10 @@ class TestManualPenaltyProcess:
         proc = ManualPenaltyProcess(k_pen=1e6)
         assert proc.compute_k_pen(0, 10) == 1e6
         assert proc.compute_k_pen(9, 10) == 1e6
+
+    def test_is_compatibility_process(self):
+        """CompatibilityProcess カテゴリに属する."""
+        assert issubclass(ManualPenaltyProcess, CompatibilityProcess)
 
     def test_deprecated_warning(self):
         """deprecated マーカーが設定されている."""

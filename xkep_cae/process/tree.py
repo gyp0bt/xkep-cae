@@ -67,21 +67,19 @@ class ProcessTree:
         # ツリー全体に含まれるクラスを収集
         all_classes = self._collect_all_classes(self.root)
 
-        for dep in cls.uses:
-            if dep not in all_classes:
-                errors.append(
-                    f"{name} は {dep.__name__} を uses 宣言しているが、ツリーに含まれていない"
-                )
-
-        # 動的 _runtime_uses チェック
+        # effective_uses() = 静的 uses + StrategySlot 動的依存
         if node.process_instance is not None:
-            runtime_uses: list[type] = getattr(node.process_instance, "_runtime_uses", [])
-            for dep in runtime_uses:
-                if dep not in all_classes:
-                    errors.append(
-                        f"{name} は {dep.__name__} を _runtime_uses で参照しているが、"
-                        "ツリーに含まれていない"
-                    )
+            deps = node.process_instance.effective_uses()
+        else:
+            deps = list(cls.uses)
+
+        static_uses = set(cls.uses)
+        for dep in deps:
+            if dep not in all_classes:
+                source = "uses" if dep in static_uses else "StrategySlot"
+                errors.append(
+                    f"{name} は {dep.__name__} を {source} で参照しているが、ツリーに含まれていない"
+                )
 
         for child in node.children:
             self._validate_node(child, visited.copy(), errors)

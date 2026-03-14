@@ -178,9 +178,15 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         ...
 
     def effective_uses(self) -> list[type[AbstractProcess]]:
-        """静的 uses + インスタンス _runtime_uses を統合した実効依存リストを返す."""
+        """静的 uses + StrategySlot の動的依存を統合した実効依存リストを返す.
+
+        Phase 9-B: _runtime_uses を廃止し、collect_strategy_types() で
+        StrategySlot に設定された具象クラスの型を直接収集する。
+        """
+        from xkep_cae.process.slots import collect_strategy_types
+
         static = list(self.__class__.uses)
-        runtime: list[type[AbstractProcess]] = getattr(self, "_runtime_uses", [])
+        runtime: list[type] = collect_strategy_types(self)
         seen = {id(c) for c in static}
         for dep in runtime:
             if id(dep) not in seen:

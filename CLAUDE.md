@@ -56,6 +56,7 @@
 | 旧機能 | 新機能 | 移行status |
 |--------|--------|-----------|
 | `newton_raphson_with_contact` | `newton_raphson_contact_ncp` | status-107→108 |
+| `_runtime_uses` | `collect_strategy_types()` + `effective_uses()` | status-165 |
 
 ## 推奨ソルバー構成
 
@@ -67,7 +68,7 @@
 
 ## 現在の状態
 
-**2477テスト + 314 processテスト** — 2026-03-13
+**2477テスト + 314 processテスト** — 2026-03-14
 
 ### ターゲット
 
@@ -75,7 +76,7 @@
 
 ### 次の課題
 
-**R1 Phase 8 実装完了（status-164）** — ProcessRunner / StrategySlot / CompatibilityProcess / SolverPreset / C13チェック 全実装。314 processテスト。
+**R1 Phase 9-A/B 完了（status-165）** — _import_all_modules 走査化 + _runtime_uses 廃止 + StrategySlot 完全移行。全9契約チェック稼働中。314 processテスト。
 
 S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,7 +85,8 @@ S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/s
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ### やるべきこと
-- **Phase 9 以降の計画**: Phase 8 完了を受けて次ステップを検討
+- **Phase 9 実装**: 9-A（_import_all_modules 走査化）、9-B（StrategySlot 完全移行）
+- **S3 凍結解除判断**（9-C）
 - `scripts/validate_process_contracts.py` のエラーをゼロに**維持**する
 - コンテキスト整理（ドキュメント構造の明確化）
 

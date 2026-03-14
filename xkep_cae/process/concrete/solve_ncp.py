@@ -73,17 +73,13 @@ class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
         if self.strategies.contact_geometry is not None:
             self.contact_geometry_slot = self.strategies.contact_geometry
 
-        # 動的依存追跡（C8対策: _runtime_uses は StrategySlot から構築）
-        self._runtime_uses = collect_strategy_types(self)
-
     def get_instance_dependency_tree(self) -> dict:
         """インスタンスレベルの依存ツリー."""
+        runtime = collect_strategy_types(self)
         return {
             "name": type(self).__name__,
             "module": self.meta.module,
-            "uses": [
-                {"name": dep.__name__, "module": "solve", "uses": []} for dep in self._runtime_uses
-            ],
+            "uses": [{"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime],
         }
 
     def process(self, input_data: SolverInputData) -> SolverResultData:

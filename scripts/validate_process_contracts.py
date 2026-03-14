@@ -60,54 +60,51 @@ def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
 
 
 def _import_all_modules() -> None:
-    """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築."""
-    # concrete プロセス
-    concrete_modules = [
-        "xkep_cae.process.concrete.pre_mesh",
-        "xkep_cae.process.concrete.pre_contact",
-        "xkep_cae.process.concrete.solve_ncp",
-        "xkep_cae.process.concrete.post_export",
-        "xkep_cae.process.concrete.post_render",
-        "xkep_cae.process.verify.convergence",
-        "xkep_cae.process.verify.energy",
-        "xkep_cae.process.verify.contact",
-        "xkep_cae.process.batch.strand_bending",
-    ]
-    # strategy プロセス
-    strategy_modules = [
-        "xkep_cae.process.strategies.penalty",
-        "xkep_cae.process.strategies.friction",
-        "xkep_cae.process.strategies.contact_force",
-        "xkep_cae.process.strategies.contact_geometry",
-        "xkep_cae.process.strategies.time_integration",
-    ]
+    """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築.
 
-    for mod_name in concrete_modules + strategy_modules:
+    Phase 9-A: ハードコードされたモジュールリストを廃止し、
+    xkep_cae/process/ 配下の .py ファイルをファイルシステム走査で自動検出する。
+    新規プロセス追加時のモジュールリスト更新忘れを根絶。
+    """
+    process_root = _project_root / "xkep_cae" / "process"
+
+    # 除外対象: テストファイル、__init__.py、基盤モジュール
+    _SKIP_NAMES = {"__init__", "base", "categories", "data", "slots", "tree", "runner"}
+
+    # xkep_cae/process/ 配下の全 .py を走査（テスト以外）
+    process_modules = []
+    for py_file in sorted(process_root.rglob("*.py")):
+        # テストファイルはあとで別処理
+        if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+            continue
+        if py_file.parent.name == "__pycache__":
+            continue
+        if py_file.stem in _SKIP_NAMES:
+            continue
+        # docs/ 配下のマークダウンと同名ファイルなどを除外
+        if not py_file.stem.isidentifier():
+            continue
+        mod_path = py_file.relative_to(_project_root).with_suffix("")
+        mod_name = str(mod_path).replace("/", ".")
+        process_modules.append(mod_name)
+
+    for mod_name in process_modules:
         try:
             importlib.import_module(mod_name)
         except Exception as e:
             print(f"  警告: {mod_name} のインポートに失敗: {e}")
 
-    # テストモジュール（@binds_to 発動用）を動的インポート
+    # テストモジュール（@binds_to 発動用）を走査・インポート
     # pytest がない環境では AST で @binds_to を検出してフォールバック
-    test_dirs = [
-        _project_root / "xkep_cae" / "process" / "tests",
-        _project_root / "xkep_cae" / "process" / "strategies" / "tests",
-        _project_root / "xkep_cae" / "process" / "concrete" / "tests",
-        _project_root / "xkep_cae" / "process" / "verify" / "tests",
-        _project_root / "xkep_cae" / "process" / "batch" / "tests",
-    ]
-    for test_dir in test_dirs:
-        if not test_dir.is_dir():
+    for py_file in sorted(process_root.rglob("test_*.py")):
+        if py_file.parent.name == "__pycache__":
             continue
-        for py_file in sorted(test_dir.glob("test_*.py")):
-            mod_path = py_file.relative_to(_project_root).with_suffix("")
-            mod_name = str(mod_path).replace("/", ".")
-            try:
-                importlib.import_module(mod_name)
-            except Exception:
-                # pytest 未インストール等でインポート失敗時は AST フォールバック
-                _ast_fallback_binds_to(py_file, registry=None)
+        mod_path = py_file.relative_to(_project_root).with_suffix("")
+        mod_name = str(mod_path).replace("/", ".")
+        try:
+            importlib.import_module(mod_name)
+        except Exception:
+            _ast_fallback_binds_to(py_file, registry=None)
 
 
 def _is_test_fixture(cls: type) -> bool:
@@ -176,27 +173,22 @@ def check_c7_metaclass_wrap(registry: dict[str, type]) -> list[str]:
     return errors
 
 
-def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
-    """C8: _runtime_uses / StrategySlot の動的依存カバーを検証.
+def check_c8_strategy_slot(registry: dict[str, type]) -> list[str]:
+    """C8: StrategySlot の動的依存カバーを検証.
 
-    設計方針: NCPContactSolverProcess のように strategy 注入で動的依存を持つクラスは
-    静的 uses = [] とし、_runtime_uses + effective_uses() で依存を追跡する（C8対策）。
-    Phase 8-B で StrategySlot が追加され、collect_strategy_types() で型情報を取得可能。
-    ここでは:
+    Phase 9-B: _runtime_uses 廃止後の StrategySlot ベース検証。
+    StrategySlot を持つクラスに対して:
     1. デフォルト引数でインスタンス化が成功すること
-    2. _runtime_uses が空でないこと（strategy が正しく注入されていること）
-    3. effective_uses() が _runtime_uses を含むこと
-    4. StrategySlot があれば collect_strategy_types() と _runtime_uses が一致すること
+    2. collect_strategy_types() が空でないこと（strategy が正しく注入されていること）
+    3. effective_uses() が StrategySlot の型を含むこと
     を検証する。
     """
+    from xkep_cae.process.slots import collect_strategy_slots, collect_strategy_types
+
     errors = []
     for name, cls in sorted(registry.items()):
-        # _runtime_uses を設定するクラスかチェック
-        try:
-            source = inspect.getsource(cls.__init__)
-            if "_runtime_uses" not in source:
-                continue
-        except (OSError, TypeError):
+        slots = collect_strategy_slots(cls)
+        if not slots:
             continue
 
         # デフォルト引数でインスタンス化を試みる
@@ -206,38 +198,22 @@ def check_c8_runtime_uses(registry: dict[str, type]) -> list[str]:
             errors.append(f"C8: {name} のデフォルトインスタンス化に失敗: {e}")
             continue
 
-        runtime = getattr(instance, "_runtime_uses", [])
-        if not runtime:
-            errors.append(f"C8: {name}._runtime_uses が空（strategy 注入に失敗している可能性）")
+        slot_types = collect_strategy_types(instance)
+        if not slot_types:
+            errors.append(
+                f"C8: {name} の StrategySlot が全て空（strategy 注入に失敗している可能性）"
+            )
             continue
 
-        # effective_uses() が _runtime_uses を含むか
-        if hasattr(instance, "effective_uses"):
-            effective = instance.effective_uses()
-            effective_ids = {id(dep) for dep in effective}
-            for dep in runtime:
-                if id(dep) not in effective_ids:
-                    dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
-                    errors.append(
-                        f"C8: {name}._runtime_uses の {dep_name} が effective_uses() に含まれていない"
-                    )
-
-        # StrategySlot 整合性チェック（Phase 8-B/E）
-        try:
-            from xkep_cae.process.slots import collect_strategy_slots, collect_strategy_types
-
-            slots = collect_strategy_slots(cls)
-            if slots:
-                slot_types = set(collect_strategy_types(instance))
-                runtime_types = set(runtime)
-                if slot_types != runtime_types:
-                    errors.append(
-                        f"C8: {name} の StrategySlot 型と _runtime_uses が不一致 "
-                        f"(slot: {sorted(t.__name__ for t in slot_types)}, "
-                        f"runtime: {sorted(t.__name__ for t in runtime_types)})"
-                    )
-        except ImportError:
-            pass  # slots モジュール未インストール時はスキップ
+        # effective_uses() が StrategySlot の型を含むか
+        effective = instance.effective_uses()
+        effective_ids = {id(dep) for dep in effective}
+        for dep in slot_types:
+            if id(dep) not in effective_ids:
+                dep_name = dep.__name__ if hasattr(dep, "__name__") else str(dep)
+                errors.append(
+                    f"C8: {name} の StrategySlot 型 {dep_name} が effective_uses() に含まれていない"
+                )
 
     return errors
 
@@ -453,7 +429,7 @@ def main() -> int:
         ("C5: 未宣言依存（AST）", check_c5_undeclared_deps),
         ("C6: Strategy意味論", check_c6_strategy_semantics),
         ("C7: メタクラスラップ", check_c7_metaclass_wrap),
-        ("C8: 動的依存カバー", check_c8_runtime_uses),
+        ("C8: StrategySlot 依存カバー", check_c8_strategy_slot),
         ("C9: frozen不変性", check_c9_frozen_immutability),
         ("C11: 推移的依存", check_c11_transitive_deps),
         ("C12: BatchProcess順序", check_c12_batch_order),
