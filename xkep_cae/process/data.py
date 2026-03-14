@@ -153,20 +153,6 @@ def default_strategies(
 
 
 @dataclass(frozen=True)
-class SolverInputData:
-    """NCPContactSolverProcess への統合入力.
-
-    内部で NCPSolverInput に変換して既存ソルバーを呼び出す（ラッパー方式）。
-    """
-
-    mesh: MeshData
-    boundary: BoundaryData
-    contact: ContactSetupData
-    callbacks: AssembleCallbacks
-    strategies: SolverStrategies | None = None
-
-
-@dataclass(frozen=True)
 class DynamicFrictionInputData:
     """動的摩擦接触解析の入力（smooth_penalty 王道構成）.
 

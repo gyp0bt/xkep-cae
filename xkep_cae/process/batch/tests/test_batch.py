@@ -23,7 +23,7 @@ class TestStrandBendingBatchProcess:
         assert names == [
             "StrandMeshProcess",
             "ContactSetupProcess",
-            "NCPContactSolverProcess",
+            "NCPQuasiStaticContactFrictionProcess",
             "ExportProcess",
             "BeamRenderProcess",
             "ConvergenceVerifyProcess",
