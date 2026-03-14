@@ -67,7 +67,13 @@ class BenchmarkTimingCollector:
 
     def record(self, phase: int, step: int, iteration: int, label: str, elapsed: float):
         self._records.append(
-            {"phase": phase, "step": step, "iteration": iteration, "label": label, "elapsed": elapsed}
+            {
+                "phase": phase,
+                "step": step,
+                "iteration": iteration,
+                "label": label,
+                "elapsed": elapsed,
+            }
         )
 
     def summary_table(self) -> str:

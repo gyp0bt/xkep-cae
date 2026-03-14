@@ -1374,8 +1374,9 @@ def _contact_fixed_dofs():
 def plot_contact_crossing_beam():
     """交差梁接触の荷重ステップ応答（ギャップ・接触力・変位）."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.pair import ContactConfig, ContactManager
     from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
 
     (
         node_coords_ref,
@@ -1491,8 +1492,9 @@ def plot_contact_crossing_beam():
 def plot_contact_penetration_control():
     """ペナルティ剛性と貫入量の関係（適応的ペナルティ増大の効果）."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.pair import ContactConfig, ContactManager
     from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
 
     k_pen_values = [1e3, 1e4, 1e5, 1e6]
     pen_ratios_noadapt = []
@@ -1627,8 +1629,9 @@ def plot_contact_penetration_control():
 def plot_contact_friction_stick_slip():
     """摩擦 return mapping: stick→slip 遷移の検証."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.pair import ContactConfig, ContactManager
     from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
+
+    from xkep_cae.contact.pair import ContactConfig, ContactManager
 
     # 接線荷重を変化させて stick→slip 遷移を観察
     f_tangential_values = [1.0, 3.0, 5.0, 10.0, 20.0, 30.0, 50.0]
