@@ -57,6 +57,7 @@
 |--------|--------|-----------|
 | `newton_raphson_with_contact` | `newton_raphson_contact_ncp` | status-107→108 |
 | `_runtime_uses` | `collect_strategy_types()` + `effective_uses()` | status-165 |
+| AL solver (`solver_hooks.py`, `line_search.py`) | 完全削除（NCP一本化） | status-167 |
 
 ## 推奨ソルバー構成
 
@@ -68,7 +69,7 @@
 
 ## 現在の状態
 
-**2477テスト + 327 processテスト** — 2026-03-14
+**~2260テスト + 327 processテスト** — 2026-03-14
 
 ### ターゲット
 
@@ -76,24 +77,22 @@
 
 ### 次の課題
 
-**R1 ProcessRegistry 導入完了（status-166）** — _registry dict → ProcessRegistry クラス昇格。全9契約チェック稼働中。327 processテスト。
+**AL完全削除 + Process Architecture移行中（status-167）** — AL solver（solver_hooks.py, line_search.py）を完全削除。NCP一本化。~215テスト削除。
 
-S3スケーリングは凍結中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+S3凍結解除準備中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ### やるべきこと
-- **Phase 9 実装**: 9-A（_import_all_modules 走査化）、9-B（StrategySlot 完全移行）
-- **S3 凍結解除判断**（9-C）
+- **Process Architecture 完全移行**: テスト名正規化（_ncp除去）、NCP直接呼出→Process API移行
+- **S3 凍結解除**: 変位制御7本撚線曲げ揺動のPhase2 xfail解消
 - `scripts/validate_process_contracts.py` のエラーをゼロに**維持**する
 - コンテキスト整理（ドキュメント構造の明確化）
 
 ### やってはいけないこと
-- **S3 スケーリング作業**（NCP 収束改善、37本以上の収束テスト — 凍結中）
 - ソルバー性能改善（スパース最適化、並列化、メモリ削減）
-- scripts/ での新規収束検証スクリプト作成
 - NCP ソルバー（solver_ncp.py）の収束ロジック変更
 
 ### セッション開始時の確認手順

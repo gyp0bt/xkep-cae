@@ -9,7 +9,6 @@
 """
 
 import numpy as np
-import pytest
 import scipy.sparse as sp
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager
@@ -378,111 +377,6 @@ class TestNCPSolverConvergence:
 
         assert result.converged
         assert np.all(result.lambdas >= 0.0), "λ must be non-negative"
-
-
-@pytest.mark.deprecated
-class TestNCPSolverComparison:
-    """既存 AL ソルバーとの結果比較.
-
-    DEPRECATED: 旧ソルバー(newton_raphson_with_contact)との比較テスト。
-    NCP ソルバー単体テストは TestNCPSolverBasic / TestNCPSolverConvergence を参照。
-    """
-
-    @pytest.mark.xfail(
-        reason="NCP constraint builder skips INACTIVE pairs; hysteresis boundary "
-        "case (gap=-0.01, g_on=0.01) prevents activation. AL uses outer-loop "
-        "penalty so it works. Known architectural difference, not a regression.",
-        strict=False,
-    )
-    def test_displacement_consistency(self):
-        """NCP と既存 AL ソルバーの変位が近いこと."""
-        from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
-
-        (
-            coords,
-            conn,
-            radii,
-            ndof,
-            ndof_per_node,
-            K_fn,
-            f_int_fn,
-            fixed_dofs,
-        ) = _make_spring_system(z_sep=0.041, radii=0.04, k_spring=1e4)
-
-        f_ext = np.zeros(ndof)
-        f_ext[1 * ndof_per_node + 2] = -20.0
-        f_ext[3 * ndof_per_node + 2] = 20.0
-
-        # AL ソルバー
-        mgr_al = ContactManager(
-            config=ContactConfig(
-                k_pen_scale=1e5,
-                g_on=0.01,
-                g_off=0.02,
-                n_outer_max=5,
-                use_line_search=True,
-            ),
-        )
-        result_al = newton_raphson_with_contact(
-            f_ext,
-            fixed_dofs,
-            K_fn,
-            f_int_fn,
-            mgr_al,
-            coords,
-            conn,
-            radii,
-            n_load_steps=5,
-            max_iter=30,
-            show_progress=False,
-            broadphase_margin=0.05,
-        )
-
-        # NCP ソルバー
-        mgr_ncp = ContactManager(
-            config=ContactConfig(
-                k_pen_scale=1e5,
-                g_on=0.01,
-                g_off=0.02,
-            ),
-        )
-        result_ncp = newton_raphson_contact_ncp(
-            f_ext,
-            fixed_dofs,
-            K_fn,
-            f_int_fn,
-            mgr_ncp,
-            coords,
-            conn,
-            radii,
-            n_load_steps=5,
-            max_iter=50,
-            show_progress=False,
-            broadphase_margin=0.05,
-        )
-
-        assert result_al.converged, "AL solver did not converge"
-        assert result_ncp.converged, "NCP solver did not converge"
-
-        # 変位の方向が一致すること（大まかな比較）
-        # NCP とALの定式化が異なるため完全一致は期待しない
-        # z 方向の変位符号が一致し、大きさのオーダーが近いこと
-        u_al = result_al.u
-        u_ncp = result_ncp.u
-
-        # node 1 (A自由端) の z 変位
-        uz_al_node1 = u_al[1 * ndof_per_node + 2]
-        uz_ncp_node1 = u_ncp[1 * ndof_per_node + 2]
-
-        # 両方とも非ゼロ変位が生じること
-        assert abs(uz_al_node1) > 1e-8, "AL solver should produce nonzero z disp"
-        assert abs(uz_ncp_node1) > 1e-8, "NCP solver should produce nonzero z disp"
-
-        # z 方向変位の符号が一致すること
-        # （接触力が支配的な場合は正にもなりうる）
-        assert np.sign(uz_al_node1) == np.sign(uz_ncp_node1), (
-            f"Sign mismatch: AL={uz_al_node1:.6f}, NCP={uz_ncp_node1:.6f}"
-        )
 
 
 class TestConstraintJacobianAndForce:
