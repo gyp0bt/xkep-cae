@@ -1,17 +1,14 @@
-"""NCPContactSolverProcess — NCP接触ソルバーのProcess Wrapper.
+"""NCPDynamicContactFrictionProcess — 動的摩擦接触ソルバー.
 
-設計仕様: process-architecture.md §2.4
-newton_raphson_contact_ncp() を AbstractProcess として管理し、
-SolverStrategies によるStrategy合成を実現する。
+Smooth penalty + Uzawa + Coulomb 摩擦 + Generalized-α 動的解析。
+Strategy 経由で全ての接触力・摩擦力・時間積分を評価する。
 
-依存追跡（§13.2 C8対応）:
-- クラス変数 uses = [] は空（__init_subclass__ 通過用）
-- インスタンス変数 _runtime_uses で動的依存追跡
-- StrategySlot による型安全な Strategy 宣言（Phase 8-B/E）
-
-Phase 8-E 更新:
-- StrategySlot ディスクリプタを追加（PenaltyStrategy, FrictionStrategy, TimeIntegrationStrategy）
-- _runtime_uses は StrategySlot + 従来方式の両方から構築（後方互換）
+固定構成（王道構成）:
+- contact_mode = "smooth_penalty"
+- use_friction = True
+- line_contact = True
+- adaptive_timestepping = True
+- 時間積分 = Generalized-α
 """
 
 from __future__ import annotations
@@ -19,7 +16,7 @@ from __future__ import annotations
 from xkep_cae.process.base import ProcessMeta
 from xkep_cae.process.categories import SolverProcess
 from xkep_cae.process.data import (
-    SolverInputData,
+    DynamicFrictionInputData,
     SolverResultData,
     SolverStrategies,
     default_strategies,
@@ -34,27 +31,28 @@ from xkep_cae.process.strategies.protocols import (
 )
 
 
-class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
-    """NCP接触ソルバーのProcess Wrapper.
+class NCPDynamicContactFrictionProcess(
+    SolverProcess[DynamicFrictionInputData, SolverResultData]
+):
+    """動的摩擦接触ソルバー（Generalized-α + smooth penalty）.
 
-    newton_raphson_contact_ncp() を内部で呼び出し、
-    SolverStrategies による Strategy 合成を実現する。
+    solve_smooth_penalty_friction() を Strategy 経由で呼び出し、
+    Generalized-α 時間積分を強制する。
 
     Usage:
-        solver = NCPContactSolverProcess()  # デフォルト構成
-        solver = NCPContactSolverProcess(strategies=custom_strategies)
+        solver = NCPDynamicContactFrictionProcess()
         result = solver.process(input_data)
     """
 
     meta = ProcessMeta(
-        name="NCP接触ソルバー",
+        name="動的摩擦接触ソルバー",
         module="solve",
         version="0.1.0",
         document_path="../docs/process-architecture.md",
     )
-    uses = []  # 静的usesは空（C8対策: 動的構築はインスタンス側で管理）
+    uses = []
 
-    # StrategySlot 宣言（Phase 8-B/E）
+    # StrategySlot 宣言
     penalty_slot = StrategySlot(PenaltyStrategy)
     friction_slot = StrategySlot(FrictionStrategy)
     time_integration_slot = StrategySlot(TimeIntegrationStrategy)
@@ -64,7 +62,6 @@ class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
     def __init__(self, strategies: SolverStrategies | None = None) -> None:
         self.strategies = strategies or default_strategies()
 
-        # StrategySlot に設定（Protocol 準拠検証付き）
         self.penalty_slot = self.strategies.penalty
         self.friction_slot = self.strategies.friction
         self.time_integration_slot = self.strategies.time_integration
@@ -79,19 +76,38 @@ class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
         return {
             "name": type(self).__name__,
             "module": self.meta.module,
-            "uses": [{"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime],
+            "uses": [
+                {"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime
+            ],
         }
 
-    def process(self, input_data: SolverInputData) -> SolverResultData:
-        """SolverInputData → newton_raphson_contact_ncp() → SolverResultData."""
+    def process(self, input_data: DynamicFrictionInputData) -> SolverResultData:
+        """DynamicFrictionInputData → solve_smooth_penalty_friction() → SolverResultData."""
         import time
 
-        from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
+        from xkep_cae.contact.solver_smooth_penalty import (
+            solve_smooth_penalty_friction,
+        )
 
-        strategies = input_data.strategies or self.strategies
+        # Generalized-α Strategy を動的パラメータで構築
+        ndof = len(input_data.boundary.f_ext_total)
+        strategies = default_strategies(
+            ndof=ndof,
+            mass_matrix=input_data.mass_matrix,
+            damping_matrix=input_data.damping_matrix,
+            dt_physical=input_data.dt_physical,
+            rho_inf=input_data.rho_inf,
+            velocity=input_data.velocity,
+            acceleration=input_data.acceleration,
+            k_pen=input_data.contact.k_pen,
+            use_friction=True,
+            mu=input_data.contact.mu or 0.15,
+            contact_mode="smooth_penalty",
+            line_contact=True,
+        )
 
         t0 = time.perf_counter()
-        result = newton_raphson_contact_ncp(
+        result = solve_smooth_penalty_friction(
             f_ext_total=input_data.boundary.f_ext_total,
             fixed_dofs=input_data.boundary.fixed_dofs,
             assemble_tangent=input_data.callbacks.assemble_tangent,
@@ -100,12 +116,14 @@ class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
             node_coords_ref=input_data.mesh.node_coords,
             connectivity=input_data.mesh.connectivity,
             radii=input_data.mesh.radii,
-            k_pen=input_data.contact.k_pen,
-            use_friction=input_data.contact.use_friction,
-            mu=input_data.contact.mu,
-            contact_mode=input_data.contact.contact_mode,
-            ul_assembler=input_data.callbacks.ul_assembler,
             strategies=strategies,
+            k_pen=input_data.contact.k_pen,
+            mu=input_data.contact.mu,
+            u0=input_data.u0,
+            f_ext_base=input_data.boundary.f_ext_base,
+            prescribed_dofs=input_data.boundary.prescribed_dofs,
+            prescribed_values=input_data.boundary.prescribed_values,
+            ul_assembler=input_data.callbacks.ul_assembler,
         )
         elapsed = time.perf_counter() - t0
 

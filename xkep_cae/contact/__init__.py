@@ -16,6 +16,11 @@
 
 from xkep_cae.contact.assembly import compute_contact_force, compute_contact_stiffness
 from xkep_cae.contact.broadphase import broadphase_aabb, compute_segment_aabb
+from xkep_cae.contact.diagnostics import (
+    ConvergenceDiagnostics,
+    NCPSolveResult,
+    NCPSolverInput,
+)
 from xkep_cae.contact.geometry import compute_st_jacobian
 from xkep_cae.contact.graph import (
     ContactEdge,
@@ -80,13 +85,12 @@ from xkep_cae.contact.sheath_contact import (
     evaluate_sheath_contact,
 )
 from xkep_cae.contact.solver_ncp import (
-    ConvergenceDiagnostics,
-    NCPSolveResult,
-    NCPSolverInput,
     _solve_saddle_point_direct,
     _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
 )
+from xkep_cae.contact.solver_smooth_penalty import solve_smooth_penalty_friction
+from xkep_cae.contact.utils import deformed_coords, ncp_line_search
 
 __all__ = [
     "ConvergenceDiagnostics",
@@ -140,6 +144,9 @@ __all__ = [
     "ncp_fischer_burmeister",
     "ncp_min",
     "newton_raphson_contact_ncp",
+    "solve_smooth_penalty_friction",
+    "deformed_coords",
+    "ncp_line_search",
     "_solve_saddle_point_direct",
     "_solve_saddle_point_gmres",
     "build_mortar_system",

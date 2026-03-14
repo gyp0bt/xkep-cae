@@ -153,17 +153,57 @@ def default_strategies(
 
 
 @dataclass(frozen=True)
-class SolverInputData:
-    """NCPContactSolverProcess への統合入力.
+class DynamicFrictionInputData:
+    """動的摩擦接触解析の入力（smooth_penalty 王道構成）.
 
-    内部で NCPSolverInput に変換して既存ソルバーを呼び出す（ラッパー方式）。
+    固定構成:
+    - contact_mode = "smooth_penalty"（NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
+    - use_friction = True（摩擦常時有効）
+    - line_contact = True（Line-to-line Gauss積分）
+    - adaptive_timestepping = True
+    - 時間積分 = Generalized-α
+
+    動的解析では mass_matrix と dt_physical が必須。
     """
 
     mesh: MeshData
     boundary: BoundaryData
     contact: ContactSetupData
     callbacks: AssembleCallbacks
-    strategies: SolverStrategies | None = None
+    # 動的解析必須パラメータ
+    mass_matrix: sp.spmatrix
+    dt_physical: float
+    rho_inf: float = 0.9
+    damping_matrix: sp.spmatrix | None = None
+    # 初期条件
+    velocity: np.ndarray | None = None
+    acceleration: np.ndarray | None = None
+    u0: np.ndarray | None = None
+
+    def __post_init__(self) -> None:
+        if self.dt_physical <= 0.0:
+            raise ValueError("dt_physical は正の値が必要です。")
+
+
+@dataclass(frozen=True)
+class QuasiStaticFrictionInputData:
+    """準静的摩擦接触解析の入力（smooth_penalty 王道構成）.
+
+    固定構成:
+    - contact_mode = "smooth_penalty"（NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
+    - use_friction = True（摩擦常時有効）
+    - line_contact = True（Line-to-line Gauss積分）
+    - adaptive_timestepping = True
+    - 時間積分 = 準静的（荷重制御 or 変位制御）
+
+    動的パラメータ不要。質量行列・時間増分はなし。
+    """
+
+    mesh: MeshData
+    boundary: BoundaryData
+    contact: ContactSetupData
+    callbacks: AssembleCallbacks
+    u0: np.ndarray | None = None
 
 
 @dataclass

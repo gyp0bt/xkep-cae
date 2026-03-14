@@ -58,6 +58,7 @@
 | `newton_raphson_with_contact` | `newton_raphson_contact_ncp` | status-107→108 |
 | `_runtime_uses` | `collect_strategy_types()` + `effective_uses()` | status-165 |
 | AL solver (`solver_hooks.py`, `line_search.py`) | 完全削除（NCP一本化） | status-167 |
+| `NCPContactSolverProcess` | `NCPDynamic/QuasiStaticContactFrictionProcess` → 完全削除 | status-168 |
 
 ## 推奨ソルバー構成
 
