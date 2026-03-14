@@ -155,47 +155,6 @@ def smooth_normal_force_vectorized(
     return p_n, dp_dg
 
 
-def update_al_multiplier(
-    pair: ContactPair,
-    *,
-    omega: float = 1.0,
-    preserve_inactive: bool = False,
-    lambda_n_max: float = 0.0,
-) -> None:
-    """AL 乗数 lambda_n を更新する（Outer loop 終了時に呼ぶ）.
-
-    緩和付き更新:
-        lambda_n <- lambda_n + omega * (p_n - lambda_n)
-
-    omega = 1.0 の場合は従来動作（lambda_n <- p_n）と等価。
-    omega < 1.0 で under-relaxation：低い k_pen でも乗数が徐々に蓄積し、
-    条件数悪化なく正確な接触力に近づく。商用ソルバー（Abaqus Augmented
-    Lagrange、ANSYS FKN制御）のペナルティ+乗数増大法に相当。
-
-    preserve_inactive=False の場合、INACTIVE ペアの lambda_n をゼロリセット。
-    preserve_inactive=True の場合、INACTIVE ペアの lambda_n を保持する
-    （LS-DYNA IGAP sticky contact に相当。再活性化時の乗数不整合を防止）。
-
-    lambda_n_max > 0 の場合、更新後の lambda_n を [0, lambda_n_max] にクリップ。
-    n_outer_max が大きい場合に λ_n の暴走を防止する。
-
-    Args:
-        pair: 接触ペア
-        omega: 緩和係数 ω ∈ (0, 1]。1.0で従来動作（デフォルト）
-        preserve_inactive: True で INACTIVE ペアの lambda_n 保持
-        lambda_n_max: λ_n の上限値（0 で無効）
-    """
-    if pair.state.status == ContactStatus.INACTIVE:
-        if not preserve_inactive:
-            pair.state.lambda_n = 0.0
-        # preserve_inactive=True: lambda_n を維持（再活性化時に使用）
-    else:
-        new_lambda = pair.state.lambda_n + omega * (pair.state.p_n - pair.state.lambda_n)
-        if lambda_n_max > 0.0:
-            new_lambda = min(new_lambda, lambda_n_max)
-        pair.state.lambda_n = max(0.0, new_lambda)
-
-
 def normal_force_linearization(pair: ContactPair) -> float:
     """法線接触反力の変分（接線剛性の主項係数）を返す.
 

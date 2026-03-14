@@ -1,4 +1,4 @@
-"""法線接触力則（Augmented Lagrangian）のテスト.
+"""法線接触力則のテスト.
 
 Phase C2: law_normal.py の単体テスト。
 """
@@ -10,7 +10,6 @@ from xkep_cae.contact.law_normal import (
     evaluate_normal_force,
     initialize_penalty_stiffness,
     normal_force_linearization,
-    update_al_multiplier,
 )
 from xkep_cae.contact.pair import ContactPair, ContactState, ContactStatus
 
@@ -66,13 +65,13 @@ class TestEvaluateNormalForce:
         assert p_n == 0.0
 
     def test_al_multiplier_effect(self):
-        """AL 乗数がある場合の反力計算."""
+        """乗数がある場合の反力計算."""
         pair = _make_pair(gap=-0.01, lambda_n=50.0, k_pen=1e4)
         p_n = evaluate_normal_force(pair)
         # p_n = max(0, 50 + 1e4 * 0.01) = max(0, 150) = 150
         assert abs(p_n - 150.0) < 1e-10
 
-    def test_al_with_positive_gap_and_multiplier(self):
+    def test_with_positive_gap_and_multiplier(self):
         """gap > 0 だが lambda_n > 0 → lambda_n > k_pen*gap なら接触."""
         pair = _make_pair(gap=0.001, lambda_n=100.0, k_pen=1e4)
         p_n = evaluate_normal_force(pair)
@@ -84,35 +83,6 @@ class TestEvaluateNormalForce:
         pair = _make_pair(gap=0.0, lambda_n=0.0, k_pen=1e4)
         p_n = evaluate_normal_force(pair)
         assert p_n == 0.0
-
-
-class TestUpdateALMultiplier:
-    """update_al_multiplier のテスト."""
-
-    def test_active_pair_update(self):
-        """ACTIVE ペアは lambda_n <- p_n."""
-        pair = _make_pair(gap=-0.01, lambda_n=0.0, k_pen=1e4)
-        evaluate_normal_force(pair)  # p_n = 100
-        update_al_multiplier(pair)
-        assert abs(pair.state.lambda_n - 100.0) < 1e-10
-
-    def test_inactive_pair_reset(self):
-        """INACTIVE ペアは lambda_n = 0."""
-        pair = _make_pair(status=ContactStatus.INACTIVE)
-        pair.state.lambda_n = 50.0
-        update_al_multiplier(pair)
-        assert pair.state.lambda_n == 0.0
-
-    def test_repeated_update_converges(self):
-        """複数回の AL 更新で乗数が安定する方向に動く."""
-        pair = _make_pair(gap=-0.01, lambda_n=0.0, k_pen=1e4)
-        prev_lambda = 0.0
-        for _ in range(5):
-            evaluate_normal_force(pair)
-            update_al_multiplier(pair)
-            # 乗数は増加方向に動く（ギャップ固定の場合）
-            assert pair.state.lambda_n >= prev_lambda
-            prev_lambda = pair.state.lambda_n
 
 
 class TestNormalForceLinearization:

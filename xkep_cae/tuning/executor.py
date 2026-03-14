@@ -46,10 +46,9 @@ def execute_s3_benchmark(
         ContactManager,
         ContactStatus,
     )
-    from xkep_cae.contact.solver_hooks import (
-        BenchmarkTimingCollector,
-        newton_raphson_block_contact,
-        newton_raphson_with_contact,
+    raise NotImplementedError(
+        "execute_s3_benchmark は AL solver 依存のため廃止。"
+        "NCP 版への移行は status-167 以降で実施予定。"
     )
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
     from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh

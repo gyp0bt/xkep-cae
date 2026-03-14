@@ -33,15 +33,49 @@ from pathlib import Path
 import numpy as np
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
-from xkep_cae.contact.solver_hooks import (
-    BenchmarkTimingCollector,
-    ContactSolveResult,
-    newton_raphson_with_contact,
-)
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 from xkep_cae.elements.beam_timo3d import ULCRBeamAssembler, assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
 from xkep_cae.sections.beam import BeamSection
+
+# ====================================================================
+# AL solver_hooks 削除に伴うローカル定義
+# ====================================================================
+
+
+@dataclass
+class ContactSolveResult:
+    """ソルバー結果（solver_hooks 削除後のローカル定義）."""
+
+    u: np.ndarray
+    converged: bool
+    n_load_steps: int = 0
+    total_newton_iterations: int = 0
+    total_outer_iterations: int = 0
+    n_active_final: int = 0
+    load_history: list = field(default_factory=list)
+    displacement_history: list = field(default_factory=list)
+    contact_force_history: list = field(default_factory=list)
+    graph_history: list = field(default_factory=list)
+
+
+class BenchmarkTimingCollector:
+    """タイミング収集（solver_hooks 削除後のローカル定義）."""
+
+    def __init__(self):
+        self._records: list[dict] = []
+
+    def record(self, phase: int, step: int, iteration: int, label: str, elapsed: float):
+        self._records.append(
+            {"phase": phase, "step": step, "iteration": iteration, "label": label, "elapsed": elapsed}
+        )
+
+    def summary_table(self) -> str:
+        lines = ["  Timing Summary:"]
+        for r in self._records:
+            lines.append(f"    {r['label']:30s} {r['elapsed']:.4f} s")
+        return "\n".join(lines)
+
 
 # ====================================================================
 # 物理パラメータ（鋼線デフォルト）
@@ -469,7 +503,7 @@ def run_bending_oscillation(
     gif_output_dir: str | Path | None = None,
     gif_snapshot_interval: int = 1,
     # S3: NCP ソルバーパラメータ
-    use_ncp: bool = False,
+    use_ncp: bool = True,
     use_mortar: bool = True,
     n_gauss: int = 2,
     ncp_k_pen: float = 0.0,
@@ -889,27 +923,7 @@ def run_bending_oscillation(
             graph_history=_ncp_result.graph_history,
         )
     else:
-        if show_progress:
-            print(
-                f"\n--- Phase 1: 曲げ（M={M_per_strand:.4e} N·m/strand, "
-                f"{n_bending_steps} steps）---"
-            )
-        result_bend = newton_raphson_with_contact(
-            f_ext_bend,
-            fixed_dofs_base,
-            assemble_tangent,
-            assemble_internal_force,
-            mgr,
-            mesh.node_coords,
-            mesh.connectivity,
-            contact_radii,
-            n_load_steps=n_bending_steps,
-            max_iter=max_iter,
-            tol_force=tol_force,
-            show_progress=show_progress,
-            broadphase_margin=broadphase_margin,
-            timing=timing,
-        )
+        raise ValueError("AL solver has been removed. Use use_ncp=True.")
 
     u_after_bend = result_bend.u.copy()
     _record_snapshot(u_after_bend, f"bend done ({bend_angle_deg}deg)")
@@ -1171,23 +1185,7 @@ def run_bending_oscillation(
                     graph_history=_ncp_step.graph_history,
                 )
             else:
-                result_step = newton_raphson_with_contact(
-                    f_ext_bend,
-                    fixed_dofs_phase2,
-                    assemble_tangent,
-                    assemble_internal_force,
-                    mgr,
-                    mesh.node_coords,
-                    mesh.connectivity,
-                    contact_radii,
-                    n_load_steps=1,
-                    max_iter=max_iter,
-                    tol_force=tol_force,
-                    show_progress=False,
-                    u0=u,
-                    broadphase_margin=broadphase_margin,
-                    timing=timing,
-                )
+                raise ValueError("AL solver has been removed. Use use_ncp=True.")
 
             u = result_step.u.copy()
             phase2_results.append(result_step)

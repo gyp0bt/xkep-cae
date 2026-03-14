@@ -4,14 +4,12 @@
 - geometry: segment-to-segment 最近接点計算
 - broadphase: AABB格子による候補ペア探索
 - pair: 接触ペア・状態管理・幾何更新・Active-set
-- law_normal: 法線接触（Augmented Lagrangian）
+- law_normal: 法線接触力・ペナルティ剛性
 - law_friction: Coulomb 摩擦（return mapping）
-- line_search: merit function + backtracking line search
 - line_contact: line-to-line Gauss 積分（Phase C6-L1）
 - ncp: NCP 関数（Fischer-Burmeister, min）（Phase C6-L3）
 - solver_ncp: Semi-smooth Newton ソルバー（Phase C6-L3）
 - assembly: 接触内力・接線の組み込み
-- solver_hooks: 接触付き Newton-Raphson（Outer/Inner 分離）
 - graph: 接触グラフ表現・可視化
 - mortar: Mortar 離散化（Phase C6-L5）
 """
@@ -41,7 +39,6 @@ from xkep_cae.contact.law_normal import (
     evaluate_normal_force,
     initialize_penalty_stiffness,
     normal_force_linearization,
-    update_al_multiplier,
 )
 from xkep_cae.contact.line_contact import (
     auto_select_n_gauss,
@@ -54,7 +51,6 @@ from xkep_cae.contact.line_contact import (
     gauss_legendre_01,
     project_point_to_segment,
 )
-from xkep_cae.contact.line_search import backtracking_line_search, merit_function
 from xkep_cae.contact.mortar import (
     build_mortar_system,
     compute_mortar_contact_force,
@@ -83,15 +79,6 @@ from xkep_cae.contact.sheath_contact import (
     build_sheath_contact_manager,
     evaluate_sheath_contact,
 )
-from xkep_cae.contact.solver_hooks import (
-    BenchmarkTimingCollector,
-    ContactSolveResult,
-    CyclicContactResult,
-    TimingRecord,
-    newton_raphson_block_contact,
-    newton_raphson_with_contact,
-    run_contact_cyclic,
-)
 from xkep_cae.contact.solver_ncp import (
     ConvergenceDiagnostics,
     NCPSolveResult,
@@ -102,7 +89,6 @@ from xkep_cae.contact.solver_ncp import (
 )
 
 __all__ = [
-    "BenchmarkTimingCollector",
     "ConvergenceDiagnostics",
     "ContactConfig",
     "ContactEdge",
@@ -110,8 +96,6 @@ __all__ = [
     "ContactGraphHistory",
     "ContactManager",
     "ContactPair",
-    "ContactSolveResult",
-    "CyclicContactResult",
     "ContactState",
     "ContactStatus",
     "SheathContactConfig",
@@ -122,7 +106,6 @@ __all__ = [
     "auto_beam_penalty_stiffness",
     "auto_penalty_stiffness",
     "auto_select_n_gauss",
-    "backtracking_line_search",
     "broadphase_aabb",
     "compute_contact_force",
     "compute_contact_stiffness",
@@ -142,18 +125,12 @@ __all__ = [
     "gauss_legendre_01",
     "friction_tangent_2x2",
     "initialize_penalty_stiffness",
-    "merit_function",
-    "newton_raphson_block_contact",
-    "newton_raphson_with_contact",
-    "run_contact_cyclic",
     "normal_force_linearization",
     "plot_hysteresis_curve",
     "project_point_to_segment",
     "plot_statistics_dashboard",
     "rotate_friction_history",
     "snapshot_contact_graph",
-    "update_al_multiplier",
-    "TimingRecord",
     "NCPSolveResult",
     "NCPSolverInput",
     "build_augmented_residual",
