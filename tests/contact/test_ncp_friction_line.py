@@ -6,12 +6,9 @@ Phase S1: NCP Semi-smooth Newton に Coulomb 摩擦と line-to-line Gauss 積分
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact.diagnostics import NCPSolveResult
 from xkep_cae.contact.pair import ContactConfig, ContactManager
-from xkep_cae.contact.solver_ncp import (
-    NCPSolveResult,
-    _compute_friction_forces_ncp,
-    newton_raphson_contact_ncp,
-)
+from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 
 
 def _make_spring_system(
@@ -320,64 +317,6 @@ class TestNCPFrictionBasic:
         )
 
         assert result.converged
-
-
-class TestNCPFrictionForceUnit:
-    """_compute_friction_forces_ncp の単体テスト."""
-
-    def test_no_contact_no_friction(self):
-        """接触なしでは摩擦力ゼロ."""
-        mgr = ContactManager()
-        lambdas = np.array([])
-        u = np.zeros(24)
-        u_ref = np.zeros(24)
-        coords_ref = np.zeros((4, 3))
-
-        f_fric, tangents = _compute_friction_forces_ncp(
-            mgr, lambdas, u, u_ref, coords_ref, 24, mu=0.3
-        )
-
-        np.testing.assert_allclose(f_fric, 0.0, atol=1e-15)
-        assert len(tangents) == 0
-
-    def test_zero_mu_no_friction(self):
-        """μ=0 では摩擦力ゼロ."""
-        from xkep_cae.contact.pair import ContactPair, ContactState, ContactStatus
-
-        mgr = ContactManager(config=ContactConfig(k_t_ratio=0.5))
-        state = ContactState(
-            s=0.5,
-            t=0.5,
-            gap=-0.01,
-            normal=np.array([0.0, 0.0, 1.0]),
-            tangent1=np.array([1.0, 0.0, 0.0]),
-            tangent2=np.array([0.0, 1.0, 0.0]),
-            status=ContactStatus.ACTIVE,
-            k_pen=1e5,
-            k_t=5e4,
-            p_n=1000.0,
-        )
-        pair = ContactPair(
-            elem_a=0,
-            elem_b=1,
-            nodes_a=np.array([0, 1]),
-            nodes_b=np.array([2, 3]),
-            state=state,
-            radius_a=0.04,
-            radius_b=0.04,
-        )
-        mgr.pairs = [pair]
-
-        lambdas = np.array([1000.0])
-        u = np.zeros(24)
-        u_ref = np.zeros(24)
-        coords_ref = np.zeros((4, 3))
-
-        f_fric, tangents = _compute_friction_forces_ncp(
-            mgr, lambdas, u, u_ref, coords_ref, 24, k_pen=1e5, mu=0.0
-        )
-
-        np.testing.assert_allclose(f_fric, 0.0, atol=1e-15)
 
 
 # ============================================================

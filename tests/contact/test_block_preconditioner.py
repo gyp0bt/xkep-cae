@@ -13,12 +13,12 @@ import scipy.sparse as sp
 
 from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
 from xkep_cae.contact.solver_ncp import (
-    _build_constraint_jacobian,
     _solve_saddle_point_contact,
     _solve_saddle_point_direct,
     _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
 )
+from xkep_cae.process.strategies.contact_geometry import _build_constraint_jacobian_ptp
 
 
 def _make_spring_system(
@@ -142,7 +142,7 @@ def _setup_saddle_point_problem():
     )
     mgr.pairs = [pair]
 
-    G_A, active_idx = _build_constraint_jacobian(mgr, ndof, ndof_per_node)
+    G_A, active_idx = _build_constraint_jacobian_ptp(mgr.pairs, ndof, ndof_per_node)
     k_pen = 1e5
     R_u = np.random.default_rng(42).standard_normal(ndof) * 10.0
     R_u[fixed_dofs] = 0.0

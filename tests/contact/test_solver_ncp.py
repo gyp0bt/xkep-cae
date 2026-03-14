@@ -11,14 +11,10 @@
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact.diagnostics import ConvergenceDiagnostics, NCPSolveResult
 from xkep_cae.contact.pair import ContactConfig, ContactManager
-from xkep_cae.contact.solver_ncp import (
-    ConvergenceDiagnostics,
-    NCPSolveResult,
-    _build_constraint_jacobian,
-    _compute_contact_force_from_lambdas,
-    newton_raphson_contact_ncp,
-)
+from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
+from xkep_cae.process.strategies.contact_geometry import _build_constraint_jacobian_ptp
 
 
 def _make_spring_system(
@@ -407,7 +403,7 @@ class TestConstraintJacobianAndForce:
         mgr.pairs = [pair]
 
         ndof = 24  # 4 nodes * 6 DOF
-        G, active_idx = _build_constraint_jacobian(mgr, ndof, ndof_per_node=6)
+        G, active_idx = _build_constraint_jacobian_ptp(mgr.pairs, ndof, ndof_per_node=6)
 
         assert G.shape == (1, 24)
         assert len(active_idx) == 1
@@ -428,12 +424,12 @@ class TestConstraintJacobianAndForce:
         )
         mgr.pairs = [pair]
 
-        G, active_idx = _build_constraint_jacobian(mgr, 24, ndof_per_node=6)
+        G, active_idx = _build_constraint_jacobian_ptp(mgr.pairs, 24, ndof_per_node=6)
         assert G.shape[0] == 0
         assert len(active_idx) == 0
 
     def test_contact_force_from_lambdas(self):
-        """λ からの接触力計算が正しいこと."""
+        """λ からの接触力計算（G^T @ λ）が作用反作用を満たすこと."""
         from xkep_cae.contact.pair import ContactPair, ContactState, ContactStatus
 
         mgr = ContactManager()
@@ -456,9 +452,10 @@ class TestConstraintJacobianAndForce:
         )
         mgr.pairs = [pair]
 
-        lam_all = np.array([100.0])
         ndof = 24
-        f_c = _compute_contact_force_from_lambdas(mgr, lam_all, ndof, ndof_per_node=6)
+        G, active_idx = _build_constraint_jacobian_ptp(mgr.pairs, ndof, ndof_per_node=6)
+        lam_active = np.array([100.0])
+        f_c = G.T @ lam_active
 
         assert f_c.shape == (24,)
         # 作用反作用: A側とB側の合計力はゼロ
@@ -490,8 +487,10 @@ class TestConstraintJacobianAndForce:
         )
         mgr.pairs = [pair]
 
-        lam_all = np.array([0.0])
-        f_c = _compute_contact_force_from_lambdas(mgr, lam_all, 24, ndof_per_node=6)
+        ndof = 24
+        G, _ = _build_constraint_jacobian_ptp(mgr.pairs, ndof, ndof_per_node=6)
+        lam_active = np.array([0.0])
+        f_c = G.T @ lam_active
         np.testing.assert_allclose(f_c, 0.0, atol=1e-15)
 
 
