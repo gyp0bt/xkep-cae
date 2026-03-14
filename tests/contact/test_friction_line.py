@@ -17,7 +17,7 @@ def _make_spring_system(
     z_sep: float = 0.041,
     radii: float = 0.04,
 ):
-    """2本の直交ばね梁モデル（test_solver_ncp.py と同一）."""
+    """2本の直交ばね梁モデル（test_solver_contact.py と同一）."""
     node_coords_ref = np.array(
         [
             [0.0, 0.0, z_sep],
@@ -92,7 +92,7 @@ def _make_spring_system(
 # ============================================================
 
 
-class TestNCPFrictionBasic:
+class TestFrictionBasic:
     """NCP ソルバーの摩擦基本動作."""
 
     def test_friction_converges(self):
@@ -324,7 +324,7 @@ class TestNCPFrictionBasic:
 # ============================================================
 
 
-class TestNCPLineContactBasic:
+class TestLineContactBasic:
     """NCP ソルバーの line contact 統合テスト."""
 
     def test_line_contact_converges(self):
@@ -489,7 +489,7 @@ class TestNCPLineContactBasic:
 # ============================================================
 
 
-class TestNCPLineContactFriction:
+class TestLineContactFriction:
     """NCP + line contact + friction の複合テスト."""
 
     def test_all_features_converge(self):

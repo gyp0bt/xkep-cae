@@ -3,8 +3,8 @@
 2本の交差梁でOuter loopなし収束を検証。
 
 テスト構成:
-- TestNCPSolverBasic: 基本的な NCP ソルバーの動作確認
-- TestNCPSolverConvergence: 収束性・精度テスト
+- TestSolverBasic: 基本的な NCP ソルバーの動作確認
+- TestSolverConvergence: 収束性・精度テスト
 - TestNCPSolverComparison: 既存 AL ソルバーとの比較
 """
 
@@ -105,7 +105,7 @@ def _make_spring_system(
     )
 
 
-class TestNCPSolverBasic:
+class TestSolverBasic:
     """基本的な NCP ソルバーの動作確認."""
 
     def test_no_contact_case(self):
@@ -238,7 +238,7 @@ class TestNCPSolverBasic:
         assert result.u.shape == (ndof,)
 
 
-class TestNCPSolverConvergence:
+class TestSolverConvergence:
     """NCP ソルバーの収束性テスト."""
 
     def test_outer_loop_free_convergence(self):
@@ -289,7 +289,7 @@ class TestNCPSolverConvergence:
             f"NCP solver did not converge, {result.total_newton_iterations} iters"
         )
 
-    def test_fb_vs_min_ncp(self):
+    def test_fb_vs_min(self):
         """FB 関数と min 関数の両方で収束すること."""
         (
             coords,

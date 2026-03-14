@@ -27,7 +27,7 @@ def _make_spring_system(
     z_sep: float = 0.041,
     radii: float = 0.04,
 ):
-    """2本の直交ばね梁モデル（test_solver_ncp.py と同一）."""
+    """2本の直交ばね梁モデル（test_solver_contact.py と同一）."""
     node_coords_ref = np.array(
         [
             [0.0, 0.0, z_sep],
@@ -226,7 +226,7 @@ class TestSaddlePointGMRES:
 class TestBlockPreconditionerConvergence:
     """ブロック前処理付き NCP ソルバーの収束検証."""
 
-    def test_ncp_with_block_preconditioner_converges(self):
+    def test_block_preconditioner_converges(self):
         """ブロック前処理付き NCP ソルバーが収束すること."""
         (
             coords,

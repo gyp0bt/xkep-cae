@@ -37,7 +37,7 @@ _MESH_GAP = 0.15  # mm: 弦近似誤差による初期貫入防止
 # ====================================================================
 
 
-class TestNCP7StrandBendingOscillation:
+class Test7StrandBendingOscillation:
     """7本撚線のNCP曲げ揺動収束テスト.
 
     Phase 1: CR梁による90度曲げ（変位制御: 端部回転角を処方）
@@ -49,7 +49,7 @@ class TestNCP7StrandBendingOscillation:
     Mortar接触は接触チャタリング問題により将来課題。
     """
 
-    def test_ncp_7strand_bending_45deg(self):
+    def test_7strand_bending_45deg(self):
         """7本: 45度曲げのみ（揺動なし）でNCP収束を確認."""
         result = run_bending_oscillation(
             n_strands=7,
@@ -86,7 +86,7 @@ class TestNCP7StrandBendingOscillation:
             f"active={result.n_active_contacts}"
         )
 
-    def test_ncp_7strand_bending_90deg(self):
+    def test_7strand_bending_90deg(self):
         """7本: 90度曲げのみ（揺動なし）でNCP収束を確認."""
         result = run_bending_oscillation(
             n_strands=7,
@@ -124,7 +124,7 @@ class TestNCP7StrandBendingOscillation:
     @pytest.mark.xfail(
         reason="Phase2揺動の接触活性セット変動による不収束 (status-143)", strict=False
     )
-    def test_ncp_7strand_bending_oscillation_full(self):
+    def test_7strand_bending_oscillation_full(self):
         """7本: 90度曲げ + 揺動1周期（S3ベンチマーク）.
 
         S3要件: 非線形梁の90度曲げ + サイクル変位（揺動）でNCP収束。
@@ -176,14 +176,14 @@ class TestNCP7StrandBendingOscillation:
 # ====================================================================
 
 
-class TestNCP19StrandBendingOscillation:
+class Test19StrandBendingOscillation:
     """19本撚線のNCP曲げ揺動収束テスト.
 
     7本収束達成後の段階的スケールアップ。
     19本(1+6+12)で非線形曲げ+揺動を収束させる。
     """
 
-    def test_ncp_19strand_bending_45deg(self):
+    def test_19strand_bending_45deg(self):
         """19本: 45度曲げのみでNCP収束を試行."""
         result = run_bending_oscillation(
             n_strands=19,
@@ -222,7 +222,7 @@ class TestNCP19StrandBendingOscillation:
     @pytest.mark.xfail(
         reason="Phase2揺動の接触活性セット変動による不収束 (status-143)", strict=False
     )
-    def test_ncp_19strand_bending_oscillation(self):
+    def test_19strand_bending_oscillation(self):
         """19本: 45度曲げ + 揺動1周期でNCP収束を試行."""
         result = run_bending_oscillation(
             n_strands=19,
@@ -266,7 +266,7 @@ class TestNCP19StrandBendingOscillation:
 # ====================================================================
 
 
-class TestNCP7StrandBendingPhysics:
+class Test7StrandBendingPhysics:
     """7本NCP曲げ揺動の物理的妥当性テスト.
 
     曲げ変形後の先端変位・回転角が解析解と整合することを確認。

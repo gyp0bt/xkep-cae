@@ -166,7 +166,7 @@ def _fix_all_strand_starts(mesh):
     return np.array(sorted(fixed), dtype=int)
 
 
-def _solve_coated_3strand_ncp(
+def _solve_coated_3strand(
     load_type,
     load_value,
     *,
@@ -276,27 +276,27 @@ def _solve_coated_3strand_ncp(
 # ====================================================================
 
 
-class TestCoatedThreeStrandContactNCP:
+class TestCoatedThreeStrandContact:
     """被膜付き3本撚りの接触解析テスト（NCP版）."""
 
     def test_coated_tension_converges(self):
         """被膜付き3本撚り引張が収束（摩擦なし）."""
-        result, _, _ = _solve_coated_3strand_ncp("tension", 100.0)
+        result, _, _ = _solve_coated_3strand("tension", 100.0)
         assert result.converged, "被膜付き3本撚り引張が収束しなかった"
 
     def test_coated_lateral_converges(self):
         """被膜付き3本撚り横力が収束（摩擦なし）."""
-        result, _, _ = _solve_coated_3strand_ncp("lateral", 10.0)
+        result, _, _ = _solve_coated_3strand("lateral", 10.0)
         assert result.converged, "被膜付き3本撚り横力が収束しなかった"
 
     def test_coated_bending_converges(self):
         """被膜付き3本撚り曲げが収束（摩擦なし）."""
-        result, _, _ = _solve_coated_3strand_ncp("bending", 0.05)
+        result, _, _ = _solve_coated_3strand("bending", 0.05)
         assert result.converged, "被膜付き3本撚り曲げが収束しなかった"
 
     def test_coated_tension_with_friction(self):
         """被膜付き3本撚り引張 + 摩擦が収束."""
-        result, _, _ = _solve_coated_3strand_ncp(
+        result, _, _ = _solve_coated_3strand(
             "tension",
             50.0,
             use_friction=True,
@@ -310,12 +310,12 @@ class TestCoatedThreeStrandContactNCP:
     )
     def test_coated_vs_bare_stiffness(self):
         """被膜付きは素線のみより剛性が高い."""
-        r_coated, _, _ = _solve_coated_3strand_ncp(
+        r_coated, _, _ = _solve_coated_3strand(
             "tension",
             50.0,
             with_coating=True,
         )
-        r_bare, _, _ = _solve_coated_3strand_ncp(
+        r_bare, _, _ = _solve_coated_3strand(
             "tension",
             50.0,
             with_coating=False,

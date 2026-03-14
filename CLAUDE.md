@@ -60,6 +60,8 @@
 | AL solver (`solver_hooks.py`, `line_search.py`) | 完全削除（NCP一本化） | status-167 |
 | `NCPContactSolverProcess` | `NCPDynamic/QuasiStaticContactFrictionProcess` → 完全削除 | status-168 |
 | `ContactManager.compute_coating_*()` | `CoatingStrategy.*()` | status-169 |
+| `ContactManager.{max_layer,compute_active_layer_for_step,...}` | `staged_activation.*()` / `initial_penetration.*()` | status-170 |
+| テスト名 `*_ncp.*` | NCP サフィックス除去 | status-170 |
 
 ## 推奨ソルバー構成
 

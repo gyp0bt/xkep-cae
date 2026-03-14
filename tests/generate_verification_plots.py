@@ -3570,7 +3570,7 @@ def plot_beam_3d_stress_contour():
 # =====================================================================
 
 
-def _run_ncp_for_visualization(n_strands, *, layers=(1,), force_per_node=5.0):
+def _run_for_visualization(n_strands, *, layers=(1,), force_per_node=5.0):
     """可視化用に NCP 解析を実行し (mesh, result, mgr) を返す.
 
     径方向圧縮荷重で接触を活性化する。
@@ -3817,7 +3817,7 @@ def plot_contact_force_vectors_3d():
     from xkep_cae.contact.pair import ContactStatus
 
     print("    Running 7-strand NCP for contact force visualization...")
-    mesh, result, mgr = _run_ncp_for_visualization(7, layers=(1,))
+    mesh, result, mgr = _run_for_visualization(7, layers=(1,))
 
     if not result.converged:
         print("    WARNING: NCP did not converge, plotting partial result")
@@ -3996,7 +3996,7 @@ def plot_deformed_twisted_wire_3d():
     plt = _setup_matplotlib()
 
     print("    Running 7-strand NCP for deformed visualization...")
-    mesh, result, mgr = _run_ncp_for_visualization(7, layers=(1,))
+    mesh, result, mgr = _run_for_visualization(7, layers=(1,))
 
     wire_d = 0.002
     r_wire = wire_d / 2.0

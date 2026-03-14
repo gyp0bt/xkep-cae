@@ -16,9 +16,7 @@ import numpy as np
 from xkep_cae.contact.broadphase import broadphase_aabb
 from xkep_cae.contact.geometry import (
     build_contact_frame_batch,
-    closest_point_segments,
     closest_point_segments_batch,
-    compute_gap,
 )
 
 
@@ -605,121 +603,56 @@ class ContactManager:
     # -- ペナルティ初期化 ----
 
     def max_layer(self) -> int:
-        """elem_layer_map の最大層番号を返す（未設定なら 0）."""
-        lm = self.config.elem_layer_map
-        if not lm:
-            return 0
-        return max(lm.values()) if lm else 0
+        """elem_layer_map の最大層番号を返す（未設定なら 0）.
+
+        .. deprecated:: status-170
+            ``staged_activation.max_layer()`` を使用してください。
+        """
+        from xkep_cae.contact.staged_activation import max_layer
+
+        return max_layer(self.config.elem_layer_map)
 
     def compute_active_layer_for_step(self, step: int, n_load_steps: int) -> int:
-        """段階的アクティベーション: 現在ステップで許容する最大層番号を計算.
+        """段階的アクティベーション: deprecated ラッパー.
 
-        staged_activation_steps ステップをかけて層を段階的にオンにする。
-        例: 3層構造で staged_activation_steps=6, n_load_steps=20 の場合:
-          - step 1-2: layer 0 のみ（中心素線どうし）
-          - step 3-4: layer 0-1
-          - step 5-6: layer 0-2（全層）
-          - step 7+: 全層
-
-        Args:
-            step: 現在の荷重ステップ（1-indexed）
-            n_load_steps: 全荷重ステップ数
-
-        Returns:
-            最大許容層番号
+        .. deprecated:: status-170
+            ``staged_activation.compute_active_layer_for_step()`` を使用。
         """
-        n_staged = self.config.staged_activation_steps
-        if n_staged <= 0:
-            return self.max_layer()
+        from xkep_cae.contact.staged_activation import compute_active_layer_for_step
 
-        max_lay = self.max_layer()
-        if max_lay <= 0:
-            return 0
-
-        # n_staged ステップで全層をオンにする
-        # ステップ per 層 = n_staged / (max_lay + 1)
-        steps_per_layer = max(1, n_staged // (max_lay + 1))
-        current_max_layer = min(max_lay, (step - 1) // steps_per_layer)
-        return current_max_layer
+        return compute_active_layer_for_step(
+            step, self.config.staged_activation_steps, self.config.elem_layer_map
+        )
 
     def filter_pairs_by_layer(self, max_layer: int) -> None:
-        """許容層より上の接触ペアを INACTIVE にする.
+        """許容層フィルタ: deprecated ラッパー.
 
-        elem_layer_map が設定されている場合、両方の要素の層番号が
-        max_layer 以下であるペアのみをアクティブに維持する。
-
-        Args:
-            max_layer: 許容する最大層番号
+        .. deprecated:: status-170
+            ``staged_activation.filter_pairs_by_layer()`` を使用。
         """
-        lm = self.config.elem_layer_map
-        if not lm:
-            return
+        from xkep_cae.contact.staged_activation import filter_pairs_by_layer
 
-        for pair in self.pairs:
-            if pair.state.status == ContactStatus.INACTIVE:
-                continue
-            layer_a = lm.get(pair.elem_a, 0)
-            layer_b = lm.get(pair.elem_b, 0)
-            # 接触は層間のペア。両方の層が max_layer 以内であること
-            if layer_a > max_layer or layer_b > max_layer:
-                pair.state.status = ContactStatus.INACTIVE
+        filter_pairs_by_layer(self.pairs, max_layer, self.config.elem_layer_map)
 
     def count_same_layer_pairs(self) -> int:
-        """同層ペア数を返す（除外効果の事前評価用）.
+        """同層ペア数: deprecated ラッパー.
 
-        elem_layer_map が設定されている場合、両要素が同じ層に属する
-        ACTIVE ペアの数を返す。
-
-        Returns:
-            同層ペア数
+        .. deprecated:: status-170
+            ``staged_activation.count_same_layer_pairs()`` を使用。
         """
-        lm = self.config.elem_layer_map
-        if not lm:
-            return 0
-        count = 0
-        for pair in self.pairs:
-            if pair.state.status == ContactStatus.INACTIVE:
-                continue
-            layer_a = lm.get(pair.elem_a, -1)
-            layer_b = lm.get(pair.elem_b, -1)
-            if layer_a == layer_b and layer_a >= 0:
-                count += 1
-        return count
+        from xkep_cae.contact.staged_activation import count_same_layer_pairs
+
+        return count_same_layer_pairs(self.pairs, self.config.elem_layer_map)
 
     def check_initial_penetration(self, node_coords: np.ndarray) -> int:
-        """初期貫入をチェックする.
+        """初期貫入チェック: deprecated ラッパー.
 
-        被膜モデル有効時: 芯線半径ベースでギャップを計算。
-        被膜モデル無効時: 被膜込み半径（total radius）でギャップを計算。
-
-        Args:
-            node_coords: 初期節点座標 (n_nodes, 3)
-
-        Returns:
-            初期貫入ペア数
+        .. deprecated:: status-170
+            ``initial_penetration.check_initial_penetration()`` を使用。
         """
-        coords = np.asarray(node_coords, dtype=float)
-        n_pen = 0
-        _use_coating = self.config.coating_stiffness > 0.0
+        from xkep_cae.contact.initial_penetration import check_initial_penetration
 
-        for pair in self.pairs:
-            xA0 = coords[pair.nodes_a[0]]
-            xA1 = coords[pair.nodes_a[1]]
-            xB0 = coords[pair.nodes_b[0]]
-            xB1 = coords[pair.nodes_b[1]]
-
-            result = closest_point_segments(xA0, xA1, xB0, xB1)
-            if _use_coating:
-                # 被膜モデル: 芯線半径ベースのギャップ
-                gap = compute_gap(result.distance, pair.core_radius_a, pair.core_radius_b)
-            else:
-                # 従来モデル: 被膜込み半径ベース
-                gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
-
-            if gap < 0.0:
-                n_pen += 1
-
-        return n_pen
+        return check_initial_penetration(self.pairs, node_coords, self.config.coating_stiffness)
 
     def adjust_initial_positions(
         self,
@@ -728,79 +661,16 @@ class ContactManager:
         *,
         max_iterations: int = 10,
     ) -> tuple[np.ndarray, int, int]:
-        """初期節点座標を調整して貫入解消・ギャップ閉鎖を行う.
+        """初期座標調整: deprecated ラッパー.
 
-        各接触ペアのギャップを検査し:
-          - gap < 0（貫入）: 節点を法線方向に離してgap = 0にする
-          - 0 <= gap < position_tolerance: 節点を法線方向に近づけてgap = 0にする
-
-        調整は反復的に行い、ペア間の干渉を解消する。
-
-        Args:
-            node_coords: 初期節点座標 (n_nodes, 3)。**破壊的に変更される**。
-            position_tolerance: ギャップ閉鎖の閾値 [m]。
-                gap < tolerance のペアをgap=0に調整する。
-            max_iterations: 調整反復の上限
-
-        Returns:
-            (adjusted_coords, n_penetration_fixed, n_gap_closed)
+        .. deprecated:: status-170
+            ``initial_penetration.adjust_initial_positions()`` を使用。
         """
-        coords = np.asarray(node_coords, dtype=float)
-        n_pen_fixed = 0
-        n_gap_closed = 0
+        from xkep_cae.contact.initial_penetration import adjust_initial_positions
 
-        for _iteration in range(max_iterations):
-            # 各ノードの補正ベクトルを蓄積
-            corrections = np.zeros_like(coords)
-            correction_count = np.zeros(len(coords), dtype=int)
-            any_adjusted = False
-
-            for pair in self.pairs:
-                nA0, nA1 = int(pair.nodes_a[0]), int(pair.nodes_a[1])
-                nB0, nB1 = int(pair.nodes_b[0]), int(pair.nodes_b[1])
-                xA0, xA1 = coords[nA0], coords[nA1]
-                xB0, xB1 = coords[nB0], coords[nB1]
-
-                result = closest_point_segments(xA0, xA1, xB0, xB1)
-                gap = compute_gap(result.distance, pair.radius_a, pair.radius_b)
-
-                if gap >= position_tolerance:
-                    continue  # 調整不要
-
-                # 調整量: gap = 0 にするための移動量
-                # gap < 0: 貫入 → 離す（+方向に移動）
-                # 0 <= gap < tol: 近接 → 近づける（-方向に移動）
-                adjust_dist = -gap  # 正=離す、負=近づける
-                half_adjust = adjust_dist / 2.0
-
-                # 法線方向（AからBへ向かう方向）
-                normal = result.normal
-                if float(np.linalg.norm(normal)) < 1e-15:
-                    continue
-
-                # セグメントAを+法線方向に、Bを-法線方向に移動
-                # 各セグメントの2節点に均等配分
-                for nid in [nA0, nA1]:
-                    corrections[nid] -= half_adjust * normal
-                    correction_count[nid] += 1
-                for nid in [nB0, nB1]:
-                    corrections[nid] += half_adjust * normal
-                    correction_count[nid] += 1
-
-                any_adjusted = True
-                if gap < 0:
-                    n_pen_fixed += 1
-                else:
-                    n_gap_closed += 1
-
-            if not any_adjusted:
-                break
-
-            # 補正を適用（複数ペアから補正を受けるノードは平均化）
-            mask = correction_count > 0
-            coords[mask] += corrections[mask] / correction_count[mask, np.newaxis]
-
-        return coords, n_pen_fixed, n_gap_closed
+        return adjust_initial_positions(
+            self.pairs, node_coords, position_tolerance, max_iterations=max_iterations
+        )
 
     def compute_coating_forces(
         self,

@@ -182,7 +182,7 @@ def _make_cr_assemblers(node_coords_ref, connectivity, ndof_total):
     return assemble_tangent, assemble_internal_force
 
 
-def _solve_contact_ncp(
+def _solve_contact(
     assembler_type,
     n_seg_a=_DEFAULT_N_SEG,
     n_seg_b=_DEFAULT_N_SEG,
@@ -268,29 +268,29 @@ def _solve_contact_ncp(
 # ====================================================================
 
 
-class TestTimo3DContactDetectionNCP:
+class TestTimo3DContactDetection:
     """Timoshenko 3D 梁での接触検出テスト（NCP版）."""
 
     def test_contact_detected(self):
         """z方向押し下げで接触が検出される."""
-        result, mgr, _, _ = _solve_contact_ncp("timo3d", f_z=500.0)
+        result, mgr, _, _ = _solve_contact("timo3d", f_z=500.0)
         assert result.converged
         active = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
         assert len(active) > 0, "接触が検出されていない"
 
     def test_no_contact_without_force(self):
         """押し下げ力なしでは接触しない."""
-        result, mgr, _, _ = _solve_contact_ncp("timo3d", f_z=0.0)
+        result, mgr, _, _ = _solve_contact("timo3d", f_z=0.0)
         active = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
         assert len(active) == 0, "力なしで接触が発生した"
 
 
-class TestTimo3DPenetrationBoundNCP:
+class TestTimo3DPenetrationBound:
     """Timoshenko 3D 梁での貫入量制限テスト（NCP版）."""
 
     def test_penetration_bounded(self):
         """NCP法により貫入が制限される."""
-        result, mgr, _, _ = _solve_contact_ncp("timo3d", f_z=500.0)
+        result, mgr, _, _ = _solve_contact("timo3d", f_z=500.0)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -301,12 +301,12 @@ class TestTimo3DPenetrationBoundNCP:
                 assert pen_ratio < _TOL_PEN_RATIO, f"貫入比 {pen_ratio:.4f} > {_TOL_PEN_RATIO}"
 
 
-class TestTimo3DMultiSegmentNCP:
+class TestTimo3DMultiSegment:
     """Timoshenko 3D マルチセグメント梁での接触テスト（NCP版）."""
 
     def test_8_segment_contact(self):
         """8分割梁での接触検出と貫入制限."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "timo3d",
             n_seg_a=8,
             n_seg_b=8,
@@ -329,29 +329,29 @@ class TestTimo3DMultiSegmentNCP:
 # ====================================================================
 
 
-class TestCRBeamContactDetectionNCP:
+class TestCRBeamContactDetection:
     """CR梁での接触検出テスト（NCP版）."""
 
     def test_contact_detected(self):
         """CR梁でz方向押し下げにより接触が検出される."""
-        result, mgr, _, _ = _solve_contact_ncp("cr", f_z=500.0)
+        result, mgr, _, _ = _solve_contact("cr", f_z=500.0)
         assert result.converged
         active = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
         assert len(active) > 0, "CR梁で接触が検出されていない"
 
     def test_no_contact_without_force(self):
         """CR梁で押し下げ力なしでは接触しない."""
-        result, mgr, _, _ = _solve_contact_ncp("cr", f_z=0.0)
+        result, mgr, _, _ = _solve_contact("cr", f_z=0.0)
         active = [p for p in mgr.pairs if p.state.status != ContactStatus.INACTIVE]
         assert len(active) == 0
 
 
-class TestCRBeamPenetrationBoundNCP:
+class TestCRBeamPenetrationBound:
     """CR梁での貫入量制限テスト（NCP版）."""
 
     def test_penetration_bounded(self):
         """CR梁でNCP法により貫入が制限される."""
-        result, mgr, _, _ = _solve_contact_ncp("cr", f_z=500.0)
+        result, mgr, _, _ = _solve_contact("cr", f_z=500.0)
         assert result.converged
 
         for pair in mgr.pairs:
@@ -364,12 +364,12 @@ class TestCRBeamPenetrationBoundNCP:
                 )
 
 
-class TestCRBeamMultiSegmentNCP:
+class TestCRBeamMultiSegment:
     """CR梁マルチセグメント接触テスト（NCP版）."""
 
     def test_8_segment_contact(self):
         """CR梁8分割での接触検出と貫入制限."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "cr",
             n_seg_a=8,
             n_seg_b=8,
@@ -392,14 +392,14 @@ class TestCRBeamMultiSegmentNCP:
 # ====================================================================
 
 
-class TestTimo3DVsCRConsistencyNCP:
+class TestTimo3DVsCRConsistency:
     """小変位でのTimo3D vs CR梁の一致性テスト（NCP版）."""
 
     def test_small_load_consistency(self):
         """小荷重での変位が20%以内で一致."""
         f_z = 200.0
-        result_t, _, _, _ = _solve_contact_ncp("timo3d", f_z=f_z)
-        result_c, _, _, _ = _solve_contact_ncp("cr", f_z=f_z)
+        result_t, _, _, _ = _solve_contact("timo3d", f_z=f_z)
+        result_c, _, _, _ = _solve_contact("cr", f_z=f_z)
 
         assert result_t.converged
         assert result_c.converged
@@ -420,12 +420,12 @@ class TestTimo3DVsCRConsistencyNCP:
 # ====================================================================
 
 
-class TestRealBeamFrictionContactNCP:
+class TestRealBeamFrictionContact:
     """実梁要素の摩擦付き接触テスト（NCP版）."""
 
     def test_timo3d_friction_converges(self):
         """Timo3D梁の摩擦付き接触が収束する."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "timo3d",
             f_z=500.0,
             use_friction=True,
@@ -439,7 +439,7 @@ class TestRealBeamFrictionContactNCP:
     )
     def test_cr_friction_converges(self):
         """CR梁の摩擦付き接触が収束する."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "cr",
             f_z=500.0,
             use_friction=True,
@@ -449,8 +449,8 @@ class TestRealBeamFrictionContactNCP:
 
     def test_friction_does_not_worsen_penetration(self):
         """摩擦が貫入量を悪化させない."""
-        _, mgr_nf, _, _ = _solve_contact_ncp("timo3d", f_z=200.0, use_friction=False)
-        _, mgr_f, _, _ = _solve_contact_ncp(
+        _, mgr_nf, _, _ = _solve_contact("timo3d", f_z=200.0, use_friction=False)
+        _, mgr_f, _, _ = _solve_contact(
             "timo3d",
             f_z=200.0,
             use_friction=True,
@@ -474,12 +474,12 @@ class TestRealBeamFrictionContactNCP:
 # ====================================================================
 
 
-class TestLongRangeSlideNCP:
+class TestLongRangeSlide:
     """長距離スライド接触テスト（NCP版）."""
 
     def test_slide_contact_detected(self):
         """スライド荷重で接触が検出される."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "timo3d",
             f_z=200.0,
             f_x=100.0,
@@ -493,7 +493,7 @@ class TestLongRangeSlideNCP:
 
     def test_slide_penetration_bounded(self):
         """スライド中も貫入量が許容範囲内."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "timo3d",
             f_z=200.0,
             f_x=100.0,
@@ -512,7 +512,7 @@ class TestLongRangeSlideNCP:
 
     def test_cr_slide_converges(self):
         """CR梁のスライド接触が収束する."""
-        result, mgr, _, _ = _solve_contact_ncp(
+        result, mgr, _, _ = _solve_contact(
             "cr",
             f_z=200.0,
             f_x=100.0,
