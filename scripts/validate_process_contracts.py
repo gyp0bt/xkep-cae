@@ -30,6 +30,7 @@ _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
 
 from xkep_cae.process.base import AbstractProcess  # noqa: E402
+from xkep_cae.process.registry import ProcessRegistry  # noqa: E402
 
 
 def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
@@ -40,7 +41,7 @@ def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
     except (SyntaxError, OSError):
         return
 
-    reg = registry if registry is not None else AbstractProcess._registry
+    reg = registry if registry is not None else ProcessRegistry.default()
 
     for node in ast.walk(tree):
         if not isinstance(node, ast.ClassDef):
@@ -416,7 +417,7 @@ def main() -> int:
     print("\nモジュールインポート中...")
     _import_all_modules()
 
-    registry = AbstractProcess._registry
+    registry = ProcessRegistry.default()
     print(f"レジストリ登録プロセス数: {len(registry)}")
     for name in sorted(registry.keys()):
         cls = registry[name]

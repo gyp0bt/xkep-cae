@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from xkep_cae.process.base import AbstractProcess
+from xkep_cae.process.registry import ProcessRegistry
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")
@@ -140,7 +141,7 @@ class ProcessRunner:
     def _validate_deps(self, process: AbstractProcess) -> None:
         """uses 依存が全てレジストリに登録されているか検証."""
         effective = process.effective_uses()
-        registry = AbstractProcess._registry
+        registry = ProcessRegistry.default()
         for dep in effective:
             dep_name = dep.__name__
             if dep_name not in registry:
