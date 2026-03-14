@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from xkep_cae.process.base import ProcessMeta
-from xkep_cae.process.categories import SolverProcess
+from xkep_cae.process.categories import CompatibilityProcess, SolverProcess
 
 
 @dataclass(frozen=True)
@@ -109,7 +109,7 @@ class AutoEALProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
         return PenaltyOutput(k_pen=self.compute_k_pen(input_data.step, input_data.total_steps))
 
 
-class ManualPenaltyProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
+class ManualPenaltyProcess(CompatibilityProcess[PenaltyInput, PenaltyOutput]):
     """手動指定のペナルティ剛性.
 
     .. deprecated::
