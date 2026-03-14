@@ -166,6 +166,29 @@ class PenaltyStrategy(Protocol):
 
 
 @runtime_checkable
+class LinearSolverStrategy(Protocol):
+    """線形連立方程式の解法を規定する.
+
+    実装:
+    - DirectLinearSolver: spsolve 直接法
+    - IterativeLinearSolver: GMRES + ILU 前処理
+    - AutoLinearSolver: DOF 閾値ベースで自動選択
+    """
+
+    def solve(self, K: sp.csr_matrix, rhs: np.ndarray) -> np.ndarray:
+        """K x = rhs を解く.
+
+        Args:
+            K: 剛性行列 (CSR)
+            rhs: 右辺ベクトル
+
+        Returns:
+            解ベクトル x
+        """
+        ...
+
+
+@runtime_checkable
 class CoatingStrategy(Protocol):
     """被膜接触モデルの評価方法を規定する.
 

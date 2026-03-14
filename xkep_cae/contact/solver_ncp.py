@@ -172,57 +172,20 @@ def _solve_linear_system(
 ) -> np.ndarray:
     """線形連立方程式を解く.
 
+    内部的に LinearSolverStrategy に委譲する。
     mode="auto" では DOF 閾値に基づいて直接法と反復法を自動選択する:
       - DOF < gmres_dof_threshold: 直接法（spsolve）
       - DOF >= gmres_dof_threshold: 反復法（GMRES + ILU 前処理）
     """
-    import warnings
+    from xkep_cae.process.strategies.linear_solver import create_linear_solver
 
-    import scipy.sparse.linalg as spla
-
-    if mode == "direct":
-        return spla.spsolve(K, rhs)
-
-    if mode == "iterative":
-        K_csc = K.tocsc()
-        try:
-            ilu = spla.spilu(K_csc, drop_tol=ilu_drop_tol)
-            M = spla.LinearOperator(K.shape, ilu.solve)
-        except RuntimeError:
-            M = None
-        _restart_k = min(max(30, K.shape[0] // 10), 200)
-        x, info = spla.gmres(
-            K, rhs, M=M, atol=iterative_tol, restart=_restart_k, maxiter=max(500, K.shape[0])
-        )
-        if info != 0:
-            x = spla.spsolve(K, rhs)
-        return x
-
-    # auto: DOF 閾値ベースで選択
-    n = K.shape[0]
-    if n >= gmres_dof_threshold:
-        return _solve_linear_system(
-            K,
-            rhs,
-            mode="iterative",
-            iterative_tol=iterative_tol,
-            ilu_drop_tol=ilu_drop_tol,
-        )
-
-    # 小規模: direct → iterative fallback
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        x = spla.spsolve(K, rhs)
-    for w in caught:
-        if "MatrixRankWarning" in str(w.category.__name__) or "singular" in str(w.message).lower():
-            return _solve_linear_system(
-                K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
-            )
-    if not np.all(np.isfinite(x)):
-        return _solve_linear_system(
-            K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
-        )
-    return x
+    solver = create_linear_solver(
+        mode=mode,
+        iterative_tol=iterative_tol,
+        ilu_drop_tol=ilu_drop_tol,
+        gmres_dof_threshold=gmres_dof_threshold,
+    )
+    return solver.solve(K, rhs)
 
 
 def _apply_bc(K_lil, rhs, fixed_dofs):
