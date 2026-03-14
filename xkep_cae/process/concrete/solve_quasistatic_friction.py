@@ -76,9 +76,7 @@ class NCPQuasiStaticContactFrictionProcess(
         return {
             "name": type(self).__name__,
             "module": self.meta.module,
-            "uses": [
-                {"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime
-            ],
+            "uses": [{"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime],
         }
 
     def process(self, input_data: QuasiStaticFrictionInputData) -> SolverResultData:

@@ -80,6 +80,7 @@
 | [166](status-166.md) | 2026-03-14 | ProcessRegistry 導入 — _registry dict のクラス昇格 | 2477+327p |
 | [167](status-167.md) | 2026-03-14 | AL完全削除 — プロセスアーキテクチャ完全移行 Session 1 | ~2260+327p |
 | [168](status-168.md) | 2026-03-14 | NCP ソルバーリファクタリング — solver_ncp.py 分離 + Process 移行 | ~2260+327p |
+| [169](status-169.md) | 2026-03-14 | CoatingStrategy 抽出 — ContactManager 被膜メソッド Strategy 移行 | ~2260+341p |
 
 ## アーカイブ（001〜096）
 

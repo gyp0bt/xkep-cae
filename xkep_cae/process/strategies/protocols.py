@@ -163,3 +163,73 @@ class PenaltyStrategy(Protocol):
     def compute_k_pen(self, step: int, total_steps: int) -> float:
         """現在ステップのペナルティ剛性."""
         ...
+
+
+@runtime_checkable
+class CoatingStrategy(Protocol):
+    """被膜接触モデルの評価方法を規定する.
+
+    実装:
+    - KelvinVoigtCoating: Kelvin-Voigt 弾性+粘性被膜モデル（status-137/140）
+    - NoCoating: 被膜なし（ゼロ返却）
+    """
+
+    def forces(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        config: object,
+        dt: float,
+    ) -> np.ndarray:
+        """被膜圧縮による接触力ベクトルを計算.
+
+        Kelvin-Voigt: f = k*δ + c*δ̇
+
+        Returns:
+            f_coat: (ndof,) 被膜法線力
+        """
+        ...
+
+    def stiffness(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        config: object,
+        ndof_total: int,
+        dt: float,
+    ) -> sp.csr_matrix:
+        """被膜接触の接線剛性行列.
+
+        Returns:
+            K_coat: (ndof_total, ndof_total) CSR
+        """
+        ...
+
+    def friction_forces(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        config: object,
+        u_cur: np.ndarray,
+        u_ref: np.ndarray,
+    ) -> np.ndarray:
+        """被膜摩擦力を計算.
+
+        Returns:
+            f_fric: (ndof,) 被膜摩擦力
+        """
+        ...
+
+    def friction_stiffness(
+        self,
+        pairs: list,
+        node_coords: np.ndarray,
+        config: object,
+        ndof_total: int,
+    ) -> sp.csr_matrix:
+        """被膜摩擦の接線剛性行列.
+
+        Returns:
+            K_fric: (ndof_total, ndof_total) CSR
+        """
+        ...
