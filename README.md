@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 341 processテスト** — 2026-03-14時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**~2260テスト + 356 processテスト** — 2026-03-14時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
@@ -27,7 +27,7 @@
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了 |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了 |
 | **大規模収束** | **19本曲げ揺動収束、37本径方向圧縮収束** | **凍結中** |
-| **Process Architecture** | **Phase 9 完遂、AL完全削除、テスト名正規化+純関数化 (status-170)** | **[Phase 8 完遂](xkep_cae/process/docs/phase8-design.md)** |
+| **Process Architecture** | **Phase 9 完遂、AL完全削除、deprecated除去+LinearSolverStrategy (status-171)** | **[Phase 8 完遂](xkep_cae/process/docs/phase8-design.md)** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
