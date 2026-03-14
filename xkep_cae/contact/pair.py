@@ -807,61 +807,18 @@ class ContactManager:
         node_coords: np.ndarray,
         dt: float = 1.0,
     ) -> np.ndarray:
-        """被膜圧縮による接触力ベクトルを計算する.
+        """被膜圧縮による接触力ベクトル（deprecated: CoatingStrategy を使用）."""
+        import warnings
 
-        Kelvin-Voigt被膜モデル: 弾性スプリング + 粘性ダッシュポット。
-        被膜圧縮量 δ = max(0, t_coat_total - gap_core) に対し
-        f_coat = k * δ + c * δ̇ の法線力を生成する。
+        warnings.warn(
+            "ContactManager.compute_coating_forces() は非推奨です。"
+            "CoatingStrategy.forces() を使用してください。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from xkep_cae.process.strategies.coating import KelvinVoigtCoatingProcess
 
-        δ̇ ≈ (δ - δ_prev) / dt （後退差分近似）
-
-        Args:
-            node_coords: 節点座標 (n_nodes, 3)
-            dt: 時間増分 [s]（粘性項の計算に使用）
-
-        Returns:
-            f_coat: 節点力ベクトル (ndof,)
-        """
-        k_coat = self.config.coating_stiffness
-        c_coat = self.config.coating_damping
-        coords = np.asarray(node_coords, dtype=float)
-        n_nodes = len(coords)
-        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-        f_coat = np.zeros(n_nodes * ndof_per_node)
-
-        for pair in self.pairs:
-            cc = pair.state.coating_compression
-            if cc <= 0.0 and pair.state.coating_compression_prev <= 0.0:
-                continue
-
-            # Kelvin-Voigt: f = k * δ + c * δ̇
-            f_n = k_coat * cc
-            if c_coat > 0.0 and dt > 0.0:
-                delta_dot = (cc - pair.state.coating_compression_prev) / dt
-                f_n += c_coat * delta_dot
-
-            if abs(f_n) < 1e-30:
-                continue
-
-            n_vec = pair.state.normal
-            s = pair.state.s
-            t = pair.state.t
-
-            nA0 = int(pair.nodes_a[0])
-            nA1 = int(pair.nodes_a[1])
-            nB0 = int(pair.nodes_b[0])
-            nB1 = int(pair.nodes_b[1])
-
-            fA = -f_n * n_vec
-            fB = f_n * n_vec
-
-            dpn = ndof_per_node
-            f_coat[nA0 * dpn : nA0 * dpn + 3] += (1.0 - s) * fA
-            f_coat[nA1 * dpn : nA1 * dpn + 3] += s * fA
-            f_coat[nB0 * dpn : nB0 * dpn + 3] += (1.0 - t) * fB
-            f_coat[nB1 * dpn : nB1 * dpn + 3] += t * fB
-
-        return f_coat
+        return KelvinVoigtCoatingProcess().forces(self.pairs, node_coords, self.config, dt)
 
     def compute_coating_stiffness(
         self,
@@ -869,73 +826,20 @@ class ContactManager:
         ndof_total: int,
         dt: float = 1.0,
     ) -> np.ndarray:
-        """被膜Kelvin-Voigtモデルの接線剛性行列を計算する.
+        """被膜接線剛性行列（deprecated: CoatingStrategy を使用）."""
+        import warnings
 
-        K_coat = (k_coat + c_coat/dt) * N^T (n ⊗ n) N
+        warnings.warn(
+            "ContactManager.compute_coating_stiffness() は非推奨です。"
+            "CoatingStrategy.stiffness() を使用してください。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from xkep_cae.process.strategies.coating import KelvinVoigtCoatingProcess
 
-        弾性項 k_coat と粘性項 c_coat/dt の合算が接線剛性となる。
-        後退Euler離散化により c*δ̇ ≈ c*(δ-δ_prev)/dt の δ に対する微分が c/dt。
-
-        Args:
-            node_coords: 節点座標 (n_nodes, 3)
-            ndof_total: 全体自由度数
-            dt: 時間増分 [s]（粘性項の接線剛性 c/dt に使用）
-
-        Returns:
-            K_coat: (ndof_total, ndof_total) CSR形式被膜剛性行列
-        """
-        import scipy.sparse as sp
-
-        k_coat = self.config.coating_stiffness
-        c_coat = self.config.coating_damping
-        # 実効接線剛性: 弾性 + 粘性（後退Euler）
-        k_eff = k_coat
-        if c_coat > 0.0 and dt > 0.0:
-            k_eff += c_coat / dt
-        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[float] = []
-
-        for pair in self.pairs:
-            cc = pair.state.coating_compression
-            if cc <= 1e-15:
-                continue
-
-            n_vec = pair.state.normal
-            s = pair.state.s
-            t = pair.state.t
-
-            nA0 = int(pair.nodes_a[0])
-            nA1 = int(pair.nodes_a[1])
-            nB0 = int(pair.nodes_b[0])
-            nB1 = int(pair.nodes_b[1])
-
-            weights = [-(1.0 - s), -s, (1.0 - t), t]
-            node_ids = [nA0, nA1, nB0, nB1]
-
-            gdofs = []
-            g_n = np.zeros(12)
-            for idx, (w, nid) in enumerate(zip(weights, node_ids, strict=True)):
-                base = nid * ndof_per_node
-                gdofs.extend([base, base + 1, base + 2])
-                g_n[3 * idx : 3 * idx + 3] = w * n_vec
-
-            K_local = k_eff * np.outer(g_n, g_n)
-
-            for i_loc in range(12):
-                for j_loc in range(12):
-                    val = K_local[i_loc, j_loc]
-                    if abs(val) > 1e-30:
-                        rows.append(gdofs[i_loc])
-                        cols.append(gdofs[j_loc])
-                        data.append(val)
-
-        if not data:
-            return sp.csr_matrix((ndof_total, ndof_total))
-
-        return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
+        return KelvinVoigtCoatingProcess().stiffness(
+            self.pairs, node_coords, self.config, ndof_total, dt
+        )
 
     def compute_coating_friction_forces(
         self,
@@ -943,189 +847,40 @@ class ContactManager:
         u_cur: np.ndarray,
         u_ref: np.ndarray,
     ) -> np.ndarray:
-        """被膜接触面のCoulomb摩擦力を計算する.
+        """被膜摩擦力（deprecated: CoatingStrategy を使用）."""
+        import warnings
 
-        被膜法線力 p_n = k_coat * δ に対し Coulomb return mapping を適用。
-        接線変位増分 Δu_t は梁-梁摩擦と同様に接線面投影で算出。
+        warnings.warn(
+            "ContactManager.compute_coating_friction_forces() は非推奨です。"
+            "CoatingStrategy.friction_forces() を使用してください。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from xkep_cae.process.strategies.coating import KelvinVoigtCoatingProcess
 
-        Args:
-            node_coords: 現在の節点座標 (n_nodes, 3)
-            u_cur: 現在の変位ベクトル (ndof,)
-            u_ref: 前ステップの変位ベクトル (ndof,)
-
-        Returns:
-            f_fric: 被膜摩擦力ベクトル (ndof,)
-        """
-        from xkep_cae.contact.law_friction import return_mapping_core
-
-        mu = self.config.coating_mu
-        if mu <= 0.0:
-            return np.zeros_like(u_cur)
-
-        k_coat = self.config.coating_stiffness
-        k_t_ratio = self.config.coating_k_t_ratio
-        k_t = k_coat * k_t_ratio
-
-        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-        n_nodes = len(node_coords)
-        f_fric = np.zeros(n_nodes * ndof_per_node)
-        du = u_cur - u_ref
-
-        for pair in self.pairs:
-            cc = pair.state.coating_compression
-            if cc <= 0.0:
-                # 非接触: 摩擦履歴リセット
-                pair.state.coating_z_t[:] = 0.0
-                pair.state.coating_stick = True
-                pair.state.coating_q_trial_norm = 0.0
-                pair.state.coating_dissipation = 0.0
-                continue
-
-            # 被膜法線力（弾性成分のみ — 摩擦のCoulomb条件に使用）
-            p_n = k_coat * cc
-
-            # 接線相対変位増分
-            s = pair.state.s
-            t = pair.state.t
-            t1 = pair.state.tangent1
-            t2 = pair.state.tangent2
-
-            nA0, nA1 = int(pair.nodes_a[0]), int(pair.nodes_a[1])
-            nB0, nB1 = int(pair.nodes_b[0]), int(pair.nodes_b[1])
-            dpn = ndof_per_node
-            du_A0 = du[nA0 * dpn : nA0 * dpn + 3]
-            du_A1 = du[nA1 * dpn : nA1 * dpn + 3]
-            du_B0 = du[nB0 * dpn : nB0 * dpn + 3]
-            du_B1 = du[nB1 * dpn : nB1 * dpn + 3]
-
-            du_A = (1.0 - s) * du_A0 + s * du_A1
-            du_B = (1.0 - t) * du_B0 + t * du_B1
-            du_rel = du_B - du_A
-
-            delta_ut = np.array([float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))])
-
-            # Coulomb return mapping（純粋関数）
-            q, is_stick, q_trial_norm, dissipation = return_mapping_core(
-                pair.state.coating_z_t.copy(), delta_ut, k_t, p_n, mu
-            )
-
-            # 状態更新
-            pair.state.coating_z_t = q.copy()
-            pair.state.coating_stick = is_stick
-            pair.state.coating_q_trial_norm = q_trial_norm
-            pair.state.coating_dissipation = dissipation
-
-            # 接線力を節点力に分配
-            # f_t = q[0]*t1 + q[1]*t2 (3D接線力ベクトル)
-            f_t_3d = q[0] * t1 + q[1] * t2
-
-            # A側: -f_t (反力), B側: +f_t
-            fA = -f_t_3d
-            fB = f_t_3d
-
-            f_fric[nA0 * dpn : nA0 * dpn + 3] += (1.0 - s) * fA
-            f_fric[nA1 * dpn : nA1 * dpn + 3] += s * fA
-            f_fric[nB0 * dpn : nB0 * dpn + 3] += (1.0 - t) * fB
-            f_fric[nB1 * dpn : nB1 * dpn + 3] += t * fB
-
-        return f_fric
+        return KelvinVoigtCoatingProcess().friction_forces(
+            self.pairs, node_coords, self.config, u_cur, u_ref
+        )
 
     def compute_coating_friction_stiffness(
         self,
         node_coords: np.ndarray,
         ndof_total: int,
     ) -> np.ndarray:
-        """被膜摩擦の接線剛性行列を計算する.
+        """被膜摩擦接線剛性（deprecated: CoatingStrategy を使用）."""
+        import warnings
 
-        stick: D_t = k_t * I₂
-        slip:  D_t = (μ*p_n/||q_trial||) * k_t * (I₂ - q̂⊗q̂)
+        warnings.warn(
+            "ContactManager.compute_coating_friction_stiffness() は非推奨です。"
+            "CoatingStrategy.friction_stiffness() を使用してください。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from xkep_cae.process.strategies.coating import KelvinVoigtCoatingProcess
 
-        Args:
-            node_coords: 節点座標 (n_nodes, 3)
-            ndof_total: 全体自由度数
-
-        Returns:
-            K_fric: (ndof_total, ndof_total) CSR形式被膜摩擦剛性行列
-        """
-        import scipy.sparse as sp
-
-        from xkep_cae.contact.law_friction import tangent_2x2_core
-
-        mu = self.config.coating_mu
-        if mu <= 0.0:
-            return sp.csr_matrix((ndof_total, ndof_total))
-
-        k_coat = self.config.coating_stiffness
-        k_t = k_coat * self.config.coating_k_t_ratio
-        ndof_per_node = self.config.ndof_per_node if hasattr(self.config, "ndof_per_node") else 6
-
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[float] = []
-
-        for pair in self.pairs:
-            cc = pair.state.coating_compression
-            if cc <= 0.0:
-                continue
-
-            p_n = k_coat * cc
-
-            # 2x2接線剛性
-            D_t = tangent_2x2_core(
-                k_t=k_t,
-                p_n=p_n,
-                mu=mu,
-                z_t=pair.state.coating_z_t,
-                q_trial_norm=pair.state.coating_q_trial_norm,
-                is_stick=pair.state.coating_stick,
-            )
-
-            # 3D接線方向への展開
-            t1 = pair.state.tangent1
-            t2 = pair.state.tangent2
-            s = pair.state.s
-            t = pair.state.t
-
-            nA0 = int(pair.nodes_a[0])
-            nA1 = int(pair.nodes_a[1])
-            nB0 = int(pair.nodes_b[0])
-            nB1 = int(pair.nodes_b[1])
-
-            # 接線力の変位に対する微分
-            # T = [t1 | t2] (3x2), D_t (2x2)
-            # K_3x3 = T @ D_t @ T^T
-            T_mat = np.column_stack([t1, t2])  # (3, 2)
-            K_3x3 = T_mat @ D_t @ T_mat.T  # (3, 3)
-
-            # 節点への分配（形状関数の微分）
-            weights_A = [-(1.0 - s), -s]
-            weights_B = [(1.0 - t), t]
-            node_ids = [nA0, nA1, nB0, nB1]
-            weights = weights_A + weights_B
-
-            dpn = ndof_per_node
-            gdofs = []
-            for nid in node_ids:
-                gdofs.append(nid * dpn)
-
-            for i_node in range(4):
-                for j_node in range(4):
-                    w_ij = weights[i_node] * weights[j_node]
-                    K_block = w_ij * K_3x3
-                    gi = gdofs[i_node]
-                    gj = gdofs[j_node]
-                    for ii in range(3):
-                        for jj in range(3):
-                            val = K_block[ii, jj]
-                            if abs(val) > 1e-30:
-                                rows.append(gi + ii)
-                                cols.append(gj + jj)
-                                data.append(val)
-
-        if not data:
-            return sp.csr_matrix((ndof_total, ndof_total))
-
-        return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
+        return KelvinVoigtCoatingProcess().friction_stiffness(
+            self.pairs, node_coords, self.config, ndof_total
+        )
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する.

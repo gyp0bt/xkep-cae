@@ -1139,12 +1139,14 @@ def newton_raphson_contact_ncp(
         _friction_strategy_pre = strategies.friction
         _contact_force_strategy_pre = strategies.contact_force
         _contact_geometry_strategy_pre = strategies.contact_geometry
+        _coating_strategy = getattr(strategies, "coating", None)
     else:
         _time_strategy = None
         _penalty_strategy_pre = None
         _friction_strategy_pre = None
         _contact_force_strategy_pre = None
         _contact_geometry_strategy_pre = None
+        _coating_strategy = None
 
     # --- 動的解析の初期化（TimeIntegrationStrategy: status-158）---
     if _time_strategy is None:
@@ -1433,6 +1435,14 @@ def newton_raphson_contact_ncp(
     _pos_tol = manager.config.position_tolerance
     _adjust = manager.config.adjust_initial_penetration
     _use_coating = manager.config.coating_stiffness > 0.0
+
+    # CoatingStrategy の後方互換フォールバック（strategies=None 時）
+    if _use_coating and _coating_strategy is None:
+        from xkep_cae.process.strategies.coating import create_coating_strategy
+
+        _coating_strategy = create_coating_strategy(
+            coating_stiffness=manager.config.coating_stiffness,
+        )
 
     # ULアセンブラ使用時: adjust_initial_positions は禁止（status-145）
     # node_coords_refを変更するとULアセンブラの参照座標と不整合になる。
@@ -1776,14 +1786,18 @@ def newton_raphson_contact_ncp(
                 ramp_factor = (it + 1) / _contact_force_ramp_iters
                 f_c = f_c * ramp_factor
 
-            # 4d. 被膜Kelvin-Voigt力（status-140: 弾性+粘性減衰）
-            if _use_coating:
+            # 4d. 被膜Kelvin-Voigt力（CoatingStrategy 経由: status-169）
+            if _use_coating and _coating_strategy is not None:
                 _coat_dt = max(load_frac - load_frac_prev, 1e-15)
-                f_coat = manager.compute_coating_forces(coords_def, dt=_coat_dt)
+                f_coat = _coating_strategy.forces(
+                    manager.pairs, coords_def, manager.config, _coat_dt
+                )
                 f_c = f_c + f_coat
-                # 4e. 被膜Coulomb摩擦力（status-140）
+                # 4e. 被膜Coulomb摩擦力
                 if manager.config.coating_mu > 0.0:
-                    f_coat_fric = manager.compute_coating_friction_forces(coords_def, u, u_ref)
+                    f_coat_fric = _coating_strategy.friction_forces(
+                        manager.pairs, coords_def, manager.config, u, u_ref
+                    )
                     f_c = f_c + f_coat_fric
 
             # 5. 力残差
@@ -1937,14 +1951,18 @@ def newton_raphson_contact_ncp(
                 manager.config.n_gauss = _orig_ng
                 K_T = K_T + K_line
 
-            # 8b2. 被膜Kelvin-Voigt接線剛性（status-140: k + c/dt）
-            if _use_coating:
+            # 8b2. 被膜Kelvin-Voigt接線剛性（CoatingStrategy 経由: status-169）
+            if _use_coating and _coating_strategy is not None:
                 _coat_dt = max(load_frac - load_frac_prev, 1e-15)
-                K_coat = manager.compute_coating_stiffness(coords_def, ndof, dt=_coat_dt)
+                K_coat = _coating_strategy.stiffness(
+                    manager.pairs, coords_def, manager.config, ndof, _coat_dt
+                )
                 K_T = K_T + K_coat
-                # 8b3. 被膜Coulomb摩擦接線剛性（status-140）
+                # 8b3. 被膜Coulomb摩擦接線剛性
                 if manager.config.coating_mu > 0.0:
-                    K_coat_fric = manager.compute_coating_friction_stiffness(coords_def, ndof)
+                    K_coat_fric = _coating_strategy.friction_stiffness(
+                        manager.pairs, coords_def, manager.config, ndof
+                    )
                     K_T = K_T + K_coat_fric
 
             # 8c. 摩擦接線剛性をK_Tに加算（FrictionStrategy 経由）

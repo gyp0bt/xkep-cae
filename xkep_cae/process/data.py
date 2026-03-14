@@ -77,6 +77,7 @@ class SolverStrategies:
     time_integration: object
     contact_force: object | None = None  # Phase 5後半で注入
     contact_geometry: object | None = None  # Phase 5後半で注入
+    coating: object | None = None  # status-169: CoatingStrategy
 
 
 def default_strategies(
@@ -101,12 +102,14 @@ def default_strategies(
     n_gauss: int = 2,
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
+    coating_stiffness: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
     NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
     5軸 Strategy 全生成（status-159: Phase 5 完了）。
     """
+    from xkep_cae.process.strategies.coating import create_coating_strategy
     from xkep_cae.process.strategies.contact_force import (
         create_contact_force_strategy,
     )
@@ -148,6 +151,9 @@ def default_strategies(
             line_contact=line_contact,
             use_mortar=use_mortar,
             n_gauss=n_gauss,
+        ),
+        coating=create_coating_strategy(
+            coating_stiffness=coating_stiffness,
         ),
     )
 

@@ -89,6 +89,7 @@ def solve_smooth_penalty_friction(
     _penalty_strategy = strategies.penalty
     _friction_strategy = strategies.friction
     _contact_force_strategy = strategies.contact_force
+    _coating_strategy = strategies.coating
 
     _dynamics = _time_strategy.is_dynamic
     _dt_sub = 0.0
@@ -329,13 +330,17 @@ def solve_smooth_penalty_friction(
                 )
                 f_c = f_c + f_friction
 
-                # 4. 被膜力
-                if _use_coating:
+                # 4. 被膜力（CoatingStrategy 経由: status-169）
+                if _use_coating and _coating_strategy is not None:
                     _coat_dt = max(load_frac - load_frac_prev, 1e-15)
-                    f_coat = manager.compute_coating_forces(coords_def, dt=_coat_dt)
+                    f_coat = _coating_strategy.forces(
+                        manager.pairs, coords_def, manager.config, _coat_dt
+                    )
                     f_c = f_c + f_coat
                     if manager.config.coating_mu > 0.0:
-                        f_coat_fric = manager.compute_coating_friction_forces(coords_def, u, u_ref)
+                        f_coat_fric = _coating_strategy.friction_forces(
+                            manager.pairs, coords_def, manager.config, u, u_ref
+                        )
                         f_c = f_c + f_coat_fric
 
                 # 5. 力残差
@@ -390,13 +395,17 @@ def solve_smooth_penalty_friction(
                 K_c = _contact_force_strategy.tangent(u, lam_all, manager, k_pen)
                 K_T = K_T + K_c
 
-                # 被膜剛性
-                if _use_coating:
+                # 被膜剛性（CoatingStrategy 経由: status-169）
+                if _use_coating and _coating_strategy is not None:
                     _coat_dt = max(load_frac - load_frac_prev, 1e-15)
-                    K_coat = manager.compute_coating_stiffness(coords_def, ndof, dt=_coat_dt)
+                    K_coat = _coating_strategy.stiffness(
+                        manager.pairs, coords_def, manager.config, ndof, _coat_dt
+                    )
                     K_T = K_T + K_coat
                     if manager.config.coating_mu > 0.0:
-                        K_coat_fric = manager.compute_coating_friction_stiffness(coords_def, ndof)
+                        K_coat_fric = _coating_strategy.friction_stiffness(
+                            manager.pairs, coords_def, manager.config, ndof
+                        )
                         K_T = K_T + K_coat_fric
 
                 # 摩擦剛性（FrictionStrategy 経由）
