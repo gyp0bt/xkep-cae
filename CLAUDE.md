@@ -59,6 +59,7 @@
 | `_runtime_uses` | `collect_strategy_types()` + `effective_uses()` | status-165 |
 | AL solver (`solver_hooks.py`, `line_search.py`) | 完全削除（NCP一本化） | status-167 |
 | `NCPContactSolverProcess` | `NCPDynamic/QuasiStaticContactFrictionProcess` → 完全削除 | status-168 |
+| `ContactManager.compute_coating_*()` | `CoatingStrategy.*()` | status-169 |
 
 ## 推奨ソルバー構成
 
@@ -70,7 +71,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 327 processテスト** — 2026-03-14
+**~2260テスト + 341 processテスト** — 2026-03-14
 
 ### ターゲット
 

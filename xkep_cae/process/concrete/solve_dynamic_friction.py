@@ -31,9 +31,7 @@ from xkep_cae.process.strategies.protocols import (
 )
 
 
-class NCPDynamicContactFrictionProcess(
-    SolverProcess[DynamicFrictionInputData, SolverResultData]
-):
+class NCPDynamicContactFrictionProcess(SolverProcess[DynamicFrictionInputData, SolverResultData]):
     """動的摩擦接触ソルバー（Generalized-α + smooth penalty）.
 
     solve_smooth_penalty_friction() を Strategy 経由で呼び出し、
@@ -76,9 +74,7 @@ class NCPDynamicContactFrictionProcess(
         return {
             "name": type(self).__name__,
             "module": self.meta.module,
-            "uses": [
-                {"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime
-            ],
+            "uses": [{"name": dep.__name__, "module": "solve", "uses": []} for dep in runtime],
         }
 
     def process(self, input_data: DynamicFrictionInputData) -> SolverResultData:
