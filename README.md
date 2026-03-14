@@ -27,7 +27,7 @@
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了 |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了 |
 | **大規模収束** | **19本曲げ揺動収束、37本径方向圧縮収束** | **凍結中** |
-| **Process Architecture** | **Phase 9 完遂、AL完全削除 (status-167)** | **[Phase 8 完遂](xkep_cae/process/docs/phase8-design.md)** |
+| **Process Architecture** | **Phase 9 完遂、AL完全削除、テスト名正規化+純関数化 (status-170)** | **[Phase 8 完遂](xkep_cae/process/docs/phase8-design.md)** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
@@ -36,7 +36,7 @@
 | ドキュメント | 内容 |
 |------------|------|
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全166件のstatus + テスト数推移 |
+| [ステータス一覧](docs/status/status-index.md) | 全170件のstatus + テスト数推移 |
 | [S3完了済み項目](docs/status/s3-completed.md) | S3フェーズ53項目の完了記録 |
 | [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
 | [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |

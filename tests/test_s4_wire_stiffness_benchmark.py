@@ -590,9 +590,7 @@ class TestS4SheathStiffness:
         P = 1.0
         mesh = _make_mesh()
 
-        result_b, _, ndof_b = _solve_twisted_wire(
-            mesh, "bending", P, coating=None, n_load_steps=8
-        )
+        result_b, _, ndof_b = _solve_twisted_wire(mesh, "bending", P, coating=None, n_load_steps=8)
         assert result_b.converged, "裸撚線曲げが収束しない"
 
         d_b = _extract_tip_displacement(mesh, result_b.u, "bending")
@@ -620,9 +618,7 @@ class TestS4SheathStiffness:
         M = 0.001  # N·m
         mesh = _make_mesh()
 
-        result_b, _, ndof_b = _solve_twisted_wire(
-            mesh, "torsion", M, coating=None, n_load_steps=8
-        )
+        result_b, _, ndof_b = _solve_twisted_wire(mesh, "torsion", M, coating=None, n_load_steps=8)
         assert result_b.converged, "裸撚線ねじりが収束しない"
 
         theta_b = _extract_tip_displacement(mesh, result_b.u, "torsion")

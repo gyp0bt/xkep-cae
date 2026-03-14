@@ -81,6 +81,7 @@
 | [167](status-167.md) | 2026-03-14 | AL完全削除 — プロセスアーキテクチャ完全移行 Session 1 | ~2260+327p |
 | [168](status-168.md) | 2026-03-14 | NCP ソルバーリファクタリング — solver_ncp.py 分離 + Process 移行 | ~2260+327p |
 | [169](status-169.md) | 2026-03-14 | CoatingStrategy 抽出 — ContactManager 被膜メソッド Strategy 移行 | ~2260+341p |
+| [170](status-170.md) | 2026-03-14 | テスト名正規化 + StagedActivation/InitialPenetration 純関数化 | ~2260+341p |
 
 ## アーカイブ（001〜096）
 
@@ -119,7 +120,7 @@ GNN/PINN PoC:  1629  (2026-02-26)
 Phase C6:       1850  (2026-02-28)
 S1-S2:          1822  (2026-02-28)
 S2++/S3基盤:    1886  (2026-03-01)
-現在:           2477+327p (2026-03-14) ← status-166 (327=processテスト)
+現在:           ~2260+341p (2026-03-14) ← status-170
 ```
 
 ## 備考
