@@ -78,6 +78,7 @@
 | [164](status-164.md) | 2026-03-13 | Phase 8 実装完了 — ProcessRunner / StrategySlot / Preset / C13 | 2477+314p |
 | [165](status-165.md) | 2026-03-14 | Phase 8 完遂 + Phase 9-A/B — 走査化 + StrategySlot 完全移行 | 2477+314p |
 | [166](status-166.md) | 2026-03-14 | ProcessRegistry 導入 — _registry dict のクラス昇格 | 2477+327p |
+| [167](status-167.md) | 2026-03-14 | AL完全削除 — プロセスアーキテクチャ完全移行 Session 1 | ~2260+327p |
 
 ## アーカイブ（001〜096）
 
