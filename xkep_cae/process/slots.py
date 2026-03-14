@@ -7,10 +7,8 @@
 - __set_name__ は type.__new__ 内で呼ばれる（メタクラスの __new__ より前）
 - ディスクリプタの __get__/__set__ はインスタンスアクセス時に呼ばれる
 
-_runtime_uses からの移行:
-1. StrategySlot が __set_name__ で自動登録
-2. collect_strategy_types() でクラスのスロットから型情報を収集
-3. effective_uses() は既存の _runtime_uses を優先し、StrategySlot をフォールバック
+Phase 9-B で _runtime_uses は廃止。effective_uses() が collect_strategy_types() を
+直接呼び出し、StrategySlot に設定された具象クラスの型を動的依存として収集する。
 """
 
 from __future__ import annotations

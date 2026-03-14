@@ -103,36 +103,34 @@ class TestProcessTree:
         )
         assert node.node_type == NodeType.PARALLEL
 
-    def test_runtime_uses_validated_when_instance_provided(self) -> None:
-        """_runtime_uses のツリー外依存がエラーとして検出されること."""
+    def test_effective_uses_validated_when_instance_provided(self) -> None:
+        """effective_uses() のツリー外依存がエラーとして検出されること."""
         instance = TreeSolverProcess()
-        instance._runtime_uses = [TreeBrokenProcess]  # ツリーに含まれない
-        node = ProcessNode(
-            process_class=TreeSolverProcess,
-            process_instance=instance,
-            children=[ProcessNode(process_class=TreePreProcess)],
-        )
-        tree = ProcessTree(root=node, name="RuntimeUsesTest")
-        errors = tree.validate()
-        assert any("_runtime_uses" in e and "TreeBrokenProcess" in e for e in errors)
-
-    def test_runtime_uses_no_error_when_in_tree(self) -> None:
-        """_runtime_uses の依存がツリー内にあればエラーなし."""
-        instance = TreeSolverProcess()
-        instance._runtime_uses = [TreePreProcess]  # ツリーに含まれる
         pre_node = ProcessNode(process_class=TreePreProcess)
         solver_node = ProcessNode(
             process_class=TreeSolverProcess,
             process_instance=instance,
             children=[pre_node],
         )
-        tree = ProcessTree(root=solver_node, name="RuntimeUsesOK")
+        tree = ProcessTree(root=solver_node, name="EffectiveUsesTest")
+        # TreeSolverProcess.uses = [TreePreProcess] → ツリーに含まれるのでエラーなし
         errors = tree.validate()
         assert errors == []
 
-    def test_runtime_uses_skipped_when_no_instance(self) -> None:
-        """process_instance=None なら _runtime_uses チェックは行われない."""
-        # TreeSolverProcess は uses=[TreePreProcess] だが、ツリーに含めている
+    def test_missing_uses_with_instance(self) -> None:
+        """process_instance あり + uses のツリー外依存がエラーとして検出されること."""
+        instance = TreeBrokenProcess()
+        # TreeBrokenProcess.uses = [TreePreProcess] だがツリーに含めない
+        node = ProcessNode(
+            process_class=TreeBrokenProcess,
+            process_instance=instance,
+        )
+        tree = ProcessTree(root=node, name="MissingUsesWithInstance")
+        errors = tree.validate()
+        assert any("TreePreProcess" in e and "uses" in e for e in errors)
+
+    def test_static_uses_only_when_no_instance(self) -> None:
+        """process_instance=None なら静的 uses のみチェック."""
         tree = self._build_valid_tree()
         errors = tree.validate()
         assert errors == []

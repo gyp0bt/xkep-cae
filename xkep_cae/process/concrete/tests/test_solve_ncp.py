@@ -23,16 +23,16 @@ class TestNCPContactSolverProcess:
         assert proc.strategies.friction is not None
         assert proc.strategies.time_integration is not None
 
-    def test_runtime_uses_populated(self):
-        """_runtime_uses が strategies から構築される."""
-        proc = NCPContactSolverProcess()
-        assert len(proc._runtime_uses) >= 3  # penalty, friction, time_integration
+    def test_effective_uses_from_slots(self):
+        """effective_uses() が StrategySlot の型を含む（Phase 9-B）."""
+        from xkep_cae.process.slots import collect_strategy_types
 
-    def test_effective_uses(self):
-        """effective_uses() が _runtime_uses を含む."""
         proc = NCPContactSolverProcess()
+        slot_types = collect_strategy_types(proc)
         effective = proc.effective_uses()
         assert len(effective) >= 3
+        for t in slot_types:
+            assert t in effective
 
     def test_instance_dependency_tree(self):
         proc = NCPContactSolverProcess()
@@ -59,10 +59,7 @@ class TestNCPContactSolverProcess:
         assert proc.friction_slot is proc.strategies.friction
         assert proc.time_integration_slot is proc.strategies.time_integration
 
-    def test_runtime_uses_from_slots(self):
-        """_runtime_uses が StrategySlot から構築されていること."""
-        from xkep_cae.process.slots import collect_strategy_types
-
+    def test_no_runtime_uses_attribute(self):
+        """Phase 9-B: _runtime_uses が廃止されていること."""
         proc = NCPContactSolverProcess()
-        slot_types = collect_strategy_types(proc)
-        assert set(proc._runtime_uses) == set(slot_types)
+        assert not hasattr(proc, "_runtime_uses")
