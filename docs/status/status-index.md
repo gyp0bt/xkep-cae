@@ -75,6 +75,7 @@
 | [161](status-161.md) | 2026-03-11 | フォーカスガード逆転 — Process Architecture Phase 7 開始 + 契約違反テスト | 2477 |
 | [162](status-162.md) | 2026-03-13 | Phase 7 完遂 — 契約違反31→0件 + VerifyProcess/BatchProcess実装 | 2477 |
 | [163](status-163.md) | 2026-03-13 | Phase 7 完了記録 + CI process テスト統合 + Phase 8 設計 | 2477 |
+| [164](status-164.md) | 2026-03-13 | Phase 8 実装完了 — ProcessRunner / StrategySlot / Preset / C13 | 2477+314p |
 
 ## アーカイブ（001〜096）
 
@@ -113,7 +114,7 @@ GNN/PINN PoC:  1629  (2026-02-26)
 Phase C6:       1850  (2026-02-28)
 S1-S2:          1822  (2026-02-28)
 S2++/S3基盤:    1886  (2026-03-01)
-現在:           2477  (2026-03-13)  ← status-162
+現在:           2477+314p (2026-03-13) ← status-164 (314=processテスト)
 ```
 
 ## 備考

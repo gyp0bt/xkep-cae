@@ -13,6 +13,7 @@ AbstractProcess + Strategy Protocol によるソルバー契約化フレーム�
 from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
 from xkep_cae.process.categories import (
     BatchProcess,
+    CompatibilityProcess,
     PostProcess,
     PreProcess,
     SolverProcess,
@@ -30,6 +31,8 @@ from xkep_cae.process.data import (
     VerifyResult,
     default_strategies,
 )
+from xkep_cae.process.runner import ExecutionContext, ProcessRunner
+from xkep_cae.process.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
 from xkep_cae.process.testing import binds_to
 from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 
@@ -44,6 +47,7 @@ __all__ = [
     "PostProcess",
     "VerifyProcess",
     "BatchProcess",
+    "CompatibilityProcess",
     # テスト
     "binds_to",
     # グラフ
@@ -60,6 +64,13 @@ __all__ = [
     "SolverStrategies",
     "VerifyInput",
     "VerifyResult",
+    # 実行管理
+    "ProcessRunner",
+    "ExecutionContext",
+    # Strategy Slot
+    "StrategySlot",
+    "collect_strategy_slots",
+    "collect_strategy_types",
     # ファクトリ
     "default_strategies",
 ]

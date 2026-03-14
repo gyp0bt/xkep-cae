@@ -44,3 +44,25 @@ class TestNCPContactSolverProcess:
         from xkep_cae.process.base import AbstractProcess
 
         assert "NCPContactSolverProcess" in AbstractProcess._registry
+
+    def test_strategy_slots_populated(self):
+        """StrategySlot が正しく設定されていること（Phase 8-E）."""
+        proc = NCPContactSolverProcess()
+        assert proc.penalty_slot is not None
+        assert proc.friction_slot is not None
+        assert proc.time_integration_slot is not None
+
+    def test_strategy_slots_match_strategies(self):
+        """StrategySlot の値が strategies の値と一致すること."""
+        proc = NCPContactSolverProcess()
+        assert proc.penalty_slot is proc.strategies.penalty
+        assert proc.friction_slot is proc.strategies.friction
+        assert proc.time_integration_slot is proc.strategies.time_integration
+
+    def test_runtime_uses_from_slots(self):
+        """_runtime_uses が StrategySlot から構築されていること."""
+        from xkep_cae.process.slots import collect_strategy_types
+
+        proc = NCPContactSolverProcess()
+        slot_types = collect_strategy_types(proc)
+        assert set(proc._runtime_uses) == set(slot_types)

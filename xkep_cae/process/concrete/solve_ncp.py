@@ -7,6 +7,11 @@ SolverStrategies によるStrategy合成を実現する。
 依存追跡（§13.2 C8対応）:
 - クラス変数 uses = [] は空（__init_subclass__ 通過用）
 - インスタンス変数 _runtime_uses で動的依存追跡
+- StrategySlot による型安全な Strategy 宣言（Phase 8-B/E）
+
+Phase 8-E 更新:
+- StrategySlot ディスクリプタを追加（PenaltyStrategy, FrictionStrategy, TimeIntegrationStrategy）
+- _runtime_uses は StrategySlot + 従来方式の両方から構築（後方互換）
 """
 
 from __future__ import annotations
@@ -18,6 +23,14 @@ from xkep_cae.process.data import (
     SolverResultData,
     SolverStrategies,
     default_strategies,
+)
+from xkep_cae.process.slots import StrategySlot, collect_strategy_types
+from xkep_cae.process.strategies.protocols import (
+    ContactForceStrategy,
+    ContactGeometryStrategy,
+    FrictionStrategy,
+    PenaltyStrategy,
+    TimeIntegrationStrategy,
 )
 
 
@@ -41,21 +54,27 @@ class NCPContactSolverProcess(SolverProcess[SolverInputData, SolverResultData]):
     )
     uses = []  # 静的usesは空（C8対策: 動的構築はインスタンス側で管理）
 
+    # StrategySlot 宣言（Phase 8-B/E）
+    penalty_slot = StrategySlot(PenaltyStrategy)
+    friction_slot = StrategySlot(FrictionStrategy)
+    time_integration_slot = StrategySlot(TimeIntegrationStrategy)
+    contact_force_slot = StrategySlot(ContactForceStrategy, required=False)
+    contact_geometry_slot = StrategySlot(ContactGeometryStrategy, required=False)
+
     def __init__(self, strategies: SolverStrategies | None = None) -> None:
         self.strategies = strategies or default_strategies()
-        # 動的依存追跡（C8対策）
-        self._runtime_uses = [
-            type(s)
-            for s in [
-                self.strategies.penalty,
-                self.strategies.friction,
-                self.strategies.time_integration,
-            ]
-        ]
+
+        # StrategySlot に設定（Protocol 準拠検証付き）
+        self.penalty_slot = self.strategies.penalty
+        self.friction_slot = self.strategies.friction
+        self.time_integration_slot = self.strategies.time_integration
         if self.strategies.contact_force is not None:
-            self._runtime_uses.append(type(self.strategies.contact_force))
+            self.contact_force_slot = self.strategies.contact_force
         if self.strategies.contact_geometry is not None:
-            self._runtime_uses.append(type(self.strategies.contact_geometry))
+            self.contact_geometry_slot = self.strategies.contact_geometry
+
+        # 動的依存追跡（C8対策: _runtime_uses は StrategySlot から構築）
+        self._runtime_uses = collect_strategy_types(self)
 
     def get_instance_dependency_tree(self) -> dict:
         """インスタンスレベルの依存ツリー."""
