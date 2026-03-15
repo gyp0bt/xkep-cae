@@ -32,8 +32,8 @@ from pathlib import Path
 _project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_project_root))
 
-from xkep_cae.process.base import AbstractProcess  # noqa: E402
-from xkep_cae.process.registry import ProcessRegistry  # noqa: E402
+from xkep_cae.core.base import AbstractProcess  # noqa: E402
+from xkep_cae.core.registry import ProcessRegistry  # noqa: E402
 
 
 def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
@@ -66,31 +66,37 @@ def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
 def _import_all_modules() -> None:
     """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築.
 
-    Phase 9-A: ハードコードされたモジュールリストを廃止し、
-    xkep_cae/process/ 配下の .py ファイルをファイルシステム走査で自動検出する。
-    新規プロセス追加時のモジュールリスト更新忘れを根絶。
+    xkep_cae/core/ と xkep_cae/contact/ 配下の .py ファイルを
+    ファイルシステム走査で自動検出する。
     """
-    process_root = _project_root / "xkep_cae" / "process"
+    # 走査対象ルート: core（基盤）+ contact（Strategy 実装）
+    scan_roots = [
+        _project_root / "xkep_cae" / "core",
+        _project_root / "xkep_cae" / "contact",
+    ]
 
     # 除外対象: テストファイル、__init__.py、基盤モジュール
     _SKIP_NAMES = {"__init__", "base", "categories", "data", "slots", "tree", "runner"}
 
-    # xkep_cae/process/ 配下の全 .py を走査（テスト以外）
     process_modules = []
-    for py_file in sorted(process_root.rglob("*.py")):
-        # テストファイルはあとで別処理
-        if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+    test_files = []
+    for scan_root in scan_roots:
+        if not scan_root.exists():
             continue
-        if py_file.parent.name == "__pycache__":
-            continue
-        if py_file.stem in _SKIP_NAMES:
-            continue
-        # docs/ 配下のマークダウンと同名ファイルなどを除外
-        if not py_file.stem.isidentifier():
-            continue
-        mod_path = py_file.relative_to(_project_root).with_suffix("")
-        mod_name = str(mod_path).replace("/", ".")
-        process_modules.append(mod_name)
+        for py_file in sorted(scan_root.rglob("*.py")):
+            if py_file.parent.name == "__pycache__":
+                continue
+            # テストファイルはあとで別処理
+            if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+                test_files.append(py_file)
+                continue
+            if py_file.stem in _SKIP_NAMES:
+                continue
+            if not py_file.stem.isidentifier():
+                continue
+            mod_path = py_file.relative_to(_project_root).with_suffix("")
+            mod_name = str(mod_path).replace("/", ".")
+            process_modules.append(mod_name)
 
     for mod_name in process_modules:
         try:
@@ -100,9 +106,7 @@ def _import_all_modules() -> None:
 
     # テストモジュール（@binds_to 発動用）を走査・インポート
     # pytest がない環境では AST で @binds_to を検出してフォールバック
-    for py_file in sorted(process_root.rglob("test_*.py")):
-        if py_file.parent.name == "__pycache__":
-            continue
+    for py_file in test_files:
         mod_path = py_file.relative_to(_project_root).with_suffix("")
         mod_name = str(mod_path).replace("/", ".")
         try:
@@ -191,7 +195,7 @@ def check_c8_strategy_slot(registry: dict[str, type]) -> list[str]:
     3. effective_uses() が StrategySlot の型を含むこと
     を検証する。
     """
-    from xkep_cae.process.slots import collect_strategy_slots, collect_strategy_types
+    from xkep_cae.core.slots import collect_strategy_slots, collect_strategy_types
 
     errors = []
     for name, cls in sorted(registry.items()):
@@ -236,7 +240,7 @@ def check_c6_strategy_semantics(registry: dict[str, type]) -> list[str]:
     errors = []
 
     try:
-        from xkep_cae.process.strategies.protocols import (
+        from xkep_cae.core.strategies.protocols import (
             ContactForceStrategy,
             ContactGeometryStrategy,
             FrictionStrategy,
@@ -391,7 +395,7 @@ def check_c13_compatibility_uses(registry: dict[str, type]) -> list[str]:
     errors = []
 
     try:
-        from xkep_cae.process.categories import CompatibilityProcess
+        from xkep_cae.core.categories import CompatibilityProcess
     except ImportError:
         return errors  # CompatibilityProcess 未定義時はスキップ
 
@@ -455,7 +459,6 @@ def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
     そのファイルが実際に存在しなければ契約違反。
     """
     errors = []
-    process_root = _project_root / "xkep_cae" / "process"
 
     for name, cls in sorted(registry.items()):
         meta = getattr(cls, "meta", None)
@@ -465,21 +468,17 @@ def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
         if not doc_path:
             continue
 
-        # document_path は strategy サブパッケージからの相対パス
-        # cls のモジュールパスから strategy パッケージルートを推定
-        module = getattr(cls, "__module__", "")
-        parts = module.split(".")
-        # xkep_cae.process.strategies.penalty.strategy → penalty/
-        if "strategies" in parts:
-            idx = parts.index("strategies")
-            if idx + 1 < len(parts):
-                strategy_pkg = parts[idx + 1]
-                doc_full = process_root / "strategies" / strategy_pkg / doc_path
-                if not doc_full.exists():
-                    errors.append(
-                        f"C15: {name} の document_path '{doc_path}' が存在しない"
-                        f" (期待: {doc_full.relative_to(_project_root)})"
-                    )
+        # document_path はクラス定義ファイルからの相対パスで解決
+        try:
+            src_file = Path(inspect.getfile(cls))
+            doc_full = (src_file.parent / doc_path).resolve()
+            if not doc_full.exists():
+                errors.append(
+                    f"C15: {name} の document_path '{doc_path}' が存在しない"
+                    f" (期待: {doc_full.relative_to(_project_root)})"
+                )
+        except (TypeError, OSError):
+            errors.append(f"C15: {name} のソースファイルを取得できない")
 
     return errors
 
@@ -502,16 +501,22 @@ def check_c16_sterilization() -> list[str]:
     import enum
 
     errors = []
-    strategies_root = _project_root / "xkep_cae" / "process" / "strategies"
-
-    if not strategies_root.exists():
-        return errors
+    # Strategy 実装は core/strategies/ と contact/ に分散
+    scan_roots = [
+        _project_root / "xkep_cae" / "core" / "strategies",
+        _project_root / "xkep_cae" / "contact",
+    ]
 
     # protocols.py は Protocol 定義ファイルなのでスキップ
     # __init__.py は re-export のみなのでスキップ
     _SKIP_STEMS = {"__init__", "protocols"}
 
-    for py_file in sorted(strategies_root.rglob("*.py")):
+    all_py_files = []
+    for root in scan_roots:
+        if root.exists():
+            all_py_files.extend(sorted(root.rglob("*.py")))
+
+    for py_file in all_py_files:
         # テストファイル・__pycache__ はスキップ
         if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
             continue

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from xkep_cae.process.base import AbstractProcess
+    from xkep_cae.core.base import AbstractProcess
 
 
 def binds_to(process_class: type[AbstractProcess]):

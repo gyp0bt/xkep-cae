@@ -3,7 +3,7 @@
 ペナルティ剛性の決定と法線接触力の評価。
 """
 
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     ALNormalForceProcess,
     NormalForceInput,
     NormalForceResult,
@@ -12,7 +12,7 @@ from xkep_cae.process.strategies.penalty.law_normal import (
     VectorizedNormalForceResult,
     VectorizedSmoothInput,
 )
-from xkep_cae.process.strategies.penalty.strategy import (
+from xkep_cae.contact.penalty.strategy import (
     AutoBeamEIPenalty,
     AutoEALPenalty,
     ContinuationPenalty,

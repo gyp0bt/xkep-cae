@@ -7,15 +7,15 @@ from __future__ import annotations
 
 import pytest
 
-from xkep_cae.process.strategies import PenaltyStrategy
-from xkep_cae.process.strategies.penalty import (
+from xkep_cae.contact.penalty import (
     AutoBeamEIPenalty,
     AutoEALPenalty,
     ContinuationPenalty,
     PenaltyInput,
     PenaltyOutput,
 )
-from xkep_cae.process.testing import binds_to
+from xkep_cae.core.strategies import PenaltyStrategy
+from xkep_cae.core.testing import binds_to
 
 # ── AutoBeamEIPenalty ────────────────────────────────────────
 

@@ -3,7 +3,7 @@
 各 strategy サブパッケージは新規実装。
 """
 
-from xkep_cae.process.strategies.protocols import (
+from xkep_cae.core.strategies.protocols import (
     CoatingStrategy,
     ContactForceStrategy,
     ContactGeometryStrategy,

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from xkep_cae.process import ProcessMeta, SolverProcess
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── データ型 ──────────────────────────────────────────────
 

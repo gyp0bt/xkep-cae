@@ -1,8 +1,63 @@
-"""暫定 re-export（未移行モジュール）."""
+"""プロセスアーキテクチャ基盤.
 
-import importlib as _il
+AbstractProcess + Strategy Protocol によるソルバー契約化フレームワーク。
+"""
 
-_m = _il.import_module("xkep_cae_deprecated.core")
-for _k in dir(_m):
-    if not _k.startswith("_"):
-        globals()[_k] = getattr(_m, _k)
+from xkep_cae.core.base import AbstractProcess, ProcessMeta, ProcessMetaclass
+from xkep_cae.core.categories import (
+    BatchProcess,
+    CompatibilityProcess,
+    PostProcess,
+    PreProcess,
+    SolverProcess,
+    VerifyProcess,
+)
+from xkep_cae.core.data import (
+    AssembleCallbacks,
+    BoundaryData,
+    ContactFrictionInputData,
+    ContactSetupData,
+    MeshData,
+    SolverResultData,
+    SolverStrategies,
+    VerifyInput,
+    VerifyResult,
+    default_strategies,
+)
+from xkep_cae.core.registry import ProcessRegistry
+from xkep_cae.core.runner import ExecutionContext, ProcessRunner
+from xkep_cae.core.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
+from xkep_cae.core.testing import binds_to
+from xkep_cae.core.tree import NodeType, ProcessNode, ProcessTree
+
+__all__ = [
+    "AbstractProcess",
+    "ProcessMeta",
+    "ProcessMetaclass",
+    "PreProcess",
+    "SolverProcess",
+    "PostProcess",
+    "VerifyProcess",
+    "BatchProcess",
+    "CompatibilityProcess",
+    "binds_to",
+    "ProcessTree",
+    "ProcessNode",
+    "NodeType",
+    "MeshData",
+    "BoundaryData",
+    "ContactSetupData",
+    "AssembleCallbacks",
+    "ContactFrictionInputData",
+    "SolverResultData",
+    "SolverStrategies",
+    "VerifyInput",
+    "VerifyResult",
+    "ProcessRegistry",
+    "ProcessRunner",
+    "ExecutionContext",
+    "StrategySlot",
+    "collect_strategy_slots",
+    "collect_strategy_types",
+    "default_strategies",
+]

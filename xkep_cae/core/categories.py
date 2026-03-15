@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC
 from typing import TypeVar
 
-from xkep_cae.process.base import AbstractProcess
+from xkep_cae.core.base import AbstractProcess
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")

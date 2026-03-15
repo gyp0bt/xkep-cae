@@ -17,7 +17,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
-from xkep_cae.process.registry import ProcessRegistry, RegistryProxy
+from xkep_cae.core.registry import ProcessRegistry, RegistryProxy
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")
@@ -185,7 +185,7 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         Phase 9-B: _runtime_uses を廃止し、collect_strategy_types() で
         StrategySlot に設定された具象クラスの型を直接収集する。
         """
-        from xkep_cae.process.slots import collect_strategy_types
+        from xkep_cae.core.slots import collect_strategy_types
 
         static = list(self.__class__.uses)
         runtime: list[type] = collect_strategy_types(self)
