@@ -16,7 +16,9 @@ from xkep_cae.core.time_integration import (
     QuasiStaticProcess,
     TimeIntegrationInput,
     TimeIntegrationOutput,
-    create_time_integration_strategy,
+)
+from xkep_cae.core.time_integration.strategy import (
+    _create_time_integration_strategy,
 )
 
 # ── Protocol 準拠 ─────────────────────────────────────────
@@ -242,30 +244,30 @@ class TestCreateTimeIntegrationStrategy:
     """ファクトリ関数のテスト."""
 
     def test_no_mass_returns_quasi_static(self):
-        s = create_time_integration_strategy()
+        s = _create_time_integration_strategy()
         assert isinstance(s, QuasiStaticProcess)
 
     def test_mass_no_dt_returns_quasi_static(self):
         M = sp.eye(4, format="csr")
-        s = create_time_integration_strategy(mass_matrix=M, dt_physical=0.0)
+        s = _create_time_integration_strategy(mass_matrix=M, dt_physical=0.0)
         assert isinstance(s, QuasiStaticProcess)
 
     def test_mass_with_dt_returns_dynamic(self):
         M = sp.eye(4, format="csr")
-        s = create_time_integration_strategy(mass_matrix=M, dt_physical=0.01)
+        s = _create_time_integration_strategy(mass_matrix=M, dt_physical=0.01)
         assert isinstance(s, GeneralizedAlphaProcess)
 
     def test_dynamic_with_initial_state(self):
         M = sp.eye(4, format="csr")
         v0 = np.ones(4)
-        s = create_time_integration_strategy(mass_matrix=M, dt_physical=0.01, velocity=v0)
+        s = _create_time_integration_strategy(mass_matrix=M, dt_physical=0.01, velocity=v0)
         assert isinstance(s, GeneralizedAlphaProcess)
         np.testing.assert_array_equal(s.vel, v0)
 
     def test_dynamic_with_damping(self):
         M = sp.eye(4, format="csr")
         C = sp.eye(4, format="csr") * 0.1
-        s = create_time_integration_strategy(
+        s = _create_time_integration_strategy(
             mass_matrix=M,
             damping_matrix=C,
             dt_physical=0.01,

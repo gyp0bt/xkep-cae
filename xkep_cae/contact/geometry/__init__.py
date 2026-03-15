@@ -10,9 +10,6 @@ from xkep_cae.contact.geometry.strategy import (
     MortarSegmentProcess,
     PointToPointProcess,
 )
-from xkep_cae.contact.geometry.strategy import (
-    _create_contact_geometry_strategy as create_contact_geometry_strategy,
-)
 
 __all__ = [
     "PointToPointProcess",
@@ -20,5 +17,4 @@ __all__ = [
     "MortarSegmentProcess",
     "ContactGeometryInput",
     "ContactGeometryOutput",
-    "create_contact_geometry_strategy",
 ]

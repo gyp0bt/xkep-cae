@@ -14,7 +14,9 @@ from xkep_cae.contact.geometry import (
     LineToLineGaussProcess,
     MortarSegmentProcess,
     PointToPointProcess,
-    create_contact_geometry_strategy,
+)
+from xkep_cae.contact.geometry.strategy import (
+    _create_contact_geometry_strategy,
 )
 from xkep_cae.core.strategies import ContactGeometryStrategy
 from xkep_cae.core.testing import binds_to
@@ -206,39 +208,39 @@ class TestCreateContactGeometryStrategy:
     """ファクトリ関数のテスト."""
 
     def test_default_returns_ptp(self):
-        s = create_contact_geometry_strategy()
+        s = _create_contact_geometry_strategy()
         assert isinstance(s, PointToPointProcess)
 
     def test_point_to_point_mode(self):
-        s = create_contact_geometry_strategy(mode="point_to_point")
+        s = _create_contact_geometry_strategy(mode="point_to_point")
         assert isinstance(s, PointToPointProcess)
 
     def test_line_to_line_mode(self):
-        s = create_contact_geometry_strategy(mode="line_to_line")
+        s = _create_contact_geometry_strategy(mode="line_to_line")
         assert isinstance(s, LineToLineGaussProcess)
 
     def test_mortar_mode(self):
-        s = create_contact_geometry_strategy(mode="mortar")
+        s = _create_contact_geometry_strategy(mode="mortar")
         assert isinstance(s, MortarSegmentProcess)
 
     def test_line_contact_flag(self):
-        s = create_contact_geometry_strategy(line_contact=True)
+        s = _create_contact_geometry_strategy(line_contact=True)
         assert isinstance(s, LineToLineGaussProcess)
 
     def test_use_mortar_flag(self):
-        s = create_contact_geometry_strategy(use_mortar=True)
+        s = _create_contact_geometry_strategy(use_mortar=True)
         assert isinstance(s, MortarSegmentProcess)
 
     def test_mortar_overrides_line_contact(self):
-        s = create_contact_geometry_strategy(line_contact=True, use_mortar=True)
+        s = _create_contact_geometry_strategy(line_contact=True, use_mortar=True)
         assert isinstance(s, MortarSegmentProcess)
 
     def test_custom_n_gauss(self):
-        s = create_contact_geometry_strategy(mode="line_to_line", n_gauss=4)
+        s = _create_contact_geometry_strategy(mode="line_to_line", n_gauss=4)
         assert isinstance(s, LineToLineGaussProcess)
         assert s._n_gauss == 4
 
     def test_auto_gauss(self):
-        s = create_contact_geometry_strategy(mode="line_to_line", auto_gauss=True)
+        s = _create_contact_geometry_strategy(mode="line_to_line", auto_gauss=True)
         assert isinstance(s, LineToLineGaussProcess)
         assert s._auto_gauss is True

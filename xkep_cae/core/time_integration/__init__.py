@@ -9,14 +9,10 @@ from xkep_cae.core.time_integration.strategy import (
     TimeIntegrationInput,
     TimeIntegrationOutput,
 )
-from xkep_cae.core.time_integration.strategy import (
-    _create_time_integration_strategy as create_time_integration_strategy,
-)
 
 __all__ = [
     "QuasiStaticProcess",
     "GeneralizedAlphaProcess",
     "TimeIntegrationInput",
     "TimeIntegrationOutput",
-    "create_time_integration_strategy",
 ]
