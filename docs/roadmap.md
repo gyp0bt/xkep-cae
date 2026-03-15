@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-15）
 
-**~2260テスト + 34 新processテスト** | 脱出ポット計画進行中（S3 凍結中） | [最新status](status/status-index.md)
+**~2260テスト + 186 新processテスト** | 脱出ポット計画 Phase 2 完了・契約違反ゼロ（S3 凍結中） | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
