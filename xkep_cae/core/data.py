@@ -109,30 +109,27 @@ def default_strategies(
     NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
     5軸 Strategy 全生成（status-159: Phase 5 完了）。
     """
-    from xkep_cae.contact.friction import create_friction_strategy
-    from xkep_cae.contact.penalty import create_penalty_strategy
-    from xkep_cae.core.strategies.coating import create_coating_strategy
-    from xkep_cae.core.strategies.contact_force import (
-        create_contact_force_strategy,
+    from xkep_cae.contact.contact_force.strategy import (
+        _create_contact_force_strategy,
     )
-    from xkep_cae.core.strategies.contact_geometry import (
-        create_contact_geometry_strategy,
+    from xkep_cae.contact.friction.strategy import _create_friction_strategy
+    from xkep_cae.contact.geometry.strategy import (
+        _create_contact_geometry_strategy,
     )
-    from xkep_cae.core.strategies.time_integration import (
-        create_time_integration_strategy,
+    from xkep_cae.core.time_integration.strategy import (
+        _create_time_integration_strategy,
     )
 
+    # NOTE: penalty / coating のファクトリ関数は未実装（Phase 3 で追加予定）
     return SolverStrategies(
-        penalty=create_penalty_strategy(
-            k_pen=k_pen,
-        ),
-        friction=create_friction_strategy(
+        penalty=None,
+        friction=_create_friction_strategy(
             use_friction=use_friction,
             contact_mode=contact_mode,
             ndof=ndof,
             ndof_per_node=ndof_per_node,
         ),
-        time_integration=create_time_integration_strategy(
+        time_integration=_create_time_integration_strategy(
             mass_matrix=mass_matrix,
             damping_matrix=damping_matrix,
             dt_physical=dt_physical,
@@ -140,21 +137,19 @@ def default_strategies(
             velocity=velocity,
             acceleration=acceleration,
         ),
-        contact_force=create_contact_force_strategy(
+        contact_force=_create_contact_force_strategy(
             contact_mode=contact_mode,
             ndof=ndof,
             ndof_per_node=ndof_per_node,
             contact_compliance=contact_compliance,
             smoothing_delta=smoothing_delta,
         ),
-        contact_geometry=create_contact_geometry_strategy(
+        contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,
             use_mortar=use_mortar,
             n_gauss=n_gauss,
         ),
-        coating=create_coating_strategy(
-            coating_stiffness=coating_stiffness,
-        ),
+        coating=None,
     )
 
 

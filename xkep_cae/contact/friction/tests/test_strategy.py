@@ -13,7 +13,9 @@ from xkep_cae.contact.friction import (
     FrictionInput,
     NoFrictionProcess,
     SmoothPenaltyFrictionProcess,
-    create_friction_strategy,
+)
+from xkep_cae.contact.friction.strategy import (
+    _create_friction_strategy,
 )
 from xkep_cae.core.strategies import FrictionStrategy
 from xkep_cae.core.testing import binds_to
@@ -150,50 +152,50 @@ class TestSmoothPenaltyFrictionProcess:
         assert not SmoothPenaltyFrictionProcess.meta.deprecated
 
 
-# ── create_friction_strategy ファクトリ ───────────────────
+# ── _create_friction_strategy ファクトリ ───────────────────
 
 
 class TestCreateFrictionStrategy:
-    """create_friction_strategy のテスト."""
+    """_create_friction_strategy のテスト."""
 
     def test_no_friction(self):
-        strategy = create_friction_strategy(use_friction=False, ndof=12)
+        strategy = _create_friction_strategy(use_friction=False, ndof=12)
         assert isinstance(strategy, NoFrictionProcess)
 
     def test_no_friction_default(self):
-        strategy = create_friction_strategy(ndof=12)
+        strategy = _create_friction_strategy(ndof=12)
         assert isinstance(strategy, NoFrictionProcess)
 
     def test_coulomb_ncp(self):
-        strategy = create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
+        strategy = _create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
         assert isinstance(strategy, CoulombReturnMappingProcess)
 
     def test_smooth_penalty(self):
-        strategy = create_friction_strategy(
+        strategy = _create_friction_strategy(
             use_friction=True, contact_mode="smooth_penalty", ndof=12
         )
         assert isinstance(strategy, SmoothPenaltyFrictionProcess)
 
     def test_k_pen_propagation(self):
-        strategy = create_friction_strategy(
+        strategy = _create_friction_strategy(
             use_friction=True, contact_mode="ncp", ndof=12, k_pen=1e4
         )
         assert isinstance(strategy, CoulombReturnMappingProcess)
         assert strategy._k_pen == 1e4
 
     def test_k_t_ratio_propagation(self):
-        strategy = create_friction_strategy(
+        strategy = _create_friction_strategy(
             use_friction=True, contact_mode="smooth_penalty", ndof=12, k_t_ratio=0.5
         )
         assert isinstance(strategy, SmoothPenaltyFrictionProcess)
         assert strategy._k_t_ratio == 0.5
 
     def test_no_friction_evaluate_zero(self):
-        strategy = create_friction_strategy(ndof=12)
+        strategy = _create_friction_strategy(ndof=12)
         f, r = strategy.evaluate(np.zeros(12), [], 0.3)
         np.testing.assert_array_equal(f, np.zeros(12))
 
     def test_coulomb_evaluate_no_pairs(self):
-        strategy = create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
+        strategy = _create_friction_strategy(use_friction=True, contact_mode="ncp", ndof=12)
         f, r = strategy.evaluate(np.zeros(12), [], 0.3)
         np.testing.assert_array_equal(f, np.zeros(12))

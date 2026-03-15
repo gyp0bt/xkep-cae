@@ -14,7 +14,9 @@ from xkep_cae.contact.contact_force import (
     ContactForceOutput,
     NCPContactForceProcess,
     SmoothPenaltyContactForceProcess,
-    create_contact_force_strategy,
+)
+from xkep_cae.contact.contact_force.strategy import (
+    _create_contact_force_strategy,
 )
 from xkep_cae.core.strategies import ContactForceStrategy
 from xkep_cae.core.testing import binds_to
@@ -223,24 +225,24 @@ class TestCreateContactForceStrategy:
     """ファクトリ関数のテスト."""
 
     def test_default_returns_ncp(self):
-        s = create_contact_force_strategy(ndof=24)
+        s = _create_contact_force_strategy(ndof=24)
         assert isinstance(s, NCPContactForceProcess)
 
     def test_ncp_mode(self):
-        s = create_contact_force_strategy(contact_mode="ncp", ndof=24)
+        s = _create_contact_force_strategy(contact_mode="ncp", ndof=24)
         assert isinstance(s, NCPContactForceProcess)
 
     def test_smooth_penalty_mode(self):
-        s = create_contact_force_strategy(contact_mode="smooth_penalty", ndof=24)
+        s = _create_contact_force_strategy(contact_mode="smooth_penalty", ndof=24)
         assert isinstance(s, SmoothPenaltyContactForceProcess)
 
     def test_ncp_with_compliance(self):
-        s = create_contact_force_strategy(ndof=24, contact_compliance=0.01)
+        s = _create_contact_force_strategy(ndof=24, contact_compliance=0.01)
         assert isinstance(s, NCPContactForceProcess)
         assert s._contact_compliance == 0.01
 
     def test_smooth_penalty_with_delta(self):
-        s = create_contact_force_strategy(
+        s = _create_contact_force_strategy(
             contact_mode="smooth_penalty",
             ndof=24,
             smoothing_delta=10.0,

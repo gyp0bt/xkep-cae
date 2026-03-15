@@ -508,8 +508,7 @@ def check_c16_sterilization() -> list[str]:
     ]
 
     # protocols.py は Protocol 定義ファイルなのでスキップ
-    # __init__.py は re-export のみなのでスキップ
-    _SKIP_STEMS = {"__init__", "protocols"}
+    _SKIP_STEMS = {"protocols"}
 
     all_py_files = []
     for root in scan_roots:
@@ -530,6 +529,40 @@ def check_c16_sterilization() -> list[str]:
             source = py_file.read_text(encoding="utf-8")
             tree = ast.parse(source)
         except (SyntaxError, OSError):
+            continue
+
+        # __init__.py は re-export のみ検査（関数の公開エイリアスを検出）
+        if py_file.stem == "__init__":
+            rel = py_file.relative_to(_project_root)
+            for node in ast.iter_child_nodes(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                for alias in node.names:
+                    # _foo as foo パターン: private 関数を公開名で re-export
+                    if (
+                        alias.asname
+                        and not alias.asname.startswith("_")
+                        and alias.name.startswith("_")
+                        and not alias.name.startswith("__")
+                    ):
+                        errors.append(
+                            f"C16: {rel} が {alias.name} を"
+                            f" {alias.asname} として公開 re-export"
+                            f"（private 関数の公開エイリアス禁止）"
+                        )
+                    # 公開関数の re-export（元名が _ なしの関数）
+                    exported_name = alias.asname or alias.name
+                    if (
+                        not exported_name.startswith("_")
+                        and exported_name[0].islower()
+                        and not alias.name.startswith("_")
+                    ):
+                        # 小文字開始 = 関数の可能性。ただし Process/dataclass/Enum 名は
+                        # 大文字開始なので小文字開始の re-export は関数とみなす
+                        errors.append(
+                            f"C16: {rel} が {exported_name}() を公開 re-export"
+                            f"（純粋関数の公開エクスポート禁止）"
+                        )
             continue
 
         class_names = []
