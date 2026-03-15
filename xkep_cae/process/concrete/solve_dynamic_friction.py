@@ -1,21 +1,17 @@
 """NCPDynamicContactFrictionProcess — 動的摩擦接触ソルバー.
 
-Smooth penalty + Uzawa + Coulomb 摩擦 + Generalized-α 動的解析。
-Strategy 経由で全ての接触力・摩擦力・時間積分を評価する。
-
-固定構成（王道構成）:
-- contact_mode = "smooth_penalty"
-- use_friction = True
-- line_contact = True
-- adaptive_timestepping = True
-- 時間積分 = Generalized-α
+deprecated: ContactFrictionProcess に統合（status-172）。
+後方互換のためエイリアスとして残す。
 """
 
 from __future__ import annotations
 
+import warnings
+
 from xkep_cae.process.base import ProcessMeta
 from xkep_cae.process.categories import SolverProcess
 from xkep_cae.process.data import (
+    ContactFrictionInputData,
     DynamicFrictionInputData,
     SolverResultData,
     SolverStrategies,
@@ -32,14 +28,11 @@ from xkep_cae.process.strategies.protocols import (
 
 
 class NCPDynamicContactFrictionProcess(SolverProcess[DynamicFrictionInputData, SolverResultData]):
-    """動的摩擦接触ソルバー（Generalized-α + smooth penalty）.
+    """動的摩擦接触ソルバー（deprecated → ContactFrictionProcess）.
 
-    solve_smooth_penalty_friction() を Strategy 経由で呼び出し、
-    Generalized-α 時間積分を強制する。
-
-    Usage:
-        solver = NCPDynamicContactFrictionProcess()
-        result = solver.process(input_data)
+    .. deprecated:: status-172
+        ContactFrictionProcess に統合。動的は ContactFrictionInputData に
+        mass_matrix + dt_physical を指定で自動判定される。
     """
 
     meta = ProcessMeta(
@@ -47,6 +40,8 @@ class NCPDynamicContactFrictionProcess(SolverProcess[DynamicFrictionInputData, S
         module="solve",
         version="0.1.0",
         document_path="../docs/process-architecture.md",
+        deprecated=True,
+        deprecated_by="ContactFrictionProcess",
     )
     uses = []
 
@@ -58,6 +53,12 @@ class NCPDynamicContactFrictionProcess(SolverProcess[DynamicFrictionInputData, S
     contact_geometry_slot = StrategySlot(ContactGeometryStrategy, required=False)
 
     def __init__(self, strategies: SolverStrategies | None = None) -> None:
+        warnings.warn(
+            "NCPDynamicContactFrictionProcess は deprecated です。"
+            "ContactFrictionProcess を使用してください（status-172）。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.strategies = strategies or default_strategies()
 
         self.penalty_slot = self.strategies.penalty
@@ -78,58 +79,23 @@ class NCPDynamicContactFrictionProcess(SolverProcess[DynamicFrictionInputData, S
         }
 
     def process(self, input_data: DynamicFrictionInputData) -> SolverResultData:
-        """DynamicFrictionInputData → solve_smooth_penalty_friction() → SolverResultData."""
-        import time
-
-        from xkep_cae.contact.solver_smooth_penalty import (
-            solve_smooth_penalty_friction,
+        """DynamicFrictionInputData → ContactFrictionProcess に委譲."""
+        from xkep_cae.process.concrete.solve_contact_friction import (
+            ContactFrictionProcess,
         )
 
-        # Generalized-α Strategy を動的パラメータで構築
-        ndof = len(input_data.boundary.f_ext_total)
-        strategies = default_strategies(
-            ndof=ndof,
+        unified_input = ContactFrictionInputData(
+            mesh=input_data.mesh,
+            boundary=input_data.boundary,
+            contact=input_data.contact,
+            callbacks=input_data.callbacks,
+            u0=input_data.u0,
             mass_matrix=input_data.mass_matrix,
-            damping_matrix=input_data.damping_matrix,
             dt_physical=input_data.dt_physical,
             rho_inf=input_data.rho_inf,
+            damping_matrix=input_data.damping_matrix,
             velocity=input_data.velocity,
             acceleration=input_data.acceleration,
-            k_pen=input_data.contact.k_pen,
-            use_friction=True,
-            mu=input_data.contact.mu or 0.15,
-            contact_mode="smooth_penalty",
-            line_contact=True,
         )
-
-        t0 = time.perf_counter()
-        result = solve_smooth_penalty_friction(
-            f_ext_total=input_data.boundary.f_ext_total,
-            fixed_dofs=input_data.boundary.fixed_dofs,
-            assemble_tangent=input_data.callbacks.assemble_tangent,
-            assemble_internal_force=input_data.callbacks.assemble_internal_force,
-            manager=input_data.contact.manager,
-            node_coords_ref=input_data.mesh.node_coords,
-            connectivity=input_data.mesh.connectivity,
-            radii=input_data.mesh.radii,
-            strategies=strategies,
-            k_pen=input_data.contact.k_pen,
-            mu=input_data.contact.mu,
-            u0=input_data.u0,
-            f_ext_base=input_data.boundary.f_ext_base,
-            prescribed_dofs=input_data.boundary.prescribed_dofs,
-            prescribed_values=input_data.boundary.prescribed_values,
-            ul_assembler=input_data.callbacks.ul_assembler,
-        )
-        elapsed = time.perf_counter() - t0
-
-        return SolverResultData(
-            u=result.u,
-            converged=result.converged,
-            n_increments=result.n_increments,
-            total_newton_iterations=result.total_newton_iterations,
-            displacement_history=result.displacement_history,
-            contact_force_history=result.contact_force_history,
-            elapsed_seconds=elapsed,
-            diagnostics=result.diagnostics,
-        )
+        proc = ContactFrictionProcess(strategies=self.strategies)
+        return proc.process(unified_input)

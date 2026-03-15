@@ -212,6 +212,40 @@ class QuasiStaticFrictionInputData:
     u0: np.ndarray | None = None
 
 
+@dataclass(frozen=True)
+class ContactFrictionInputData:
+    """摩擦接触解析の統一入力（準静的/動的の自動判定）.
+
+    動的パラメータ (mass_matrix, dt_physical) が指定されると動的解析
+    （Generalized-α）、未指定なら準静的解析を自動選択する。
+    TimeIntegrationStrategy が内部で QuasiStatic / GeneralizedAlpha を振り分ける。
+
+    固定構成（王道構成）:
+    - contact_mode = "smooth_penalty"
+    - use_friction = True
+    - line_contact = True
+    - adaptive_timestepping = True
+    """
+
+    mesh: MeshData
+    boundary: BoundaryData
+    contact: ContactSetupData
+    callbacks: AssembleCallbacks
+    u0: np.ndarray | None = None
+    # 動的解析パラメータ（全て Optional — 未指定で準静的）
+    mass_matrix: sp.spmatrix | None = None
+    dt_physical: float = 0.0
+    rho_inf: float = 0.9
+    damping_matrix: sp.spmatrix | None = None
+    velocity: np.ndarray | None = None
+    acceleration: np.ndarray | None = None
+
+    @property
+    def is_dynamic(self) -> bool:
+        """動的解析かどうか."""
+        return self.mass_matrix is not None and self.dt_physical > 0.0
+
+
 @dataclass
 class SolverResultData:
     """ソルバー結果."""

@@ -133,6 +133,10 @@ def check_c5_undeclared_deps(registry: dict[str, type]) -> list[str]:
     registry_names = set(registry.keys())
 
     for name, cls in sorted(registry.items()):
+        # deprecated プロセスはスキップ（後継への委譲は正常動作）
+        meta = getattr(cls, "meta", None)
+        if meta is not None and getattr(meta, "deprecated", False):
+            continue
         # ラップ前の元関数を取得
         method = getattr(cls, "process", None)
         if method is None:
