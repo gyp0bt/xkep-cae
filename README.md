@@ -27,7 +27,7 @@
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了 |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了 |
 | **大規模収束** | **19本曲げ揺動収束、37本径方向圧縮収束** | **凍結中** |
-| **Process Architecture** | **Phase 9 完遂、AL完全削除、deprecated完全削除 (status-173)** | **[Phase 8 完遂](xkep_cae/process/docs/phase8-design.md)** |
+| **Process Architecture** | **脱出ポット計画 Phase 1: xkep_cae リネーム + PenaltyStrategy (status-175)** | **新パッケージ構築中** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
