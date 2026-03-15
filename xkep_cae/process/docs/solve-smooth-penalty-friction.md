@@ -21,16 +21,12 @@
 
 ## プロセスクラス
 
-### NCPDynamicContactFrictionProcess
+### ContactFrictionProcess（統一型, status-172）
 
-- 入力: `DynamicFrictionInputData`（mass_matrix, dt_physical 必須）
-- 時間積分: `GeneralizedAlphaProcess`（rho_inf 指定可能）
-- 出力: `SolverResultData`
-
-### NCPQuasiStaticContactFrictionProcess
-
-- 入力: `QuasiStaticFrictionInputData`（質量行列不要）
-- 時間積分: `QuasiStaticProcess`
+- 入力: `ContactFrictionInputData`（動的パラメータ Optional）
+- 動的/準静的は `is_dynamic` プロパティで自動判定
+  - 動的（mass_matrix + dt_physical > 0）: Generalized-α 時間積分
+  - 準静的（それ以外）: 荷重制御 or 変位制御
 - 出力: `SolverResultData`
 
 ## ソルバー関数
@@ -55,4 +51,5 @@
 - status-168: 本設計の実装記録
 - status-147: NCP鞍点系の符号問題特定（smooth_penalty 必須化の根拠）
 - status-158: SolverStrategies 統合
+- status-173: deprecated プロセス完全削除（NCPQuasiStatic/NCPDynamic → ContactFrictionProcess）
 """

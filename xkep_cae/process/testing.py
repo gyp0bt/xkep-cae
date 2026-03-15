@@ -20,8 +20,8 @@ def binds_to(process_class: type[AbstractProcess]):
 
     Usage::
 
-        @binds_to(NCPQuasiStaticContactFrictionProcess)
-        class TestNCPQuasiStaticContactFrictionProcess:
+        @binds_to(ContactFrictionProcess)
+        class TestContactFrictionProcess:
             ...
     """
 
