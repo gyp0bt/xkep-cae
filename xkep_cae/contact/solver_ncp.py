@@ -25,6 +25,10 @@ AL-NCP ハイブリッド + Alart-Curnier 鞍点定式化:
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from xkep_cae.process.strategies.protocols import LinearSolverStrategy
 
 import numpy as np
 import scipy.sparse as sp
@@ -402,6 +406,7 @@ def _solve_saddle_point_direct(
     ilu_drop_tol: float = 1e-4,
     contact_compliance: float = 0.0,
     lam_active: np.ndarray | None = None,
+    solver_strategy: LinearSolverStrategy | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を直接 Schur complement で解く.
 
@@ -429,18 +434,32 @@ def _solve_saddle_point_direct(
         R_u: (ndof,) 力残差
         g_active: (n_active,) アクティブペアのギャップ
         fixed_dofs: 拘束 DOF
-        linear_solver: 線形ソルバーモード
-        iterative_tol: 反復ソルバー許容値
-        ilu_drop_tol: ILU drop tolerance
+        linear_solver: 線形ソルバーモード（solver_strategy 未指定時のフォールバック）
+        iterative_tol: 反復ソルバー許容値（solver_strategy 未指定時のフォールバック）
+        ilu_drop_tol: ILU drop tolerance（solver_strategy 未指定時のフォールバック）
         contact_compliance: δ正則化パラメータ（0で従来動作）
         lam_active: (n_active,) アクティブペアの現在λ（δ>0時に使用）
+        solver_strategy: LinearSolverStrategy インスタンス。指定時は
+            linear_solver/iterative_tol/ilu_drop_tol を無視して Strategy 経由で解く。
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
     """
     ndof = K_T.shape[0]
     n_active = G_A.shape[0]
-    solve_kw = dict(mode=linear_solver, iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol)
+
+    # Strategy が渡されていない場合はフォールバックでファクトリから生成
+    if solver_strategy is None:
+        from xkep_cae.process.strategies.linear_solver import create_linear_solver
+
+        solver_strategy = create_linear_solver(
+            mode=linear_solver,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+        )
+
+    def _solve(K, rhs):
+        return solver_strategy.solve(K, rhs)
 
     # K_eff = K_T + k_pen * G_A^T * G_A （ペナルティ正則化）
     K_eff = K_T + k_pen * (G_A.T @ G_A)
@@ -450,7 +469,7 @@ def _solve_saddle_point_direct(
     K_bc_csr, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
     # Step 1: v0 = K_eff^{-1} * (-R_u)
-    v0 = _solve_linear_system(K_bc_csr, rhs_u, **solve_kw)
+    v0 = _solve(K_bc_csr, rhs_u)
 
     # Step 2: V = K_eff^{-1} * G_A^T  (ndof × n_active)
     G_A_T_dense = G_A.T.toarray()  # ndof × n_active
@@ -464,14 +483,14 @@ def _solve_saddle_point_direct(
         from concurrent.futures import ThreadPoolExecutor
 
         def _solve_col(j):
-            return j, _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+            return j, _solve(K_bc_csr, G_A_T_bc[:, j])
 
         with ThreadPoolExecutor() as pool:
             for j, vj in pool.map(lambda j: _solve_col(j), range(n_active)):
                 V[:, j] = vj
     else:
         for j in range(n_active):
-            V[:, j] = _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+            V[:, j] = _solve(K_bc_csr, G_A_T_bc[:, j])
 
     # Step 3: S = G_A * V  (n_active × n_active — 制約 Schur 補集合)
     G_A_dense = G_A.toarray()
@@ -873,8 +892,18 @@ def _solve_saddle_point_contact(
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
     """
+    from xkep_cae.process.strategies.linear_solver import create_linear_solver
+
     n_active = G_A.shape[0]
     ndof = K_T.shape[0]
+
+    # LinearSolverStrategy を一度だけ生成（Newton反復内で再利用）
+    _solver_strategy = create_linear_solver(
+        mode=linear_solver,
+        iterative_tol=iterative_tol,
+        ilu_drop_tol=ilu_drop_tol,
+        gmres_dof_threshold=gmres_dof_threshold,
+    )
 
     # auto モードで DOF 閾値を超えた場合、ブロック前処理 GMRES を自動選択
     auto_block = linear_solver == "auto" and ndof >= gmres_dof_threshold and n_active > 0
@@ -882,13 +911,7 @@ def _solve_saddle_point_contact(
     if n_active == 0:
         rhs = -R_u.copy()
         K_bc_csr, rhs = _apply_bc_csr(K_T, rhs, fixed_dofs)
-        solve_kw = dict(
-            mode=linear_solver,
-            iterative_tol=iterative_tol,
-            ilu_drop_tol=ilu_drop_tol,
-            gmres_dof_threshold=gmres_dof_threshold,
-        )
-        du = _solve_linear_system(K_bc_csr, rhs, **solve_kw)
+        du = _solver_strategy.solve(K_bc_csr, rhs)
         return du, np.array([])
 
     # --- S3改良10: 対角スケーリング前処理 ---
@@ -904,6 +927,8 @@ def _solve_saddle_point_contact(
         G_A = G_A @ D_sp
 
     if use_block_preconditioner or auto_block:
+        # ブロック前処理 GMRES: 拡大鞍点系固有のGMRESソルバー
+        # LinearSolverStrategy とは異なるパラダイム（拡大系全体をGMRESで解く）
         du, dlam = _solve_saddle_point_gmres(
             K_T,
             G_A,
@@ -923,11 +948,9 @@ def _solve_saddle_point_contact(
             R_u,
             g_active,
             fixed_dofs,
-            linear_solver=linear_solver,
-            iterative_tol=iterative_tol,
-            ilu_drop_tol=ilu_drop_tol,
             contact_compliance=contact_compliance,
             lam_active=lam_active,
+            solver_strategy=_solver_strategy,
         )
 
     # スケーリングの逆変換
