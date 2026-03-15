@@ -66,6 +66,8 @@
 | `_solve_linear_system()` if分岐 | `LinearSolverStrategy` Protocol + 委譲 | status-171 |
 | `NCPQuasiStatic/DynamicContactFrictionProcess` | `ContactFrictionProcess`（統一型） | status-172 |
 | `executor.py` 4関数 NotImplementedError | NCP版実装 | status-172 |
+| `NCPQuasiStatic/DynamicContactFrictionProcess` | 完全削除（→ ContactFrictionProcess） | status-173 |
+| `QuasiStaticFrictionInputData` / `DynamicFrictionInputData` | 完全削除（→ ContactFrictionInputData） | status-173 |
 
 ## 推奨ソルバー構成
 
@@ -77,7 +79,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 356 processテスト** — 2026-03-15
+**~2260テスト + 343 processテスト** — 2026-03-15
 
 ### ターゲット
 
@@ -85,7 +87,7 @@
 
 ### 次の課題
 
-**Process Architecture 統合完了（status-172）** — ContactFrictionProcess統合 + executor NCP版再実装。
+**deprecated プロセス完全削除（status-173）** — NCPQuasiStatic/NCPDynamic 完全削除 + executor テスト追加。
 
 S3凍結解除準備中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
