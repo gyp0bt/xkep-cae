@@ -62,6 +62,8 @@
 | `ContactManager.compute_coating_*()` | `CoatingStrategy.*()` | status-169 |
 | `ContactManager.{max_layer,compute_active_layer_for_step,...}` | `staged_activation.*()` / `initial_penetration.*()` | status-170 |
 | テスト名 `*_ncp.*` | NCP サフィックス除去 | status-170 |
+| `ContactManager` deprecated 10メソッド | 完全削除（呼び出し元直接移行済み） | status-171 |
+| `_solve_linear_system()` if分岐 | `LinearSolverStrategy` Protocol + 委譲 | status-171 |
 
 ## 推奨ソルバー構成
 
@@ -73,7 +75,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 341 processテスト** — 2026-03-14
+**~2260テスト + 356 processテスト** — 2026-03-14
 
 ### ターゲット
 

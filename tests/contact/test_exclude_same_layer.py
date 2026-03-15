@@ -12,6 +12,7 @@ from xkep_cae.contact.pair import (
     ContactPair,
     ContactStatus,
 )
+from xkep_cae.contact.staged_activation import count_same_layer_pairs
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
 
@@ -222,7 +223,7 @@ class TestExcludeSameLayerTwistedWire:
 
 
 class TestCountSameLayerPairs:
-    """ContactManager.count_same_layer_pairs() のテスト."""
+    """count_same_layer_pairs() 純関数のテスト."""
 
     def _make_pair(self, elem_a, elem_b, status=ContactStatus.ACTIVE):
         pair = ContactPair(
@@ -237,28 +238,22 @@ class TestCountSameLayerPairs:
     def test_count_basic(self):
         """基本的な同層ペアカウント."""
         lmap = {0: 0, 1: 0, 2: 1, 3: 1}
-        mgr = ContactManager(config=ContactConfig(elem_layer_map=lmap))
-        mgr.pairs.append(self._make_pair(0, 1))  # 同層(0)
-        mgr.pairs.append(self._make_pair(0, 2))  # 異層
-        mgr.pairs.append(self._make_pair(2, 3))  # 同層(1)
-        assert mgr.count_same_layer_pairs() == 2
+        pairs = [self._make_pair(0, 1), self._make_pair(0, 2), self._make_pair(2, 3)]
+        assert count_same_layer_pairs(pairs, lmap) == 2
 
     def test_inactive_not_counted(self):
         """INACTIVE ペアはカウントされない."""
         lmap = {0: 0, 1: 0}
-        mgr = ContactManager(config=ContactConfig(elem_layer_map=lmap))
-        mgr.pairs.append(self._make_pair(0, 1, status=ContactStatus.INACTIVE))
-        assert mgr.count_same_layer_pairs() == 0
+        pairs = [self._make_pair(0, 1, status=ContactStatus.INACTIVE)]
+        assert count_same_layer_pairs(pairs, lmap) == 0
 
     def test_no_layer_map(self):
         """layer_map なしなら 0."""
-        mgr = ContactManager(config=ContactConfig())
-        mgr.pairs.append(self._make_pair(0, 1))
-        assert mgr.count_same_layer_pairs() == 0
+        pairs = [self._make_pair(0, 1)]
+        assert count_same_layer_pairs(pairs, None) == 0
 
     def test_unknown_elem_not_counted(self):
         """layer_map に含まれない要素は同層判定されない."""
         lmap = {0: 0}
-        mgr = ContactManager(config=ContactConfig(elem_layer_map=lmap))
-        mgr.pairs.append(self._make_pair(0, 5))  # elem 5 は map にない
-        assert mgr.count_same_layer_pairs() == 0
+        pairs = [self._make_pair(0, 5)]
+        assert count_same_layer_pairs(pairs, lmap) == 0

@@ -20,6 +20,10 @@ import scipy.sparse as sp
 
 from xkep_cae.contact.diagnostics import ConvergenceDiagnostics, NCPSolveResult
 from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
+from xkep_cae.contact.initial_penetration import (
+    adjust_initial_positions,
+    check_initial_penetration,
+)
 from xkep_cae.contact.pair import ContactManager
 from xkep_cae.contact.utils import deformed_coords, ncp_line_search
 from xkep_cae.process.data import SolverStrategies
@@ -206,8 +210,8 @@ def solve_smooth_penalty_friction(
         _use_adjust = False
     if _use_adjust:
         _pos_tol = manager.config.position_tolerance
-        node_coords_ref, n_pen_fixed, n_gap_closed = manager.adjust_initial_positions(
-            node_coords_ref, _pos_tol
+        node_coords_ref, n_pen_fixed, n_gap_closed = adjust_initial_positions(
+            manager.pairs, node_coords_ref, _pos_tol
         )
         if show_progress and (n_pen_fixed + n_gap_closed) > 0:
             print(f"  初期位置調整: 貫入修正={n_pen_fixed}ペア, ギャップ閉鎖={n_gap_closed}ペア")
@@ -225,7 +229,9 @@ def solve_smooth_penalty_friction(
         and hasattr(ul_assembler, "u_total_accum")
         and float(np.linalg.norm(ul_assembler.u_total_accum)) > 1e-15
     )
-    n_initial_pen = manager.check_initial_penetration(node_coords_ref)
+    n_initial_pen = check_initial_penetration(
+        manager.pairs, node_coords_ref, manager.config.coating_stiffness
+    )
     if n_initial_pen > 0 and not _use_coating and not _ul_has_accum:
         raise ValueError(
             f"初期貫入が検出されました: {n_initial_pen}ペア。"

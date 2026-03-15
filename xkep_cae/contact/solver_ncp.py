@@ -40,6 +40,10 @@ from xkep_cae.contact.diagnostics import (
     NCPSolverInput,  # noqa: F401 — re-export for backward compatibility
 )
 from xkep_cae.contact.graph import ContactGraphHistory, snapshot_contact_graph
+from xkep_cae.contact.initial_penetration import (
+    adjust_initial_positions,
+    check_initial_penetration,
+)
 from xkep_cae.contact.law_friction import compute_mu_effective
 from xkep_cae.contact.mortar import (
     build_mortar_system,
@@ -48,6 +52,10 @@ from xkep_cae.contact.mortar import (
     identify_mortar_nodes,
 )
 from xkep_cae.contact.pair import ContactManager, ContactStatus
+from xkep_cae.contact.staged_activation import (
+    compute_active_layer_for_step,
+    filter_pairs_by_layer,
+)
 from xkep_cae.contact.utils import deformed_coords, ncp_line_search
 
 # NCPSolverInput は diagnostics.py からの re-export（後方互換）
@@ -164,57 +172,20 @@ def _solve_linear_system(
 ) -> np.ndarray:
     """線形連立方程式を解く.
 
+    内部的に LinearSolverStrategy に委譲する。
     mode="auto" では DOF 閾値に基づいて直接法と反復法を自動選択する:
       - DOF < gmres_dof_threshold: 直接法（spsolve）
       - DOF >= gmres_dof_threshold: 反復法（GMRES + ILU 前処理）
     """
-    import warnings
+    from xkep_cae.process.strategies.linear_solver import create_linear_solver
 
-    import scipy.sparse.linalg as spla
-
-    if mode == "direct":
-        return spla.spsolve(K, rhs)
-
-    if mode == "iterative":
-        K_csc = K.tocsc()
-        try:
-            ilu = spla.spilu(K_csc, drop_tol=ilu_drop_tol)
-            M = spla.LinearOperator(K.shape, ilu.solve)
-        except RuntimeError:
-            M = None
-        _restart_k = min(max(30, K.shape[0] // 10), 200)
-        x, info = spla.gmres(
-            K, rhs, M=M, atol=iterative_tol, restart=_restart_k, maxiter=max(500, K.shape[0])
-        )
-        if info != 0:
-            x = spla.spsolve(K, rhs)
-        return x
-
-    # auto: DOF 閾値ベースで選択
-    n = K.shape[0]
-    if n >= gmres_dof_threshold:
-        return _solve_linear_system(
-            K,
-            rhs,
-            mode="iterative",
-            iterative_tol=iterative_tol,
-            ilu_drop_tol=ilu_drop_tol,
-        )
-
-    # 小規模: direct → iterative fallback
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        x = spla.spsolve(K, rhs)
-    for w in caught:
-        if "MatrixRankWarning" in str(w.category.__name__) or "singular" in str(w.message).lower():
-            return _solve_linear_system(
-                K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
-            )
-    if not np.all(np.isfinite(x)):
-        return _solve_linear_system(
-            K, rhs, mode="iterative", iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol
-        )
-    return x
+    solver = create_linear_solver(
+        mode=mode,
+        iterative_tol=iterative_tol,
+        ilu_drop_tol=ilu_drop_tol,
+        gmres_dof_threshold=gmres_dof_threshold,
+    )
+    return solver.solve(K, rhs)
 
 
 def _apply_bc(K_lil, rhs, fixed_dofs):
@@ -1452,8 +1423,8 @@ def newton_raphson_contact_ncp(
 
     # 初期貫入修正 + 小ギャップ閉鎖（position_tolerance > 0 の場合）
     if _adjust:
-        node_coords_ref, n_pen_fixed, n_gap_closed = manager.adjust_initial_positions(
-            node_coords_ref, _pos_tol
+        node_coords_ref, n_pen_fixed, n_gap_closed = adjust_initial_positions(
+            manager.pairs, node_coords_ref, _pos_tol
         )
         if show_progress and (n_pen_fixed + n_gap_closed) > 0:
             print(
@@ -1477,7 +1448,9 @@ def newton_raphson_contact_ncp(
         and hasattr(ul_assembler, "u_total_accum")
         and float(np.linalg.norm(ul_assembler.u_total_accum)) > 1e-15
     )
-    n_initial_pen = manager.check_initial_penetration(node_coords_ref)
+    n_initial_pen = check_initial_penetration(
+        manager.pairs, node_coords_ref, manager.config.coating_stiffness
+    )
     if n_initial_pen > 0 and not _use_coating and not _ul_has_accum:
         raise ValueError(
             f"初期貫入が検出されました: {n_initial_pen}ペア。"
@@ -1550,8 +1523,12 @@ def newton_raphson_contact_ncp(
         if manager.config.staged_activation_steps > 0:
             # n_load_steps は adaptive では不定のため、推定値を使用
             _est_total = max(n_load_steps, int(1.0 / max(_dt_min_frac, 0.01)))
-            max_layer = manager.compute_active_layer_for_step(step_display, _est_total)
-            manager.filter_pairs_by_layer(max_layer)
+            max_layer = compute_active_layer_for_step(
+                step_display,
+                manager.config.staged_activation_steps,
+                manager.config.elem_layer_map,
+            )
+            filter_pairs_by_layer(manager.pairs, max_layer, manager.config.elem_layer_map)
 
         manager.update_geometry(coords_def)
 

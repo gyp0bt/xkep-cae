@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-14）
 
-**~2260テスト + 341 processテスト** | R1 テスト名正規化+純関数化完了（S3 凍結中） | [最新status](status/status-index.md)
+**~2260テスト + 356 processテスト** | R1 deprecated除去+LinearSolverStrategy完了（S3 凍結中） | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
