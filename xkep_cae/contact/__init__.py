@@ -89,7 +89,6 @@ from xkep_cae.contact.solver_ncp import (
     _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
 )
-from xkep_cae.contact.solver_smooth_penalty import solve_smooth_penalty_friction
 from xkep_cae.contact.utils import deformed_coords, ncp_line_search
 
 __all__ = [
@@ -144,7 +143,6 @@ __all__ = [
     "ncp_fischer_burmeister",
     "ncp_min",
     "newton_raphson_contact_ncp",
-    "solve_smooth_penalty_friction",
     "deformed_coords",
     "ncp_line_search",
     "_solve_saddle_point_direct",

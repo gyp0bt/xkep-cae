@@ -85,6 +85,7 @@
 | [171](status-171.md) | 2026-03-14 | deprecated薄ラッパー除去 + LinearSolverStrategy 抽出 | ~2260+356p |
 | [172](status-172.md) | 2026-03-15 | status-171 TODO消化 — LinearSolverStrategy統合 + Process統合 + executor NCP版 | ~2260+356p |
 | [173](status-173.md) | 2026-03-15 | deprecated プロセス完全削除 + executor テスト追加 | ~2260+343p |
+| [174](status-174.md) | 2026-03-15 | solver_smooth_penalty.py 分解 → Process 実体化 | ~2260+343p |
 
 ## アーカイブ（001〜096）
 
@@ -123,7 +124,7 @@ GNN/PINN PoC:  1629  (2026-02-26)
 Phase C6:       1850  (2026-02-28)
 S1-S2:          1822  (2026-02-28)
 S2++/S3基盤:    1886  (2026-03-01)
-現在:           ~2260+343p (2026-03-15) ← status-173
+現在:           ~2260+343p (2026-03-15) ← status-174
 ```
 
 ## 備考
