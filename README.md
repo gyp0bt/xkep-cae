@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 34 新processテスト** — 2026-03-15時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**~2260テスト + 204 新processテスト** — 2026-03-15時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
@@ -26,7 +26,7 @@
 | 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了（deprecated） |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了（deprecated） |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了（deprecated） |
-| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 2 前半完了（core移行+Friction）** |
+| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 2 後半完了（Strategy全移行+契約違反ゼロ）** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
@@ -43,7 +43,10 @@ xkep_cae/
 │   └── strategies/ # Strategy Protocol 定義
 ├── contact/        # 接触 Strategy 実装
 │   ├── penalty/    # ✅ PenaltyStrategy + 法線力 Process（34テスト）
-│   └── friction/   # ✅ FrictionStrategy + return mapping（52テスト）
+│   ├── friction/   # ✅ FrictionStrategy + return mapping（52テスト）
+│   ├── coating/    # ✅ CoatingStrategy + Kelvin-Voigt（12テスト）
+│   ├── contact_force/ # ✅ ContactForceStrategy（テスト済み）
+│   └── geometry/   # ✅ ContactGeometryStrategy（テスト済み）
 ├── process/        # 後方互換 re-export レイヤー（→ core/）
 ├── elements/       # 要素（移行予定）
 ├── materials/      # 構成則（移行予定）

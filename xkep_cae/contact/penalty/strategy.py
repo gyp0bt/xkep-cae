@@ -32,6 +32,31 @@ class PenaltyOutput:
 # ── 具象 Process ──────────────────────────────────────────
 
 
+class ConstantPenalty(SolverProcess[PenaltyInput, PenaltyOutput]):
+    """定数ペナルティ剛性.
+
+    k_pen を全ステップで一定値として返す。
+    beam_E / beam_I が未指定の場合のフォールバック用。
+    """
+
+    meta = ProcessMeta(
+        name="ConstantPenalty",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/penalty.md",
+    )
+
+    def __init__(self, k_pen: float = 1.0) -> None:
+        self._k_pen = k_pen
+
+    def compute_k_pen(self, step: int, total_steps: int) -> float:
+        """PenaltyStrategy Protocol."""
+        return self._k_pen
+
+    def process(self, input_data: PenaltyInput) -> PenaltyOutput:
+        return PenaltyOutput(k_pen=self._k_pen)
+
+
 class AutoBeamEIPenalty(SolverProcess[PenaltyInput, PenaltyOutput]):
     """梁曲げ剛性 EI/L³ ベースのペナルティ剛性自動推定.
 
@@ -159,3 +184,27 @@ class ContinuationPenalty(SolverProcess[PenaltyInput, PenaltyOutput]):
 
     def process(self, input_data: PenaltyInput) -> PenaltyOutput:
         return PenaltyOutput(k_pen=self.compute_k_pen(input_data.step, input_data.total_steps))
+
+
+def _create_penalty_strategy(
+    *,
+    k_pen: float = 1.0,
+    beam_E: float = 0.0,
+    beam_I: float = 0.0,
+    beam_L: float = 0.0,
+) -> AutoBeamEIPenalty | ConstantPenalty:
+    """Penalty Strategy ファクトリ.
+
+    Args:
+        k_pen: 定数ペナルティ剛性（beam パラメータ未指定時のフォールバック）
+        beam_E: ヤング率
+        beam_I: 断面二次モーメント
+        beam_L: 代表要素長
+
+    Returns:
+        beam_E, beam_I, beam_L が全て正なら AutoBeamEIPenalty、
+        そうでなければ ConstantPenalty(k_pen) を返す。
+    """
+    if beam_E > 0.0 and beam_I > 0.0 and beam_L > 0.0:
+        return AutoBeamEIPenalty(beam_E=beam_E, beam_I=beam_I, L_elem=beam_L)
+    return ConstantPenalty(k_pen=k_pen)
