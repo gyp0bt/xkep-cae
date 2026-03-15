@@ -13,79 +13,53 @@
 |------|------|------|
 | 素線数 | **37本**（径方向圧縮Layer1で収束達成）| 1000本（~30,000 DOF, 長手分割で~100,000節点） |
 | 計算時間 | 91本で~25分/曲げ揺動 | 1000本で6時間以内 |
-| ソルバー | NCP: **37本収束達成**、S3改良12項目（適応Δt/AMG/k_pen自動推定/残差スケーリング/接触力ランプ/初期貫入補正等）実装済み | NCP: 91本収束 |
+| ソルバー | NCP: **37本収束達成**、S3改良12項目実装済み | NCP: 91本収束 |
 | 接触ペア | 91本で~66,000候補 | 1000本で~730万候補→ML削減 |
 
 ## 現在の状態
 
-**~2260テスト + 343 processテスト** — 2026-03-15時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**~2260テスト + 34 新processテスト** — 2026-03-15時点 | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
-| FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 平面 + HEX8 + 非線形 + 動的解析 | 完了 |
-| 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了 |
-| 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了 |
-| 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了 |
-| **大規模収束** | **19本曲げ揺動収束、37本径方向圧縮収束** | **凍結中** |
-| **Process Architecture** | **脱出ポット計画 Phase 1: xkep_cae リネーム + PenaltyStrategy (status-175)** | **新パッケージ構築中** |
+| FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 平面 + HEX8 + 非線形 + 動的解析 | 完了（deprecated） |
+| 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了（deprecated） |
+| 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了（deprecated） |
+| 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了（deprecated） |
+| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 1 完了** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
-## ドキュメント
+## パッケージ構成
 
-| ドキュメント | 内容 |
-|------------|------|
-| [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
-| [ステータス一覧](docs/status/status-index.md) | 全170件のstatus + テスト数推移 |
-| [S3完了済み項目](docs/status/s3-completed.md) | S3フェーズ53項目の完了記録 |
-| [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
-| [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
-| [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
-| [設計文書一覧](docs/design/README.md) | プロセスアーキテクチャ・Cosserat・接触・過渡応答等 |
-| [使用例](docs/reference/examples.md) | API・梁要素・非線形・弾塑性のコード例 |
-| [Abaqus差異](docs/reference/abaqus-differences.md) | xkep-caeとAbaqusの要素定式化の差異 |
+### xkep_cae/（新パッケージ — Process Architecture ベース）
 
-### モジュール別ドキュメント
-
-各モジュールの設計仕様は、対応するソースディレクトリの README.md に配置。
-
-| モジュール | README | 主な設計仕様 |
-|-----------|--------|------------|
-| [contact/](xkep_cae/contact/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
-| [elements/](xkep_cae/elements/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
-| [mesh/](xkep_cae/mesh/README.md) | メッシュ生成 | 撚線/シース/被膜 |
-| [tuning/](xkep_cae/tuning/) | チューニングタスク | TuningTask/スケーリング/検証プロット |
-| [solver](xkep_cae/solver.py) | 非線形ソルバー | NR/弧長法 |
-
-## インストール
-
-```bash
-pip install -e ".[dev]"
-# ML機能（GNN/PINN）を使う場合
-pip install -e ".[dev,ml]"
-```
-
-## テスト実行
-
-```bash
-# 高速テストのみ（~3分）
-pytest tests/ -v -m "not slow and not external"
-
-# 全テスト（~30分, slow含む）
-pytest tests/ -v -m "not external"
-```
-
-## Lint / Format
-
-```bash
-ruff check xkep_cae/ tests/
-ruff format xkep_cae/ tests/
-```
-
-## プロジェクト構成
+脱出ポット計画により Process Architecture でゼロから構築中。
+C14（deprecated インポート禁止）/ C15（ドキュメント存在検証）/ C16（滅菌チェック）の契約ルール適用。
 
 ```
 xkep_cae/
+├── core/           # Protocol 定義
+├── elements/       # 要素（移行予定）
+├── materials/      # 構成則（移行予定）
+├── sections/       # 断面モデル（移行予定）
+├── math/           # 数学ユーティリティ（移行予定）
+├── process/        # プロセスアーキテクチャ基盤
+│   └── strategies/
+│       └── penalty/  # ✅ PenaltyStrategy + 法線力 Process（34テスト）
+├── mesh/           # メッシュ生成（移行予定）
+├── io/             # Abaqus .inp パーサー（移行予定）
+├── output/         # 出力（移行予定）
+├── thermal/        # 熱伝導（移行予定）
+└── tuning/         # チューニング（移行予定）
+```
+
+### xkep_cae_deprecated/（旧パッケージ — 段階的移行元）
+
+全機能が実装済み。脱出ポット計画で新 xkep_cae に順次移行される。
+
+```
+xkep_cae_deprecated/
 ├── core/           # Protocol 定義（Element, Constitutive, State）
 ├── elements/       # 要素（Q4, TRI3/6, Beam, Cosserat, HEX8）
 ├── materials/      # 構成則（弾性, 1D/3D弾塑性）
@@ -103,6 +77,57 @@ xkep_cae/
 ├── dynamics.py     # 動的解析
 ├── bc.py           # 境界条件
 └── api.py          # 高レベル API
+```
+
+## ドキュメント
+
+| ドキュメント | 内容 |
+|------------|------|
+| [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
+| [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
+| [設計文書一覧](docs/design/README.md) | 新旧設計仕様書リンク集 |
+| [検証画像ギャラリー](docs/verification/gallery.md) | 全検証画像の一覧（新しい順） |
+| [検証文書](docs/verification/validation.md) | 解析解・厳密解との比較（検証図20枚） |
+| [接触テストカタログ](docs/verification/contact_test_catalog.md) | 全接触テスト（~240テスト） |
+| [使用例](docs/reference/examples.md) | API・梁要素・非線形・弾塑性のコード例（旧API） |
+| [Abaqus差異](docs/reference/abaqus-differences.md) | xkep-caeとAbaqusの要素定式化の差異 |
+
+### 旧モジュール別ドキュメント
+
+各旧モジュールの設計仕様は `xkep_cae_deprecated/` 配下に配置。
+
+| モジュール | README | 主な設計仕様 |
+|-----------|--------|------------|
+| [contact/](xkep_cae_deprecated/contact/docs/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
+| [elements/](xkep_cae_deprecated/elements/docs/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
+| [mesh/](xkep_cae_deprecated/mesh/docs/README.md) | メッシュ生成 | 撚線/シース/被膜 |
+
+## インストール
+
+```bash
+pip install -e ".[dev]"
+# ML機能（GNN/PINN）を使う場合
+pip install -e ".[dev,ml]"
+```
+
+## テスト実行
+
+```bash
+# 高速テストのみ（~3分）
+pytest tests/ -v -m "not slow and not external"
+
+# 全テスト（~30分, slow含む）
+pytest tests/ -v -m "not external"
+
+# 新パッケージテストのみ
+pytest xkep_cae/ -v
+```
+
+## Lint / Format
+
+```bash
+ruff check xkep_cae/ tests/
+ruff format xkep_cae/ tests/
 ```
 
 ## ライセンス
