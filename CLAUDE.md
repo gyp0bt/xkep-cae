@@ -64,6 +64,8 @@
 | テスト名 `*_ncp.*` | NCP サフィックス除去 | status-170 |
 | `ContactManager` deprecated 10メソッド | 完全削除（呼び出し元直接移行済み） | status-171 |
 | `_solve_linear_system()` if分岐 | `LinearSolverStrategy` Protocol + 委譲 | status-171 |
+| `NCPQuasiStatic/DynamicContactFrictionProcess` | `ContactFrictionProcess`（統一型） | status-172 |
+| `executor.py` 4関数 NotImplementedError | NCP版実装 | status-172 |
 
 ## 推奨ソルバー構成
 
@@ -75,7 +77,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 356 processテスト** — 2026-03-14
+**~2260テスト + 356 processテスト** — 2026-03-15
 
 ### ターゲット
 
@@ -83,7 +85,7 @@
 
 ### 次の課題
 
-**AL完全削除 + Process Architecture移行中（status-167）** — AL solver（solver_hooks.py, line_search.py）を完全削除。NCP一本化。~215テスト削除。
+**Process Architecture 統合完了（status-172）** — ContactFrictionProcess統合 + executor NCP版再実装。
 
 S3凍結解除準備中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
