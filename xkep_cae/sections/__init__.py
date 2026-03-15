@@ -1,5 +1,8 @@
-"""xkep_cae.sections - 断面モデル."""
+"""暫定 re-export（未移行モジュール）."""
 
-from xkep_cae.sections.fiber import FiberSection
+import importlib as _il
 
-__all__ = ["FiberSection"]
+_m = _il.import_module("xkep_cae_deprecated.sections")
+for _k in dir(_m):
+    if not _k.startswith("_"):
+        globals()[_k] = getattr(_m, _k)

@@ -1,61 +1,55 @@
 """プロセスアーキテクチャ基盤.
 
-AbstractProcess + Strategy Protocol によるソルバー契約化フレームワーク。
-
-公開API:
-    - AbstractProcess, ProcessMeta, ProcessMetaclass: 基底クラス群
-    - PreProcess, SolverProcess, PostProcess, VerifyProcess, BatchProcess: カテゴリ
-    - binds_to: テスト1:1紐付けデコレータ
-    - ProcessTree, ProcessNode, NodeType: 実行グラフ
-    - データ型: MeshData, BoundaryData, ContactSetupData, etc.
+基盤クラス群は xkep_cae_deprecated/process/ から暫定 re-export。
+strategies/ 配下は新規実装に順次置き換える。
 """
 
-from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
-from xkep_cae.process.categories import (
-    BatchProcess,
-    CompatibilityProcess,
-    PostProcess,
-    PreProcess,
-    SolverProcess,
-    VerifyProcess,
-)
-from xkep_cae.process.data import (
+from xkep_cae_deprecated.process import (  # noqa: F401
+    AbstractProcess,
     AssembleCallbacks,
+    BatchProcess,
     BoundaryData,
+    CompatibilityProcess,
     ContactFrictionInputData,
     ContactSetupData,
+    ExecutionContext,
     MeshData,
+    NodeType,
+    PostProcess,
+    PreProcess,
+    ProcessMeta,
+    ProcessMetaclass,
+    ProcessNode,
+    ProcessRegistry,
+    ProcessRunner,
+    ProcessTree,
+    SolverProcess,
     SolverResultData,
     SolverStrategies,
+    StrategySlot,
     VerifyInput,
+    VerifyProcess,
     VerifyResult,
+    binds_to,
+    collect_strategy_slots,
+    collect_strategy_types,
     default_strategies,
 )
-from xkep_cae.process.registry import ProcessRegistry
-from xkep_cae.process.runner import ExecutionContext, ProcessRunner
-from xkep_cae.process.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
-from xkep_cae.process.testing import binds_to
-from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 
 __all__ = [
-    # 基底
     "AbstractProcess",
     "ProcessMeta",
     "ProcessMetaclass",
-    # カテゴリ
     "PreProcess",
     "SolverProcess",
     "PostProcess",
     "VerifyProcess",
     "BatchProcess",
     "CompatibilityProcess",
-    # テスト
     "binds_to",
-    # グラフ
     "ProcessTree",
     "ProcessNode",
     "NodeType",
-    # データ型
     "MeshData",
     "BoundaryData",
     "ContactSetupData",
@@ -65,15 +59,11 @@ __all__ = [
     "SolverStrategies",
     "VerifyInput",
     "VerifyResult",
-    # レジストリ
     "ProcessRegistry",
-    # 実行管理
     "ProcessRunner",
     "ExecutionContext",
-    # Strategy Slot
     "StrategySlot",
     "collect_strategy_slots",
     "collect_strategy_types",
-    # ファクトリ
     "default_strategies",
 ]
