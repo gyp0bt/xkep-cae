@@ -71,7 +71,7 @@ class VectorizedNormalForceResult:
 # ── 純粋関数 ─────────────────────────────────────────────
 
 
-def softplus(x: float, delta: float) -> tuple[float, float]:
+def _softplus(x: float, delta: float) -> tuple[float, float]:
     """Softplus 関数とその導関数（数値安定版）.
 
     softplus(x, δ) = δ × ln(1 + exp(x/δ))
@@ -93,7 +93,7 @@ def softplus(x: float, delta: float) -> tuple[float, float]:
     return delta * math.log1p(exp_z), exp_z / (1.0 + exp_z)
 
 
-def evaluate_al_normal_force(
+def _evaluate_al_normal_force(
     gap: float, lambda_n: float, k_pen: float, *, is_active: bool = True
 ) -> tuple[float, float]:
     """AL 法線接触力を評価.
@@ -111,7 +111,7 @@ def evaluate_al_normal_force(
     return p_n, dp_dg
 
 
-def evaluate_smooth_normal_force(
+def _evaluate_smooth_normal_force(
     gap: float, k_pen: float, lambda_n: float = 0.0, *, delta: float = 1e-4
 ) -> tuple[float, float]:
     """スムースペナルティ法線力（C∞連続）.
@@ -123,11 +123,11 @@ def evaluate_smooth_normal_force(
         (p_n, dp_dg)
     """
     x = -gap + lambda_n / k_pen if k_pen > 0.0 else -gap
-    sp, sig = softplus(x, delta)
+    sp, sig = _softplus(x, delta)
     return k_pen * sp, -k_pen * sig
 
 
-def evaluate_smooth_normal_force_vectorized(
+def _evaluate_smooth_normal_force_vectorized(
     gaps: np.ndarray,
     k_pen: float,
     lambdas: np.ndarray,
@@ -150,7 +150,7 @@ def evaluate_smooth_normal_force_vectorized(
     return k_pen * sp, -k_pen * sig
 
 
-def auto_beam_penalty_stiffness(
+def _auto_beam_penalty_stiffness(
     E: float,
     I: float,  # noqa: E741
     L_elem: float,
@@ -186,7 +186,7 @@ class ALNormalForceProcess(SolverProcess[NormalForceInput, NormalForceResult]):
     )
 
     def process(self, input_data: NormalForceInput) -> NormalForceResult:
-        p_n, dp_dg = evaluate_al_normal_force(
+        p_n, dp_dg = _evaluate_al_normal_force(
             input_data.gap, input_data.lambda_n, input_data.k_pen, is_active=input_data.is_active
         )
         return NormalForceResult(p_n=p_n, dp_dg=dp_dg)
@@ -203,7 +203,7 @@ class SmoothNormalForceProcess(SolverProcess[SmoothNormalForceInput, NormalForce
     )
 
     def process(self, input_data: SmoothNormalForceInput) -> NormalForceResult:
-        p_n, dp_dg = evaluate_smooth_normal_force(
+        p_n, dp_dg = _evaluate_smooth_normal_force(
             input_data.gap, input_data.k_pen, input_data.lambda_n, delta=input_data.delta
         )
         return NormalForceResult(p_n=p_n, dp_dg=dp_dg)
