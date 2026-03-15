@@ -402,6 +402,7 @@ def _solve_saddle_point_direct(
     ilu_drop_tol: float = 1e-4,
     contact_compliance: float = 0.0,
     lam_active: np.ndarray | None = None,
+    solver_strategy: object | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を直接 Schur complement で解く.
 
@@ -434,13 +435,26 @@ def _solve_saddle_point_direct(
         ilu_drop_tol: ILU drop tolerance
         contact_compliance: δ正則化パラメータ（0で従来動作）
         lam_active: (n_active,) アクティブペアの現在λ（δ>0時に使用）
+        solver_strategy: LinearSolverStrategy インスタンス。指定時は
+            linear_solver/iterative_tol/ilu_drop_tol を無視して直接委譲する。
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
     """
     ndof = K_T.shape[0]
     n_active = G_A.shape[0]
-    solve_kw = dict(mode=linear_solver, iterative_tol=iterative_tol, ilu_drop_tol=ilu_drop_tol)
+
+    # LinearSolverStrategy が渡された場合は直接使用、なければ従来パラメータで構築
+    if solver_strategy is not None:
+        _solver = solver_strategy
+    else:
+        from xkep_cae.process.strategies.linear_solver import create_linear_solver
+
+        _solver = create_linear_solver(
+            mode=linear_solver,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+        )
 
     # K_eff = K_T + k_pen * G_A^T * G_A （ペナルティ正則化）
     K_eff = K_T + k_pen * (G_A.T @ G_A)
@@ -450,7 +464,7 @@ def _solve_saddle_point_direct(
     K_bc_csr, rhs_u = _apply_bc_csr(K_eff, rhs_u, fixed_dofs)
 
     # Step 1: v0 = K_eff^{-1} * (-R_u)
-    v0 = _solve_linear_system(K_bc_csr, rhs_u, **solve_kw)
+    v0 = _solver.solve(K_bc_csr, rhs_u)
 
     # Step 2: V = K_eff^{-1} * G_A^T  (ndof × n_active)
     G_A_T_dense = G_A.T.toarray()  # ndof × n_active
@@ -464,14 +478,14 @@ def _solve_saddle_point_direct(
         from concurrent.futures import ThreadPoolExecutor
 
         def _solve_col(j):
-            return j, _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+            return j, _solver.solve(K_bc_csr, G_A_T_bc[:, j])
 
         with ThreadPoolExecutor() as pool:
             for j, vj in pool.map(lambda j: _solve_col(j), range(n_active)):
                 V[:, j] = vj
     else:
         for j in range(n_active):
-            V[:, j] = _solve_linear_system(K_bc_csr, G_A_T_bc[:, j], **solve_kw)
+            V[:, j] = _solver.solve(K_bc_csr, G_A_T_bc[:, j])
 
     # Step 3: S = G_A * V  (n_active × n_active — 制約 Schur 補集合)
     G_A_dense = G_A.toarray()
@@ -843,6 +857,7 @@ def _solve_saddle_point_contact(
     residual_scaling: bool = False,
     contact_compliance: float = 0.0,
     lam_active: np.ndarray | None = None,
+    solver_strategy: object | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Alart-Curnier NCP 鞍点系を解く（直接法 or ブロック前処理 GMRES）.
 
@@ -869,6 +884,9 @@ def _solve_saddle_point_contact(
         use_block_preconditioner: ブロック前処理 GMRES の使用（Phase C6-L4）
         gmres_dof_threshold: DOF 閾値。この値以上で自動的に反復法を選択
         use_amg: PyAMG SA前処理を使用（S3改良7）
+        solver_strategy: LinearSolverStrategy インスタンス。指定時は
+            linear_solver/iterative_tol/ilu_drop_tol/gmres_dof_threshold を
+            無視して直接委譲する（直接法パスおよび n_active==0 パス）。
 
     Returns:
         (du, dlam_A): 変位増分, アクティブ乗数増分
@@ -876,19 +894,24 @@ def _solve_saddle_point_contact(
     n_active = G_A.shape[0]
     ndof = K_T.shape[0]
 
+    # LinearSolverStrategy が渡された場合は構築済みインスタンスを使用
+    if solver_strategy is None:
+        from xkep_cae.process.strategies.linear_solver import create_linear_solver
+
+        solver_strategy = create_linear_solver(
+            mode=linear_solver,
+            iterative_tol=iterative_tol,
+            ilu_drop_tol=ilu_drop_tol,
+            gmres_dof_threshold=gmres_dof_threshold,
+        )
+
     # auto モードで DOF 閾値を超えた場合、ブロック前処理 GMRES を自動選択
     auto_block = linear_solver == "auto" and ndof >= gmres_dof_threshold and n_active > 0
 
     if n_active == 0:
         rhs = -R_u.copy()
         K_bc_csr, rhs = _apply_bc_csr(K_T, rhs, fixed_dofs)
-        solve_kw = dict(
-            mode=linear_solver,
-            iterative_tol=iterative_tol,
-            ilu_drop_tol=ilu_drop_tol,
-            gmres_dof_threshold=gmres_dof_threshold,
-        )
-        du = _solve_linear_system(K_bc_csr, rhs, **solve_kw)
+        du = solver_strategy.solve(K_bc_csr, rhs)
         return du, np.array([])
 
     # --- S3改良10: 対角スケーリング前処理 ---
@@ -928,6 +951,7 @@ def _solve_saddle_point_contact(
             ilu_drop_tol=ilu_drop_tol,
             contact_compliance=contact_compliance,
             lam_active=lam_active,
+            solver_strategy=solver_strategy,
         )
 
     # スケーリングの逆変換
