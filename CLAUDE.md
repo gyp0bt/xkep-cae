@@ -69,6 +69,10 @@
 | `NCPQuasiStatic/DynamicContactFrictionProcess` | 完全削除（→ ContactFrictionProcess） | status-173 |
 | `QuasiStaticFrictionInputData` / `DynamicFrictionInputData` | 完全削除（→ ContactFrictionInputData） | status-173 |
 | `contact/solver_smooth_penalty.py` | `process/strategies/{solver_state,newton_uzawa,adaptive_stepping}.py` + Process実体化 | status-174 |
+| `xkep_cae/process/` 基盤ファイル | `xkep_cae/core/` | status-178 |
+| `process/strategies/penalty/` | `contact/penalty/` | status-178 |
+| `xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
+| `xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
 
 ## 推奨ソルバー構成
 
@@ -80,7 +84,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 343 processテスト** — 2026-03-15
+**~2260テスト + 86 新パッケージテスト** — 2026-03-15
 
 ### ターゲット
 
@@ -88,9 +92,9 @@
 
 ### 次の課題
 
-**deprecated プロセス完全削除（status-173）** — NCPQuasiStatic/NCPDynamic 完全削除 + executor テスト追加。
+**脱出ポット計画 Phase 2 後半（status-178 TODO）** — ContactForceStrategy / TimeIntegrationStrategy / ContactGeometryStrategy の移行。
 
-S3凍結解除準備中。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 3件残。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 

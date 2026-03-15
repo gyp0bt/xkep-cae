@@ -9,7 +9,8 @@
 
 | 文書 | 配置先 | 内容 | 状態 |
 |------|--------|------|------|
-| [penalty.md](../../xkep_cae/process/strategies/penalty/docs/penalty.md) | `xkep_cae/process/strategies/penalty/docs/` | Penalty Strategy（k_pen推定 + 法線力） | 完了 |
+| [penalty.md](../../xkep_cae/contact/penalty/docs/penalty.md) | `xkep_cae/contact/penalty/docs/` | Penalty Strategy（k_pen推定 + 法線力） | 完了 |
+| [friction.md](../../xkep_cae/contact/friction/docs/friction.md) | `xkep_cae/contact/friction/docs/` | Friction Strategy（Coulomb return mapping） | 完了 |
 
 > 新 xkep_cae のモジュールが増えるに伴い、ここにドキュメントリンクを追加していく。
 
