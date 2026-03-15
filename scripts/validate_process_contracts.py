@@ -11,6 +11,8 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C11: uses チェーンの推移的依存漏れ
 - C12: BatchProcess 具象クラスの順序依存検証
 - C13: active プロセスが CompatibilityProcess を uses している場合はエラー
+- C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出
+- C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
 
 使用方法:
     python scripts/validate_process_contracts.py 2>&1 | tee /tmp/log-$(date +%s).log
@@ -412,10 +414,79 @@ def check_c13_compatibility_uses(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c14_deprecated_imports() -> list[str]:
+    """C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出.
+
+    新パッケージが旧パッケージに依存していると脱出ポット計画が破綻する。
+    AST 解析で import / from ... import を走査。
+    """
+    errors = []
+    new_pkg = _project_root / "xkep_cae"
+
+    for py_file in sorted(new_pkg.rglob("*.py")):
+        if py_file.parent.name == "__pycache__":
+            continue
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        rel = py_file.relative_to(_project_root)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("xkep_cae_deprecated"):
+                        errors.append(
+                            f"C14: {rel}:{node.lineno} が xkep_cae_deprecated をインポート"
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.module.startswith("xkep_cae_deprecated"):
+                    errors.append(f"C14: {rel}:{node.lineno} が xkep_cae_deprecated からインポート")
+
+    return errors
+
+
+def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
+    """C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証.
+
+    Strategy 具象クラスは ProcessMeta に document_path を宣言する必要があり、
+    そのファイルが実際に存在しなければ契約違反。
+    """
+    errors = []
+    process_root = _project_root / "xkep_cae" / "process"
+
+    for name, cls in sorted(registry.items()):
+        meta = getattr(cls, "meta", None)
+        if meta is None:
+            continue
+        doc_path = getattr(meta, "document_path", None)
+        if not doc_path:
+            continue
+
+        # document_path は strategy サブパッケージからの相対パス
+        # cls のモジュールパスから strategy パッケージルートを推定
+        module = getattr(cls, "__module__", "")
+        parts = module.split(".")
+        # xkep_cae.process.strategies.penalty.strategy → penalty/
+        if "strategies" in parts:
+            idx = parts.index("strategies")
+            if idx + 1 < len(parts):
+                strategy_pkg = parts[idx + 1]
+                doc_full = process_root / "strategies" / strategy_pkg / doc_path
+                if not doc_full.exists():
+                    errors.append(
+                        f"C15: {name} の document_path '{doc_path}' が存在しない"
+                        f" (期待: {doc_full.relative_to(_project_root)})"
+                    )
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C13）")
+    print("プロセス契約違反検出スクリプト（C3-C15）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -439,6 +510,7 @@ def main() -> int:
         ("C11: 推移的依存", check_c11_transitive_deps),
         ("C12: BatchProcess順序", check_c12_batch_order),
         ("C13: CompatibilityProcess uses禁止", check_c13_compatibility_uses),
+        ("C15: Strategy ドキュメント存在", check_c15_strategy_docs),
     ]
 
     for label, check_fn in checks:
@@ -451,6 +523,16 @@ def main() -> int:
         else:
             print("  OK")
 
+    # C14 はレジストリ不要（ファイルシステム走査のみ）
+    print("\n--- C14: deprecated インポート禁止 ---")
+    c14_errors = check_c14_deprecated_imports()
+    all_errors.extend(c14_errors)
+    if c14_errors:
+        for e in c14_errors:
+            print(f"  NG: {e}")
+    else:
+        print("  OK")
+
     print("\n" + "=" * 60)
     if all_errors:
         print(f"契約違反: {len(all_errors)} 件")
@@ -460,6 +542,8 @@ def main() -> int:
         print("  C9  → base.py execute() にチェックサム検証を追加")
         print("  C12 → batch/ に BatchProcess 具象クラスを実装")
         print("  C13 → active プロセスから CompatibilityProcess への uses を削除")
+        print("  C14 → xkep_cae/ 内の deprecated インポートを除去（コピーに置換）")
+        print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
         return 1
     else:
         print("契約違反なし")
