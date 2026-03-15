@@ -495,8 +495,8 @@ def check_c16_sterilization() -> list[str]:
       2. frozen dataclass（入出力データ型）
       3. Enum サブクラス（設定値列挙）
 
-    トップレベル関数は __all__ でエクスポートされていれば許可（純粋関数）。
-    エクスポートされていない非 private 関数は警告。
+    トップレベル関数は Protocol/Strategy(AbstractProcess)/Process のいずれかであるべき。
+    純粋関数（非クラス）は __all__ エクスポートの有無に関わらず契約違反。
     """
     import dataclasses
     import enum
@@ -580,29 +580,15 @@ def check_c16_sterilization() -> list[str]:
             )
 
         # ── 関数検査 ──
-        # パッケージの __init__.py から __all__ を取得
-        pkg_init = py_file.parent / "__init__.py"
-        exported: set[str] = set()
-        if pkg_init.exists():
-            try:
-                pkg_mod_path = pkg_init.relative_to(_project_root).with_suffix("")
-                pkg_mod_name = str(pkg_mod_path).replace("/", ".")
-                pkg_mod = importlib.import_module(pkg_mod_name)
-                exported = set(getattr(pkg_mod, "__all__", []))
-            except Exception:
-                pass
-
+        # 純粋関数は Protocol / Strategy(AbstractProcess) / Process に変換すべき
         for fn_name in func_names:
             # private 関数は許可（内部ヘルパー）
             if fn_name.startswith("_"):
                 continue
-            # __all__ にエクスポートされていれば公開純粋関数として許可
-            if fn_name in exported:
-                continue
-            # エクスポートされていない public 関数 → 違反
+            # public 純粋関数 → 違反（Protocol/Strategy/Process に変換が必要）
             errors.append(
-                f"C16: {rel} の {fn_name}() は __all__ 未エクスポート"
-                f"（公開関数は __init__.py の __all__ に含めるか、_ prefix で private 化）"
+                f"C16: {rel} の {fn_name}() は純粋関数"
+                f"（Protocol / Strategy / Process に変換が必要）"
             )
 
     return errors
@@ -680,7 +666,7 @@ def main() -> int:
         print("  C14 → xkep_cae/ 内の deprecated インポートを除去（コピーに置換）")
         print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
-        print("       関数は __all__ エクスポートか _ prefix で private 化")
+        print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")
         return 1
     else:
         print("契約違反なし")
