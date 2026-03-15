@@ -8,29 +8,29 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from xkep_cae.process.strategies.penalty import (
+from xkep_cae.contact.penalty import (
     ALNormalForceProcess,
     NormalForceInput,
     NormalForceResult,
     SmoothNormalForceInput,
     SmoothNormalForceProcess,
 )
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     _auto_beam_penalty_stiffness as auto_beam_penalty_stiffness,
 )
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     _evaluate_al_normal_force as evaluate_al_normal_force,
 )
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     _evaluate_smooth_normal_force as evaluate_smooth_normal_force,
 )
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     _evaluate_smooth_normal_force_vectorized as evaluate_smooth_normal_force_vectorized,
 )
-from xkep_cae.process.strategies.penalty.law_normal import (
+from xkep_cae.contact.penalty.law_normal import (
     _softplus as softplus,
 )
-from xkep_cae.process.testing import binds_to
+from xkep_cae.core.testing import binds_to
 
 # ── softplus 関数テスト ───────────────────────────────────
 

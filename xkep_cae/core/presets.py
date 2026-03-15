@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from xkep_cae.process.data import SolverStrategies
+from xkep_cae.core.data import SolverStrategies
 
 
 @dataclass(frozen=True)
@@ -48,7 +48,7 @@ class SolverPreset:
 
 def _smooth_penalty_factory(**kwargs: object) -> SolverStrategies:
     """smooth_penalty 構成の SolverStrategies を生成."""
-    from xkep_cae.process.data import default_strategies
+    from xkep_cae.core.data import default_strategies
 
     defaults = {
         "use_friction": True,
@@ -60,7 +60,7 @@ def _smooth_penalty_factory(**kwargs: object) -> SolverStrategies:
 
 def _ncp_frictionless_factory(**kwargs: object) -> SolverStrategies:
     """NCP frictionless 構成の SolverStrategies を生成."""
-    from xkep_cae.process.data import default_strategies
+    from xkep_cae.core.data import default_strategies
 
     defaults = {
         "use_friction": False,

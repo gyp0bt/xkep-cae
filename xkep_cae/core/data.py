@@ -109,16 +109,16 @@ def default_strategies(
     NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
     5軸 Strategy 全生成（status-159: Phase 5 完了）。
     """
-    from xkep_cae.process.strategies.coating import create_coating_strategy
-    from xkep_cae.process.strategies.contact_force import (
+    from xkep_cae.contact.friction import create_friction_strategy
+    from xkep_cae.contact.penalty import create_penalty_strategy
+    from xkep_cae.core.strategies.coating import create_coating_strategy
+    from xkep_cae.core.strategies.contact_force import (
         create_contact_force_strategy,
     )
-    from xkep_cae.process.strategies.contact_geometry import (
+    from xkep_cae.core.strategies.contact_geometry import (
         create_contact_geometry_strategy,
     )
-    from xkep_cae.process.strategies.friction import create_friction_strategy
-    from xkep_cae.process.strategies.penalty import create_penalty_strategy
-    from xkep_cae.process.strategies.time_integration import (
+    from xkep_cae.core.strategies.time_integration import (
         create_time_integration_strategy,
     )
 

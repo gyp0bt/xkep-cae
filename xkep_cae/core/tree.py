@@ -11,7 +11,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from xkep_cae.process.base import AbstractProcess
+    from xkep_cae.core.base import AbstractProcess
 
 
 class NodeType(Enum):

@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar
 
-from xkep_cae.process.base import AbstractProcess
-from xkep_cae.process.registry import ProcessRegistry
+from xkep_cae.core.base import AbstractProcess
+from xkep_cae.core.registry import ProcessRegistry
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")

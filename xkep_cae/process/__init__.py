@@ -1,34 +1,40 @@
-"""プロセスアーキテクチャ基盤.
+"""後方互換 re-export — xkep_cae.core から re-export.
 
-AbstractProcess + Strategy Protocol によるソルバー契約化フレームワーク。
+process/ の実体は core/ に移動済み。
+既存コードの ``from xkep_cae.process import ...`` を壊さないための互換レイヤー。
 """
 
-from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
-from xkep_cae.process.categories import (
-    BatchProcess,
-    CompatibilityProcess,
-    PostProcess,
-    PreProcess,
-    SolverProcess,
-    VerifyProcess,
-)
-from xkep_cae.process.data import (
+from xkep_cae.core import (  # noqa: F401
+    AbstractProcess,
     AssembleCallbacks,
+    BatchProcess,
     BoundaryData,
+    CompatibilityProcess,
     ContactFrictionInputData,
     ContactSetupData,
+    ExecutionContext,
     MeshData,
+    NodeType,
+    PostProcess,
+    PreProcess,
+    ProcessMeta,
+    ProcessMetaclass,
+    ProcessNode,
+    ProcessRegistry,
+    ProcessRunner,
+    ProcessTree,
+    SolverProcess,
     SolverResultData,
     SolverStrategies,
+    StrategySlot,
     VerifyInput,
+    VerifyProcess,
     VerifyResult,
+    binds_to,
+    collect_strategy_slots,
+    collect_strategy_types,
     default_strategies,
 )
-from xkep_cae.process.registry import ProcessRegistry
-from xkep_cae.process.runner import ExecutionContext, ProcessRunner
-from xkep_cae.process.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
-from xkep_cae.process.testing import binds_to
-from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 
 __all__ = [
     "AbstractProcess",

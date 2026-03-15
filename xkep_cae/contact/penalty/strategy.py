@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from xkep_cae.process import ProcessMeta, SolverProcess
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
 
