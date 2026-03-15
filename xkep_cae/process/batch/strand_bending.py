@@ -23,14 +23,14 @@ from xkep_cae.process.concrete.pre_mesh import (
     StrandMeshConfig,
     StrandMeshProcess,
 )
-from xkep_cae.process.concrete.solve_quasistatic_friction import (
-    NCPQuasiStaticContactFrictionProcess,
+from xkep_cae.process.concrete.solve_contact_friction import (
+    ContactFrictionProcess,
 )
 from xkep_cae.process.data import (
     AssembleCallbacks,
     BoundaryData,
+    ContactFrictionInputData,
     MeshData,
-    QuasiStaticFrictionInputData,
     VerifyResult,
 )
 from xkep_cae.process.verify.convergence import (
@@ -78,7 +78,7 @@ class StrandBendingBatchProcess(
     """撚線曲げ揺動ワークフロー.
 
     実行ツリー（process-architecture.md §6）:
-      StrandMeshProcess → ContactSetupProcess → NCPQuasiStaticContactFrictionProcess
+      StrandMeshProcess → ContactSetupProcess → ContactFrictionProcess
         → [ExportProcess] → [BeamRenderProcess] → [ConvergenceVerifyProcess]
 
     断片G: ワークフロー orchestration のみ。ホットパスは各子プロセスに委譲。
@@ -94,7 +94,7 @@ class StrandBendingBatchProcess(
     uses = [
         StrandMeshProcess,
         ContactSetupProcess,
-        NCPQuasiStaticContactFrictionProcess,
+        ContactFrictionProcess,
         ExportProcess,
         BeamRenderProcess,
         ConvergenceVerifyProcess,
@@ -135,10 +135,10 @@ class StrandBendingBatchProcess(
         contact_data = contact_proc.process(contact_config)
         log.append("ContactSetupProcess: done")
 
-        # 3. 準静的摩擦接触ソルバー
-        log.append("NCPQuasiStaticContactFrictionProcess: start")
-        solver_proc = NCPQuasiStaticContactFrictionProcess()
-        solver_input = QuasiStaticFrictionInputData(
+        # 3. 摩擦接触ソルバー
+        log.append("ContactFrictionProcess: start")
+        solver_proc = ContactFrictionProcess()
+        solver_input = ContactFrictionInputData(
             mesh=mesh_data,
             boundary=input_data.boundary,
             contact=contact_data,
@@ -146,9 +146,7 @@ class StrandBendingBatchProcess(
         )
         solver_result = solver_proc.process(solver_input)
         result.solver_converged = solver_result.converged
-        log.append(
-            f"NCPQuasiStaticContactFrictionProcess: done (converged={solver_result.converged})"
-        )
+        log.append(f"ContactFrictionProcess: done (converged={solver_result.converged})")
 
         # 4. エクスポート（オプション）
         if input_data.run_export:

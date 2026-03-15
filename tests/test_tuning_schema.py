@@ -349,6 +349,61 @@ class TestTuningExecutorAPI:
         assert callable(run_convergence_tuning)
         assert callable(run_sensitivity_analysis)
 
+    def test_execute_s3_benchmark_error_handling(self, monkeypatch):
+        """ソルバー例外時でも TuningRun が返ること."""
+        import xkep_cae.tuning.executor as executor_mod
+
+        def _mock_run_bending(*args, **kwargs):
+            raise RuntimeError("mock solver failure")
+
+        monkeypatch.setattr(
+            "xkep_cae.numerical_tests.wire_bending_benchmark.run_bending_oscillation",
+            _mock_run_bending,
+        )
+        run = executor_mod.execute_s3_benchmark(7)
+        assert run.metrics["converged"] is False
+        assert "error" in run.metrics
+        assert run.metadata["n_strands"] == 7
+
+    def test_run_convergence_tuning_no_grid(self, monkeypatch):
+        """param_grid=None でデフォルト1回実行."""
+        import xkep_cae.tuning.executor as executor_mod
+        from xkep_cae.tuning.schema import TuningRun
+
+        mock_run = TuningRun(
+            params={"n_strands": 7},
+            metrics={"converged": True, "total_newton_iterations": 10},
+        )
+        monkeypatch.setattr(
+            executor_mod,
+            "execute_s3_benchmark",
+            lambda n, **kw: mock_run,
+        )
+        result = executor_mod.run_convergence_tuning(n_strands=7, param_grid=None)
+        assert len(result.runs) == 1
+
+    def test_run_convergence_tuning_with_grid(self, monkeypatch):
+        """param_grid 指定時にグリッドサーチが実行されること."""
+        import xkep_cae.tuning.executor as executor_mod
+        from xkep_cae.tuning.schema import TuningRun
+
+        calls = []
+
+        def _mock_bench(n, **kw):
+            calls.append(kw)
+            return TuningRun(
+                params={"n_strands": n, **kw},
+                metrics={"converged": True},
+            )
+
+        monkeypatch.setattr(executor_mod, "execute_s3_benchmark", _mock_bench)
+        result = executor_mod.run_convergence_tuning(
+            n_strands=7,
+            param_grid={"alpha": [0.1, 0.5], "beta": [1.0, 2.0]},
+        )
+        assert len(result.runs) == 4  # 2x2 grid
+        assert len(calls) == 4
+
 
 class TestOptunaTunerAPI:
     """Optuna 連携の import/基本APIテスト."""
