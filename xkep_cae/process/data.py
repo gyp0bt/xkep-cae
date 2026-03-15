@@ -159,8 +159,49 @@ def default_strategies(
 
 
 @dataclass(frozen=True)
+class SolverFrictionInputData:
+    """摩擦接触解析の統一入力（準静的/動的共用）.
+
+    固定構成（王道構成）:
+    - contact_mode = "smooth_penalty"（NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
+    - use_friction = True（摩擦常時有効）
+    - line_contact = True（Line-to-line Gauss積分）
+    - adaptive_timestepping = True
+
+    準静的 vs 動的の判別:
+    - mass_matrix が None → 準静的（QuasiStatic TimeIntegrationStrategy）
+    - mass_matrix が非 None → 動的（Generalized-α TimeIntegrationStrategy）
+    """
+
+    mesh: MeshData
+    boundary: BoundaryData
+    contact: ContactSetupData
+    callbacks: AssembleCallbacks
+    u0: np.ndarray | None = None
+    # 動的解析パラメータ（None で準静的）
+    mass_matrix: sp.spmatrix | None = None
+    dt_physical: float | None = None
+    rho_inf: float = 0.9
+    damping_matrix: sp.spmatrix | None = None
+    velocity: np.ndarray | None = None
+    acceleration: np.ndarray | None = None
+
+    @property
+    def is_dynamic(self) -> bool:
+        """動的解析かどうか."""
+        return self.mass_matrix is not None
+
+    def __post_init__(self) -> None:
+        if self.mass_matrix is not None and (self.dt_physical is None or self.dt_physical <= 0.0):
+            raise ValueError("動的解析では dt_physical > 0 が必要です。")
+
+
+@dataclass(frozen=True)
 class DynamicFrictionInputData:
     """動的摩擦接触解析の入力（smooth_penalty 王道構成）.
+
+    .. deprecated:: status-172
+        SolverFrictionInputData に統合。後方互換のため残存。
 
     固定構成:
     - contact_mode = "smooth_penalty"（NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
@@ -190,10 +231,29 @@ class DynamicFrictionInputData:
         if self.dt_physical <= 0.0:
             raise ValueError("dt_physical は正の値が必要です。")
 
+    def to_unified(self) -> SolverFrictionInputData:
+        """SolverFrictionInputData に変換."""
+        return SolverFrictionInputData(
+            mesh=self.mesh,
+            boundary=self.boundary,
+            contact=self.contact,
+            callbacks=self.callbacks,
+            u0=self.u0,
+            mass_matrix=self.mass_matrix,
+            dt_physical=self.dt_physical,
+            rho_inf=self.rho_inf,
+            damping_matrix=self.damping_matrix,
+            velocity=self.velocity,
+            acceleration=self.acceleration,
+        )
+
 
 @dataclass(frozen=True)
 class QuasiStaticFrictionInputData:
     """準静的摩擦接触解析の入力（smooth_penalty 王道構成）.
+
+    .. deprecated:: status-172
+        SolverFrictionInputData に統合。後方互換のため残存。
 
     固定構成:
     - contact_mode = "smooth_penalty"（NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
@@ -210,6 +270,16 @@ class QuasiStaticFrictionInputData:
     contact: ContactSetupData
     callbacks: AssembleCallbacks
     u0: np.ndarray | None = None
+
+    def to_unified(self) -> SolverFrictionInputData:
+        """SolverFrictionInputData に変換."""
+        return SolverFrictionInputData(
+            mesh=self.mesh,
+            boundary=self.boundary,
+            contact=self.contact,
+            callbacks=self.callbacks,
+            u0=self.u0,
+        )
 
 
 @dataclass
