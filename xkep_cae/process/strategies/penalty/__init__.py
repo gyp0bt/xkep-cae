@@ -11,11 +11,6 @@ from xkep_cae.process.strategies.penalty.law_normal import (
     SmoothNormalForceProcess,
     VectorizedNormalForceResult,
     VectorizedSmoothInput,
-    auto_beam_penalty_stiffness,
-    evaluate_al_normal_force,
-    evaluate_smooth_normal_force,
-    evaluate_smooth_normal_force_vectorized,
-    softplus,
 )
 from xkep_cae.process.strategies.penalty.strategy import (
     AutoBeamEIPenalty,
@@ -40,9 +35,4 @@ __all__ = [
     "SmoothNormalForceInput",
     "VectorizedSmoothInput",
     "VectorizedNormalForceResult",
-    "evaluate_al_normal_force",
-    "evaluate_smooth_normal_force",
-    "evaluate_smooth_normal_force_vectorized",
-    "auto_beam_penalty_stiffness",
-    "softplus",
 ]

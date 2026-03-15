@@ -14,11 +14,21 @@ from xkep_cae.process.strategies.penalty import (
     NormalForceResult,
     SmoothNormalForceInput,
     SmoothNormalForceProcess,
-    auto_beam_penalty_stiffness,
-    evaluate_al_normal_force,
-    evaluate_smooth_normal_force,
-    evaluate_smooth_normal_force_vectorized,
-    softplus,
+)
+from xkep_cae.process.strategies.penalty.law_normal import (
+    _auto_beam_penalty_stiffness as auto_beam_penalty_stiffness,
+)
+from xkep_cae.process.strategies.penalty.law_normal import (
+    _evaluate_al_normal_force as evaluate_al_normal_force,
+)
+from xkep_cae.process.strategies.penalty.law_normal import (
+    _evaluate_smooth_normal_force as evaluate_smooth_normal_force,
+)
+from xkep_cae.process.strategies.penalty.law_normal import (
+    _evaluate_smooth_normal_force_vectorized as evaluate_smooth_normal_force_vectorized,
+)
+from xkep_cae.process.strategies.penalty.law_normal import (
+    _softplus as softplus,
 )
 from xkep_cae.process.testing import binds_to
 
