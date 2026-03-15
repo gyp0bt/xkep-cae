@@ -1,40 +1,34 @@
 """プロセスアーキテクチャ基盤.
 
-基盤クラス群は xkep_cae_deprecated/process/ から暫定 re-export。
-strategies/ 配下は新規実装に順次置き換える。
+AbstractProcess + Strategy Protocol によるソルバー契約化フレームワーク。
 """
 
-from xkep_cae_deprecated.process import (  # noqa: F401
-    AbstractProcess,
-    AssembleCallbacks,
+from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
+from xkep_cae.process.categories import (
     BatchProcess,
-    BoundaryData,
     CompatibilityProcess,
-    ContactFrictionInputData,
-    ContactSetupData,
-    ExecutionContext,
-    MeshData,
-    NodeType,
     PostProcess,
     PreProcess,
-    ProcessMeta,
-    ProcessMetaclass,
-    ProcessNode,
-    ProcessRegistry,
-    ProcessRunner,
-    ProcessTree,
     SolverProcess,
+    VerifyProcess,
+)
+from xkep_cae.process.data import (
+    AssembleCallbacks,
+    BoundaryData,
+    ContactFrictionInputData,
+    ContactSetupData,
+    MeshData,
     SolverResultData,
     SolverStrategies,
-    StrategySlot,
     VerifyInput,
-    VerifyProcess,
     VerifyResult,
-    binds_to,
-    collect_strategy_slots,
-    collect_strategy_types,
     default_strategies,
 )
+from xkep_cae.process.registry import ProcessRegistry
+from xkep_cae.process.runner import ExecutionContext, ProcessRunner
+from xkep_cae.process.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
+from xkep_cae.process.testing import binds_to
+from xkep_cae.process.tree import NodeType, ProcessNode, ProcessTree
 
 __all__ = [
     "AbstractProcess",
