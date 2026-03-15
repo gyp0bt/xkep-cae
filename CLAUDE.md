@@ -84,7 +84,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 86 新パッケージテスト** — 2026-03-15
+**~2260テスト + 186 新パッケージテスト** — 2026-03-15
 
 ### ターゲット
 
@@ -92,9 +92,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 2 後半（status-178 TODO）** — ContactForceStrategy / TimeIntegrationStrategy / ContactGeometryStrategy の移行。
+**脱出ポット計画 Phase 3** — concrete プロセス移行（Mesh/Setup/Export/Verify）と StrandBendingBatchProcess フル実装。
 
-契約違反 3件残。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 **0件**（status-179 で全解消）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
