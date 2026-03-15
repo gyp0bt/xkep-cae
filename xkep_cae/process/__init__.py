@@ -22,6 +22,7 @@ from xkep_cae.process.categories import (
 from xkep_cae.process.data import (
     AssembleCallbacks,
     BoundaryData,
+    ContactFrictionInputData,
     ContactSetupData,
     DynamicFrictionInputData,
     MeshData,
@@ -61,6 +62,7 @@ __all__ = [
     "BoundaryData",
     "ContactSetupData",
     "AssembleCallbacks",
+    "ContactFrictionInputData",
     "DynamicFrictionInputData",
     "QuasiStaticFrictionInputData",
     "SolverResultData",
