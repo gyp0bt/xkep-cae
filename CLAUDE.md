@@ -68,6 +68,7 @@
 | `executor.py` 4関数 NotImplementedError | NCP版実装 | status-172 |
 | `NCPQuasiStatic/DynamicContactFrictionProcess` | 完全削除（→ ContactFrictionProcess） | status-173 |
 | `QuasiStaticFrictionInputData` / `DynamicFrictionInputData` | 完全削除（→ ContactFrictionInputData） | status-173 |
+| `contact/solver_smooth_penalty.py` | `process/strategies/{solver_state,newton_uzawa,adaptive_stepping}.py` + Process実体化 | status-174 |
 
 ## 推奨ソルバー構成
 
