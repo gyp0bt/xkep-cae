@@ -1,71 +1,8 @@
-"""メッシュ生成ユーティリティ."""
+"""暫定 re-export（未移行モジュール）."""
 
-from xkep_cae.mesh.ring_compliance import (
-    build_ring_compliance_matrix,
-    build_variable_thickness_compliance_matrix,
-    evaluate_fourier_profile,
-    fourier_decompose_profile,
-    ring_compliance_summary,
-    ring_mode0_compliance,
-    ring_mode_n_compliance,
-)
-from xkep_cae.mesh.twisted_wire import (
-    CoatingModel,
-    SheathModel,
-    StrandInfo,
-    TwistedWireMesh,
-    coated_beam_section,
-    coated_contact_radius,
-    coated_radii,
-    coating_section_properties,
-    compute_envelope_radius,
-    compute_helix_angle,
-    compute_inner_surface_profile,
-    compute_strand_length_per_pitch,
-    make_strand_layout,
-    make_twisted_wire_mesh,
-    minimum_strand_diameter,
-    outermost_layer,
-    outermost_strand_ids,
-    outermost_strand_node_indices,
-    sheath_compliance_matrix,
-    sheath_equivalent_stiffness,
-    sheath_inner_radius,
-    sheath_radial_gap,
-    sheath_section_properties,
-    validate_strand_geometry,
-)
+import importlib as _il
 
-__all__ = [
-    "build_ring_compliance_matrix",
-    "build_variable_thickness_compliance_matrix",
-    "evaluate_fourier_profile",
-    "fourier_decompose_profile",
-    "ring_compliance_summary",
-    "ring_mode0_compliance",
-    "ring_mode_n_compliance",
-    "CoatingModel",
-    "SheathModel",
-    "StrandInfo",
-    "TwistedWireMesh",
-    "coated_beam_section",
-    "coated_contact_radius",
-    "coated_radii",
-    "coating_section_properties",
-    "compute_envelope_radius",
-    "compute_helix_angle",
-    "compute_inner_surface_profile",
-    "compute_strand_length_per_pitch",
-    "make_strand_layout",
-    "make_twisted_wire_mesh",
-    "minimum_strand_diameter",
-    "outermost_layer",
-    "outermost_strand_ids",
-    "outermost_strand_node_indices",
-    "sheath_compliance_matrix",
-    "sheath_equivalent_stiffness",
-    "sheath_inner_radius",
-    "sheath_radial_gap",
-    "sheath_section_properties",
-    "validate_strand_geometry",
-]
+_m = _il.import_module("xkep_cae_deprecated.mesh")
+for _k in dir(_m):
+    if not _k.startswith("_"):
+        globals()[_k] = getattr(_m, _k)

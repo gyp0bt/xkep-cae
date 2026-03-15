@@ -11,6 +11,9 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C11: uses チェーンの推移的依存漏れ
 - C12: BatchProcess 具象クラスの順序依存検証
 - C13: active プロセスが CompatibilityProcess を uses している場合はエラー
+- C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出
+- C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
+- C16: 新パッケージ滅菌 — strategy サブパッケージ内の全クラス/関数を分類検査
 
 使用方法:
     python scripts/validate_process_contracts.py 2>&1 | tee /tmp/log-$(date +%s).log
@@ -412,10 +415,203 @@ def check_c13_compatibility_uses(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c14_deprecated_imports() -> list[str]:
+    """C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出.
+
+    新パッケージが旧パッケージに依存していると脱出ポット計画が破綻する。
+    AST 解析で import / from ... import を走査。
+    """
+    errors = []
+    new_pkg = _project_root / "xkep_cae"
+
+    for py_file in sorted(new_pkg.rglob("*.py")):
+        if py_file.parent.name == "__pycache__":
+            continue
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        rel = py_file.relative_to(_project_root)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("xkep_cae_deprecated"):
+                        errors.append(
+                            f"C14: {rel}:{node.lineno} が xkep_cae_deprecated をインポート"
+                        )
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.module.startswith("xkep_cae_deprecated"):
+                    errors.append(f"C14: {rel}:{node.lineno} が xkep_cae_deprecated からインポート")
+
+    return errors
+
+
+def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
+    """C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証.
+
+    Strategy 具象クラスは ProcessMeta に document_path を宣言する必要があり、
+    そのファイルが実際に存在しなければ契約違反。
+    """
+    errors = []
+    process_root = _project_root / "xkep_cae" / "process"
+
+    for name, cls in sorted(registry.items()):
+        meta = getattr(cls, "meta", None)
+        if meta is None:
+            continue
+        doc_path = getattr(meta, "document_path", None)
+        if not doc_path:
+            continue
+
+        # document_path は strategy サブパッケージからの相対パス
+        # cls のモジュールパスから strategy パッケージルートを推定
+        module = getattr(cls, "__module__", "")
+        parts = module.split(".")
+        # xkep_cae.process.strategies.penalty.strategy → penalty/
+        if "strategies" in parts:
+            idx = parts.index("strategies")
+            if idx + 1 < len(parts):
+                strategy_pkg = parts[idx + 1]
+                doc_full = process_root / "strategies" / strategy_pkg / doc_path
+                if not doc_full.exists():
+                    errors.append(
+                        f"C15: {name} の document_path '{doc_path}' が存在しない"
+                        f" (期待: {doc_full.relative_to(_project_root)})"
+                    )
+
+    return errors
+
+
+def check_c16_sterilization() -> list[str]:
+    """C16: 新パッケージ滅菌チェック — Process Architecture 外の型を完全検挙.
+
+    xkep_cae/process/strategies/ 配下の strategy サブパッケージ内で
+    定義された全クラスを分類し、以下のいずれにも該当しないものを契約違反とする:
+
+    許可カテゴリ:
+      1. AbstractProcess サブクラス（Process）
+      2. frozen dataclass（入出力データ型）
+      3. Enum サブクラス（設定値列挙）
+
+    トップレベル関数は __all__ でエクスポートされていれば許可（純粋関数）。
+    エクスポートされていない非 private 関数は警告。
+    """
+    import dataclasses
+    import enum
+
+    errors = []
+    strategies_root = _project_root / "xkep_cae" / "process" / "strategies"
+
+    if not strategies_root.exists():
+        return errors
+
+    # protocols.py は Protocol 定義ファイルなのでスキップ
+    # __init__.py は re-export のみなのでスキップ
+    _SKIP_STEMS = {"__init__", "protocols"}
+
+    for py_file in sorted(strategies_root.rglob("*.py")):
+        # テストファイル・__pycache__ はスキップ
+        if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+            continue
+        if "__pycache__" in str(py_file):
+            continue
+        if py_file.stem in _SKIP_STEMS:
+            continue
+
+        # AST でクラス名・関数名を収集
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        class_names = []
+        func_names = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.ClassDef):
+                class_names.append(node.name)
+            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                func_names.append(node.name)
+
+        if not class_names and not func_names:
+            continue
+
+        # モジュールをインポートして実際の型を検査
+        mod_path = py_file.relative_to(_project_root).with_suffix("")
+        mod_name = str(mod_path).replace("/", ".")
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception as e:
+            errors.append(f"C16: {mod_name} のインポート失敗: {e}")
+            continue
+
+        rel = py_file.relative_to(_project_root)
+
+        # ── クラス検査 ──
+        for cls_name in class_names:
+            cls = getattr(mod, cls_name, None)
+            if cls is None:
+                continue
+
+            # 1. AbstractProcess サブクラス
+            if isinstance(cls, type) and issubclass(cls, AbstractProcess):
+                continue
+
+            # 2. frozen dataclass
+            if dataclasses.is_dataclass(cls):
+                params = getattr(cls, "__dataclass_params__", None)
+                if params and params.frozen:
+                    continue
+                errors.append(
+                    f"C16: {rel} の {cls_name} は non-frozen dataclass（frozen=True が必須）"
+                )
+                continue
+
+            # 3. Enum
+            if isinstance(cls, type) and issubclass(cls, enum.Enum):
+                continue
+
+            # いずれにも該当しない → 違反
+            errors.append(
+                f"C16: {rel} の {cls_name} は Process でも frozen dataclass でもない"
+                f"（許可: AbstractProcess subclass / frozen dataclass / Enum）"
+            )
+
+        # ── 関数検査 ──
+        # パッケージの __init__.py から __all__ を取得
+        pkg_init = py_file.parent / "__init__.py"
+        exported: set[str] = set()
+        if pkg_init.exists():
+            try:
+                pkg_mod_path = pkg_init.relative_to(_project_root).with_suffix("")
+                pkg_mod_name = str(pkg_mod_path).replace("/", ".")
+                pkg_mod = importlib.import_module(pkg_mod_name)
+                exported = set(getattr(pkg_mod, "__all__", []))
+            except Exception:
+                pass
+
+        for fn_name in func_names:
+            # private 関数は許可（内部ヘルパー）
+            if fn_name.startswith("_"):
+                continue
+            # __all__ にエクスポートされていれば公開純粋関数として許可
+            if fn_name in exported:
+                continue
+            # エクスポートされていない public 関数 → 違反
+            errors.append(
+                f"C16: {rel} の {fn_name}() は __all__ 未エクスポート"
+                f"（公開関数は __init__.py の __all__ に含めるか、_ prefix で private 化）"
+            )
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C13）")
+    print("プロセス契約違反検出スクリプト（C3-C16）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -439,6 +635,7 @@ def main() -> int:
         ("C11: 推移的依存", check_c11_transitive_deps),
         ("C12: BatchProcess順序", check_c12_batch_order),
         ("C13: CompatibilityProcess uses禁止", check_c13_compatibility_uses),
+        ("C15: Strategy ドキュメント存在", check_c15_strategy_docs),
     ]
 
     for label, check_fn in checks:
@@ -451,6 +648,26 @@ def main() -> int:
         else:
             print("  OK")
 
+    # C14 はレジストリ不要（ファイルシステム走査のみ）
+    print("\n--- C14: deprecated インポート禁止 ---")
+    c14_errors = check_c14_deprecated_imports()
+    all_errors.extend(c14_errors)
+    if c14_errors:
+        for e in c14_errors:
+            print(f"  NG: {e}")
+    else:
+        print("  OK")
+
+    # C16 もレジストリ不要（ファイルシステム走査 + ランタイム型検査）
+    print("\n--- C16: 新パッケージ滅菌 ---")
+    c16_errors = check_c16_sterilization()
+    all_errors.extend(c16_errors)
+    if c16_errors:
+        for e in c16_errors:
+            print(f"  NG: {e}")
+    else:
+        print("  OK")
+
     print("\n" + "=" * 60)
     if all_errors:
         print(f"契約違反: {len(all_errors)} 件")
@@ -460,6 +677,10 @@ def main() -> int:
         print("  C9  → base.py execute() にチェックサム検証を追加")
         print("  C12 → batch/ に BatchProcess 具象クラスを実装")
         print("  C13 → active プロセスから CompatibilityProcess への uses を削除")
+        print("  C14 → xkep_cae/ 内の deprecated インポートを除去（コピーに置換）")
+        print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
+        print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
+        print("       関数は __all__ エクスポートか _ prefix で private 化")
         return 1
     else:
         print("契約違反なし")
