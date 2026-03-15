@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-14）
+## 現在地（2026-03-15）
 
-**~2260テスト + 356 processテスト** | R1 deprecated除去+LinearSolverStrategy完了（S3 凍結中） | [最新status](status/status-index.md)
+**~2260テスト + 356 processテスト** | status-171 TODO消化完了: LinearSolverStrategy統合 + Process統合 + executor NCP版 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|

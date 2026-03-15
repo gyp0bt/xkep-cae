@@ -64,6 +64,9 @@
 | テスト名 `*_ncp.*` | NCP サフィックス除去 | status-170 |
 | `ContactManager` deprecated 10メソッド | 完全削除（呼び出し元直接移行済み） | status-171 |
 | `_solve_linear_system()` if分岐 | `LinearSolverStrategy` Protocol + 委譲 | status-171 |
+| `NCPQuasiStatic/DynamicContactFrictionProcess` | `ContactFrictionSolverProcess` | status-172 |
+| `QuasiStatic/DynamicFrictionInputData` | `SolverFrictionInputData` | status-172 |
+| `executor.py` NotImplementedError | NCP版完全再実装 | status-172 |
 
 ## 推奨ソルバー構成
 
@@ -75,7 +78,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 356 processテスト** — 2026-03-14
+**~2260テスト + 356 processテスト** — 2026-03-15
 
 ### ターゲット
 

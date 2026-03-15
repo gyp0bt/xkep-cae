@@ -15,7 +15,7 @@ class TestNCPDynamicContactFrictionProcess:
     def test_meta(self):
         assert NCPDynamicContactFrictionProcess.meta.name == "動的摩擦接触ソルバー"
         assert NCPDynamicContactFrictionProcess.meta.module == "solve"
-        assert not NCPDynamicContactFrictionProcess.meta.deprecated
+        assert NCPDynamicContactFrictionProcess.meta.deprecated
 
     def test_default_strategies(self):
         """デフォルト strategies でインスタンス化."""
