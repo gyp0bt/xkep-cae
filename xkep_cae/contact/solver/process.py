@@ -169,13 +169,13 @@ class ContactFrictionProcess(
         # --- 摩擦設定 ---
         mu = input_data.contact.mu if input_data.contact.mu is not None else manager.config.mu
 
-        # --- FrictionStrategy k_pen 伝播 ---
-        if hasattr(_friction_strategy, "_k_pen"):
-            _friction_strategy._k_pen = k_pen
-        if hasattr(_friction_strategy, "_k_t_ratio"):
-            _friction_strategy._k_t_ratio = manager.config.k_t_ratio
-        if hasattr(_contact_force_strategy, "_ndof"):
-            _contact_force_strategy._ndof = ndof
+        # --- Strategy パラメータ伝播 ---
+        if hasattr(_friction_strategy, "set_k_pen"):
+            _friction_strategy.set_k_pen(k_pen)
+        if hasattr(_friction_strategy, "set_k_t_ratio"):
+            _friction_strategy.set_k_t_ratio(manager.config.k_t_ratio)
+        if hasattr(_contact_force_strategy, "set_ndof"):
+            _contact_force_strategy.set_ndof(ndof)
 
         # --- SolverState 初期化 ---
         u0 = input_data.u0.copy() if input_data.u0 is not None else np.zeros(ndof)
