@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-16）
 
-**~2260テスト + 315 新パッケージテスト** | 脱出ポット計画 Phase 9 進行中 — Process API 移行 + ContactManager Process 分割 | [最新status](status/status-index.md)
+**~2260テスト + 315 新パッケージテスト** | 脱出ポット計画 Phase 9 完了 — Process 内部プライベート関数移行 + Strategy 公開 API + O1 条例検知 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|

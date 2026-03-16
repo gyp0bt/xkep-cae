@@ -720,6 +720,55 @@ def check_c16_sterilization() -> list[str]:
     return errors
 
 
+def check_o1_test_direct_function_calls() -> list[str]:
+    """O1（条例）: テストが Process ラッパーのある関数を直接呼び出していないか検出.
+
+    Process 化された関数をテストが直接 import して使用する場合、
+    Process Architecture の一貫性テストが不足している可能性がある。
+    法律違反（C14/C16）ではないが、条例違反として検知する。
+    """
+    errors = []
+    xkep_root = _project_root / "xkep_cae"
+
+    # Process ラッパーが存在する既知のプライベート関数マッピング
+    _KNOWN_PROCESS_WRAPPERS: dict[str, str] = {
+        "_deformed_coords": "DeformedCoordsProcess",
+        "_ncp_line_search": "NCPLineSearchProcess",
+        "_snapshot_contact_graph": "ContactGraphProcess",
+        "_format_diagnostics_report": "DiagnosticsReportProcess",
+        "_check_initial_penetration": "InitialPenetrationProcess",
+        "_adjust_initial_positions": "InitialPenetrationProcess",
+    }
+
+    # テストファイルを走査
+    for py_file in sorted(xkep_root.rglob("*.py")):
+        if "__pycache__" in str(py_file):
+            continue
+        is_test = py_file.name.startswith("test_") or py_file.parent.name == "tests"
+        if not is_test:
+            continue
+
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        rel = py_file.relative_to(_project_root)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                if node.module and node.module.startswith("xkep_cae"):
+                    for alias in node.names:
+                        if alias.name in _KNOWN_PROCESS_WRAPPERS:
+                            process_name = _KNOWN_PROCESS_WRAPPERS[alias.name]
+                            errors.append(
+                                f"O1: {rel}:{node.lineno} が {alias.name}() を直接 import"
+                                f"（{process_name} 経由を推奨）"
+                            )
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
@@ -780,9 +829,20 @@ def main() -> int:
     else:
         print("  OK")
 
+    # O1: 条例違反チェック（テストでの直接関数呼び出し）
+    print("\n--- O1: テスト直接関数呼び出し（条例） ---")
+    o1_warnings = check_o1_test_direct_function_calls()
+    if o1_warnings:
+        for w in o1_warnings:
+            print(f"  WARN: {w}")
+    else:
+        print("  OK")
+
     print("\n" + "=" * 60)
     if all_errors:
         print(f"契約違反: {len(all_errors)} 件")
+        if o1_warnings:
+            print(f"条例違反: {len(o1_warnings)} 件（警告）")
         print("\n修正ガイド:")
         print("  C3  → concrete/test_*.py を作成し @binds_to で紐付け")
         print("  C6  → test_contracts.py の意味論テストを実装で解消")
@@ -793,9 +853,13 @@ def main() -> int:
         print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
         print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")
+        print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
         return 1
     else:
-        print("契約違反なし")
+        if o1_warnings:
+            print(f"契約違反なし（条例違反 {len(o1_warnings)} 件は警告のみ）")
+        else:
+            print("契約違反なし、条例違反なし")
         return 0
 
 

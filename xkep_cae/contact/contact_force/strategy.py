@@ -196,6 +196,20 @@ class SmoothPenaltyContactForceProcess(
         self._n_uzawa_max = n_uzawa_max
         self._tol_uzawa = tol_uzawa
 
+    @property
+    def n_uzawa_max(self) -> int:
+        """Uzawa 最大反復回数."""
+        return self._n_uzawa_max
+
+    @property
+    def tol_uzawa(self) -> float:
+        """Uzawa 収束許容値."""
+        return self._tol_uzawa
+
+    def set_ndof(self, ndof: int) -> None:
+        """全体 DOF 数を設定."""
+        self._ndof = ndof
+
     @staticmethod
     def _softplus(g: float, delta: float) -> float:
         """Softplus 接触力: p_n = (1/δ) * log(1 + exp(-δ*g))."""

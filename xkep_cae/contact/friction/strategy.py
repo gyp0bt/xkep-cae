@@ -147,6 +147,18 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         """μ ランプ適用後の有効摩擦係数."""
         return _compute_mu_effective(mu, self._mu_ramp_counter, self._mu_ramp_steps)
 
+    def set_k_pen(self, k_pen: float) -> None:
+        """ペナルティ正則化パラメータを設定."""
+        self._k_pen = k_pen
+
+    def set_k_t_ratio(self, k_t_ratio: float) -> None:
+        """接線/法線ペナルティ比を設定."""
+        self._k_t_ratio = k_t_ratio
+
+    def set_mu_ramp_counter(self, counter: int) -> None:
+        """μ ランプカウンタを設定."""
+        self._mu_ramp_counter = counter
+
     def evaluate(
         self,
         u: np.ndarray,
@@ -264,6 +276,18 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
     def compute_mu_effective(self, mu: float) -> float:
         """μ ランプ適用後の有効摩擦係数."""
         return _compute_mu_effective(mu, self._mu_ramp_counter, self._mu_ramp_steps)
+
+    def set_k_pen(self, k_pen: float) -> None:
+        """ペナルティ正則化パラメータを設定."""
+        self._k_pen = k_pen
+
+    def set_k_t_ratio(self, k_t_ratio: float) -> None:
+        """接線/法線ペナルティ比を設定."""
+        self._k_t_ratio = k_t_ratio
+
+    def set_mu_ramp_counter(self, counter: int) -> None:
+        """μ ランプカウンタを設定."""
+        self._mu_ramp_counter = counter
 
     def evaluate(
         self,

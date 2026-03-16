@@ -12,7 +12,12 @@ from enum import Enum
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.contact.solver._utils import _deformed_coords, _ncp_line_search
+from xkep_cae.contact.solver._utils import (
+    DeformedCoordsInput,
+    DeformedCoordsProcess,
+    NCPLineSearchInput,
+    NCPLineSearchProcess,
+)
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ================================================================
@@ -64,20 +69,28 @@ class ContactForceAssemblyProcess(
         version="1.0.0",
         document_path="docs/newton_uzawa.md",
     )
+    uses = [DeformedCoordsProcess]
 
     def process(self, inp: ContactForceAssemblyInput) -> ContactForceAssemblyOutput:
         u = inp.u
 
         # 1. 幾何更新
-        coords_def = _deformed_coords(inp.node_coords_ref, u, inp.ndof_per_node)
+        _dc_out = DeformedCoordsProcess().process(
+            DeformedCoordsInput(
+                node_coords_ref=inp.node_coords_ref,
+                u=u,
+                ndof_per_node=inp.ndof_per_node,
+            )
+        )
+        coords_def = _dc_out.coords
         inp.manager.update_geometry(coords_def, freeze_active_set=True)
 
         # 2. 接触力
         f_c, _ = inp.contact_force_strategy.evaluate(u, inp.lam_all, inp.manager, inp.k_pen)
 
         # 3. 摩擦力
-        if hasattr(inp.friction_strategy, "_mu_ramp_counter"):
-            inp.friction_strategy._mu_ramp_counter = inp.step_display
+        if hasattr(inp.friction_strategy, "set_mu_ramp_counter"):
+            inp.friction_strategy.set_mu_ramp_counter(inp.step_display)
         f_friction, _ = inp.friction_strategy.evaluate(
             u,
             inp.manager.pairs,
@@ -385,22 +398,25 @@ class LineSearchUpdateProcess(
         version="1.0.0",
         document_path="docs/newton_uzawa.md",
     )
+    uses = [NCPLineSearchProcess]
 
     def process(self, inp: LineSearchUpdateInput) -> LineSearchUpdateOutput:
         scale_factor = 1.0
         if inp.use_line_search:
-            alpha = _ncp_line_search(
-                inp.u,
-                inp.du,
-                inp.f_ext,
-                inp.fixed_dofs,
-                inp.assemble_internal_force,
-                inp.res_u_norm,
-                max_steps=inp.line_search_max_steps,
-                f_c=inp.f_c,
-                diverge_factor=3.0,
+            _ls_out = NCPLineSearchProcess().process(
+                NCPLineSearchInput(
+                    u=inp.u,
+                    du=inp.du,
+                    f_ext=inp.f_ext,
+                    fixed_dofs=inp.fixed_dofs,
+                    assemble_internal_force=inp.assemble_internal_force,
+                    res_u_norm=inp.res_u_norm,
+                    max_steps=inp.line_search_max_steps,
+                    f_c=inp.f_c,
+                    diverge_factor=3.0,
+                )
             )
-            scale_factor *= alpha
+            scale_factor *= _ls_out.alpha
         if inp.du_norm_cap > 0.0:
             _du_n = float(np.linalg.norm(scale_factor * inp.du))
             _u_ref_n = max(float(np.linalg.norm(inp.u)), 1.0)
@@ -447,9 +463,17 @@ class UzawaUpdateProcess(
         version="1.0.0",
         document_path="docs/newton_uzawa.md",
     )
+    uses = [DeformedCoordsProcess]
 
     def process(self, inp: UzawaUpdateInput) -> UzawaUpdateOutput:
-        coords_def = _deformed_coords(inp.node_coords_ref, inp.u, inp.ndof_per_node)
+        _dc_out = DeformedCoordsProcess().process(
+            DeformedCoordsInput(
+                node_coords_ref=inp.node_coords_ref,
+                u=inp.u,
+                ndof_per_node=inp.ndof_per_node,
+            )
+        )
+        coords_def = _dc_out.coords
         inp.manager.update_geometry(coords_def, freeze_active_set=True)
 
         lam_prev = inp.lam_all.copy()
