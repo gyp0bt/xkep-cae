@@ -1,7 +1,8 @@
 """Newton-Raphson + Uzawa イテレーション（プライベート）.
 
 Static/Dynamic 完全分離版への統合エントリポイント。
-後方互換のため NewtonUzawaProcess = NewtonUzawaStaticProcess として維持。
+Dynamic を正統 NewtonUzawaProcess とする（status-191）。
+Static は保存用。
 """
 
 from __future__ import annotations
@@ -19,8 +20,8 @@ from xkep_cae.contact.solver._newton_uzawa_static import (  # noqa: F401
     StaticStepResult,
 )
 
-# --- 後方互換エイリアス ---
-NewtonUzawaProcess = NewtonUzawaStaticProcess
-NewtonUzawaConfig = NewtonUzawaStaticConfig
-NewtonUzawaStepInput = NewtonUzawaStaticStepInput
-StepResult = StaticStepResult
+# --- Dynamic を正統 Process とする ---
+NewtonUzawaProcess = NewtonUzawaDynamicProcess
+NewtonUzawaConfig = NewtonUzawaDynamicConfig
+NewtonUzawaStepInput = NewtonUzawaDynamicStepInput
+StepResult = DynamicStepResult

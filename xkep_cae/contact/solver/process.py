@@ -16,17 +16,29 @@ import time
 
 import numpy as np
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+    UpdateGeometryInput,
+    UpdateGeometryProcess,
+)
 from xkep_cae.contact.solver._adaptive_stepping import (
     AdaptiveStepInput,
     AdaptiveSteppingConfig,
     AdaptiveSteppingProcess,
     StepAction,
 )
-from xkep_cae.contact.solver._contact_graph import _snapshot_contact_graph
-from xkep_cae.contact.solver._diagnostics import _format_diagnostics_report
+from xkep_cae.contact.solver._contact_graph import (
+    ContactGraphInput,
+    ContactGraphProcess,
+)
+from xkep_cae.contact.solver._diagnostics import (
+    DiagnosticsInput,
+    DiagnosticsReportProcess,
+)
 from xkep_cae.contact.solver._initial_penetration import (
-    _adjust_initial_positions,
-    _check_initial_penetration,
+    InitialPenetrationInput,
+    InitialPenetrationProcess,
 )
 from xkep_cae.contact.solver._newton_uzawa_dynamic import (
     NewtonUzawaDynamicConfig,
@@ -46,7 +58,7 @@ from xkep_cae.contact.solver._solver_state import (
     _save_checkpoint,
     _state_set,
 )
-from xkep_cae.contact.solver._utils import _deformed_coords
+from xkep_cae.contact.solver._utils import DeformedCoordsInput, DeformedCoordsProcess
 from xkep_cae.core import (
     ContactFrictionInputData,
     ProcessMeta,
@@ -73,7 +85,17 @@ class ContactFrictionProcess(
         version="1.0.0",
         document_path="docs/contact_friction.md",
     )
-    uses = [NewtonUzawaStaticProcess, NewtonUzawaDynamicProcess, AdaptiveSteppingProcess]
+    uses = [
+        NewtonUzawaStaticProcess,
+        NewtonUzawaDynamicProcess,
+        AdaptiveSteppingProcess,
+        InitialPenetrationProcess,
+        ContactGraphProcess,
+        DiagnosticsReportProcess,
+        DeformedCoordsProcess,
+        DetectCandidatesProcess,
+        UpdateGeometryProcess,
+    ]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
     penalty_slot = StrategySlot(object)
@@ -190,34 +212,51 @@ class ContactFrictionProcess(
         # --- 初期貫入チェック ---
         broadphase_margin = 0.0
         broadphase_cell_size = None
-        manager.detect_candidates(
-            node_coords_ref,
-            connectivity,
-            radii,
-            margin=broadphase_margin,
-            cell_size=broadphase_cell_size,
-            core_radii=core_radii,
+        _detect_proc = DetectCandidatesProcess()
+        _geom_proc = UpdateGeometryProcess()
+        _detect_proc.process(
+            DetectCandidatesInput(
+                manager=manager,
+                node_coords=node_coords_ref,
+                connectivity=connectivity,
+                radii=radii,
+                margin=broadphase_margin,
+                cell_size=broadphase_cell_size,
+                core_radii=core_radii,
+            )
         )
+        _pen_proc = InitialPenetrationProcess()
         _use_adjust = manager.config.adjust_initial_penetration
         if _use_adjust and _ul:
             _use_adjust = False
         if _use_adjust:
             _pos_tol = manager.config.position_tolerance
-            node_coords_ref, n_pen_fixed, n_gap_closed = _adjust_initial_positions(
-                manager.pairs, node_coords_ref, _pos_tol
+            pen_out = _pen_proc.process(
+                InitialPenetrationInput(
+                    pairs=manager.pairs,
+                    node_coords=node_coords_ref,
+                    position_tolerance=_pos_tol,
+                    adjust=True,
+                )
             )
-            if (n_pen_fixed + n_gap_closed) > 0:
+            if pen_out.adjusted_coords is not None:
+                node_coords_ref = pen_out.adjusted_coords
+            if (pen_out.n_pen_fixed + pen_out.n_gap_closed) > 0:
                 print(
-                    f"  初期位置調整: 貫入修正={n_pen_fixed}ペア, ギャップ閉鎖={n_gap_closed}ペア"
+                    f"  初期位置調整: 貫入修正={pen_out.n_pen_fixed}ペア, "
+                    f"ギャップ閉鎖={pen_out.n_gap_closed}ペア"
                 )
             _state_set(state, "node_coords_ref", node_coords_ref)
-            manager.detect_candidates(
-                node_coords_ref,
-                connectivity,
-                radii,
-                margin=broadphase_margin,
-                cell_size=broadphase_cell_size,
-                core_radii=core_radii,
+            _detect_proc.process(
+                DetectCandidatesInput(
+                    manager=manager,
+                    node_coords=node_coords_ref,
+                    connectivity=connectivity,
+                    radii=radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                    core_radii=core_radii,
+                )
             )
 
         _ul_has_accum = (
@@ -225,9 +264,14 @@ class ContactFrictionProcess(
             and hasattr(ul_assembler, "u_total_accum")
             and float(np.linalg.norm(ul_assembler.u_total_accum)) > 1e-15
         )
-        n_initial_pen = _check_initial_penetration(
-            manager.pairs, node_coords_ref, manager.config.coating_stiffness
+        pen_check = _pen_proc.process(
+            InitialPenetrationInput(
+                pairs=manager.pairs,
+                node_coords=node_coords_ref,
+                coating_stiffness=manager.config.coating_stiffness,
+            )
         )
+        n_initial_pen = pen_check.n_penetrations
         if n_initial_pen > 0 and not use_coating and not _ul_has_accum:
             raise ValueError(
                 f"初期貫入が検出されました: {n_initial_pen}ペア。"
@@ -308,16 +352,26 @@ class ContactFrictionProcess(
                 state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
 
             # 候補検出
-            coords_def = _deformed_coords(state.node_coords_ref, state.u, 6)
-            manager.detect_candidates(
-                coords_def,
-                connectivity,
-                radii,
-                margin=broadphase_margin,
-                cell_size=broadphase_cell_size,
-                core_radii=core_radii,
+            _dc_out = DeformedCoordsProcess().process(
+                DeformedCoordsInput(
+                    node_coords_ref=state.node_coords_ref,
+                    u=state.u,
+                    ndof_per_node=6,
+                )
             )
-            manager.update_geometry(coords_def)
+            coords_def = _dc_out.coords
+            _detect_proc.process(
+                DetectCandidatesInput(
+                    manager=manager,
+                    node_coords=coords_def,
+                    connectivity=connectivity,
+                    radii=radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                    core_radii=core_radii,
+                )
+            )
+            _geom_proc.process(UpdateGeometryInput(manager=manager, node_coords=coords_def))
             _ensure_lam_size(state, manager.n_pairs)
 
             # --- NR + Uzawa 実行（Static/Dynamic 完全分離） ---
@@ -397,7 +451,10 @@ class ContactFrictionProcess(
                         f"  WARNING: Step {state.step_display} "
                         f"(frac={load_frac:.4f}) did not converge."
                     )
-                    print(_format_diagnostics_report(last_diag))
+                    _diag_report = DiagnosticsReportProcess().process(
+                        DiagnosticsInput(diagnostics=last_diag)
+                    )
+                    print(_diag_report.report)
                     _u_out = _build_u_output(state, ul_assembler)
                     elapsed = time.perf_counter() - t0
                     return SolverResultData(
@@ -474,8 +531,10 @@ class ContactFrictionProcess(
             state.disp_history.append(_u_hist.copy() if _ul else _u_hist)
             state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
             try:
-                graph = _snapshot_contact_graph(manager, step=state.step_display - 1)
-                state.graph_snapshots.append(graph)
+                _cg_out = ContactGraphProcess().process(
+                    ContactGraphInput(manager=manager, step=state.step_display - 1)
+                )
+                state.graph_snapshots.append(_cg_out.graph)
             except Exception:
                 pass
 
