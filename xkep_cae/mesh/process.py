@@ -6,12 +6,12 @@
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 
 import numpy as np
 
 from xkep_cae.core import MeshData, PreProcess, ProcessMeta
+from xkep_cae.mesh._twisted_wire import _make_twisted_wire_mesh, _radii
 
 
 @dataclass(frozen=True)
@@ -52,14 +52,11 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
 
     def process(self, input_data: StrandMeshConfig) -> StrandMeshResult:
         """メッシュ生成の実行."""
-        _mod = importlib.import_module("xkep_cae_deprecated.mesh.twisted_wire")
-        make_twisted_wire_mesh = _mod.make_twisted_wire_mesh
-
         wire_diameter = input_data.wire_radius * 2.0
         length = input_data.pitch_length * input_data.n_pitches
         n_elems = int(input_data.n_elements_per_pitch * input_data.n_pitches)
 
-        mesh = make_twisted_wire_mesh(
+        mesh = _make_twisted_wire_mesh(
             n_strands=input_data.n_strands,
             wire_diameter=wire_diameter,
             pitch=input_data.pitch_length,
@@ -73,7 +70,7 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
         mesh_data = MeshData(
             node_coords=mesh.node_coords,
             connectivity=mesh.connectivity,
-            radii=mesh.radii,
+            radii=_radii(mesh),
             n_strands=input_data.n_strands,
             layer_ids=getattr(mesh, "layer_ids", None),
         )
