@@ -10,7 +10,6 @@ NCP 鞍点系のブロック対角前処理（接触 Schur 補集合）を検証
 
 import numpy as np
 import scipy.sparse as sp
-
 from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
 from xkep_cae.contact.solver_ncp import (
     _solve_saddle_point_contact,
@@ -18,7 +17,8 @@ from xkep_cae.contact.solver_ncp import (
     _solve_saddle_point_gmres,
     newton_raphson_contact_ncp,
 )
-from xkep_cae.process.strategies.contact_geometry import _build_constraint_jacobian_ptp
+
+from xkep_cae.contact.geometry.strategy import _build_constraint_jacobian_ptp
 
 
 def _make_spring_system(

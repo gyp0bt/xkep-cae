@@ -10,12 +10,14 @@ import time
 
 import numpy as np
 
-from xkep_cae.process.base import AbstractProcess, ProcessMeta, ProcessMetaclass
-from xkep_cae.process.categories import SolverProcess
-from xkep_cae.process.strategies.penalty import (
-    AutoBeamEIProcess,
+from xkep_cae.contact.penalty import (
+    AutoBeamEIPenalty as AutoBeamEIProcess,
+)
+from xkep_cae.contact.penalty import (
     PenaltyInput,
 )
+from xkep_cae.core.base import ProcessMeta
+from xkep_cae.core.categories import SolverProcess
 
 
 # --- Protocol のみの軽量クラス（比較対象）---
@@ -57,7 +59,7 @@ def benchmark_call(func, n_calls: int = 100_000) -> float:
 
 def main():
     n_calls = 200_000
-    print(f"=== U1判断: Process vs Protocol オーバーヘッド計測 ===")
+    print("=== U1判断: Process vs Protocol オーバーヘッド計測 ===")
     print(f"呼び出し回数: {n_calls:,}\n")
 
     # 1. Protocol (bare) — compute_k_pen 直接呼び出し
@@ -112,13 +114,13 @@ def main():
     n_nr_iter = 20  # 典型的NR反復回数
     n_strategies = 5  # 5 Strategy 軸
     total_overhead_per_step = overhead_process * n_nr_iter * n_strategies
-    print(f"\n=== NR反復での影響推定 ===")
+    print("\n=== NR反復での影響推定 ===")
     print(f"  NR反復/ステップ: {n_nr_iter}")
     print(f"  Strategy数: {n_strategies}")
     print(
         f"  1ステップあたりの追加時間: {total_overhead_per_step:.1f} μs = {total_overhead_per_step / 1000:.3f} ms"
     )
-    print(f"  （典型的NR反復の1ステップ計算時間: 数百ms〜数秒）")
+    print("  （典型的NR反復の1ステップ計算時間: 数百ms〜数秒）")
 
 
 if __name__ == "__main__":
