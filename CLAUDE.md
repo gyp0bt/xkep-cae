@@ -82,6 +82,8 @@
 | `output/__init__.py` 全量 re-export | 明示的エクスポート + `__getattr__` 遅延ロード | status-185 |
 | `contact/solver/process.py` importlib 9箇所 | プライベートモジュール群 + `_create_working_strategies` | status-186 |
 | C14: direct import のみ検出 | importlib.import_module() も検出 | status-186 |
+| `xkep_cae_deprecated.mesh.twisted_wire` importlib | `xkep_cae.mesh._twisted_wire` 直接 import | status-187 |
+| `output/__init__.py __getattr__` deprecated lazy-load | 完全削除（使用箇所ゼロ） | status-187 |
 
 ## 推奨ソルバー構成
 
@@ -93,7 +95,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 275 新パッケージテスト** — 2026-03-16 | C14 違反 **4件**（status-186）
+**~2260テスト + 284 新パッケージテスト** — 2026-03-16 | C14 違反 **2件**（status-187）
 
 ### ターゲット
 
@@ -101,9 +103,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 7〜8** — deprecated 依存除去（mesh/contact/output + strategies 完全実装）。
+**脱出ポット計画 Phase 7 後半〜8** — ContactManager 新パッケージ移植 + friction/geometry stub 解消。
 
-契約違反 **4件**（status-186: C14 importlib 検出強化により顕在化。Phase 7-8 で解消予定）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 **2件**（status-187: mesh/output C14 除去済み。残りは contact/setup + contact/solver — ContactManager 移植が前提）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 

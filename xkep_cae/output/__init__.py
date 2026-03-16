@@ -1,11 +1,7 @@
-"""output パッケージ — 新プロセス + deprecated 互換.
+"""output パッケージ — 新プロセス.
 
-新パッケージのプロセス:
-  - ExportProcess: CSV/JSON エクスポート
-  - BeamRenderProcess: 2D投影レンダリング
-
-deprecated 互換: tests/test_output.py 等から使われる旧 API は
-__getattr__ 経由で xkep_cae_deprecated.output から遅延ロードする。
+- ExportProcess: CSV/JSON エクスポート
+- BeamRenderProcess: 2D投影レンダリング
 """
 
 from xkep_cae.output.export import ExportConfig, ExportProcess, ExportResult
@@ -19,13 +15,3 @@ __all__ = [
     "RenderConfig",
     "RenderResult",
 ]
-
-
-def __getattr__(name: str):
-    """deprecated 互換: 旧 API を遅延ロード."""
-    import importlib
-
-    _m = importlib.import_module("xkep_cae_deprecated.output")
-    if hasattr(_m, name):
-        return getattr(_m, name)
-    raise AttributeError(f"module 'xkep_cae.output' has no attribute {name!r}")
