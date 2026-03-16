@@ -73,6 +73,9 @@
 | `process/strategies/penalty/` | `contact/penalty/` | status-178 |
 | `xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
 | `xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
+| `xkep_cae/core/time_integration/` | `xkep_cae/time_integration/` | status-182 |
+| `xkep_cae/process/`（re-export shim） | 完全削除（core 直接参照） | status-182 |
+| C16: `core/strategies/` + `contact/` のみ | C16: core/ 以外の全モジュール | status-182 |
 
 ## 推奨ソルバー構成
 
