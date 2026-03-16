@@ -19,6 +19,7 @@
 | [183](status-183.md) | 2026-03-16 | Phase 3 — concrete プロセス移行 + BatchProcess フル実装 | ~2260+266p(新) |
 | [184](status-184.md) | 2026-03-16 | Phase 4 — ContactFrictionProcess 移行 + 完全ワークフロー実現 | ~2260+279p(新) |
 | [185](status-185.md) | 2026-03-16 | Phase 5 — ソルバー結果連携 + output re-export クリーンアップ | ~2260+275p(新) |
+| [186](status-186.md) | 2026-03-16 | Phase 6 — C14 強化 + ソルバー deprecated 依存除去 | ~2260+275p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -86,7 +87,8 @@ Phase 2 完備:   ~2260+204p(新) (2026-03-15) ← status-181（7軸ファクト
 C16拡大:        ~2260+204p(新) (2026-03-16) ← status-182（C16拡大+process/削除）
 Phase 3完了:     ~2260+266p(新) (2026-03-16) ← status-183（Phase 3 concrete移行）
 Phase 4完了:     ~2260+279p(新) (2026-03-16) ← status-184（Phase 4 Solver移行）
-現在:           ~2260+275p(新) (2026-03-16) ← status-185（Phase 5 ソルバー結果連携）
+Phase 5完了:     ~2260+275p(新) (2026-03-16) ← status-185（Phase 5 ソルバー結果連携）
+現在:           ~2260+275p(新) (2026-03-16) ← status-186（Phase 6 C14強化+deprecated除去）
 ```
 
 ## 備考
