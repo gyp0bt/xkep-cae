@@ -1,8 +1,59 @@
-"""暫定 re-export（未移行モジュール）."""
+"""xkep_cae.io - メッシュI/Oモジュール."""
 
-import importlib as _il
+from xkep_cae.io.abaqus_inp import (
+    AbaqusBeamSection,
+    AbaqusBoundary,
+    AbaqusElementGroup,
+    AbaqusFieldAnimation,
+    AbaqusMaterial,
+    AbaqusMesh,
+    AbaqusNode,
+    InpAnimationRequest,
+    InpContactDef,
+    InpInitialCondition,
+    InpOutputRequest,
+    InpStep,
+    InpSurfaceDef,
+    InpSurfaceInteraction,
+    read_abaqus_inp,
+    write_abaqus_inp,
+    write_abaqus_model,
+)
+from xkep_cae.io.inp_runner import (
+    BeamModel,
+    build_beam_model_from_inp,
+    node_dof,
+    solve_beam_static,
+)
+from xkep_cae.io.material_converter import (
+    abaqus_material_to_plane_strain_plasticity,
+    abaqus_material_to_plasticity_1d,
+    kinematic_table_to_armstrong_frederick,
+)
 
-_m = _il.import_module("xkep_cae_deprecated.io")
-for _k in dir(_m):
-    if not _k.startswith("_"):
-        globals()[_k] = getattr(_m, _k)
+__all__ = [
+    "AbaqusBoundary",
+    "AbaqusBeamSection",
+    "AbaqusElementGroup",
+    "AbaqusFieldAnimation",
+    "AbaqusMaterial",
+    "AbaqusMesh",
+    "AbaqusNode",
+    "BeamModel",
+    "abaqus_material_to_plane_strain_plasticity",
+    "abaqus_material_to_plasticity_1d",
+    "build_beam_model_from_inp",
+    "kinematic_table_to_armstrong_frederick",
+    "node_dof",
+    "InpAnimationRequest",
+    "InpContactDef",
+    "InpInitialCondition",
+    "InpOutputRequest",
+    "InpStep",
+    "InpSurfaceDef",
+    "InpSurfaceInteraction",
+    "read_abaqus_inp",
+    "solve_beam_static",
+    "write_abaqus_inp",
+    "write_abaqus_model",
+]

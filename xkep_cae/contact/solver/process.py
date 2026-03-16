@@ -26,8 +26,8 @@ from xkep_cae.core import (
 from xkep_cae.core.slots import StrategySlot
 
 
-def _import_deprecated(module_path: str) -> object:
-    """importlib 経由で deprecated モジュールをインポート（C14 準拠）."""
+def _import_module(module_path: str) -> object:
+    """importlib 経由でモジュールをインポート."""
     return importlib.import_module(module_path)
 
 
@@ -65,7 +65,7 @@ class ContactFrictionProcess(
     def __init__(self, strategies: object | None = None) -> None:
         # deprecated 版の SolverStrategies を使用（NewtonUzawaLoop との互換性のため）
         if strategies is None:
-            _data_mod = _import_deprecated("xkep_cae_deprecated.process.data")
+            _data_mod = importlib.import_module("xkep_cae.process.data")
             strategies = _data_mod.default_strategies()
         self.strategies = strategies
 
@@ -82,12 +82,12 @@ class ContactFrictionProcess(
         t0 = time.perf_counter()
 
         # deprecated モジュールの遅延インポート（C14 準拠）
-        _utils_mod = _import_deprecated("xkep_cae_deprecated.contact.utils")
-        _ip_mod = _import_deprecated("xkep_cae_deprecated.contact.initial_penetration")
-        _graph_mod = _import_deprecated("xkep_cae_deprecated.contact.graph")
-        _state_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.solver_state")
-        _nul_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.newton_uzawa")
-        _asc_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.adaptive_stepping")
+        _utils_mod = importlib.import_module("xkep_cae.contact.utils")
+        _ip_mod = importlib.import_module("xkep_cae.contact.initial_penetration")
+        _graph_mod = importlib.import_module("xkep_cae.contact.graph")
+        _state_mod = importlib.import_module("xkep_cae.process.strategies.solver_state")
+        _nul_mod = importlib.import_module("xkep_cae.process.strategies.newton_uzawa")
+        _asc_mod = importlib.import_module("xkep_cae.process.strategies.adaptive_stepping")
 
         deformed_coords = _utils_mod.deformed_coords
         check_initial_penetration = _ip_mod.check_initial_penetration
@@ -105,7 +105,7 @@ class ContactFrictionProcess(
         ul_assembler = input_data.callbacks.ul_assembler
 
         # --- Strategy 生成（deprecated 版: NewtonUzawaLoop 互換） ---
-        _data_mod = _import_deprecated("xkep_cae_deprecated.process.data")
+        _data_mod = importlib.import_module("xkep_cae.process.data")
         _default_strategies = _data_mod.default_strategies
         strategies = _default_strategies(
             ndof=ndof,

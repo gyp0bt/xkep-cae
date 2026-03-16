@@ -60,7 +60,7 @@ def _make_contact_setup(mesh: MeshData) -> ContactSetupData:
     """ContactSetupProcess 経由の接触設定."""
     import importlib
 
-    _pair = importlib.import_module("xkep_cae_deprecated.contact.pair")
+    _pair = importlib.import_module("xkep_cae.contact.pair")
     ContactConfig = _pair.ContactConfig  # noqa: N806
     ContactManager = _pair.ContactManager  # noqa: N806
 
@@ -111,7 +111,7 @@ class TestContactFrictionProcessAPI:
     def test_custom_strategies(self):
         import importlib
 
-        _data_mod = importlib.import_module("xkep_cae_deprecated.process.data")
+        _data_mod = importlib.import_module("xkep_cae.process.data")
         strats = _data_mod.default_strategies(k_pen=999.0)
         proc = ContactFrictionProcess(strategies=strats)
         assert proc.strategies is strats

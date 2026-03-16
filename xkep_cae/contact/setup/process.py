@@ -1,6 +1,6 @@
 """ContactSetupProcess — 接触設定の PreProcess.
 
-旧 xkep_cae_deprecated/process/concrete/pre_contact.py の完全書き直し。
+旧 xkep_cae/process/concrete/pre_contact.py の完全書き直し。
 設計仕様: docs/contact_setup.md
 """
 
@@ -45,7 +45,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
 
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:
         """接触設定の実行."""
-        _pair = importlib.import_module("xkep_cae_deprecated.contact.pair")
+        _pair = importlib.import_module("xkep_cae.contact.pair")
         ContactConfig = _pair.ContactConfig  # noqa: N806
         ContactManager = _pair.ContactManager  # noqa: N806
 

@@ -1,8 +1,6 @@
-"""暫定 re-export（未移行モジュール）."""
+"""数学ユーティリティ.
 
-import importlib as _il
+四元数演算、SO(3)回転操作など、有限要素解析で使用する数学ツール。
 
-_m = _il.import_module("xkep_cae_deprecated.math")
-for _k in dir(_m):
-    if not _k.startswith("_"):
-        globals()[_k] = getattr(_m, _k)
+[← README](../../README.md)
+"""

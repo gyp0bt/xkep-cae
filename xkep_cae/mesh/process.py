@@ -1,6 +1,6 @@
 """StrandMeshProcess — 撚線メッシュ生成の PreProcess.
 
-旧 xkep_cae_deprecated/process/concrete/pre_mesh.py の完全書き直し。
+旧 xkep_cae/process/concrete/pre_mesh.py の完全書き直し。
 設計仕様: docs/mesh_process.md
 """
 
@@ -52,7 +52,7 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
 
     def process(self, input_data: StrandMeshConfig) -> StrandMeshResult:
         """メッシュ生成の実行."""
-        _mod = importlib.import_module("xkep_cae_deprecated.mesh.twisted_wire")
+        _mod = importlib.import_module("xkep_cae.mesh.twisted_wire")
         make_twisted_wire_mesh = _mod.make_twisted_wire_mesh
 
         wire_diameter = input_data.wire_radius * 2.0

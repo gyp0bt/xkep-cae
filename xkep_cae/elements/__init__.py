@@ -1,8 +1,4 @@
-"""暫定 re-export（未移行モジュール）."""
+"""有限要素モジュール.
 
-import importlib as _il
-
-_m = _il.import_module("xkep_cae_deprecated.elements")
-for _k in dir(_m):
-    if not _k.startswith("_"):
-        globals()[_k] = getattr(_m, _k)
+梁（EB/Timo/CR/Cosserat）+ 平面 + HEX8 の各種有限要素実装。
+"""

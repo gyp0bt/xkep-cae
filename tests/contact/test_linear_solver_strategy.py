@@ -8,7 +8,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.core.strategies.protocols import LinearSolverStrategy
-from xkep_cae_deprecated.process.strategies.linear_solver import (
+from xkep_cae.process.strategies.linear_solver import (
     AutoLinearSolver,
     DirectLinearSolver,
     IterativeLinearSolver,

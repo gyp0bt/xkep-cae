@@ -78,6 +78,8 @@
 | C16: `core/strategies/` + `contact/` のみ | C16: core/ 以外の全モジュール | status-182 |
 | deprecated `ContactFrictionProcess` | `xkep_cae/contact/solver/process.py` | status-184 |
 | `StrandBendingBatchProcess` v2.0.0 | v3.0.0（Solver 統合） | status-184 |
+| re-export shim `__init__.py`（9パッケージ） | 直接インポート / docstring | status-185 |
+| `contact/geometry.py` | `contact/geometry/_legacy.py` + re-export | status-185 |
 
 ## 推奨ソルバー構成
 
