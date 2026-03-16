@@ -1,4 +1,4 @@
-"""接触グラフスナップショット生成（プライベート）.
+"""接触グラフスナップショット生成 Process.
 
 xkep_cae_deprecated/contact/graph.py の snapshot_contact_graph を移植。
 manager / ContactStatus は duck typing で受け取る。
@@ -7,6 +7,8 @@ manager / ContactStatus は duck typing で受け取る。
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,22 @@ class _ContactGraph:
     nodes: set[int]
     edges: list[_ContactEdge]
     n_total_pairs: int
+
+
+@dataclass(frozen=True)
+class ContactGraphInput:
+    """接触グラフスナップショットの入力."""
+
+    manager: object
+    step: int = 0
+    load_factor: float = 0.0
+
+
+@dataclass(frozen=True)
+class ContactGraphOutput:
+    """接触グラフスナップショットの出力."""
+
+    graph: _ContactGraph
 
 
 def _snapshot_contact_graph(
@@ -82,3 +100,25 @@ def _snapshot_contact_graph(
         edges=edges,
         n_total_pairs=manager.n_pairs,
     )
+
+
+class ContactGraphProcess(SolverProcess[ContactGraphInput, ContactGraphOutput]):
+    """接触グラフスナップショット生成 Process.
+
+    現在の接触状態からグラフ構造を抽出する。
+    """
+
+    meta = ProcessMeta(
+        name="ContactGraph",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_friction.md",
+    )
+
+    def process(self, input_data: ContactGraphInput) -> ContactGraphOutput:
+        graph = _snapshot_contact_graph(
+            input_data.manager,
+            input_data.step,
+            input_data.load_factor,
+        )
+        return ContactGraphOutput(graph=graph)

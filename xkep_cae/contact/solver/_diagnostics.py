@@ -1,4 +1,4 @@
-"""収束診断情報（プライベート）.
+"""収束診断情報 Process.
 
 ConvergenceDiagnostics を新パッケージに移植。
 xkep_cae_deprecated/contact/diagnostics.py からのコピー。
@@ -7,6 +7,8 @@ xkep_cae_deprecated/contact/diagnostics.py からのコピー。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,21 @@ class ConvergenceDiagnostics:
     du_norm_history: list[float] = field(default_factory=list)
     max_du_dof_history: list[int] = field(default_factory=list)
     condition_number: float | None = None
+
+
+@dataclass(frozen=True)
+class DiagnosticsInput:
+    """診断レポート生成の入力."""
+
+    diagnostics: ConvergenceDiagnostics
+    max_iter: int = 50
+
+
+@dataclass(frozen=True)
+class DiagnosticsOutput:
+    """診断レポートの出力."""
+
+    report: str
 
 
 def _format_diagnostics_report(diag: ConvergenceDiagnostics, max_iter: int = 50) -> str:
@@ -46,3 +63,21 @@ def _format_diagnostics_report(diag: ConvergenceDiagnostics, max_iter: int = 50)
 
     lines.append("=" * 60)
     return "\n".join(lines)
+
+
+class DiagnosticsReportProcess(SolverProcess[DiagnosticsInput, DiagnosticsOutput]):
+    """収束診断レポート生成 Process."""
+
+    meta = ProcessMeta(
+        name="DiagnosticsReport",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_friction.md",
+    )
+
+    def process(self, input_data: DiagnosticsInput) -> DiagnosticsOutput:
+        report = _format_diagnostics_report(
+            input_data.diagnostics,
+            input_data.max_iter,
+        )
+        return DiagnosticsOutput(report=report)

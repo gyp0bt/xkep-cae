@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from xkep_cae.core import ProcessMeta, SolverProcess
+
 _setattr = object.__setattr__
 
 
@@ -90,3 +92,44 @@ def _build_u_output(state: SolverState, ul_assembler: object | None) -> np.ndarr
     if ul_assembler is not None:
         return ul_assembler.u_total_accum + state.u
     return state.u
+
+
+@dataclass(frozen=True)
+class SolverStateInitInput:
+    """SolverState 初期化の入力."""
+
+    ndof: int
+    node_coords: np.ndarray
+    n_pairs: int = 0
+
+
+@dataclass(frozen=True)
+class SolverStateInitOutput:
+    """SolverState 初期化の出力."""
+
+    state: SolverState
+
+
+class SolverStateInitProcess(
+    SolverProcess[SolverStateInitInput, SolverStateInitOutput],
+):
+    """SolverState の初期化 Process.
+
+    自由度数・節点座標・ペア数からゼロ初期状態を生成する。
+    """
+
+    meta = ProcessMeta(
+        name="SolverStateInit",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_friction.md",
+    )
+
+    def process(self, input_data: SolverStateInitInput) -> SolverStateInitOutput:
+        state = SolverState(
+            u=np.zeros(input_data.ndof),
+            lam_all=np.zeros(max(input_data.n_pairs, 1)),
+            u_ref=np.zeros(input_data.ndof),
+            node_coords_ref=input_data.node_coords.copy(),
+        )
+        return SolverStateInitOutput(state=state)

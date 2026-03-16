@@ -28,10 +28,15 @@ from xkep_cae.contact.solver._initial_penetration import (
     _adjust_initial_positions,
     _check_initial_penetration,
 )
-from xkep_cae.contact.solver._newton_uzawa import (
-    NewtonUzawaConfig,
-    NewtonUzawaProcess,
-    NewtonUzawaStepInput,
+from xkep_cae.contact.solver._newton_uzawa_dynamic import (
+    NewtonUzawaDynamicConfig,
+    NewtonUzawaDynamicProcess,
+    NewtonUzawaDynamicStepInput,
+)
+from xkep_cae.contact.solver._newton_uzawa_static import (
+    NewtonUzawaStaticConfig,
+    NewtonUzawaStaticProcess,
+    NewtonUzawaStaticStepInput,
 )
 from xkep_cae.contact.solver._solver_state import (
     SolverState,
@@ -68,7 +73,7 @@ class ContactFrictionProcess(
         version="1.0.0",
         document_path="docs/contact_friction.md",
     )
-    uses = [NewtonUzawaProcess, AdaptiveSteppingProcess]
+    uses = [NewtonUzawaStaticProcess, NewtonUzawaDynamicProcess, AdaptiveSteppingProcess]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
     penalty_slot = StrategySlot(object)
@@ -251,9 +256,13 @@ class ContactFrictionProcess(
         )
         stepping = AdaptiveSteppingProcess(stepping_config)
 
-        # --- Newton-Uzawa プロセス ---
-        nr_config = NewtonUzawaConfig(show_progress=True)
-        nr_process = NewtonUzawaProcess()
+        # --- Newton-Uzawa プロセス（Static/Dynamic 完全分離） ---
+        if _dynamics:
+            nr_config_dyn = NewtonUzawaDynamicConfig(show_progress=True)
+            nr_process_dyn = NewtonUzawaDynamicProcess()
+        else:
+            nr_config_sta = NewtonUzawaStaticConfig(show_progress=True)
+            nr_process_sta = NewtonUzawaStaticProcess()
 
         # --- 最終診断 ---
         last_diag = None
@@ -311,30 +320,54 @@ class ContactFrictionProcess(
             manager.update_geometry(coords_def)
             _ensure_lam_size(state, manager.n_pairs)
 
-            # --- NR + Uzawa 実行 ---
-            step_input = NewtonUzawaStepInput(
-                config=nr_config,
-                u=state.u,
-                lam_all=state.lam_all,
-                f_ext=f_ext,
-                f_ext_ref_norm=f_ext_ref_norm,
-                fixed_dofs=fixed_dofs,
-                assemble_tangent=input_data.callbacks.assemble_tangent,
-                assemble_internal_force=input_data.callbacks.assemble_internal_force,
-                manager=manager,
-                node_coords_ref=state.node_coords_ref,
-                strategies=strategies,
-                k_pen=k_pen,
-                mu=mu,
-                u_ref=state.u_ref,
-                load_frac=load_frac,
-                load_frac_prev=state.load_frac_prev,
-                step_display=state.step_display,
-                dt_sub=dt_sub,
-                use_coating=use_coating,
-                dynamic_ref=dynamic_ref,
-            )
-            step_result = nr_process.process(step_input)
+            # --- NR + Uzawa 実行（Static/Dynamic 完全分離） ---
+            if _dynamics:
+                step_input = NewtonUzawaDynamicStepInput(
+                    config=nr_config_dyn,
+                    u=state.u,
+                    lam_all=state.lam_all,
+                    f_ext=f_ext,
+                    f_ext_ref_norm=f_ext_ref_norm,
+                    fixed_dofs=fixed_dofs,
+                    assemble_tangent=input_data.callbacks.assemble_tangent,
+                    assemble_internal_force=input_data.callbacks.assemble_internal_force,
+                    manager=manager,
+                    node_coords_ref=state.node_coords_ref,
+                    strategies=strategies,
+                    k_pen=k_pen,
+                    mu=mu,
+                    u_ref=state.u_ref,
+                    load_frac=load_frac,
+                    load_frac_prev=state.load_frac_prev,
+                    step_display=state.step_display,
+                    dt_sub=dt_sub,
+                    use_coating=use_coating,
+                    dynamic_ref=dynamic_ref,
+                )
+                step_result = nr_process_dyn.process(step_input)
+            else:
+                step_input = NewtonUzawaStaticStepInput(
+                    config=nr_config_sta,
+                    u=state.u,
+                    lam_all=state.lam_all,
+                    f_ext=f_ext,
+                    f_ext_ref_norm=f_ext_ref_norm,
+                    fixed_dofs=fixed_dofs,
+                    assemble_tangent=input_data.callbacks.assemble_tangent,
+                    assemble_internal_force=input_data.callbacks.assemble_internal_force,
+                    manager=manager,
+                    node_coords_ref=state.node_coords_ref,
+                    strategies=strategies,
+                    k_pen=k_pen,
+                    mu=mu,
+                    u_ref=state.u_ref,
+                    load_frac=load_frac,
+                    load_frac_prev=state.load_frac_prev,
+                    step_display=state.step_display,
+                    use_coating=use_coating,
+                    dynamic_ref=dynamic_ref,
+                )
+                step_result = nr_process_sta.process(step_input)
             _state_set(state, "total_newton", state.total_newton + step_result.n_newton_iters)
             last_diag = step_result.diagnostics
 

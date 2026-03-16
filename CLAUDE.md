@@ -91,6 +91,8 @@
 | 8モジュール暫定 re-export (`_il.import_module`) | 空化（deprecated 直接参照に移行） | status-189 |
 | friction evaluate()/tangent() ゼロ返却 stub | `_assembly.py` 経由の完全実装 | status-189 |
 | geometry detect() 空リスト stub | `_detect_candidates()` 経由 broadphase 実装 | status-189 |
+| solver 純関数5モジュール | Process 化（SolverProcess 継承） | status-190 |
+| `NewtonUzawaProcess`（統合型） | `NewtonUzawaStaticProcess` + `NewtonUzawaDynamicProcess` | status-190 |
 
 ## 推奨ソルバー構成
 
@@ -102,7 +104,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 284 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-189）
+**~2260テスト + 301 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-190）
 
 ### ターゲット
 
@@ -110,7 +112,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 8 完了 → Phase 9** — friction/geometry Strategy 実装完成、C14 importlib alias 抜け道修正済み。solver 内部 Process 化 + NewtonUzawa dynamic/static 分離が残課題。
+**脱出ポット計画 Phase 8 完了 → Phase 9** — solver 内部全モジュール Process 化完了。NewtonUzawa を Static/Dynamic に完全分離。friction/geometry Strategy の process.py 内 deprecated 直接使用の移行が残課題。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
