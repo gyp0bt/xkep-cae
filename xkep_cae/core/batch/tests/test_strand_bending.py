@@ -33,7 +33,7 @@ class TestStrandBendingBatchProcess:
         assert StrandBendingBatchProcess.meta.module == "batch"
 
     def test_meta_version(self):
-        assert StrandBendingBatchProcess.meta.version == "3.0.0"
+        assert StrandBendingBatchProcess.meta.version == "4.0.0"
 
     def test_process_returns_result_without_mesh(self):
         """mesh_config 未指定時はスキップして結果を返す."""
@@ -67,13 +67,15 @@ class TestStrandBendingBatchProcess:
         assert config.use_friction is False
 
     def test_uses_includes_concrete_processes(self):
-        """Phase 3-4 で追加された concrete プロセスが uses に含まれる."""
+        """Phase 3-5 で追加された concrete プロセスが uses に含まれる."""
         from xkep_cae.contact.setup.process import ContactSetupProcess
         from xkep_cae.contact.solver.process import ContactFrictionProcess
         from xkep_cae.mesh.process import StrandMeshProcess
         from xkep_cae.output.export import ExportProcess
         from xkep_cae.output.render import BeamRenderProcess
+        from xkep_cae.verify.contact import ContactVerifyProcess
         from xkep_cae.verify.convergence import ConvergenceVerifyProcess
+        from xkep_cae.verify.energy import EnergyBalanceVerifyProcess
 
         uses = StrandBendingBatchProcess.uses
         assert StrandMeshProcess in uses
@@ -82,6 +84,8 @@ class TestStrandBendingBatchProcess:
         assert ExportProcess in uses
         assert BeamRenderProcess in uses
         assert ConvergenceVerifyProcess in uses
+        assert EnergyBalanceVerifyProcess in uses
+        assert ContactVerifyProcess in uses
 
     def test_full_workflow_with_mesh(self):
         """mesh_config を指定してフルワークフロー実行."""
@@ -152,3 +156,137 @@ class TestStrandBendingBatchProcess:
         assert result.solver_converged is True
         assert result.solver_result is not None
         assert any("ContactFrictionProcess: done" in line for line in result.process_log)
+
+    def test_export_after_solver(self):
+        """ソルバー結果のエクスポート統合テスト."""
+        import tempfile
+
+        import numpy as np
+        import scipy.sparse as sp
+
+        from xkep_cae.core import AssembleCallbacks, BoundaryData
+
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(n_strands=2, n_elements_per_pitch=16, gap=0.01)
+        from xkep_cae.mesh.process import StrandMeshProcess
+
+        mesh_result = StrandMeshProcess().process(mesh_config)
+        ndof = len(mesh_result.mesh.node_coords) * 6
+
+        boundary = BoundaryData(
+            fixed_dofs=np.arange(6),
+            f_ext_total=np.zeros(ndof),
+        )
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr"),
+            assemble_internal_force=lambda u: u * 1.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = StrandBatchConfig(
+                mesh_config=mesh_config,
+                k_pen=1e4,
+                boundary=boundary,
+                callbacks=callbacks,
+                run_solver=True,
+                run_export=True,
+                output_dir=tmpdir,
+            )
+            result = proc.process(config)
+            assert result.export_result is not None
+            assert len(result.export_result.exported_files) > 0
+            assert any("ExportProcess: done" in line for line in result.process_log)
+
+    def test_verify_after_solver(self):
+        """ソルバー結果の検証統合テスト."""
+        import numpy as np
+        import scipy.sparse as sp
+
+        from xkep_cae.core import AssembleCallbacks, BoundaryData
+
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(n_strands=2, n_elements_per_pitch=16, gap=0.01)
+        from xkep_cae.mesh.process import StrandMeshProcess
+
+        mesh_result = StrandMeshProcess().process(mesh_config)
+        ndof = len(mesh_result.mesh.node_coords) * 6
+
+        boundary = BoundaryData(
+            fixed_dofs=np.arange(6),
+            f_ext_total=np.zeros(ndof),
+        )
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr"),
+            assemble_internal_force=lambda u: u * 1.0,
+        )
+
+        config = StrandBatchConfig(
+            mesh_config=mesh_config,
+            k_pen=1e4,
+            boundary=boundary,
+            callbacks=callbacks,
+            run_solver=True,
+            run_verify=True,
+            run_export=False,
+        )
+        result = proc.process(config)
+        assert result.verify_result is not None
+        assert result.verify_result.passed is True
+        assert "converged" in result.verify_result.checks
+        assert "displacement_finite" in result.verify_result.checks
+        assert any("VerifyProcess: done" in line for line in result.process_log)
+        assert any("ConvergenceVerify: PASS" in line for line in result.process_log)
+        assert any("EnergyBalanceVerify: PASS" in line for line in result.process_log)
+        assert any("ContactVerify: PASS" in line for line in result.process_log)
+
+    def test_render_after_solver(self):
+        """ソルバー結果のレンダリング統合テスト."""
+        import tempfile
+
+        import numpy as np
+        import scipy.sparse as sp
+
+        from xkep_cae.core import AssembleCallbacks, BoundaryData
+
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(n_strands=2, n_elements_per_pitch=16, gap=0.01)
+        from xkep_cae.mesh.process import StrandMeshProcess
+
+        mesh_result = StrandMeshProcess().process(mesh_config)
+        ndof = len(mesh_result.mesh.node_coords) * 6
+
+        boundary = BoundaryData(
+            fixed_dofs=np.arange(6),
+            f_ext_total=np.zeros(ndof),
+        )
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr"),
+            assemble_internal_force=lambda u: u * 1.0,
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = StrandBatchConfig(
+                mesh_config=mesh_config,
+                k_pen=1e4,
+                boundary=boundary,
+                callbacks=callbacks,
+                run_solver=True,
+                run_render=True,
+                run_export=False,
+                run_verify=False,
+                output_dir=tmpdir,
+            )
+            result = proc.process(config)
+            assert result.render_result is not None
+            assert len(result.render_result.image_paths) > 0
+            assert any("BeamRenderProcess: done" in line for line in result.process_log)
+
+    def test_no_export_without_solver(self):
+        """ソルバー未実行時はExport/Render/Verifyもスキップ."""
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(n_strands=7, n_elements_per_pitch=16)
+        config = StrandBatchConfig(mesh_config=mesh_config, run_export=True)
+        result = proc.process(config)
+        assert result.export_result is None
+        assert result.render_result is None
+        assert result.verify_result is None
