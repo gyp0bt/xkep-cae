@@ -31,6 +31,21 @@ from xkep_cae.contact.solver._initial_penetration import (
 from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
 from xkep_cae.contact.solver._newton_uzawa_dynamic import NewtonUzawaDynamicProcess
 from xkep_cae.contact.solver._newton_uzawa_static import NewtonUzawaStaticProcess
+from xkep_cae.contact.solver._nuzawa_steps import (
+    ContactForceAssemblyProcess,
+    ConvergenceCheckInput,
+    ConvergenceCheckOutput,
+    ConvergenceCheckProcess,
+    ConvergenceType,
+    LinearSolveInput,
+    LinearSolveOutput,
+    LinearSolveProcess,
+    LineSearchUpdateInput,
+    LineSearchUpdateOutput,
+    LineSearchUpdateProcess,
+    TangentAssemblyProcess,
+    UzawaUpdateProcess,
+)
 from xkep_cae.contact.solver._solver_state import (
     SolverStateInitInput,
     SolverStateInitOutput,
@@ -528,3 +543,112 @@ class TestNCPLineSearchProcessAPI:
         )
         assert isinstance(out, NCPLineSearchOutput)
         assert 0.0 < out.alpha <= 1.0
+
+
+# ── NewtonUzawa サブプロセス テスト ──────────────────────
+
+
+@binds_to(ContactForceAssemblyProcess)
+class TestContactForceAssemblyProcessAPI:
+    """ContactForceAssemblyProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(ContactForceAssemblyProcess, SolverProcess)
+
+
+@binds_to(ConvergenceCheckProcess)
+class TestConvergenceCheckProcessAPI:
+    """ConvergenceCheckProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(ConvergenceCheckProcess, SolverProcess)
+
+    def test_force_convergence(self):
+        """力収束を判定."""
+
+        class _MockMgr:
+            pairs = []
+
+        proc = ConvergenceCheckProcess()
+        R_u = np.array([1e-12, 0.0, 0.0])
+        out = proc.process(
+            ConvergenceCheckInput(
+                R_u=R_u,
+                du=None,
+                u=np.ones(3),
+                f_ext_ref_norm=1.0,
+                tol_force=1e-8,
+                tol_disp=1e-8,
+                dynamic_ref=False,
+                is_first_iter=True,
+                energy_ref=None,
+                manager=_MockMgr(),
+            )
+        )
+        assert isinstance(out, ConvergenceCheckOutput)
+        assert out.converged is True
+        assert out.convergence_type == ConvergenceType.FORCE
+
+
+@binds_to(TangentAssemblyProcess)
+class TestTangentAssemblyProcessAPI:
+    """TangentAssemblyProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(TangentAssemblyProcess, SolverProcess)
+
+
+@binds_to(LinearSolveProcess)
+class TestLinearSolveProcessAPI:
+    """LinearSolveProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(LinearSolveProcess, SolverProcess)
+
+    def test_simple_solve(self):
+        """単純な線形ソルブ."""
+        proc = LinearSolveProcess()
+        K = sp.eye(3, format="csr") * 2.0
+        R = np.array([1.0, 2.0, 3.0])
+        out = proc.process(LinearSolveInput(K_T=K, R_u=R, fixed_dofs=np.array([], dtype=int)))
+        assert isinstance(out, LinearSolveOutput)
+        assert out.success is True
+        assert np.allclose(out.du, [-0.5, -1.0, -1.5])
+
+
+@binds_to(LineSearchUpdateProcess)
+class TestLineSearchUpdateProcessAPI:
+    """LineSearchUpdateProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(LineSearchUpdateProcess, SolverProcess)
+
+    def test_no_line_search(self):
+        """Line search 無効時は scale=1.0."""
+        proc = LineSearchUpdateProcess()
+        du = np.array([0.1, 0.2])
+        out = proc.process(
+            LineSearchUpdateInput(
+                u=np.zeros(2),
+                du=du,
+                f_ext=np.ones(2),
+                fixed_dofs=np.array([], dtype=int),
+                assemble_internal_force=lambda x: x,
+                res_u_norm=1.0,
+                f_c=np.zeros(2),
+                use_line_search=False,
+                line_search_max_steps=5,
+                du_norm_cap=0.0,
+            )
+        )
+        assert isinstance(out, LineSearchUpdateOutput)
+        assert out.scale_factor == 1.0
+        assert np.allclose(out.du_scaled, du)
+
+
+@binds_to(UzawaUpdateProcess)
+class TestUzawaUpdateProcessAPI:
+    """UzawaUpdateProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(UzawaUpdateProcess, SolverProcess)
