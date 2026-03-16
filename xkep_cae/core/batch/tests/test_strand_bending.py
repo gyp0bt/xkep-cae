@@ -33,7 +33,7 @@ class TestStrandBendingBatchProcess:
         assert StrandBendingBatchProcess.meta.module == "batch"
 
     def test_meta_version(self):
-        assert StrandBendingBatchProcess.meta.version == "2.0.0"
+        assert StrandBendingBatchProcess.meta.version == "3.0.0"
 
     def test_process_returns_result_without_mesh(self):
         """mesh_config 未指定時はスキップして結果を返す."""
@@ -67,8 +67,9 @@ class TestStrandBendingBatchProcess:
         assert config.use_friction is False
 
     def test_uses_includes_concrete_processes(self):
-        """Phase 3 で追加された concrete プロセスが uses に含まれる."""
+        """Phase 3-4 で追加された concrete プロセスが uses に含まれる."""
         from xkep_cae.contact.setup.process import ContactSetupProcess
+        from xkep_cae.contact.solver.process import ContactFrictionProcess
         from xkep_cae.mesh.process import StrandMeshProcess
         from xkep_cae.output.export import ExportProcess
         from xkep_cae.output.render import BeamRenderProcess
@@ -77,6 +78,7 @@ class TestStrandBendingBatchProcess:
         uses = StrandBendingBatchProcess.uses
         assert StrandMeshProcess in uses
         assert ContactSetupProcess in uses
+        assert ContactFrictionProcess in uses
         assert ExportProcess in uses
         assert BeamRenderProcess in uses
         assert ConvergenceVerifyProcess in uses
@@ -92,3 +94,61 @@ class TestStrandBendingBatchProcess:
         assert result.mesh.n_strands == 7
         assert any("StrandMeshProcess: done" in line for line in result.process_log)
         assert any("ContactSetupProcess: done" in line for line in result.process_log)
+
+    def test_solver_skipped_without_boundary(self):
+        """boundary 未指定時はソルバーをスキップ."""
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(n_strands=7, n_elements_per_pitch=16)
+        config = StrandBatchConfig(mesh_config=mesh_config, run_solver=True)
+        result = proc.process(config)
+        assert result.solver_converged is False
+        assert any("skipped" in line for line in result.process_log)
+
+    def test_solver_integration_with_simple_problem(self):
+        """簡易問題でソルバー統合テスト."""
+        import numpy as np
+        import scipy.sparse as sp
+
+        from xkep_cae.core import AssembleCallbacks, BoundaryData
+
+        proc = StrandBendingBatchProcess()
+        mesh_config = StrandMeshConfig(
+            n_strands=2,
+            n_elements_per_pitch=16,
+            gap=0.01,
+        )
+        # まずメッシュだけ生成してサイズを確認
+        from xkep_cae.mesh.process import StrandMeshProcess
+
+        mesh_result = StrandMeshProcess().process(mesh_config)
+        ndof = len(mesh_result.mesh.node_coords) * 6
+
+        def assemble_tangent(u: np.ndarray) -> sp.csr_matrix:
+            return sp.eye(ndof, format="csr") * 1.0
+
+        def assemble_internal_force(u: np.ndarray) -> np.ndarray:
+            return u * 1.0
+
+        f_ext = np.zeros(ndof)
+        f_ext[6 * 16] = 0.001
+
+        boundary = BoundaryData(
+            fixed_dofs=np.arange(6),
+            f_ext_total=f_ext,
+        )
+        callbacks = AssembleCallbacks(
+            assemble_tangent=assemble_tangent,
+            assemble_internal_force=assemble_internal_force,
+        )
+
+        config = StrandBatchConfig(
+            mesh_config=mesh_config,
+            k_pen=1e4,
+            boundary=boundary,
+            callbacks=callbacks,
+            run_solver=True,
+        )
+        result = proc.process(config)
+        assert result.solver_converged is True
+        assert result.solver_result is not None
+        assert any("ContactFrictionProcess: done" in line for line in result.process_log)
