@@ -84,6 +84,9 @@
 | C14: direct import のみ検出 | importlib.import_module() も検出 | status-186 |
 | `xkep_cae_deprecated.mesh.twisted_wire` importlib | `xkep_cae.mesh._twisted_wire` 直接 import | status-187 |
 | `output/__init__.py __getattr__` deprecated lazy-load | 完全削除（使用箇所ゼロ） | status-187 |
+| `xkep_cae_deprecated.contact.pair.ContactManager` | `xkep_cae.contact._contact_pair._ContactManager` | status-188 |
+| `xkep_cae_deprecated.contact.broadphase.broadphase_aabb` | `xkep_cae.contact._broadphase._broadphase_aabb` | status-188 |
+| `solver/process.py _create_working_strategies()` | `core.data.default_strategies()` 直接使用 | status-188 |
 
 ## 推奨ソルバー構成
 
@@ -95,7 +98,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 284 新パッケージテスト** — 2026-03-16 | C14 違反 **2件**（status-187）
+**~2260テスト + 284 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-188）
 
 ### ターゲット
 
@@ -103,9 +106,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 7 後半〜8** — ContactManager 新パッケージ移植 + friction/geometry stub 解消。
+**脱出ポット計画 Phase 7 完了 → Phase 8** — ContactManager 移植済み、C14/C16 契約違反ゼロ達成。friction/geometry Strategy の実装完成が残課題。
 
-契約違反 **2件**（status-187: mesh/output C14 除去済み。残りは contact/setup + contact/solver — ContactManager 移植が前提）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
