@@ -78,6 +78,8 @@
 | C16: `core/strategies/` + `contact/` のみ | C16: core/ 以外の全モジュール | status-182 |
 | deprecated `ContactFrictionProcess` | `xkep_cae/contact/solver/process.py` | status-184 |
 | `StrandBendingBatchProcess` v2.0.0 | v3.0.0（Solver 統合） | status-184 |
+| `StrandBendingBatchProcess` v3.0.0 | v4.0.0（Export/Render/Verify 連携） | status-185 |
+| `output/__init__.py` 全量 re-export | 明示的エクスポート + `__getattr__` 遅延ロード | status-185 |
 
 ## 推奨ソルバー構成
 
@@ -89,7 +91,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 279 新パッケージテスト** — 2026-03-16
+**~2260テスト + 275 新パッケージテスト** — 2026-03-16
 
 ### ターゲット
 
@@ -97,9 +99,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 5〜8** — 残りの concrete プロセス移行 + deprecated 依存除去。
+**脱出ポット計画 Phase 6〜8** — deprecated 依存除去（mesh/contact/solver）。
 
-契約違反 **0件**（status-184 で Phase 4 完了後も維持）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 **0件**（status-185 で Phase 5 完了後も維持）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
