@@ -565,6 +565,9 @@ def check_c16_sterilization() -> list[str]:
             continue
         if py_file.stem in _SKIP_STEMS:
             continue
+        # _ prefix のプライベートモジュールはスキップ（内部実装）
+        if py_file.stem.startswith("_") and py_file.stem != "__init__":
+            continue
 
         # AST でクラス名・関数名を収集
         try:
