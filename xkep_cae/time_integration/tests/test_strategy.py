@@ -11,13 +11,13 @@ import scipy.sparse as sp
 
 from xkep_cae.core.strategies import TimeIntegrationStrategy
 from xkep_cae.core.testing import binds_to
-from xkep_cae.core.time_integration import (
+from xkep_cae.time_integration import (
     GeneralizedAlphaProcess,
     QuasiStaticProcess,
     TimeIntegrationInput,
     TimeIntegrationOutput,
 )
-from xkep_cae.core.time_integration.strategy import (
+from xkep_cae.time_integration.strategy import (
     _create_time_integration_strategy,
 )
 

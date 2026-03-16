@@ -28,7 +28,7 @@ from xkep_cae.contact.penalty.strategy import (
     AutoBeamEIPenalty,
 )
 from xkep_cae.core import BatchProcess, ProcessMeta
-from xkep_cae.core.time_integration.strategy import (
+from xkep_cae.time_integration.strategy import (
     GeneralizedAlphaProcess,
     QuasiStaticProcess,
 )

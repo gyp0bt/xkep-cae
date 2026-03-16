@@ -29,7 +29,7 @@ class TimeIntegrationInput:
     dt: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class TimeIntegrationOutput:
     """TimeIntegration Strategy の出力."""
 

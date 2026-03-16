@@ -118,7 +118,7 @@ def default_strategies(
         _create_contact_geometry_strategy,
     )
     from xkep_cae.contact.penalty.strategy import _create_penalty_strategy
-    from xkep_cae.core.time_integration.strategy import (
+    from xkep_cae.time_integration.strategy import (
         _create_time_integration_strategy,
     )
 
