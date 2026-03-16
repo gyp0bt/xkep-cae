@@ -59,12 +59,19 @@ class NoFrictionProcess(SolverProcess[FrictionInput, FrictionOutput]):
 
     def __init__(self, ndof: int = 0) -> None:
         self._ndof = ndof
+        self._friction_tangents: dict[int, np.ndarray] = {}
+
+    @property
+    def friction_tangents(self) -> dict[int, np.ndarray]:
+        """摩擦接線剛性 (2x2) の辞書."""
+        return self._friction_tangents
 
     def evaluate(
         self,
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差: ゼロベクトル."""
         ndof = self._ndof if self._ndof > 0 else len(u)
@@ -75,6 +82,7 @@ class NoFrictionProcess(SolverProcess[FrictionInput, FrictionOutput]):
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> sp.csr_matrix:
         """摩擦接線剛性: ゼロ行列."""
         ndof = self._ndof if self._ndof > 0 else len(u)
@@ -119,6 +127,12 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         self._contact_compliance = contact_compliance
         self._mu_ramp_counter = mu_ramp_counter
         self._mu_ramp_steps = mu_ramp_steps
+        self._friction_tangents: dict[int, np.ndarray] = {}
+
+    @property
+    def friction_tangents(self) -> dict[int, np.ndarray]:
+        """摩擦接線剛性 (2x2) の辞書."""
+        return self._friction_tangents
 
     def compute_k_t(self) -> float:
         """接線ペナルティ剛性."""
@@ -133,6 +147,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差を評価.
 
@@ -148,6 +163,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> sp.csr_matrix:
         """摩擦接線剛性行列."""
         return sp.csr_matrix((self._ndof, self._ndof))
@@ -193,6 +209,12 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
         self._contact_compliance = contact_compliance
         self._mu_ramp_counter = mu_ramp_counter
         self._mu_ramp_steps = mu_ramp_steps
+        self._friction_tangents: dict[int, np.ndarray] = {}
+
+    @property
+    def friction_tangents(self) -> dict[int, np.ndarray]:
+        """摩擦接線剛性 (2x2) の辞書."""
+        return self._friction_tangents
 
     def compute_k_t(self) -> float:
         """接線ペナルティ剛性."""
@@ -207,6 +229,7 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差を評価（smooth penalty 版）.
 
@@ -222,6 +245,7 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        **kwargs: object,
     ) -> sp.csr_matrix:
         """摩擦接線剛性行列."""
         return sp.csr_matrix((self._ndof, self._ndof))

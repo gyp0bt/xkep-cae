@@ -48,23 +48,8 @@ from xkep_cae.core import (
     SolverProcess,
     SolverResultData,
 )
-from xkep_cae.core.data import default_strategies as _default_strategies_stub
+from xkep_cae.core.data import default_strategies as _default_strategies
 from xkep_cae.core.slots import StrategySlot
-
-
-def _create_working_strategies(**kwargs: object) -> object:
-    """実動作する Strategy 群を生成する.
-
-    新パッケージの strategies は stub（Phase 7-8 で完全移植予定）のため、
-    deprecated 版の default_strategies() を使用する。
-
-    TODO(Phase 7-8): 新パッケージの strategies が完全実装されたら
-    xkep_cae.core.data.default_strategies に差し替える。
-    """
-    import importlib
-
-    _data_mod = importlib.import_module("xkep_cae_deprecated.process.data")
-    return _data_mod.default_strategies(**kwargs)
 
 
 class ContactFrictionProcess(
@@ -94,7 +79,7 @@ class ContactFrictionProcess(
 
     def __init__(self, strategies: object | None = None) -> None:
         if strategies is None:
-            strategies = _default_strategies_stub()
+            strategies = _default_strategies()
         self.strategies = strategies
 
         self.penalty_slot = self.strategies.penalty
@@ -115,7 +100,7 @@ class ContactFrictionProcess(
         ul_assembler = input_data.callbacks.ul_assembler
 
         # --- Strategy 生成（deprecated 版: Phase 7-8 で新パッケージに完全移行予定） ---
-        strategies = _create_working_strategies(
+        strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
             damping_matrix=input_data.damping_matrix,
