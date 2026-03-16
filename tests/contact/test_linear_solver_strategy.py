@@ -7,13 +7,13 @@ Protocol 適合性と基本的な求解精度を検証する。
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.process.strategies.linear_solver import (
+from xkep_cae.core.strategies.protocols import LinearSolverStrategy
+from xkep_cae_deprecated.process.strategies.linear_solver import (
     AutoLinearSolver,
     DirectLinearSolver,
     IterativeLinearSolver,
     create_linear_solver,
 )
-from xkep_cae.process.strategies.protocols import LinearSolverStrategy
 
 
 def _make_spd_system(n: int = 50, seed: int = 42):

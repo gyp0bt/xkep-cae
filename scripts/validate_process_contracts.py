@@ -13,7 +13,7 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C13: active プロセスが CompatibilityProcess を uses している場合はエラー
 - C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出
 - C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
-- C16: 新パッケージ滅菌 — strategy サブパッケージ内の全クラス/関数を分類検査
+- C16: 新パッケージ滅菌 — core/ 以外の全モジュール内のクラス/関数を分類検査
 
 使用方法:
     python scripts/validate_process_contracts.py 2>&1 | tee /tmp/log-$(date +%s).log
@@ -66,14 +66,12 @@ def _ast_fallback_binds_to(py_file: Path, registry: dict | None = None) -> None:
 def _import_all_modules() -> None:
     """全プロセスモジュール + テストモジュールをインポートしてレジストリを構築.
 
-    xkep_cae/core/ と xkep_cae/contact/ 配下の .py ファイルを
+    xkep_cae/ 配下の全サブパッケージの .py ファイルを
     ファイルシステム走査で自動検出する。
     """
-    # 走査対象ルート: core（基盤）+ contact（Strategy 実装）
-    scan_roots = [
-        _project_root / "xkep_cae" / "core",
-        _project_root / "xkep_cae" / "contact",
-    ]
+    # 走査対象ルート: xkep_cae/ 配下の全サブパッケージ
+    xkep_root = _project_root / "xkep_cae"
+    scan_roots = [d for d in sorted(xkep_root.iterdir()) if d.is_dir() and d.name != "__pycache__"]
 
     # 除外対象: テストファイル、__init__.py、基盤モジュール
     _SKIP_NAMES = {"__init__", "base", "categories", "data", "slots", "tree", "runner"}
@@ -486,8 +484,8 @@ def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
 def check_c16_sterilization() -> list[str]:
     """C16: 新パッケージ滅菌チェック — Process Architecture 外の型を完全検挙.
 
-    xkep_cae/process/strategies/ 配下の strategy サブパッケージ内で
-    定義された全クラスを分類し、以下のいずれにも該当しないものを契約違反とする:
+    xkep_cae/ 配下の全モジュール（core/ を除く）で定義された全クラスを分類し、
+    以下のいずれにも該当しないものを契約違反とする:
 
     許可カテゴリ:
       1. AbstractProcess サブクラス（Process）
@@ -496,15 +494,21 @@ def check_c16_sterilization() -> list[str]:
 
     トップレベル関数は Protocol/Strategy(AbstractProcess)/Process のいずれかであるべき。
     純粋関数（非クラス）は __all__ エクスポートの有無に関わらず契約違反。
+
+    除外:
+      - core/ — 基盤モジュール（Protocol 定義、レジストリ等）は検査対象外
+      - core からのインポート関数も検査対象外
     """
     import dataclasses
     import enum
 
     errors = []
-    # Strategy 実装は core/strategies/ と contact/ に分散
+    # core/ を除く xkep_cae/ 配下の全サブパッケージを走査
+    xkep_root = _project_root / "xkep_cae"
     scan_roots = [
-        _project_root / "xkep_cae" / "core" / "strategies",
-        _project_root / "xkep_cae" / "contact",
+        d
+        for d in sorted(xkep_root.iterdir())
+        if d.is_dir() and d.name != "__pycache__" and d.name != "core"
     ]
 
     # protocols.py は Protocol 定義ファイルなのでスキップ
