@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 
-@dataclass
+@dataclass(frozen=True)
 class _GraphSnapshotList:
     """接触グラフスナップショットの簡易リスト.
 
@@ -26,7 +26,7 @@ class _GraphSnapshotList:
         self.snapshots.append(graph)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolverState:
     """ソルバーの全可変状態.
 
@@ -66,22 +66,26 @@ class SolverState:
     _u_ref_ckpt: np.ndarray | None = None
     _ul_frac_base_ckpt: float = 0.0
 
+    def _set(self, name: str, value: object) -> None:
+        """frozen バイパス: 内部状態更新用."""
+        object.__setattr__(self, name, value)
+
     def save_checkpoint(self) -> None:
         """現在の状態をチェックポイントに保存."""
-        self._u_ckpt = self.u.copy()
-        self._lam_ckpt = self.lam_all.copy()
-        self._u_ref_ckpt = self.u_ref.copy()
-        self._ul_frac_base_ckpt = self.ul_frac_base
+        self._set("_u_ckpt", self.u.copy())
+        self._set("_lam_ckpt", self.lam_all.copy())
+        self._set("_u_ref_ckpt", self.u_ref.copy())
+        self._set("_ul_frac_base_ckpt", self.ul_frac_base)
 
     def restore_checkpoint(self) -> None:
         """チェックポイントから状態を復元."""
         if self._u_ckpt is None:
             raise RuntimeError("チェックポイントが保存されていません")
-        self.u = self._u_ckpt.copy()
-        self.lam_all = self._lam_ckpt.copy()
-        self.u_ref = self._u_ref_ckpt.copy()
-        self.ul_frac_base = self._ul_frac_base_ckpt
-        self.delta_frac_prev = 0.0
+        self._set("u", self._u_ckpt.copy())
+        self._set("lam_all", self._lam_ckpt.copy())
+        self._set("u_ref", self._u_ref_ckpt.copy())
+        self._set("ul_frac_base", self._ul_frac_base_ckpt)
+        self._set("delta_frac_prev", 0.0)
 
     def ensure_lam_size(self, n_pairs: int) -> None:
         """ペア数拡張に対応して lam_all を拡張."""
@@ -89,7 +93,7 @@ class SolverState:
             old_n = len(self.lam_all)
             lam_new = np.zeros(n_pairs)
             lam_new[:old_n] = self.lam_all
-            self.lam_all = lam_new
+            self._set("lam_all", lam_new)
 
     def build_u_output(self, ul_assembler: object | None) -> np.ndarray:
         """UL込みの最終変位ベクトルを構築."""

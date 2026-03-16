@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class ConvergenceDiagnostics:
     """収束失敗時の標準化診断情報.
 

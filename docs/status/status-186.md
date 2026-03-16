@@ -88,10 +88,20 @@ deprecated 依存なしの純粋な実装を新パッケージに移植:
 - [ ] strategies 完全実装（friction/contact_force の stub → 実装移行）
 - [ ] S3 凍結解除: 変位制御7本撚線曲げ揺動の Phase 2 xfail 解消
 
+### 6. C16 強化: プライベートモジュール滅菌（追加修正）
+
+- `_*.py` のプライベートモジュール除外ルールを**撤廃**（滅菌対象に復帰）
+- 全 11 クラスを `frozen=True` に修正:
+  - 不変データ: `_ContactEdge`, `_ContactGraph`, `_ClosestPointResult`, `StepResult`, `NewtonUzawaConfig` → そのまま frozen
+  - リスト蓄積: `ConvergenceDiagnostics`, `_GraphSnapshotList` → frozen（リスト要素追加は frozen でも可能）
+  - `__post_init__` 修正: `AdaptiveSteppingConfig` → `object.__setattr__` で初期値計算
+  - 可変状態: `SolverState`, `AdaptiveLoadController` → frozen + `_set()` ヘルパーで明示的更新
+  - クラス変換: `NewtonUzawaLoop` → `@dataclass(frozen=True)` に変換
+- `process.py` の全 `state.xxx = yyy` を `state._set("xxx", yyy)` に変換（15箇所）
+
 ## 懸念事項・メモ
 
 - **Strategy stub 問題**: 新パッケージの friction/contact_force strategies は stub（ゼロ返却）。ContactFrictionProcess.process() は deprecated 版の strategies を使い続ける必要がある。strategies 完全実装が Phase 7-8 の最大課題。
-- C16 にプライベートモジュール除外ルールを追加。内部実装を新パッケージに安全に移行する受け皿を確保。
 - SolverState.build_result() → NCPSolveResult のパスを廃止し、SolverResultData を直接構築するよう簡素化。これにより NCPSolveResult / ContactGraphHistory への deprecated 依存を除去。
 
 ---

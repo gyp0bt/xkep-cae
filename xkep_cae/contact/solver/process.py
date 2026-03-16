@@ -215,7 +215,7 @@ class ContactFrictionProcess(
                 print(
                     f"  初期位置調整: 貫入修正={n_pen_fixed}ペア, ギャップ閉鎖={n_gap_closed}ペア"
                 )
-            state.node_coords_ref = node_coords_ref
+            state._set("node_coords_ref", node_coords_ref)
             manager.detect_candidates(
                 node_coords_ref,
                 connectivity,
@@ -277,7 +277,7 @@ class ContactFrictionProcess(
                 controller.pop_step()
                 continue
 
-            state.step_display += 1
+            state._set("step_display", state.step_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
             # 接線予測子
@@ -285,7 +285,7 @@ class ContactFrictionProcess(
             if _dynamics:
                 dt_sub = getattr(_time_strategy, "_dt_physical", 0.0) * delta_frac
                 if hasattr(_time_strategy, "predict"):
-                    state.u = _time_strategy.predict(state.u, dt_sub)
+                    state._set("u", _time_strategy.predict(state.u, dt_sub))
             else:
                 dt_sub = 0.0
                 if (
@@ -297,7 +297,7 @@ class ContactFrictionProcess(
                     du_prev_norm = float(np.linalg.norm(du_prev))
                     if du_prev_norm > 1e-30:
                         ratio = min(delta_frac / state.delta_frac_prev, 2.0)
-                        state.u = state.u + ratio * du_prev
+                        state._set("u", state.u + ratio * du_prev)
 
             # 処方変位
             if has_prescribed:
@@ -338,7 +338,7 @@ class ContactFrictionProcess(
                 use_coating=use_coating,
                 dynamic_ref=dynamic_ref,
             )
-            state.total_newton += step_result.n_newton_iters
+            state._set("total_newton", state.total_newton + step_result.n_newton_iters)
             last_diag = step_result.diagnostics
 
             # ==============================================================
@@ -350,10 +350,10 @@ class ContactFrictionProcess(
                     state.restore_checkpoint()
                     if _ul:
                         ul_assembler.rollback()
-                        state.node_coords_ref = ul_assembler.coords_ref
+                        state._set("node_coords_ref", ul_assembler.coords_ref)
                     if _dynamics:
                         _time_strategy.restore_checkpoint()
-                    state.step_display -= 1
+                    state._set("step_display", state.step_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
                     continue
                 else:
@@ -392,10 +392,10 @@ class ContactFrictionProcess(
             # Updated Lagrangian: 参照配置更新
             if _ul:
                 ul_assembler.update_reference(state.u)
-                state.node_coords_ref = ul_assembler.coords_ref
-                state.ul_frac_base = load_frac
-                state.u = np.zeros(ndof)
-                state.u_ref = np.zeros(ndof)
+                state._set("node_coords_ref", ul_assembler.coords_ref)
+                state._set("ul_frac_base", load_frac)
+                state._set("u", np.zeros(ndof))
+                state._set("u_ref", np.zeros(ndof))
 
             # 適応時間増分: 次ステップ幅決定
             n_iters = step_result.n_newton_iters
@@ -406,7 +406,7 @@ class ContactFrictionProcess(
                 step_result.n_active,
                 state.prev_n_active,
             )
-            state.prev_n_active = step_result.n_active
+            state._set("prev_n_active", step_result.n_active)
 
             # k_pen continuation
             k_pen_new = _penalty_strategy.compute_k_pen(state.step_display, state.step_display + 1)
@@ -415,14 +415,14 @@ class ContactFrictionProcess(
                 print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
 
             # 状態更新
-            state.delta_frac_prev = load_frac - state.load_frac_prev
-            state.u_prev_converged = state.u.copy()
-            state.load_frac_prev = load_frac
+            state._set("delta_frac_prev", load_frac - state.load_frac_prev)
+            state._set("u_prev_converged", state.u.copy())
+            state._set("load_frac_prev", load_frac)
             for i, pair in enumerate(manager.pairs):
                 if i < len(state.lam_all):
                     pair.state.lambda_n = state.lam_all[i]
                     pair.state.p_n = max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap))
-            state.u_ref = state.u.copy()
+            state._set("u_ref", state.u.copy())
 
             # チェックポイント保存
             state.save_checkpoint()

@@ -7,10 +7,10 @@ xkep_cae_deprecated/process/strategies/adaptive_stepping.py からのコピー�
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
-@dataclass
+@dataclass(frozen=True)
 class AdaptiveSteppingConfig:
     """適応荷重増分の設定."""
 
@@ -30,20 +30,24 @@ class AdaptiveSteppingConfig:
             int(1.0 / self.dt_initial_fraction) if self.dt_initial_fraction > 0 else 1,
         )
         if self.dt_min_fraction <= 0.0:
-            self.dt_min_fraction = 1.0 / (effective_n * 32)
+            object.__setattr__(self, "dt_min_fraction", 1.0 / (effective_n * 32))
         if self.dt_max_fraction <= 0.0:
-            self.dt_max_fraction = min(8.0 / effective_n, 1.0)
+            object.__setattr__(self, "dt_max_fraction", min(8.0 / effective_n, 1.0))
 
 
+@dataclass(frozen=True)
 class AdaptiveLoadController:
     """適応荷重増分のステップキュー管理."""
 
-    def __init__(self, config: AdaptiveSteppingConfig) -> None:
-        self.config = config
-        self._queue: deque[float] = deque()
-        self._consecutive_good: int = 0
+    config: AdaptiveSteppingConfig
+    _queue: deque[float] = field(default_factory=deque)
+    _consecutive_good: int = 0
 
-        base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
+    def __post_init__(self) -> None:
+        """初期ステップをキューに追加."""
+        base_delta = (
+            self.config.dt_initial_fraction if self.config.dt_initial_fraction > 0.0 else 1.0
+        )
         self._queue.append(min(base_delta, 1.0))
 
     @property
@@ -80,7 +84,7 @@ class AdaptiveLoadController:
         next_delta = current_delta
 
         if n_iters <= cfg.dt_grow_iter_threshold:
-            self._consecutive_good += 1
+            object.__setattr__(self, "_consecutive_good", self._consecutive_good + 1)
             if self._consecutive_good <= 2:
                 next_delta = current_delta * cfg.dt_grow_factor
             else:
@@ -88,9 +92,9 @@ class AdaptiveLoadController:
                 next_delta = current_delta * (1.0 + (cfg.dt_grow_factor - 1.0) * _damp)
         elif n_iters >= cfg.dt_shrink_iter_threshold:
             next_delta = current_delta * cfg.dt_shrink_factor
-            self._consecutive_good = 0
+            object.__setattr__(self, "_consecutive_good", 0)
         else:
-            self._consecutive_good = 0
+            object.__setattr__(self, "_consecutive_good", 0)
 
         if prev_n_active > 0:
             change_rate = abs(n_active - prev_n_active) / max(prev_n_active, 1)
@@ -119,7 +123,7 @@ class AdaptiveLoadController:
         if delta <= self.config.dt_min_fraction + 1e-15:
             return False
 
-        self._consecutive_good = 0
+        object.__setattr__(self, "_consecutive_good", 0)
         mid_frac = load_frac_prev + delta * self.config.dt_shrink_factor
         self._queue.appendleft(load_frac)
         self._queue.appendleft(mid_frac)

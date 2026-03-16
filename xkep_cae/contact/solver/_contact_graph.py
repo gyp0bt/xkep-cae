@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ContactEdge:
     """接触グラフのエッジ（1接触ペア）."""
 
@@ -24,7 +24,7 @@ class _ContactEdge:
     t: float
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ContactGraph:
     """接触グラフの1スナップショット."""
 

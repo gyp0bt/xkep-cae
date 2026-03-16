@@ -7,7 +7,7 @@ deprecated 型参照を duck typing に置換（ロジック変更なし）。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -15,7 +15,7 @@ from xkep_cae.contact.solver._diagnostics import ConvergenceDiagnostics
 from xkep_cae.contact.solver._utils import _deformed_coords, _ncp_line_search
 
 
-@dataclass
+@dataclass(frozen=True)
 class StepResult:
     """1荷重増分の結果."""
 
@@ -26,7 +26,7 @@ class StepResult:
     diagnostics: ConvergenceDiagnostics
 
 
-@dataclass
+@dataclass(frozen=True)
 class NewtonUzawaConfig:
     """Newton-Uzawa ループの設定."""
 
@@ -40,6 +40,7 @@ class NewtonUzawaConfig:
     ndof_per_node: int = 6
 
 
+@dataclass(frozen=True)
 class NewtonUzawaLoop:
     """1荷重増分のNewton-Raphson + Uzawaイテレーション.
 
@@ -47,8 +48,7 @@ class NewtonUzawaLoop:
     manager / strategies は duck typing で受け取る（deprecated 型に依存しない）。
     """
 
-    def __init__(self, config: NewtonUzawaConfig | None = None) -> None:
-        self.config = config or NewtonUzawaConfig()
+    config: NewtonUzawaConfig = field(default_factory=NewtonUzawaConfig)
 
     def run(
         self,

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 import numpy as np
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ClosestPointResult:
     """最近接点計算の結果."""
 
