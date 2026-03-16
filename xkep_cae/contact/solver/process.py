@@ -4,13 +4,10 @@
 設計仕様: docs/contact_friction.md
 
 内部構成:
-- SolverState: 全可変状態の集約
-- NewtonUzawaLoop: 1荷重増分の NR + Uzawa
-- AdaptiveLoadController: 適応荷重増分制御
+- SolverState: 全可変状態（frozen dataclass）
+- _newton_uzawa_step: 1荷重増分の NR + Uzawa
+- AdaptiveLoadController + _ctrl_* 関数: 適応荷重増分制御
 - Strategy 5軸 + default_strategies()
-
-status-186: deprecated 依存完全除去（C14 準拠）。
-全ユーティリティを _*.py プライベートモジュールに移植。
 """
 
 from __future__ import annotations
@@ -20,16 +17,34 @@ import time
 import numpy as np
 
 from xkep_cae.contact.solver._adaptive_stepping import (
-    AdaptiveLoadController,
     AdaptiveSteppingConfig,
+    _create_load_controller,
+    _ctrl_has_steps,
+    _ctrl_on_failure,
+    _ctrl_on_success,
+    _ctrl_peek_next,
+    _ctrl_pop_step,
+    _ctrl_should_skip,
 )
 from xkep_cae.contact.solver._contact_graph import _snapshot_contact_graph
+from xkep_cae.contact.solver._diagnostics import _format_diagnostics_report
 from xkep_cae.contact.solver._initial_penetration import (
     _adjust_initial_positions,
     _check_initial_penetration,
 )
-from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaConfig, NewtonUzawaLoop
-from xkep_cae.contact.solver._solver_state import SolverState
+from xkep_cae.contact.solver._newton_uzawa import (
+    NewtonUzawaConfig,
+    NewtonUzawaProcess,
+    NewtonUzawaStepInput,
+)
+from xkep_cae.contact.solver._solver_state import (
+    SolverState,
+    _build_u_output,
+    _ensure_lam_size,
+    _restore_checkpoint,
+    _save_checkpoint,
+    _state_set,
+)
 from xkep_cae.contact.solver._utils import _deformed_coords
 from xkep_cae.core import (
     ContactFrictionInputData,
@@ -64,12 +79,6 @@ class ContactFrictionProcess(
     入力の mass_matrix / dt_physical の有無で動的/準静的を自動判定。
     - 動的: Generalized-α 時間積分
     - 準静的: 荷重制御 or 変位制御
-
-    内部構成:
-    - SolverState: 全可変状態の集約
-    - NewtonUzawaLoop: 1荷重増分のNR+Uzawa
-    - AdaptiveLoadController: 適応荷重増分制御
-    - Strategy 5軸: penalty, friction, time_integration, contact_force, coating
     """
 
     meta = ProcessMeta(
@@ -78,7 +87,7 @@ class ContactFrictionProcess(
         version="1.0.0",
         document_path="docs/contact_friction.md",
     )
-    uses = []
+    uses = [NewtonUzawaProcess]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
     penalty_slot = StrategySlot(object)
@@ -215,7 +224,7 @@ class ContactFrictionProcess(
                 print(
                     f"  初期位置調整: 貫入修正={n_pen_fixed}ペア, ギャップ閉鎖={n_gap_closed}ペア"
                 )
-            state._set("node_coords_ref", node_coords_ref)
+            _state_set(state, "node_coords_ref", node_coords_ref)
             manager.detect_candidates(
                 node_coords_ref,
                 connectivity,
@@ -239,10 +248,10 @@ class ContactFrictionProcess(
                 f"メッシュ生成時のgapを増やしてください。"
             )
 
-        state.ensure_lam_size(manager.n_pairs)
+        _ensure_lam_size(state, manager.n_pairs)
 
         # --- チェックポイント初期化 ---
-        state.save_checkpoint()
+        _save_checkpoint(state)
         if _ul:
             ul_assembler.checkpoint()
         _time_strategy.checkpoint()
@@ -259,10 +268,11 @@ class ContactFrictionProcess(
             dt_min_fraction=manager.config.dt_min_fraction,
             dt_max_fraction=manager.config.dt_max_fraction,
         )
-        controller = AdaptiveLoadController(stepping_config)
+        controller = _create_load_controller(stepping_config)
 
-        # --- Newton-Uzawa ループ ---
-        nr_loop = NewtonUzawaLoop(NewtonUzawaConfig(show_progress=True))
+        # --- Newton-Uzawa プロセス ---
+        nr_config = NewtonUzawaConfig(show_progress=True)
+        nr_process = NewtonUzawaProcess()
 
         # --- 最終診断 ---
         last_diag = None
@@ -270,14 +280,14 @@ class ContactFrictionProcess(
         # ================================================================
         # 荷重ステップループ
         # ================================================================
-        while controller.has_steps:
-            load_frac = controller.peek_next()
+        while _ctrl_has_steps(controller):
+            load_frac = _ctrl_peek_next(controller)
 
-            if controller.should_skip(load_frac, state.load_frac_prev):
-                controller.pop_step()
+            if _ctrl_should_skip(controller, load_frac, state.load_frac_prev):
+                _ctrl_pop_step(controller)
                 continue
 
-            state._set("step_display", state.step_display + 1)
+            _state_set(state, "step_display", state.step_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
             # 接線予測子
@@ -285,7 +295,7 @@ class ContactFrictionProcess(
             if _dynamics:
                 dt_sub = getattr(_time_strategy, "_dt_physical", 0.0) * delta_frac
                 if hasattr(_time_strategy, "predict"):
-                    state._set("u", _time_strategy.predict(state.u, dt_sub))
+                    _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
             else:
                 dt_sub = 0.0
                 if (
@@ -297,7 +307,7 @@ class ContactFrictionProcess(
                     du_prev_norm = float(np.linalg.norm(du_prev))
                     if du_prev_norm > 1e-30:
                         ratio = min(delta_frac / state.delta_frac_prev, 2.0)
-                        state._set("u", state.u + ratio * du_prev)
+                        _state_set(state, "u", state.u + ratio * du_prev)
 
             # 処方変位
             if has_prescribed:
@@ -314,10 +324,11 @@ class ContactFrictionProcess(
                 core_radii=core_radii,
             )
             manager.update_geometry(coords_def)
-            state.ensure_lam_size(manager.n_pairs)
+            _ensure_lam_size(state, manager.n_pairs)
 
             # --- NR + Uzawa 実行 ---
-            step_result = nr_loop.run(
+            step_input = NewtonUzawaStepInput(
+                config=nr_config,
                 u=state.u,
                 lam_all=state.lam_all,
                 f_ext=f_ext,
@@ -338,22 +349,23 @@ class ContactFrictionProcess(
                 use_coating=use_coating,
                 dynamic_ref=dynamic_ref,
             )
-            state._set("total_newton", state.total_newton + step_result.n_newton_iters)
+            step_result = nr_process.process(step_input)
+            _state_set(state, "total_newton", state.total_newton + step_result.n_newton_iters)
             last_diag = step_result.diagnostics
 
             # ==============================================================
             # 不収束処理
             # ==============================================================
             if not step_result.converged:
-                can_retry = controller.on_failure(load_frac, state.load_frac_prev)
+                can_retry = _ctrl_on_failure(controller, load_frac, state.load_frac_prev)
                 if can_retry:
-                    state.restore_checkpoint()
+                    _restore_checkpoint(state)
                     if _ul:
                         ul_assembler.rollback()
-                        state._set("node_coords_ref", ul_assembler.coords_ref)
+                        _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
                     if _dynamics:
                         _time_strategy.restore_checkpoint()
-                    state._set("step_display", state.step_display - 1)
+                    _state_set(state, "step_display", state.step_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
                     continue
                 else:
@@ -361,8 +373,8 @@ class ContactFrictionProcess(
                         f"  WARNING: Step {state.step_display} "
                         f"(frac={load_frac:.4f}) did not converge."
                     )
-                    print(last_diag.format_report())
-                    _u_out = state.build_u_output(ul_assembler)
+                    print(_format_diagnostics_report(last_diag))
+                    _u_out = _build_u_output(state, ul_assembler)
                     elapsed = time.perf_counter() - t0
                     return SolverResultData(
                         u=_u_out,
@@ -378,7 +390,7 @@ class ContactFrictionProcess(
             # ==============================================================
             # ステップ完了
             # ==============================================================
-            controller.pop_step()
+            _ctrl_pop_step(controller)
 
             # 被膜圧縮量保存
             if use_coating:
@@ -392,21 +404,22 @@ class ContactFrictionProcess(
             # Updated Lagrangian: 参照配置更新
             if _ul:
                 ul_assembler.update_reference(state.u)
-                state._set("node_coords_ref", ul_assembler.coords_ref)
-                state._set("ul_frac_base", load_frac)
-                state._set("u", np.zeros(ndof))
-                state._set("u_ref", np.zeros(ndof))
+                _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
+                _state_set(state, "ul_frac_base", load_frac)
+                _state_set(state, "u", np.zeros(ndof))
+                _state_set(state, "u_ref", np.zeros(ndof))
 
             # 適応時間増分: 次ステップ幅決定
             n_iters = step_result.n_newton_iters
-            controller.on_success(
+            _ctrl_on_success(
+                controller,
                 load_frac,
                 state.load_frac_prev,
                 n_iters,
                 step_result.n_active,
                 state.prev_n_active,
             )
-            state._set("prev_n_active", step_result.n_active)
+            _state_set(state, "prev_n_active", step_result.n_active)
 
             # k_pen continuation
             k_pen_new = _penalty_strategy.compute_k_pen(state.step_display, state.step_display + 1)
@@ -415,17 +428,17 @@ class ContactFrictionProcess(
                 print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
 
             # 状態更新
-            state._set("delta_frac_prev", load_frac - state.load_frac_prev)
-            state._set("u_prev_converged", state.u.copy())
-            state._set("load_frac_prev", load_frac)
+            _state_set(state, "delta_frac_prev", load_frac - state.load_frac_prev)
+            _state_set(state, "u_prev_converged", state.u.copy())
+            _state_set(state, "load_frac_prev", load_frac)
             for i, pair in enumerate(manager.pairs):
                 if i < len(state.lam_all):
                     pair.state.lambda_n = state.lam_all[i]
                     pair.state.p_n = max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap))
-            state._set("u_ref", state.u.copy())
+            _state_set(state, "u_ref", state.u.copy())
 
             # チェックポイント保存
-            state.save_checkpoint()
+            _save_checkpoint(state)
             if _ul:
                 ul_assembler.checkpoint()
             if _dynamics:
@@ -438,14 +451,14 @@ class ContactFrictionProcess(
             state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
             try:
                 graph = _snapshot_contact_graph(manager, step=state.step_display - 1)
-                state.graph_history.add_snapshot(graph)
+                state.graph_snapshots.append(graph)
             except Exception:
                 pass
 
         # ================================================================
         # 正常終了
         # ================================================================
-        _u_out = state.build_u_output(ul_assembler)
+        _u_out = _build_u_output(state, ul_assembler)
         elapsed = time.perf_counter() - t0
 
         return SolverResultData(

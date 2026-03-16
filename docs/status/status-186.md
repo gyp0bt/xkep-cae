@@ -88,16 +88,18 @@ deprecated 依存なしの純粋な実装を新パッケージに移植:
 - [ ] strategies 完全実装（friction/contact_force の stub → 実装移行）
 - [ ] S3 凍結解除: 変位制御7本撚線曲げ揺動の Phase 2 xfail 解消
 
-### 6. C16 強化: プライベートモジュール滅菌（追加修正）
+### 6. C16 強化: プライベートモジュール滅菌 + メソッド禁止
 
 - `_*.py` のプライベートモジュール除外ルールを**撤廃**（滅菌対象に復帰）
-- 全 11 クラスを `frozen=True` に修正:
-  - 不変データ: `_ContactEdge`, `_ContactGraph`, `_ClosestPointResult`, `StepResult`, `NewtonUzawaConfig` → そのまま frozen
-  - リスト蓄積: `ConvergenceDiagnostics`, `_GraphSnapshotList` → frozen（リスト要素追加は frozen でも可能）
-  - `__post_init__` 修正: `AdaptiveSteppingConfig` → `object.__setattr__` で初期値計算
-  - 可変状態: `SolverState`, `AdaptiveLoadController` → frozen + `_set()` ヘルパーで明示的更新
-  - クラス変換: `NewtonUzawaLoop` → `@dataclass(frozen=True)` に変換
-- `process.py` の全 `state.xxx = yyy` を `state._set("xxx", yyy)` に変換（15箇所）
+- C16 に「frozen dataclass のメソッド検出」ルールを追加（dunder 以外のメソッド/プロパティを摘発）
+- 全 11 クラスを `frozen=True` に修正 + メソッドを standalone 関数に抽出:
+  - 不変データ: `_ContactEdge`, `_ContactGraph`, `_ClosestPointResult`, `StepResult`, `NewtonUzawaConfig` → frozen（メソッドなし）
+  - `ConvergenceDiagnostics`: frozen + `format_report()` → `_format_diagnostics_report()` 関数に
+  - `_GraphSnapshotList`: **削除**（`list[object]` に統合）
+  - `SolverState`: frozen + 全メソッドを `_save_checkpoint()` / `_restore_checkpoint()` / `_ensure_lam_size()` / `_build_u_output()` / `_state_set()` 関数に
+  - `AdaptiveLoadController`: frozen + 全メソッドを `_create_load_controller()` / `_ctrl_has_steps()` / `_ctrl_peek_next()` / `_ctrl_pop_step()` / `_ctrl_should_skip()` / `_ctrl_on_success()` / `_ctrl_on_failure()` 関数に
+  - `NewtonUzawaLoop` → **`NewtonUzawaProcess`**（SolverProcess 化）+ `NewtonUzawaStepInput` frozen dataclass
+- テスト: 14 テスト合格（+3 NewtonUzawaProcess API テスト）
 
 ## 懸念事項・メモ
 

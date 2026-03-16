@@ -1,18 +1,19 @@
 """Newton-Raphson + Uzawa イテレーション（プライベート）.
 
-NewtonUzawaLoop を新パッケージに移植。
+NewtonUzawaProcess を新パッケージに移植。
 xkep_cae_deprecated/process/strategies/newton_uzawa.py からの移植。
 deprecated 型参照を duck typing に置換（ロジック変更なし）。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
 from xkep_cae.contact.solver._diagnostics import ConvergenceDiagnostics
 from xkep_cae.contact.solver._utils import _deformed_coords, _ncp_line_search
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
@@ -41,43 +42,67 @@ class NewtonUzawaConfig:
 
 
 @dataclass(frozen=True)
-class NewtonUzawaLoop:
-    """1荷重増分のNewton-Raphson + Uzawaイテレーション.
+class NewtonUzawaStepInput:
+    """1荷重増分の NR+Uzawa 入力."""
+
+    config: NewtonUzawaConfig
+    u: np.ndarray
+    lam_all: np.ndarray
+    f_ext: np.ndarray
+    f_ext_ref_norm: float
+    fixed_dofs: np.ndarray
+    assemble_tangent: object
+    assemble_internal_force: object
+    manager: object
+    node_coords_ref: np.ndarray
+    strategies: object
+    k_pen: float
+    mu: float
+    u_ref: np.ndarray
+    load_frac: float
+    load_frac_prev: float
+    step_display: int
+    dt_sub: float
+    use_coating: bool
+    dynamic_ref: bool
+
+
+class NewtonUzawaProcess(SolverProcess[NewtonUzawaStepInput, StepResult]):
+    """1荷重増分の Newton-Raphson + Uzawa イテレーション.
 
     Strategy 経由で接触力・摩擦力・被膜力・時間積分を評価する。
     manager / strategies は duck typing で受け取る（deprecated 型に依存しない）。
     """
 
-    config: NewtonUzawaConfig = field(default_factory=NewtonUzawaConfig)
+    meta = ProcessMeta(
+        name="NewtonUzawa",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/newton_uzawa.md",
+    )
+    uses = []
 
-    def run(
+    def process(  # noqa: C901, PLR0912, PLR0915
         self,
-        *,
-        u: np.ndarray,
-        lam_all: np.ndarray,
-        f_ext: np.ndarray,
-        f_ext_ref_norm: float,
-        fixed_dofs: np.ndarray,
-        assemble_tangent,
-        assemble_internal_force,
-        manager: object,
-        node_coords_ref: np.ndarray,
-        strategies: object,
-        k_pen: float,
-        mu: float,
-        u_ref: np.ndarray,
-        load_frac: float,
-        load_frac_prev: float,
-        step_display: int,
-        dt_sub: float,
-        use_coating: bool,
-        dynamic_ref: bool,
+        input_data: NewtonUzawaStepInput,
     ) -> StepResult:
         """1荷重増分のNR+Uzawaを実行.
 
-        u, lam_all は in-place で更新される。
+        input_data.u, input_data.lam_all は in-place で更新される。
         """
-        cfg = self.config
+        cfg = input_data.config
+        u = input_data.u
+        lam_all = input_data.lam_all
+        f_ext = input_data.f_ext
+        manager = input_data.manager
+        strategies = input_data.strategies
+        k_pen = input_data.k_pen
+        mu = input_data.mu
+        u_ref = input_data.u_ref
+        load_frac = input_data.load_frac
+        load_frac_prev = input_data.load_frac_prev
+        step_display = input_data.step_display
+        dt_sub = input_data.dt_sub
         ndof = len(f_ext)
 
         _time_strategy = strategies.time_integration
@@ -101,7 +126,7 @@ class NewtonUzawaLoop:
                 total_newton += 1
 
                 # 1. 幾何更新
-                coords_def = _deformed_coords(node_coords_ref, u, cfg.ndof_per_node)
+                coords_def = _deformed_coords(input_data.node_coords_ref, u, cfg.ndof_per_node)
                 manager.update_geometry(coords_def, freeze_active_set=True)
 
                 # 2. 接触力（ContactForceStrategy 経由）
@@ -116,12 +141,12 @@ class NewtonUzawaLoop:
                     mu,
                     lambdas=lam_all,
                     u_ref=u_ref,
-                    node_coords_ref=node_coords_ref,
+                    node_coords_ref=input_data.node_coords_ref,
                 )
                 f_c = f_c + f_friction
 
                 # 4. 被膜力（CoatingStrategy 経由）
-                if use_coating and _coating_strategy is not None:
+                if input_data.use_coating and _coating_strategy is not None:
                     coat_dt = max(load_frac - load_frac_prev, 1e-15)
                     f_coat = _coating_strategy.forces(
                         manager.pairs, coords_def, manager.config, coat_dt
@@ -134,7 +159,7 @@ class NewtonUzawaLoop:
                         f_c = f_c + f_coat_fric
 
                 # 5. 力残差
-                f_int = assemble_internal_force(u)
+                f_int = input_data.assemble_internal_force(u)
                 R_u = f_int + f_c - f_ext
 
                 # 動的解析: 慣性力・減衰力
@@ -142,12 +167,12 @@ class NewtonUzawaLoop:
                     _time_strategy.correct(u, np.zeros_like(u), dt_sub)
                     R_u = _time_strategy.effective_residual(R_u, dt_sub)
 
-                R_u[fixed_dofs] = 0.0
+                R_u[input_data.fixed_dofs] = 0.0
 
                 # 6. 収束判定
                 res_u_norm = float(np.linalg.norm(R_u))
-                _f_ref = f_ext_ref_norm
-                if dynamic_ref and it == 0 and res_u_norm > 1e-30:
+                _f_ref = input_data.f_ext_ref_norm
+                if input_data.dynamic_ref and it == 0 and res_u_norm > 1e-30:
                     _f_ref = res_u_norm
 
                 n_active = sum(
@@ -180,13 +205,13 @@ class NewtonUzawaLoop:
                     )
 
                 # 7. 接線剛性
-                K_T = assemble_tangent(u)
+                K_T = input_data.assemble_tangent(u)
 
                 K_c = _contact_force_strategy.tangent(u, lam_all, manager, k_pen)
                 K_T = K_T + K_c
 
                 # 被膜剛性
-                if use_coating and _coating_strategy is not None:
+                if input_data.use_coating and _coating_strategy is not None:
                     coat_dt = max(load_frac - load_frac_prev, 1e-15)
                     K_coat = _coating_strategy.stiffness(
                         manager.pairs, coords_def, manager.config, ndof, coat_dt
@@ -210,7 +235,7 @@ class NewtonUzawaLoop:
                 # 8. 線形ソルブ
                 K_eff = K_T.tocsc()
                 _rhs = -R_u.copy()
-                for d in fixed_dofs:
+                for d in input_data.fixed_dofs:
                     K_eff[d, :] = 0.0
                     K_eff[:, d] = 0.0
                     K_eff[d, d] = 1.0
@@ -233,8 +258,8 @@ class NewtonUzawaLoop:
                         u,
                         du,
                         f_ext,
-                        fixed_dofs,
-                        assemble_internal_force,
+                        input_data.fixed_dofs,
+                        input_data.assemble_internal_force,
                         res_u_norm,
                         max_steps=cfg.line_search_max_steps,
                         f_c=f_c,
@@ -284,7 +309,7 @@ class NewtonUzawaLoop:
 
             # --- Uzawa 乗数更新 ---
             if step_converged:
-                coords_def = _deformed_coords(node_coords_ref, u, cfg.ndof_per_node)
+                coords_def = _deformed_coords(input_data.node_coords_ref, u, cfg.ndof_per_node)
                 manager.update_geometry(coords_def, freeze_active_set=True)
 
                 lam_prev = lam_all.copy()

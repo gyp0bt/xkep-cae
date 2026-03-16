@@ -11,10 +11,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class ConvergenceDiagnostics:
-    """収束失敗時の標準化診断情報.
-
-    Newton反復の履歴情報を収集し、収束失敗の原因特定を支援する。
-    """
+    """収束失敗時の標準化診断情報（純粋データ）."""
 
     step: int = 0
     load_frac: float = 0.0
@@ -26,25 +23,26 @@ class ConvergenceDiagnostics:
     max_du_dof_history: list[int] = field(default_factory=list)
     condition_number: float | None = None
 
-    def format_report(self, max_iter: int = 50) -> str:
-        """診断レポートの文字列を生成する."""
-        lines = [
-            "=" * 60,
-            "  NCP Solver Convergence Diagnostics",
-            "=" * 60,
-            f"  Step: {self.step}, Load fraction: {self.load_frac:.6f}",
-            f"  Iterations: {len(self.res_history)} / {max_iter}",
-        ]
 
-        if self.condition_number is not None:
-            lines.append(f"  Condition number: {self.condition_number:.2e}")
+def _format_diagnostics_report(diag: ConvergenceDiagnostics, max_iter: int = 50) -> str:
+    """診断レポートの文字列を生成する."""
+    lines = [
+        "=" * 60,
+        "  NCP Solver Convergence Diagnostics",
+        "=" * 60,
+        f"  Step: {diag.step}, Load fraction: {diag.load_frac:.6f}",
+        f"  Iterations: {len(diag.res_history)} / {max_iter}",
+    ]
 
-        if self.res_history:
-            lines.append(f"  Final residual: {self.res_history[-1]:.6e}")
-            lines.append(f"  Min residual:   {min(self.res_history):.6e}")
+    if diag.condition_number is not None:
+        lines.append(f"  Condition number: {diag.condition_number:.2e}")
 
-        if self.n_active_history:
-            lines.append(f"  Active pairs: {self.n_active_history[-1]}")
+    if diag.res_history:
+        lines.append(f"  Final residual: {diag.res_history[-1]:.6e}")
+        lines.append(f"  Min residual:   {min(diag.res_history):.6e}")
 
-        lines.append("=" * 60)
-        return "\n".join(lines)
+    if diag.n_active_history:
+        lines.append(f"  Active pairs: {diag.n_active_history[-1]}")
+
+    lines.append("=" * 60)
+    return "\n".join(lines)

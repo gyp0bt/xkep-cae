@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -234,3 +235,18 @@ class TestContactFrictionProcessAPI:
         proc = ContactFrictionProcess()
         result = proc.process(input_data)
         assert isinstance(result, SolverResultData)
+
+
+@binds_to(NewtonUzawaProcess)
+class TestNewtonUzawaProcessAPI:
+    """NewtonUzawaProcess の API テスト."""
+
+    def test_is_solver_process(self):
+        proc = NewtonUzawaProcess()
+        assert isinstance(proc, SolverProcess)
+
+    def test_meta_name(self):
+        assert NewtonUzawaProcess.meta.name == "NewtonUzawa"
+
+    def test_meta_module(self):
+        assert NewtonUzawaProcess.meta.module == "solve"

@@ -11,27 +11,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-
-@dataclass(frozen=True)
-class _GraphSnapshotList:
-    """接触グラフスナップショットの簡易リスト.
-
-    ContactGraphHistory の軽量代替。add_snapshot メソッドのみ提供。
-    """
-
-    snapshots: list[object] = field(default_factory=list)
-
-    def add_snapshot(self, graph: object) -> None:
-        """スナップショットを追加する."""
-        self.snapshots.append(graph)
+_setattr = object.__setattr__
 
 
 @dataclass(frozen=True)
 class SolverState:
-    """ソルバーの全可変状態.
-
-    チェックポイント保存/復元もこのクラスが管理する。
-    """
+    """ソルバーの全可変状態（純粋データ）."""
 
     # --- 主要変数 ---
     u: np.ndarray
@@ -54,7 +39,7 @@ class SolverState:
     load_history: list[float] = field(default_factory=list)
     disp_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
-    graph_history: _GraphSnapshotList = field(default_factory=_GraphSnapshotList)
+    graph_snapshots: list[object] = field(default_factory=list)
 
     # --- 接線予測用 ---
     u_prev_converged: np.ndarray | None = None
@@ -66,37 +51,42 @@ class SolverState:
     _u_ref_ckpt: np.ndarray | None = None
     _ul_frac_base_ckpt: float = 0.0
 
-    def _set(self, name: str, value: object) -> None:
-        """frozen バイパス: 内部状態更新用."""
-        object.__setattr__(self, name, value)
 
-    def save_checkpoint(self) -> None:
-        """現在の状態をチェックポイントに保存."""
-        self._set("_u_ckpt", self.u.copy())
-        self._set("_lam_ckpt", self.lam_all.copy())
-        self._set("_u_ref_ckpt", self.u_ref.copy())
-        self._set("_ul_frac_base_ckpt", self.ul_frac_base)
+def _state_set(state: SolverState, name: str, value: object) -> None:
+    """frozen SolverState のフィールドを更新する."""
+    _setattr(state, name, value)
 
-    def restore_checkpoint(self) -> None:
-        """チェックポイントから状態を復元."""
-        if self._u_ckpt is None:
-            raise RuntimeError("チェックポイントが保存されていません")
-        self._set("u", self._u_ckpt.copy())
-        self._set("lam_all", self._lam_ckpt.copy())
-        self._set("u_ref", self._u_ref_ckpt.copy())
-        self._set("ul_frac_base", self._ul_frac_base_ckpt)
-        self._set("delta_frac_prev", 0.0)
 
-    def ensure_lam_size(self, n_pairs: int) -> None:
-        """ペア数拡張に対応して lam_all を拡張."""
-        if len(self.lam_all) < n_pairs:
-            old_n = len(self.lam_all)
-            lam_new = np.zeros(n_pairs)
-            lam_new[:old_n] = self.lam_all
-            self._set("lam_all", lam_new)
+def _save_checkpoint(state: SolverState) -> None:
+    """現在の状態をチェックポイントに保存."""
+    _setattr(state, "_u_ckpt", state.u.copy())
+    _setattr(state, "_lam_ckpt", state.lam_all.copy())
+    _setattr(state, "_u_ref_ckpt", state.u_ref.copy())
+    _setattr(state, "_ul_frac_base_ckpt", state.ul_frac_base)
 
-    def build_u_output(self, ul_assembler: object | None) -> np.ndarray:
-        """UL込みの最終変位ベクトルを構築."""
-        if ul_assembler is not None:
-            return ul_assembler.u_total_accum + self.u
-        return self.u
+
+def _restore_checkpoint(state: SolverState) -> None:
+    """チェックポイントから状態を復元."""
+    if state._u_ckpt is None:
+        raise RuntimeError("チェックポイントが保存されていません")
+    _setattr(state, "u", state._u_ckpt.copy())
+    _setattr(state, "lam_all", state._lam_ckpt.copy())
+    _setattr(state, "u_ref", state._u_ref_ckpt.copy())
+    _setattr(state, "ul_frac_base", state._ul_frac_base_ckpt)
+    _setattr(state, "delta_frac_prev", 0.0)
+
+
+def _ensure_lam_size(state: SolverState, n_pairs: int) -> None:
+    """ペア数拡張に対応して lam_all を拡張."""
+    if len(state.lam_all) < n_pairs:
+        old_n = len(state.lam_all)
+        lam_new = np.zeros(n_pairs)
+        lam_new[:old_n] = state.lam_all
+        _setattr(state, "lam_all", lam_new)
+
+
+def _build_u_output(state: SolverState, ul_assembler: object | None) -> np.ndarray:
+    """UL込みの最終変位ベクトルを構築."""
+    if ul_assembler is not None:
+        return ul_assembler.u_total_accum + state.u
+    return state.u
