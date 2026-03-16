@@ -16,6 +16,7 @@
 | [180](status-180.md) | 2026-03-15 | C16 契約ギャップ修正 — __init__.py re-export チェック強化 | ~2260+186p(新) |
 | [181](status-181.md) | 2026-03-15 | Penalty/Coating ファクトリ完備 — default_strategies() 7軸全生成 | ~2260+204p(新) |
 | [182](status-182.md) | 2026-03-16 | C16 スコープ拡大 + time_integration 移動 + process/ 削除 | ~2260+204p(新) |
+| [183](status-183.md) | 2026-03-16 | Phase 3 — concrete プロセス移行 + BatchProcess フル実装 | ~2260+266p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -80,7 +81,8 @@ Phase 2 前半:   ~2260+86p(新) (2026-03-15) ← core移行+Friction
 Phase 2 後半:   ~2260+186p(新) (2026-03-15) ← Strategy全移行+契約違反0
 Phase 2 完了:   ~2260+186p(新) (2026-03-15) ← status-179（契約違反ゼロ達成）
 Phase 2 完備:   ~2260+204p(新) (2026-03-15) ← status-181（7軸ファクトリ完備）
-現在:           ~2260+204p(新) (2026-03-16) ← status-182（C16拡大+process/削除）
+C16拡大:        ~2260+204p(新) (2026-03-16) ← status-182（C16拡大+process/削除）
+現在:           ~2260+266p(新) (2026-03-16) ← status-183（Phase 3 concrete移行）
 ```
 
 ## 備考
