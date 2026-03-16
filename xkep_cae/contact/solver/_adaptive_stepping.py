@@ -1,13 +1,16 @@
 """適応荷重増分制御（プライベート）.
 
-AdaptiveSteppingConfig / AdaptiveLoadController を新パッケージに移植。
+AdaptiveSteppingProcess を新パッケージに移植。
 xkep_cae_deprecated/process/strategies/adaptive_stepping.py からのコピー。
 """
 
 from __future__ import annotations
 
+import enum
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+
+from xkep_cae.core import ProcessMeta, SolverProcess
 
 _setattr = object.__setattr__
 
@@ -37,106 +40,139 @@ class AdaptiveSteppingConfig:
             _setattr(self, "dt_max_fraction", min(8.0 / effective_n, 1.0))
 
 
+class StepAction(enum.Enum):
+    """適応荷重増分の操作種別."""
+
+    QUERY = "query"
+    SUCCESS = "success"
+    FAILURE = "failure"
+
+
 @dataclass(frozen=True)
-class AdaptiveLoadController:
-    """適応荷重増分のステップキューデータ（純粋データ）."""
+class AdaptiveStepInput:
+    """適応荷重増分の入力（前ステップの結果）."""
 
-    config: AdaptiveSteppingConfig
-    _queue: deque[float] = field(default_factory=deque)
-    _consecutive_good: int = 0
-
-
-def _create_load_controller(config: AdaptiveSteppingConfig) -> AdaptiveLoadController:
-    """AdaptiveLoadController を初期化する."""
-    ctrl = AdaptiveLoadController(config=config)
-    base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
-    ctrl._queue.append(min(base_delta, 1.0))
-    return ctrl
+    action: StepAction
+    load_frac: float = 0.0
+    load_frac_prev: float = 0.0
+    n_iters: int = 0
+    n_active: int = 0
+    prev_n_active: int = 0
 
 
-def _ctrl_has_steps(ctrl: AdaptiveLoadController) -> bool:
-    """残りステップがあるか."""
-    return len(ctrl._queue) > 0
+@dataclass(frozen=True)
+class AdaptiveStepOutput:
+    """適応荷重増分の出力（次ステップの判定）."""
+
+    next_load_frac: float = 0.0
+    has_more_steps: bool = True
+    can_retry: bool = False
 
 
-def _ctrl_peek_next(ctrl: AdaptiveLoadController) -> float:
-    """次のステップの load_frac を返す（キューからは取り出さない）."""
-    return ctrl._queue[0]
+class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutput]):
+    """適応荷重増分制御（1判定 = 1 process()）.
 
-
-def _ctrl_pop_step(ctrl: AdaptiveLoadController) -> float:
-    """次のステップを取り出す."""
-    return ctrl._queue.popleft()
-
-
-def _ctrl_should_skip(
-    ctrl: AdaptiveLoadController,
-    load_frac: float,
-    load_frac_prev: float,
-) -> bool:
-    """ステップをスキップすべきか."""
-    return load_frac <= load_frac_prev + 1e-15
-
-
-def _ctrl_on_success(
-    ctrl: AdaptiveLoadController,
-    load_frac: float,
-    load_frac_prev: float,
-    n_iters: int,
-    n_active: int,
-    prev_n_active: int,
-) -> None:
-    """ステップ成功時の次ステップ幅決定."""
-    cfg = ctrl.config
-    if load_frac >= 1.0 - 1e-12:
-        return
-
-    current_delta = load_frac - load_frac_prev
-    next_delta = current_delta
-
-    if n_iters <= cfg.dt_grow_iter_threshold:
-        _setattr(ctrl, "_consecutive_good", ctrl._consecutive_good + 1)
-        if ctrl._consecutive_good <= 2:
-            next_delta = current_delta * cfg.dt_grow_factor
-        else:
-            _damp = max(0.1, 1.0 / ctrl._consecutive_good)
-            next_delta = current_delta * (1.0 + (cfg.dt_grow_factor - 1.0) * _damp)
-    elif n_iters >= cfg.dt_shrink_iter_threshold:
-        next_delta = current_delta * cfg.dt_shrink_factor
-        _setattr(ctrl, "_consecutive_good", 0)
-    else:
-        _setattr(ctrl, "_consecutive_good", 0)
-
-    if prev_n_active > 0:
-        change_rate = abs(n_active - prev_n_active) / max(prev_n_active, 1)
-        if change_rate > cfg.dt_contact_change_threshold:
-            next_delta = min(next_delta, current_delta * cfg.dt_shrink_factor)
-
-    next_delta = max(next_delta, cfg.dt_min_fraction)
-    next_delta = min(next_delta, cfg.dt_max_fraction)
-    next_frac = min(load_frac + next_delta, 1.0)
-    if 1.0 - next_frac < cfg.dt_min_fraction * 0.5:
-        next_frac = 1.0
-    ctrl._queue.appendleft(next_frac)
-
-
-def _ctrl_on_failure(
-    ctrl: AdaptiveLoadController,
-    load_frac: float,
-    load_frac_prev: float,
-) -> bool:
-    """ステップ失敗時のカットバック.
-
-    Returns:
-        True: カットバック成功（リトライ可能）
-        False: これ以上縮小不可
+    QUERY: 次の load_frac を返す（skip 対象は内部で消化）
+    SUCCESS: ステップ成功 → 次ステップ幅を計算してキューに追加
+    FAILURE: ステップ失敗 → カットバック可否を判定
     """
-    delta = load_frac - load_frac_prev
-    if delta <= ctrl.config.dt_min_fraction + 1e-15:
-        return False
 
-    _setattr(ctrl, "_consecutive_good", 0)
-    mid_frac = load_frac_prev + delta * ctrl.config.dt_shrink_factor
-    ctrl._queue.appendleft(load_frac)
-    ctrl._queue.appendleft(mid_frac)
-    return True
+    meta = ProcessMeta(
+        name="AdaptiveStepping",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/adaptive_stepping.md",
+    )
+    uses = []
+
+    def __init__(self, config: AdaptiveSteppingConfig) -> None:
+        self._config = config
+        self._queue: deque[float] = deque()
+        self._consecutive_good: int = 0
+
+        base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
+        self._queue.append(min(base_delta, 1.0))
+
+    def process(self, input_data: AdaptiveStepInput) -> AdaptiveStepOutput:
+        """適応荷重増分の1判定を実行する."""
+        if input_data.action == StepAction.QUERY:
+            return self._query(input_data.load_frac_prev)
+        if input_data.action == StepAction.SUCCESS:
+            return self._on_success(input_data)
+        if input_data.action == StepAction.FAILURE:
+            return self._on_failure(input_data)
+        raise ValueError(f"未知のアクション: {input_data.action}")
+
+    def _query(self, load_frac_prev: float) -> AdaptiveStepOutput:
+        """次の有効な load_frac を返す（skip 対象は内部で消化）."""
+        while self._queue:
+            next_frac = self._queue[0]
+            if next_frac <= load_frac_prev + 1e-15:
+                self._queue.popleft()
+                continue
+            return AdaptiveStepOutput(next_load_frac=next_frac, has_more_steps=True)
+        return AdaptiveStepOutput(has_more_steps=False)
+
+    def _on_success(self, input_data: AdaptiveStepInput) -> AdaptiveStepOutput:
+        """ステップ成功時: 消費 + 次ステップ幅決定."""
+        if self._queue and self._queue[0] <= input_data.load_frac + 1e-15:
+            self._queue.popleft()
+
+        cfg = self._config
+        load_frac = input_data.load_frac
+        load_frac_prev = input_data.load_frac_prev
+
+        if load_frac >= 1.0 - 1e-12:
+            return AdaptiveStepOutput(has_more_steps=len(self._queue) > 0)
+
+        current_delta = load_frac - load_frac_prev
+        next_delta = current_delta
+
+        if input_data.n_iters <= cfg.dt_grow_iter_threshold:
+            self._consecutive_good += 1
+            if self._consecutive_good <= 2:
+                next_delta = current_delta * cfg.dt_grow_factor
+            else:
+                _damp = max(0.1, 1.0 / self._consecutive_good)
+                next_delta = current_delta * (1.0 + (cfg.dt_grow_factor - 1.0) * _damp)
+        elif input_data.n_iters >= cfg.dt_shrink_iter_threshold:
+            next_delta = current_delta * cfg.dt_shrink_factor
+            self._consecutive_good = 0
+        else:
+            self._consecutive_good = 0
+
+        if input_data.prev_n_active > 0:
+            change_rate = abs(input_data.n_active - input_data.prev_n_active) / max(
+                input_data.prev_n_active, 1
+            )
+            if change_rate > cfg.dt_contact_change_threshold:
+                next_delta = min(next_delta, current_delta * cfg.dt_shrink_factor)
+
+        next_delta = max(next_delta, cfg.dt_min_fraction)
+        next_delta = min(next_delta, cfg.dt_max_fraction)
+        next_frac = min(load_frac + next_delta, 1.0)
+        if 1.0 - next_frac < cfg.dt_min_fraction * 0.5:
+            next_frac = 1.0
+        self._queue.appendleft(next_frac)
+
+        return AdaptiveStepOutput(
+            next_load_frac=next_frac,
+            has_more_steps=True,
+        )
+
+    def _on_failure(self, input_data: AdaptiveStepInput) -> AdaptiveStepOutput:
+        """ステップ失敗時: カットバック判定."""
+        delta = input_data.load_frac - input_data.load_frac_prev
+        if delta <= self._config.dt_min_fraction + 1e-15:
+            return AdaptiveStepOutput(has_more_steps=False, can_retry=False)
+
+        self._consecutive_good = 0
+        mid_frac = input_data.load_frac_prev + delta * self._config.dt_shrink_factor
+        self._queue.appendleft(input_data.load_frac)
+        self._queue.appendleft(mid_frac)
+
+        return AdaptiveStepOutput(
+            next_load_frac=mid_frac,
+            has_more_steps=True,
+            can_retry=True,
+        )

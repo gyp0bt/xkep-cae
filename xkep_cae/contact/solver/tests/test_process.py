@@ -5,6 +5,13 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact.solver._adaptive_stepping import (
+    AdaptiveStepInput,
+    AdaptiveStepOutput,
+    AdaptiveSteppingConfig,
+    AdaptiveSteppingProcess,
+    StepAction,
+)
 from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
@@ -250,3 +257,63 @@ class TestNewtonUzawaProcessAPI:
 
     def test_meta_module(self):
         assert NewtonUzawaProcess.meta.module == "solve"
+
+
+@binds_to(AdaptiveSteppingProcess)
+class TestAdaptiveSteppingProcessAPI:
+    """AdaptiveSteppingProcess の API テスト."""
+
+    def test_is_solver_process(self):
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+        assert isinstance(proc, SolverProcess)
+
+    def test_meta_name(self):
+        assert AdaptiveSteppingProcess.meta.name == "AdaptiveStepping"
+
+    def test_meta_module(self):
+        assert AdaptiveSteppingProcess.meta.module == "solve"
+
+    def test_query_returns_output(self):
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        assert isinstance(out, AdaptiveStepOutput)
+        assert out.has_more_steps is True
+        assert out.next_load_frac > 0.0
+
+    def test_full_cycle(self):
+        """QUERY → SUCCESS → QUERY で完了まで回る."""
+        config = AdaptiveSteppingConfig(dt_initial_fraction=1.0)
+        proc = AdaptiveSteppingProcess(config)
+
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        assert out.next_load_frac == 1.0
+
+        out = proc.process(
+            AdaptiveStepInput(
+                action=StepAction.SUCCESS,
+                load_frac=1.0,
+                load_frac_prev=0.0,
+                n_iters=3,
+            )
+        )
+        assert out.has_more_steps is False
+
+    def test_failure_triggers_retry(self):
+        """FAILURE でカットバック → can_retry=True."""
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        load_frac = out.next_load_frac
+
+        fail_out = proc.process(
+            AdaptiveStepInput(
+                action=StepAction.FAILURE,
+                load_frac=load_frac,
+                load_frac_prev=0.0,
+            )
+        )
+        assert fail_out.can_retry is True
+        assert fail_out.next_load_frac < load_frac

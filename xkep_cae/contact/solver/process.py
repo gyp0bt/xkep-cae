@@ -5,8 +5,8 @@
 
 内部構成:
 - SolverState: 全可変状態（frozen dataclass）
-- _newton_uzawa_step: 1荷重増分の NR + Uzawa
-- AdaptiveLoadController + _ctrl_* 関数: 適応荷重増分制御
+- NewtonUzawaProcess: 1荷重増分の NR + Uzawa
+- AdaptiveSteppingProcess: 適応荷重増分制御（QUERY/SUCCESS/FAILURE）
 - Strategy 5軸 + default_strategies()
 """
 
@@ -17,14 +17,10 @@ import time
 import numpy as np
 
 from xkep_cae.contact.solver._adaptive_stepping import (
+    AdaptiveStepInput,
     AdaptiveSteppingConfig,
-    _create_load_controller,
-    _ctrl_has_steps,
-    _ctrl_on_failure,
-    _ctrl_on_success,
-    _ctrl_peek_next,
-    _ctrl_pop_step,
-    _ctrl_should_skip,
+    AdaptiveSteppingProcess,
+    StepAction,
 )
 from xkep_cae.contact.solver._contact_graph import _snapshot_contact_graph
 from xkep_cae.contact.solver._diagnostics import _format_diagnostics_report
@@ -87,7 +83,7 @@ class ContactFrictionProcess(
         version="1.0.0",
         document_path="docs/contact_friction.md",
     )
-    uses = [NewtonUzawaProcess]
+    uses = [NewtonUzawaProcess, AdaptiveSteppingProcess]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
     penalty_slot = StrategySlot(object)
@@ -268,7 +264,7 @@ class ContactFrictionProcess(
             dt_min_fraction=manager.config.dt_min_fraction,
             dt_max_fraction=manager.config.dt_max_fraction,
         )
-        controller = _create_load_controller(stepping_config)
+        stepping = AdaptiveSteppingProcess(stepping_config)
 
         # --- Newton-Uzawa プロセス ---
         nr_config = NewtonUzawaConfig(show_progress=True)
@@ -280,12 +276,16 @@ class ContactFrictionProcess(
         # ================================================================
         # 荷重ステップループ
         # ================================================================
-        while _ctrl_has_steps(controller):
-            load_frac = _ctrl_peek_next(controller)
-
-            if _ctrl_should_skip(controller, load_frac, state.load_frac_prev):
-                _ctrl_pop_step(controller)
-                continue
+        while True:
+            query_out = stepping.process(
+                AdaptiveStepInput(
+                    action=StepAction.QUERY,
+                    load_frac_prev=state.load_frac_prev,
+                )
+            )
+            if not query_out.has_more_steps:
+                break
+            load_frac = query_out.next_load_frac
 
             _state_set(state, "step_display", state.step_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
@@ -357,8 +357,14 @@ class ContactFrictionProcess(
             # 不収束処理
             # ==============================================================
             if not step_result.converged:
-                can_retry = _ctrl_on_failure(controller, load_frac, state.load_frac_prev)
-                if can_retry:
+                fail_out = stepping.process(
+                    AdaptiveStepInput(
+                        action=StepAction.FAILURE,
+                        load_frac=load_frac,
+                        load_frac_prev=state.load_frac_prev,
+                    )
+                )
+                if fail_out.can_retry:
                     _restore_checkpoint(state)
                     if _ul:
                         ul_assembler.rollback()
@@ -390,7 +396,6 @@ class ContactFrictionProcess(
             # ==============================================================
             # ステップ完了
             # ==============================================================
-            _ctrl_pop_step(controller)
 
             # 被膜圧縮量保存
             if use_coating:
@@ -410,14 +415,15 @@ class ContactFrictionProcess(
                 _state_set(state, "u_ref", np.zeros(ndof))
 
             # 適応時間増分: 次ステップ幅決定
-            n_iters = step_result.n_newton_iters
-            _ctrl_on_success(
-                controller,
-                load_frac,
-                state.load_frac_prev,
-                n_iters,
-                step_result.n_active,
-                state.prev_n_active,
+            stepping.process(
+                AdaptiveStepInput(
+                    action=StepAction.SUCCESS,
+                    load_frac=load_frac,
+                    load_frac_prev=state.load_frac_prev,
+                    n_iters=step_result.n_newton_iters,
+                    n_active=step_result.n_active,
+                    prev_n_active=state.prev_n_active,
+                )
             )
             _state_set(state, "prev_n_active", step_result.n_active)
 

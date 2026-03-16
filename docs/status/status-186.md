@@ -97,9 +97,11 @@ deprecated 依存なしの純粋な実装を新パッケージに移植:
   - `ConvergenceDiagnostics`: frozen + `format_report()` → `_format_diagnostics_report()` 関数に
   - `_GraphSnapshotList`: **削除**（`list[object]` に統合）
   - `SolverState`: frozen + 全メソッドを `_save_checkpoint()` / `_restore_checkpoint()` / `_ensure_lam_size()` / `_build_u_output()` / `_state_set()` 関数に
-  - `AdaptiveLoadController`: frozen + 全メソッドを `_create_load_controller()` / `_ctrl_has_steps()` / `_ctrl_peek_next()` / `_ctrl_pop_step()` / `_ctrl_should_skip()` / `_ctrl_on_success()` / `_ctrl_on_failure()` 関数に
+  - `AdaptiveLoadController` → **`AdaptiveSteppingProcess`**（SolverProcess 化）+ `AdaptiveStepInput`/`AdaptiveStepOutput` frozen dataclass + `StepAction` Enum
   - `NewtonUzawaLoop` → **`NewtonUzawaProcess`**（SolverProcess 化）+ `NewtonUzawaStepInput` frozen dataclass
-- テスト: 14 テスト合格（+3 NewtonUzawaProcess API テスト）
+- `process.py` の `_ctrl_*` 関数呼び出しを `AdaptiveSteppingProcess.process()` API に全置換
+- `ContactFrictionProcess.uses` に `AdaptiveSteppingProcess` 追加
+- テスト: **20 テスト合格**（+3 NewtonUzawaProcess + 6 AdaptiveSteppingProcess API テスト）
 
 ## 懸念事項・メモ
 
