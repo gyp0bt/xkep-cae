@@ -5,6 +5,15 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesOutput,
+    DetectCandidatesProcess,
+    InitializePenaltyProcess,
+    UpdateGeometryInput,
+    UpdateGeometryOutput,
+    UpdateGeometryProcess,
+)
 from xkep_cae.contact.solver._adaptive_stepping import (
     AdaptiveStepInput,
     AdaptiveStepOutput,
@@ -304,9 +313,9 @@ class TestNewtonUzawaStaticProcessAPI:
     def test_meta_module(self):
         assert NewtonUzawaStaticProcess.meta.module == "solve"
 
-    def test_backward_compat_alias(self):
-        """後方互換エイリアスが機能する."""
-        assert NewtonUzawaProcess is NewtonUzawaStaticProcess
+    def test_dynamic_is_primary_process(self):
+        """Dynamic が正統 NewtonUzawaProcess."""
+        assert NewtonUzawaProcess is NewtonUzawaDynamicProcess
 
 
 @binds_to(NewtonUzawaDynamicProcess)
@@ -652,3 +661,63 @@ class TestUzawaUpdateProcessAPI:
 
     def test_protocol_conformance(self):
         assert issubclass(UzawaUpdateProcess, SolverProcess)
+
+
+# =====================================================================
+# ContactManager Process ラッパーのテスト
+# =====================================================================
+
+
+@binds_to(DetectCandidatesProcess)
+class TestDetectCandidatesProcessAPI:
+    """DetectCandidatesProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(DetectCandidatesProcess, SolverProcess)
+
+    def test_detect_basic(self):
+        """基本的な候補検出."""
+        from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+
+        manager = _ContactManager(config=_ContactConfig(exclude_same_layer=False))
+        mesh = _make_two_beam_mesh()
+        proc = DetectCandidatesProcess()
+        out = proc.process(
+            DetectCandidatesInput(
+                manager=manager,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=mesh.radii,
+            )
+        )
+        assert isinstance(out, DetectCandidatesOutput)
+        assert out.n_pairs >= 0
+
+
+@binds_to(UpdateGeometryProcess)
+class TestUpdateGeometryProcessAPI:
+    """UpdateGeometryProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(UpdateGeometryProcess, SolverProcess)
+
+    def test_update_basic(self):
+        """基本的な幾何更新."""
+        from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+
+        manager = _ContactManager(config=_ContactConfig(exclude_same_layer=False))
+        mesh = _make_two_beam_mesh()
+        # まず候補検出
+        manager.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii)
+        proc = UpdateGeometryProcess()
+        out = proc.process(UpdateGeometryInput(manager=manager, node_coords=mesh.node_coords))
+        assert isinstance(out, UpdateGeometryOutput)
+        assert out.n_active >= 0
+
+
+@binds_to(InitializePenaltyProcess)
+class TestInitializePenaltyProcessAPI:
+    """InitializePenaltyProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(InitializePenaltyProcess, SolverProcess)

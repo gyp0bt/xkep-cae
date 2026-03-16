@@ -93,6 +93,10 @@
 | geometry detect() 空リスト stub | `_detect_candidates()` 経由 broadphase 実装 | status-189 |
 | solver 純関数5モジュール | Process 化（SolverProcess 継承） | status-190 |
 | `NewtonUzawaProcess`（統合型） | `NewtonUzawaStaticProcess` + `NewtonUzawaDynamicProcess` | status-190 |
+| `process.py` プライベート関数5種直接呼び出し | Process API 経由 | status-191 |
+| `manager.detect_candidates()` 直接呼び出し | `DetectCandidatesProcess` | status-191 |
+| `manager.update_geometry()` 直接呼び出し | `UpdateGeometryProcess` | status-191 |
+| `NewtonUzawaProcess = StaticProcess` | `NewtonUzawaProcess = DynamicProcess` | status-191 |
 
 ## 推奨ソルバー構成
 
@@ -104,7 +108,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 301 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-190）
+**~2260テスト + 315 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-191）
 
 ### ターゲット
 
@@ -112,7 +116,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 8 完了 → Phase 9** — solver 内部全モジュール Process 化完了。NewtonUzawa を Static/Dynamic に完全分離。friction/geometry Strategy の process.py 内 deprecated 直接使用の移行が残課題。
+**脱出ポット計画 Phase 9 進行中** — process.py のプライベート関数呼び出しを全て Process API に移行完了。ContactManager メソッドを Process 化。NewtonUzawaDynamic を正統 Process に昇格。friction/geometry Strategy の deprecated 直接使用の移行が残課題。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
