@@ -76,6 +76,8 @@
 | `xkep_cae/core/time_integration/` | `xkep_cae/time_integration/` | status-182 |
 | `xkep_cae/process/`（re-export shim） | 完全削除（core 直接参照） | status-182 |
 | C16: `core/strategies/` + `contact/` のみ | C16: core/ 以外の全モジュール | status-182 |
+| deprecated `ContactFrictionProcess` | `xkep_cae/contact/solver/process.py` | status-184 |
+| `StrandBendingBatchProcess` v2.0.0 | v3.0.0（Solver 統合） | status-184 |
 
 ## 推奨ソルバー構成
 
@@ -87,7 +89,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 266 新パッケージテスト** — 2026-03-16
+**~2260テスト + 279 新パッケージテスト** — 2026-03-16
 
 ### ターゲット
 
@@ -95,9 +97,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 4〜8** — ContactFrictionProcess 移行 + 完全ワークフロー実現。
+**脱出ポット計画 Phase 5〜8** — 残りの concrete プロセス移行 + deprecated 依存除去。
 
-契約違反 **0件**（status-183 で Phase 3 完了後も維持）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 **0件**（status-184 で Phase 4 完了後も維持）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 

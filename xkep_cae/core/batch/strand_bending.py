@@ -3,9 +3,9 @@
 旧 xkep_cae_deprecated/process/batch/strand_bending.py の完全書き直し。
 設計仕様: docs/strand_bending.md
 
-Phase 3: concrete プロセス移行完了。
+Phase 4: ContactFrictionProcess 統合 — 完全ワークフロー実現。
 実行ツリー:
-  StrandMeshProcess → ContactSetupProcess
+  StrandMeshProcess → ContactSetupProcess → ContactFrictionProcess
     → [ExportProcess] → [BeamRenderProcess] → [ConvergenceVerifyProcess]
 """
 
@@ -30,10 +30,15 @@ from xkep_cae.contact.penalty.strategy import (
     AutoBeamEIPenalty,
 )
 from xkep_cae.contact.setup.process import ContactSetupConfig, ContactSetupProcess
+from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
+    AssembleCallbacks,
     BatchProcess,
+    BoundaryData,
+    ContactFrictionInputData,
     MeshData,
     ProcessMeta,
+    SolverResultData,
     VerifyResult,
 )
 from xkep_cae.mesh.process import StrandMeshConfig, StrandMeshProcess
@@ -54,8 +59,9 @@ from xkep_cae.verify.convergence import (
 class StrandBatchConfig:
     """撚線曲げ揺動バッチの設定.
 
-    Phase 3: concrete プロセス設定を含む完全版。
+    Phase 4: ContactFrictionProcess 統合。
     mesh_config が指定されない場合はワークフロー実行をスキップ。
+    boundary / callbacks が指定された場合はソルバーも実行。
     """
 
     mesh_config: StrandMeshConfig | None = None
@@ -68,6 +74,10 @@ class StrandBatchConfig:
     run_export: bool = True
     run_render: bool = False
     run_verify: bool = True
+    # Phase 4: ソルバー実行用（境界条件・コールバック）
+    boundary: BoundaryData | None = None
+    callbacks: AssembleCallbacks | None = None
+    run_solver: bool = False
 
 
 @dataclass
@@ -76,6 +86,7 @@ class StrandBatchResult:
 
     mesh: MeshData | None = None
     solver_converged: bool = False
+    solver_result: SolverResultData | None = None
     verify_result: VerifyResult | None = None
     export_result: ExportResult | None = None
     render_result: RenderResult | None = None
@@ -92,26 +103,25 @@ class StrandBendingBatchProcess(
     """撚線曲げ揺動ワークフロー.
 
     実行ツリー（process-architecture.md §6）:
-      StrandMeshProcess → ContactSetupProcess
+      StrandMeshProcess → ContactSetupProcess → ContactFrictionProcess
         → [ExportProcess] → [BeamRenderProcess] → [ConvergenceVerifyProcess]
 
-    Phase 3: concrete プロセスをフル実装。
-    ソルバーステップ（ContactFrictionProcess）は現時点では
-    deprecated 側の呼び出しが必要なため、このバッチでは
-    Mesh→Setup→Verify のワークフローを実行する。
+    Phase 4: ContactFrictionProcess 統合 — 完全ワークフロー実現。
+    boundary / callbacks が指定されるとソルバーも実行。
     """
 
     meta = ProcessMeta(
         name="StrandBendingBatch",
         module="batch",
-        version="2.0.0",
+        version="3.0.0",
         document_path="docs/strand_bending.md",
     )
 
     uses = [
-        # concrete プロセス（Phase 3 移行済み）
+        # concrete プロセス（Phase 3-4 移行済み）
         StrandMeshProcess,
         ContactSetupProcess,
+        ContactFrictionProcess,
         ExportProcess,
         BeamRenderProcess,
         ConvergenceVerifyProcess,
@@ -162,12 +172,29 @@ class StrandBendingBatchProcess(
             mu=input_data.mu,
             contact_mode=input_data.contact_mode,
         )
-        contact_proc.process(contact_config)
+        contact_result = contact_proc.process(contact_config)
         log.append("ContactSetupProcess: done")
 
-        # NOTE: ソルバーステップ（ContactFrictionProcess）は
-        # deprecated 側の実体呼び出しが必要。
-        # 完全移行時に追加予定。
+        # 3. ソルバー実行（boundary + callbacks が指定された場合）
+        if input_data.run_solver and input_data.boundary and input_data.callbacks:
+            log.append("ContactFrictionProcess: start")
+            solver_input = ContactFrictionInputData(
+                mesh=mesh_result.mesh,
+                boundary=input_data.boundary,
+                contact=contact_result,
+                callbacks=input_data.callbacks,
+            )
+            solver_proc = ContactFrictionProcess()
+            solver_result = solver_proc.process(solver_input)
+            result.solver_converged = solver_result.converged
+            result.solver_result = solver_result
+            log.append(
+                f"ContactFrictionProcess: done "
+                f"(converged={solver_result.converged}, "
+                f"n_incr={solver_result.n_increments})"
+            )
+        else:
+            log.append("ContactFrictionProcess: skipped (no boundary/callbacks)")
 
         result.elapsed_seconds = time.perf_counter() - t0
         result.process_log = log
