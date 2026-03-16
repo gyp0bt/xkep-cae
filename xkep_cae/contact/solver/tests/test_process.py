@@ -58,30 +58,17 @@ def _make_simple_callbacks(ndof: int) -> AssembleCallbacks:
 
 def _make_contact_setup(mesh: MeshData) -> ContactSetupData:
     """ContactSetupProcess 経由の接触設定."""
-    import importlib
+    from xkep_cae.contact.setup.process import ContactSetupConfig, ContactSetupProcess
 
-    _pair = importlib.import_module("xkep_cae_deprecated.contact.pair")
-    ContactConfig = _pair.ContactConfig  # noqa: N806
-    ContactManager = _pair.ContactManager  # noqa: N806
-
-    config = ContactConfig(
+    setup = ContactSetupProcess()
+    setup_config = ContactSetupConfig(
+        mesh=mesh,
+        k_pen=1e4,
         use_friction=True,
         mu=0.15,
         exclude_same_layer=True,
     )
-    manager = ContactManager(config=config)
-    manager.detect_candidates(
-        mesh.node_coords,
-        mesh.connectivity,
-        mesh.radii,
-    )
-    return ContactSetupData(
-        manager=manager,
-        k_pen=1e4,
-        use_friction=True,
-        mu=0.15,
-        contact_mode="smooth_penalty",
-    )
+    return setup.process(setup_config)
 
 
 @binds_to(ContactFrictionProcess)
@@ -109,10 +96,9 @@ class TestContactFrictionProcessAPI:
         assert proc.strategies.time_integration is not None
 
     def test_custom_strategies(self):
-        import importlib
+        from xkep_cae.core.data import default_strategies
 
-        _data_mod = importlib.import_module("xkep_cae_deprecated.process.data")
-        strats = _data_mod.default_strategies(k_pen=999.0)
+        strats = default_strategies(k_pen=999.0)
         proc = ContactFrictionProcess(strategies=strats)
         assert proc.strategies is strats
 

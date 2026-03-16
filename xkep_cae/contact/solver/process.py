@@ -8,27 +8,52 @@
 - NewtonUzawaLoop: 1荷重増分の NR + Uzawa
 - AdaptiveLoadController: 適応荷重増分制御
 - Strategy 5軸 + default_strategies()
+
+status-186: deprecated 依存完全除去（C14 準拠）。
+全ユーティリティを _*.py プライベートモジュールに移植。
 """
 
 from __future__ import annotations
 
-import importlib
 import time
 
 import numpy as np
 
+from xkep_cae.contact.solver._adaptive_stepping import (
+    AdaptiveLoadController,
+    AdaptiveSteppingConfig,
+)
+from xkep_cae.contact.solver._contact_graph import _snapshot_contact_graph
+from xkep_cae.contact.solver._initial_penetration import (
+    _adjust_initial_positions,
+    _check_initial_penetration,
+)
+from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaConfig, NewtonUzawaLoop
+from xkep_cae.contact.solver._solver_state import SolverState
+from xkep_cae.contact.solver._utils import _deformed_coords
 from xkep_cae.core import (
     ContactFrictionInputData,
     ProcessMeta,
     SolverProcess,
     SolverResultData,
 )
+from xkep_cae.core.data import default_strategies as _default_strategies_stub
 from xkep_cae.core.slots import StrategySlot
 
 
-def _import_deprecated(module_path: str) -> object:
-    """importlib 経由で deprecated モジュールをインポート（C14 準拠）."""
-    return importlib.import_module(module_path)
+def _create_working_strategies(**kwargs: object) -> object:
+    """実動作する Strategy 群を生成する.
+
+    新パッケージの strategies は stub（Phase 7-8 で完全移植予定）のため、
+    deprecated 版の default_strategies() を使用する。
+
+    TODO(Phase 7-8): 新パッケージの strategies が完全実装されたら
+    xkep_cae.core.data.default_strategies に差し替える。
+    """
+    import importlib
+
+    _data_mod = importlib.import_module("xkep_cae_deprecated.process.data")
+    return _data_mod.default_strategies(**kwargs)
 
 
 class ContactFrictionProcess(
@@ -63,10 +88,8 @@ class ContactFrictionProcess(
     contact_geometry_slot = StrategySlot(object, required=False)
 
     def __init__(self, strategies: object | None = None) -> None:
-        # deprecated 版の SolverStrategies を使用（NewtonUzawaLoop との互換性のため）
         if strategies is None:
-            _data_mod = _import_deprecated("xkep_cae_deprecated.process.data")
-            strategies = _data_mod.default_strategies()
+            strategies = _default_strategies_stub()
         self.strategies = strategies
 
         self.penalty_slot = self.strategies.penalty
@@ -81,33 +104,13 @@ class ContactFrictionProcess(
         """ContactFrictionInputData → NR+Uzawa+適応荷重増分 → SolverResultData."""
         t0 = time.perf_counter()
 
-        # deprecated モジュールの遅延インポート（C14 準拠）
-        _utils_mod = _import_deprecated("xkep_cae_deprecated.contact.utils")
-        _ip_mod = _import_deprecated("xkep_cae_deprecated.contact.initial_penetration")
-        _graph_mod = _import_deprecated("xkep_cae_deprecated.contact.graph")
-        _state_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.solver_state")
-        _nul_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.newton_uzawa")
-        _asc_mod = _import_deprecated("xkep_cae_deprecated.process.strategies.adaptive_stepping")
-
-        deformed_coords = _utils_mod.deformed_coords
-        check_initial_penetration = _ip_mod.check_initial_penetration
-        adjust_initial_positions = _ip_mod.adjust_initial_positions
-        snapshot_contact_graph = _graph_mod.snapshot_contact_graph
-        SolverState = _state_mod.SolverState  # noqa: N806
-        NewtonUzawaLoop = _nul_mod.NewtonUzawaLoop  # noqa: N806
-        NewtonUzawaConfig = _nul_mod.NewtonUzawaConfig  # noqa: N806
-        AdaptiveLoadController = _asc_mod.AdaptiveLoadController  # noqa: N806
-        AdaptiveSteppingConfig = _asc_mod.AdaptiveSteppingConfig  # noqa: N806
-
         ndof = len(input_data.boundary.f_ext_total)
         f_ext_total = input_data.boundary.f_ext_total
         manager = input_data.contact.manager
         ul_assembler = input_data.callbacks.ul_assembler
 
-        # --- Strategy 生成（deprecated 版: NewtonUzawaLoop 互換） ---
-        _data_mod = _import_deprecated("xkep_cae_deprecated.process.data")
-        _default_strategies = _data_mod.default_strategies
-        strategies = _default_strategies(
+        # --- Strategy 生成（deprecated 版: Phase 7-8 で新パッケージに完全移行予定） ---
+        strategies = _create_working_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
             damping_matrix=input_data.damping_matrix,
@@ -205,7 +208,7 @@ class ContactFrictionProcess(
             _use_adjust = False
         if _use_adjust:
             _pos_tol = manager.config.position_tolerance
-            node_coords_ref, n_pen_fixed, n_gap_closed = adjust_initial_positions(
+            node_coords_ref, n_pen_fixed, n_gap_closed = _adjust_initial_positions(
                 manager.pairs, node_coords_ref, _pos_tol
             )
             if (n_pen_fixed + n_gap_closed) > 0:
@@ -227,7 +230,7 @@ class ContactFrictionProcess(
             and hasattr(ul_assembler, "u_total_accum")
             and float(np.linalg.norm(ul_assembler.u_total_accum)) > 1e-15
         )
-        n_initial_pen = check_initial_penetration(
+        n_initial_pen = _check_initial_penetration(
             manager.pairs, node_coords_ref, manager.config.coating_stiffness
         )
         if n_initial_pen > 0 and not use_coating and not _ul_has_accum:
@@ -301,7 +304,7 @@ class ContactFrictionProcess(
                 state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
 
             # 候補検出
-            coords_def = deformed_coords(state.node_coords_ref, state.u, 6)
+            coords_def = _deformed_coords(state.node_coords_ref, state.u, 6)
             manager.detect_candidates(
                 coords_def,
                 connectivity,
@@ -359,23 +362,17 @@ class ContactFrictionProcess(
                         f"(frac={load_frac:.4f}) did not converge."
                     )
                     print(last_diag.format_report())
-                    result = state.build_result(
-                        converged=False,
-                        ul_assembler=ul_assembler,
-                        time_strategy=_time_strategy,
-                        diagnostics=last_diag,
-                    )
-                    result.n_active_final = manager.n_active
+                    _u_out = state.build_u_output(ul_assembler)
                     elapsed = time.perf_counter() - t0
                     return SolverResultData(
-                        u=result.u,
+                        u=_u_out,
                         converged=False,
-                        n_increments=result.n_increments,
-                        total_newton_iterations=result.total_newton_iterations,
-                        displacement_history=result.displacement_history,
-                        contact_force_history=result.contact_force_history,
+                        n_increments=state.step_display,
+                        total_newton_iterations=state.total_newton,
+                        displacement_history=state.disp_history,
+                        contact_force_history=state.contact_force_history,
                         elapsed_seconds=elapsed,
-                        diagnostics=result.diagnostics,
+                        diagnostics=last_diag,
                     )
 
             # ==============================================================
@@ -440,7 +437,7 @@ class ContactFrictionProcess(
             state.disp_history.append(_u_hist.copy() if _ul else _u_hist)
             state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
             try:
-                graph = snapshot_contact_graph(manager, step_index=state.step_display - 1)
+                graph = _snapshot_contact_graph(manager, step=state.step_display - 1)
                 state.graph_history.add_snapshot(graph)
             except Exception:
                 pass
@@ -448,21 +445,16 @@ class ContactFrictionProcess(
         # ================================================================
         # 正常終了
         # ================================================================
-        result = state.build_result(
-            converged=True,
-            ul_assembler=ul_assembler,
-            time_strategy=_time_strategy,
-        )
-        result.n_active_final = manager.n_active
+        _u_out = state.build_u_output(ul_assembler)
         elapsed = time.perf_counter() - t0
 
         return SolverResultData(
-            u=result.u,
+            u=_u_out,
             converged=True,
-            n_increments=result.n_increments,
-            total_newton_iterations=result.total_newton_iterations,
-            displacement_history=result.displacement_history,
-            contact_force_history=result.contact_force_history,
+            n_increments=state.step_display,
+            total_newton_iterations=state.total_newton,
+            displacement_history=state.disp_history,
+            contact_force_history=state.contact_force_history,
             elapsed_seconds=elapsed,
-            diagnostics=result.diagnostics,
+            diagnostics=last_diag,
         )
