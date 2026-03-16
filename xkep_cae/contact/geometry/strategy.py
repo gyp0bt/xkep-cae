@@ -16,6 +16,8 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._broadphase import _broadphase_aabb
+from xkep_cae.contact._contact_pair import _ContactPair, _ContactState
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -120,6 +122,73 @@ def _build_constraint_jacobian_ptp(
         shape=(n_active, ndof_total),
     ).tocsr()
     return G, active_indices
+
+
+def _detect_candidates(
+    node_coords: np.ndarray,
+    connectivity: np.ndarray,
+    radii: np.ndarray | float,
+    *,
+    exclude_same_layer: bool = True,
+    margin: float = 0.0,
+    cell_size: float | None = None,
+) -> list:
+    """Broadphase AABB + ペア生成の共通実装.
+
+    Args:
+        node_coords: (n_nodes, 3) 節点座標
+        connectivity: (n_elems, 2) 要素接続（各行: [node0, node1]）
+        radii: 要素ごとの断面半径
+        exclude_same_layer: 共有ノードを持つペアを除外
+        margin: 探索マージン
+        cell_size: 格子セルサイズ
+
+    Returns:
+        _ContactPair のリスト
+    """
+    coords = np.asarray(node_coords, dtype=float)
+    conn = np.asarray(connectivity, dtype=int)
+    n_elems = len(conn)
+    if n_elems < 2:
+        return []
+
+    # セグメント端点リスト
+    segments = [(coords[conn[i, 0]], coords[conn[i, 1]]) for i in range(n_elems)]
+
+    # 要素ごとの半径
+    if np.isscalar(radii):
+        r_arr = np.full(n_elems, float(radii))
+    else:
+        r_arr = np.asarray(radii, dtype=float)
+
+    # Broadphase
+    candidates = _broadphase_aabb(segments, r_arr, margin=margin, cell_size=cell_size)
+
+    # フィルタリング: 共有ノード（同層）除外
+    pairs = []
+    for ei, ej in candidates:
+        if exclude_same_layer:
+            nodes_i = set(conn[ei])
+            nodes_j = set(conn[ej])
+            if nodes_i & nodes_j:
+                continue
+
+        pair = _ContactPair(
+            elem_a=ei,
+            elem_b=ej,
+            nodes_a=conn[ei],
+            nodes_b=conn[ej],
+            state=_ContactState(),
+            radius_a=float(r_arr[ei]),
+            radius_b=float(r_arr[ej]),
+        )
+        pairs.append(pair)
+
+    # 初期 narrowphase
+    if pairs:
+        _batch_update_geometry(pairs, coords)
+
+    return pairs
 
 
 # ── バッチ幾何更新共通処理 ─────────────────────────────────
@@ -252,12 +321,13 @@ class PointToPointProcess(
         connectivity: np.ndarray,
         radii: np.ndarray | float,
     ) -> list:
-        """接触候補ペアの検出.
-
-        検出ロジックは ContactManager.detect_candidates() に委譲。
-        Strategy は narrowphase（幾何更新）を担当する。
-        """
-        return []
+        """Broadphase AABB + 共有ノード除外 + 初期 narrowphase."""
+        return _detect_candidates(
+            node_coords,
+            connectivity,
+            radii,
+            exclude_same_layer=self._exclude_same_layer,
+        )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
         """ギャップの計算."""
@@ -326,8 +396,13 @@ class LineToLineGaussProcess(
         connectivity: np.ndarray,
         radii: np.ndarray | float,
     ) -> list:
-        """接触候補ペアの検出."""
-        return []
+        """Broadphase AABB + 共有ノード除外 + 初期 narrowphase."""
+        return _detect_candidates(
+            node_coords,
+            connectivity,
+            radii,
+            exclude_same_layer=self._exclude_same_layer,
+        )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
         """ギャップの計算."""
@@ -408,8 +483,13 @@ class MortarSegmentProcess(
         connectivity: np.ndarray,
         radii: np.ndarray | float,
     ) -> list:
-        """接触候補ペアの検出 + mortar ノード同定."""
-        return []
+        """Broadphase AABB + 共有ノード除外 + 初期 narrowphase."""
+        return _detect_candidates(
+            node_coords,
+            connectivity,
+            radii,
+            exclude_same_layer=self._exclude_same_layer,
+        )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
         """ギャップの計算（mortar 射影ベース）."""
