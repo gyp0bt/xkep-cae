@@ -25,6 +25,7 @@
 | [189](status-189.md) | 2026-03-16 | Phase 8 完了 — C14 抜け道修正 + friction/geometry 実装完成 | ~2260+284p(新) |
 | [190](status-190.md) | 2026-03-16 | solver Process 化完了 + NewtonUzawa Static/Dynamic 分離 | ~2260+301p(新) |
 | [191](status-191.md) | 2026-03-16 | process.py Process API 移行 + ContactManager Process 分割 | ~2260+315p(新) |
+| [192](status-192.md) | 2026-03-16 | Process 内部プライベート関数移行 + Strategy 公開 API + O1 条例検知 | ~2260+315p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -98,7 +99,8 @@ Phase 7進行:     ~2260+284p(新) (2026-03-16) ← status-187（Phase 7 mesh/ou
 Phase 7完了:     ~2260+284p(新) (2026-03-16) ← status-188（Phase 7 完了 C14/C16=0）
 Phase 8完了:     ~2260+284p(新) (2026-03-16) ← status-189（Phase 8 完了 friction/geometry実装）
 Phase 9進行:     ~2260+301p(新) (2026-03-16) ← status-190（solver Process化+NUzawa分離）
-現在:           ~2260+315p(新) (2026-03-16) ← status-191（Process API移行+CM Process分割）
+Phase 9続:      ~2260+315p(新) (2026-03-16) ← status-191（Process API移行+CM Process分割）
+現在:           ~2260+315p(新) (2026-03-16) ← status-192（プライベート関数移行+Strategy公開API+O1条例検知）
 ```
 
 ## 備考

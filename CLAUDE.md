@@ -97,6 +97,8 @@
 | `manager.detect_candidates()` 直接呼び出し | `DetectCandidatesProcess` | status-191 |
 | `manager.update_geometry()` 直接呼び出し | `UpdateGeometryProcess` | status-191 |
 | `NewtonUzawaProcess = StaticProcess` | `NewtonUzawaProcess = DynamicProcess` | status-191 |
+| `_deformed_coords()` / `_ncp_line_search()` Process内直接呼び出し | `DeformedCoordsProcess` / `NCPLineSearchProcess` API 経由 | status-192 |
+| Strategy `_k_pen`/`_k_t_ratio`/`_ndof` 直接代入 | `set_k_pen()`/`set_k_t_ratio()`/`set_ndof()` 公開 API | status-192 |
 
 ## 推奨ソルバー構成
 
@@ -116,7 +118,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 9 進行中** — process.py のプライベート関数呼び出しを全て Process API に移行完了。ContactManager メソッドを Process 化。NewtonUzawaDynamic を正統 Process に昇格。friction/geometry Strategy の deprecated 直接使用の移行が残課題。
+**脱出ポット計画 Phase 9 完了** — Process 内部のプライベート関数を全て Process API 経由に移行。Strategy クラスのプライベート属性アクセスを公開 setter/property に移行。O1 条例違反検知（テストでの直接関数呼び出し検出）を追加。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
