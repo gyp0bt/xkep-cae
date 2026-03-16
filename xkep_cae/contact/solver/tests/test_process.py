@@ -5,6 +5,14 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact.solver._adaptive_stepping import (
+    AdaptiveStepInput,
+    AdaptiveStepOutput,
+    AdaptiveSteppingConfig,
+    AdaptiveSteppingProcess,
+    StepAction,
+)
+from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -58,30 +66,17 @@ def _make_simple_callbacks(ndof: int) -> AssembleCallbacks:
 
 def _make_contact_setup(mesh: MeshData) -> ContactSetupData:
     """ContactSetupProcess 経由の接触設定."""
-    import importlib
+    from xkep_cae.contact.setup.process import ContactSetupConfig, ContactSetupProcess
 
-    _pair = importlib.import_module("xkep_cae_deprecated.contact.pair")
-    ContactConfig = _pair.ContactConfig  # noqa: N806
-    ContactManager = _pair.ContactManager  # noqa: N806
-
-    config = ContactConfig(
+    setup = ContactSetupProcess()
+    setup_config = ContactSetupConfig(
+        mesh=mesh,
+        k_pen=1e4,
         use_friction=True,
         mu=0.15,
         exclude_same_layer=True,
     )
-    manager = ContactManager(config=config)
-    manager.detect_candidates(
-        mesh.node_coords,
-        mesh.connectivity,
-        mesh.radii,
-    )
-    return ContactSetupData(
-        manager=manager,
-        k_pen=1e4,
-        use_friction=True,
-        mu=0.15,
-        contact_mode="smooth_penalty",
-    )
+    return setup.process(setup_config)
 
 
 @binds_to(ContactFrictionProcess)
@@ -109,10 +104,9 @@ class TestContactFrictionProcessAPI:
         assert proc.strategies.time_integration is not None
 
     def test_custom_strategies(self):
-        import importlib
+        from xkep_cae.core.data import default_strategies
 
-        _data_mod = importlib.import_module("xkep_cae_deprecated.process.data")
-        strats = _data_mod.default_strategies(k_pen=999.0)
+        strats = default_strategies(k_pen=999.0)
         proc = ContactFrictionProcess(strategies=strats)
         assert proc.strategies is strats
 
@@ -248,3 +242,78 @@ class TestContactFrictionProcessAPI:
         proc = ContactFrictionProcess()
         result = proc.process(input_data)
         assert isinstance(result, SolverResultData)
+
+
+@binds_to(NewtonUzawaProcess)
+class TestNewtonUzawaProcessAPI:
+    """NewtonUzawaProcess の API テスト."""
+
+    def test_is_solver_process(self):
+        proc = NewtonUzawaProcess()
+        assert isinstance(proc, SolverProcess)
+
+    def test_meta_name(self):
+        assert NewtonUzawaProcess.meta.name == "NewtonUzawa"
+
+    def test_meta_module(self):
+        assert NewtonUzawaProcess.meta.module == "solve"
+
+
+@binds_to(AdaptiveSteppingProcess)
+class TestAdaptiveSteppingProcessAPI:
+    """AdaptiveSteppingProcess の API テスト."""
+
+    def test_is_solver_process(self):
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+        assert isinstance(proc, SolverProcess)
+
+    def test_meta_name(self):
+        assert AdaptiveSteppingProcess.meta.name == "AdaptiveStepping"
+
+    def test_meta_module(self):
+        assert AdaptiveSteppingProcess.meta.module == "solve"
+
+    def test_query_returns_output(self):
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        assert isinstance(out, AdaptiveStepOutput)
+        assert out.has_more_steps is True
+        assert out.next_load_frac > 0.0
+
+    def test_full_cycle(self):
+        """QUERY → SUCCESS → QUERY で完了まで回る."""
+        config = AdaptiveSteppingConfig(dt_initial_fraction=1.0)
+        proc = AdaptiveSteppingProcess(config)
+
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        assert out.next_load_frac == 1.0
+
+        out = proc.process(
+            AdaptiveStepInput(
+                action=StepAction.SUCCESS,
+                load_frac=1.0,
+                load_frac_prev=0.0,
+                n_iters=3,
+            )
+        )
+        assert out.has_more_steps is False
+
+    def test_failure_triggers_retry(self):
+        """FAILURE でカットバック → can_retry=True."""
+        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        proc = AdaptiveSteppingProcess(config)
+
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        load_frac = out.next_load_frac
+
+        fail_out = proc.process(
+            AdaptiveStepInput(
+                action=StepAction.FAILURE,
+                load_frac=load_frac,
+                load_frac_prev=0.0,
+            )
+        )
+        assert fail_out.can_retry is True
+        assert fail_out.next_load_frac < load_frac

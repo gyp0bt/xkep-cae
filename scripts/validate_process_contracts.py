@@ -421,7 +421,10 @@ def check_c14_deprecated_imports() -> list[str]:
     """C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出.
 
     新パッケージが旧パッケージに依存していると脱出ポット計画が破綻する。
-    AST 解析で import / from ... import を走査。
+    AST 解析で以下を走査:
+    - import xkep_cae_deprecated...
+    - from xkep_cae_deprecated... import ...
+    - importlib.import_module("xkep_cae_deprecated...")
     """
     errors = []
     new_pkg = _project_root / "xkep_cae"
@@ -446,8 +449,43 @@ def check_c14_deprecated_imports() -> list[str]:
             elif isinstance(node, ast.ImportFrom):
                 if node.module and node.module.startswith("xkep_cae_deprecated"):
                     errors.append(f"C14: {rel}:{node.lineno} が xkep_cae_deprecated からインポート")
+            # importlib.import_module("xkep_cae_deprecated...") の検出
+            elif isinstance(node, ast.Call):
+                if _is_importlib_deprecated_call(node):
+                    errors.append(
+                        f"C14: {rel}:{node.lineno} が importlib 経由で"
+                        f" xkep_cae_deprecated をインポート"
+                    )
 
     return errors
+
+
+def _is_importlib_deprecated_call(node: ast.Call) -> bool:
+    """importlib.import_module("xkep_cae_deprecated...") パターンを検出."""
+    func = node.func
+    # importlib.import_module(...) パターン
+    is_importlib = (
+        isinstance(func, ast.Attribute)
+        and func.attr == "import_module"
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "importlib"
+    )
+    # _import_deprecated("xkep_cae_deprecated...") 等のヘルパー関数パターン
+    # → 引数の文字列リテラルを検査
+    if not is_importlib:
+        # ヘルパー関数呼び出しも引数に deprecated 文字列があれば検出
+        if isinstance(func, ast.Name) and node.args:
+            arg = node.args[0]
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                return arg.value.startswith("xkep_cae_deprecated")
+        return False
+
+    # importlib.import_module の第1引数が "xkep_cae_deprecated..." であるか
+    if node.args:
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            return arg.value.startswith("xkep_cae_deprecated")
+    return False
 
 
 def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
@@ -605,6 +643,22 @@ def check_c16_sterilization() -> list[str]:
             if dataclasses.is_dataclass(cls):
                 params = getattr(cls, "__dataclass_params__", None)
                 if params and params.frozen:
+                    # メソッド検査: frozen dataclass にメソッドがあれば違反
+                    _methods = [
+                        name
+                        for name, val in vars(cls).items()
+                        if not (name.startswith("__") and name.endswith("__"))
+                        and (
+                            callable(val)
+                            or isinstance(val, (property, classmethod, staticmethod))
+                        )
+                    ]
+                    if _methods:
+                        errors.append(
+                            f"C16: {rel} の {cls_name} は frozen dataclass だが"
+                            f" メソッド {_methods} を持つ"
+                            f"（frozen dataclass は純粋データのみ許可）"
+                        )
                     continue
                 errors.append(
                     f"C16: {rel} の {cls_name} は non-frozen dataclass（frozen=True が必須）"
@@ -705,7 +759,7 @@ def main() -> int:
         print("  C9  → base.py execute() にチェックサム検証を追加")
         print("  C12 → batch/ に BatchProcess 具象クラスを実装")
         print("  C13 → active プロセスから CompatibilityProcess への uses を削除")
-        print("  C14 → xkep_cae/ 内の deprecated インポートを除去（コピーに置換）")
+        print("  C14 → xkep_cae/ 内の deprecated インポートを除去（importlib 経由も禁止）")
         print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
         print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")

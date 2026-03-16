@@ -26,7 +26,7 @@
 | 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了（deprecated） |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了（deprecated） |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了（deprecated） |
-| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 5 完了 — ソルバー結果連携 + output クリーンアップ** |
+| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 6 進行中 — C14 強化 + ソルバー deprecated 依存除去** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 

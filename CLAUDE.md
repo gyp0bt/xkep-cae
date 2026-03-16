@@ -80,6 +80,8 @@
 | `StrandBendingBatchProcess` v2.0.0 | v3.0.0（Solver 統合） | status-184 |
 | `StrandBendingBatchProcess` v3.0.0 | v4.0.0（Export/Render/Verify 連携） | status-185 |
 | `output/__init__.py` 全量 re-export | 明示的エクスポート + `__getattr__` 遅延ロード | status-185 |
+| `contact/solver/process.py` importlib 9箇所 | プライベートモジュール群 + `_create_working_strategies` | status-186 |
+| C14: direct import のみ検出 | importlib.import_module() も検出 | status-186 |
 
 ## 推奨ソルバー構成
 
@@ -91,7 +93,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 275 新パッケージテスト** — 2026-03-16
+**~2260テスト + 275 新パッケージテスト** — 2026-03-16 | C14 違反 **4件**（status-186）
 
 ### ターゲット
 
@@ -99,9 +101,9 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 6〜8** — deprecated 依存除去（mesh/contact/solver）。
+**脱出ポット計画 Phase 7〜8** — deprecated 依存除去（mesh/contact/output + strategies 完全実装）。
 
-契約違反 **0件**（status-185 で Phase 5 完了後も維持）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
+契約違反 **4件**（status-186: C14 importlib 検出強化により顕在化。Phase 7-8 で解消予定）。詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
 ## フォーカスガード（AI セッション向け）
 
