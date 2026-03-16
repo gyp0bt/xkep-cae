@@ -24,7 +24,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d_fiber
 from xkep_cae.materials.plasticity_1d import Plasticity1D, TabularIsotropicHardening
 from xkep_cae.sections.fiber import FiberSection

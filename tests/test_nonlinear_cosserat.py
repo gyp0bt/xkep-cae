@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
     cosserat_internal_force_nonlinear,

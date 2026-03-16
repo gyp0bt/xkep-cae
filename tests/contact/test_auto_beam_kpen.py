@@ -9,7 +9,6 @@ auto_beam_penalty_stiffness() (EI/L³) と auto_penalty_stiffness() (EA/L) の
 import math
 
 import pytest
-
 from xkep_cae.contact.law_normal import (
     auto_beam_penalty_stiffness,
     auto_penalty_stiffness,

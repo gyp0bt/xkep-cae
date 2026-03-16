@@ -7,7 +7,6 @@ NCP Semi-smooth Newton の大規模収束検証。
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

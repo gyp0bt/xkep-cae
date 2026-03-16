@@ -9,7 +9,6 @@ Line contact + Mortar + 同層除外を撚線環境で検証。
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

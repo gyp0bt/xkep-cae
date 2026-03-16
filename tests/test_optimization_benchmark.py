@@ -20,7 +20,6 @@ import time
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.contact.assembly import (
     _add_local_to_coo,
     _contact_shape_vector,

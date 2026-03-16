@@ -439,6 +439,7 @@ def check_c14_deprecated_imports() -> list[str]:
             continue
 
         rel = py_file.relative_to(_project_root)
+        importlib_aliases = _collect_importlib_aliases(tree)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -450,8 +451,9 @@ def check_c14_deprecated_imports() -> list[str]:
                 if node.module and node.module.startswith("xkep_cae_deprecated"):
                     errors.append(f"C14: {rel}:{node.lineno} が xkep_cae_deprecated からインポート")
             # importlib.import_module("xkep_cae_deprecated...") の検出
+            # エイリアス（import importlib as _il → _il.import_module(...)）も検出
             elif isinstance(node, ast.Call):
-                if _is_importlib_deprecated_call(node):
+                if _is_importlib_deprecated_call(node, importlib_aliases):
                     errors.append(
                         f"C14: {rel}:{node.lineno} が importlib 経由で"
                         f" xkep_cae_deprecated をインポート"
@@ -460,15 +462,41 @@ def check_c14_deprecated_imports() -> list[str]:
     return errors
 
 
-def _is_importlib_deprecated_call(node: ast.Call) -> bool:
-    """importlib.import_module("xkep_cae_deprecated...") パターンを検出."""
+def _collect_importlib_aliases(tree: ast.Module) -> set[str]:
+    """AST から importlib のエイリアス名を収集.
+
+    以下のパターンを検出:
+    - import importlib           → {"importlib"}
+    - import importlib as _il    → {"_il"}
+    - from importlib import import_module  → (直接呼び出しは別途検出)
+    """
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "importlib":
+                    aliases.add(alias.asname or alias.name)
+    return aliases
+
+
+def _is_importlib_deprecated_call(
+    node: ast.Call,
+    importlib_aliases: set[str] | None = None,
+) -> bool:
+    """importlib.import_module("xkep_cae_deprecated...") パターンを検出.
+
+    importlib_aliases が指定された場合、エイリアス名も検出対象に含める。
+    例: import importlib as _il → _il.import_module("xkep_cae_deprecated...")
+    """
     func = node.func
-    # importlib.import_module(...) パターン
+    aliases = importlib_aliases or {"importlib"}
+
+    # XXX.import_module(...) パターン（XXX = importlib またはそのエイリアス）
     is_importlib = (
         isinstance(func, ast.Attribute)
         and func.attr == "import_module"
         and isinstance(func.value, ast.Name)
-        and func.value.id == "importlib"
+        and func.value.id in aliases
     )
     # _import_deprecated("xkep_cae_deprecated...") 等のヘルパー関数パターン
     # → 引数の文字列リテラルを検査
@@ -652,8 +680,7 @@ def check_c16_sterilization() -> list[str]:
                         for name, val in vars(cls).items()
                         if not (name.startswith("__") and name.endswith("__"))
                         and (
-                            callable(val)
-                            or isinstance(val, (property, classmethod, staticmethod))
+                            callable(val) or isinstance(val, (property, classmethod, staticmethod))
                         )
                     ]
                     if _methods:

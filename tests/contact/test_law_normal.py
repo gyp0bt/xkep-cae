@@ -4,7 +4,6 @@ Phase C2: law_normal.py の単体テスト。
 """
 
 import numpy as np
-
 from xkep_cae.contact.law_normal import (
     auto_penalty_stiffness,
     evaluate_normal_force,

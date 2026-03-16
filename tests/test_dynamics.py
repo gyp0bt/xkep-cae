@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.dynamics import TransientConfig, TransientResult, solve_transient
 
 pytestmark = pytest.mark.slow
@@ -736,7 +735,6 @@ class TestLumpedMass:
         メッシュ細分化で集中・整合の差が小さくなることを確認。
         """
         from scipy.linalg import eigh
-
         from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
         from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import (
@@ -1505,7 +1503,6 @@ class TestCentralDifference:
     def test_beam_free_vibration(self):
         """カンチレバー梁の自由振動をCentral Differenceで解く."""
         from scipy.linalg import eigh
-
         from xkep_cae.dynamics import (
             CentralDifferenceConfig,
             critical_time_step,
@@ -1624,7 +1621,6 @@ class TestModalDamping:
         """全モード同一ξのモーダル減衰 → Rayleigh減衰と等価ではないが、
         各モードの減衰比は一致する."""
         from scipy.linalg import eigh
-
         from xkep_cae.dynamics import build_modal_damping_matrix
 
         M = np.diag([1.0, 2.0])
@@ -1645,7 +1641,6 @@ class TestModalDamping:
     def test_different_ratios_per_mode(self):
         """各モードに異なる減衰比を指定できる."""
         from scipy.linalg import eigh
-
         from xkep_cae.dynamics import build_modal_damping_matrix
 
         M = np.diag([1.0, 1.0, 1.0])
@@ -1671,7 +1666,6 @@ class TestModalDamping:
     def test_modal_diagonal_in_modal_space(self):
         """モーダル減衰行列はモーダル空間で対角."""
         from scipy.linalg import eigh
-
         from xkep_cae.dynamics import build_modal_damping_matrix
 
         M = np.diag([1.0, 2.0])
@@ -1743,7 +1737,6 @@ class TestModalDamping:
     def test_scalar_damping_ratio(self):
         """スカラー減衰比が全モードに適用される."""
         from scipy.linalg import eigh
-
         from xkep_cae.dynamics import build_modal_damping_matrix
 
         M = np.diag([1.0, 2.0, 1.5])

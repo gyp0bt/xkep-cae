@@ -4,7 +4,6 @@
 """
 
 import numpy as np
-
 from xkep_cae.contact.pair import (
     ContactPair,
     ContactStatus,

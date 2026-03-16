@@ -1026,6 +1026,7 @@ class TestRunTransientSteps:
     def test_central_difference_solver(self):
         """陽解法での実行."""
         from xkep_cae.dynamics import critical_time_step
+
         from xkep_cae.output import run_transient_steps
 
         M = np.array([[1.0]])

@@ -660,7 +660,6 @@ def plot_cosserat_convergence():
     """Cosserat rod: メッシュ収束テスト（軸力、ねじり、曲げ）."""
     plt = _setup_matplotlib()
     from scipy.sparse.linalg import spsolve
-
     from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
     from xkep_cae.materials.beam_elastic import BeamElastic1D
     from xkep_cae.sections.beam import BeamSection
@@ -1374,9 +1373,8 @@ def _contact_fixed_dofs():
 def plot_contact_crossing_beam():
     """交差梁接触の荷重ステップ応答（ギャップ・接触力・変位）."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
-
     from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
 
     (
         node_coords_ref,
@@ -1492,9 +1490,8 @@ def plot_contact_crossing_beam():
 def plot_contact_penetration_control():
     """ペナルティ剛性と貫入量の関係（適応的ペナルティ増大の効果）."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
-
     from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
 
     k_pen_values = [1e3, 1e4, 1e5, 1e6]
     pen_ratios_noadapt = []
@@ -1629,9 +1626,8 @@ def plot_contact_penetration_control():
 def plot_contact_friction_stick_slip():
     """摩擦 return mapping: stick→slip 遷移の検証."""
     plt = _setup_matplotlib()
-    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
-
     from xkep_cae.contact.pair import ContactConfig, ContactManager
+    from xkep_cae.contact.solver_hooks import newton_raphson_with_contact
 
     # 接線荷重を変化させて stick→slip 遷移を観察
     f_tangential_values = [1.0, 3.0, 5.0, 10.0, 20.0, 30.0, 50.0]
@@ -2533,7 +2529,6 @@ def plot_dynamics_energy_history():
     """
     plt = _setup_matplotlib()
     from scipy.linalg import eigh as sp_eigh
-
     from xkep_cae.dynamics import NonlinearTransientConfig, solve_nonlinear_transient
     from xkep_cae.elements.beam_timo3d import (
         assemble_cr_beam3d,
@@ -2773,7 +2768,6 @@ def plot_dynamics_displacement_response():
     """
     plt = _setup_matplotlib()
     from scipy.linalg import eigh as sp_eigh
-
     from xkep_cae.dynamics import NonlinearTransientConfig, solve_nonlinear_transient
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
 
@@ -3089,7 +3083,6 @@ def plot_fiber_stress_contour():
     """
     plt = _setup_matplotlib()
     from matplotlib.tri import Triangulation
-
     from xkep_cae.elements.beam_timo3d import (
         beam3d_section_forces,
         timo_beam3d_ke_global,
@@ -3346,7 +3339,6 @@ def plot_twisted_wire_3d_surface():
     """
     plt = _setup_matplotlib()
     from matplotlib.collections import PolyCollection
-
     from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
     wire_d = 2.0e-3
@@ -3461,7 +3453,6 @@ def plot_beam_3d_stress_contour():
     """
     plt = _setup_matplotlib()
     from matplotlib.collections import PolyCollection
-
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
     from xkep_cae.sections.beam import BeamSection
 

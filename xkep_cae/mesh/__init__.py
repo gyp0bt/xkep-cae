@@ -1,8 +1,8 @@
-"""暫定 re-export（未移行モジュール）."""
+"""メッシュモジュール.
 
-import importlib as _il
+移植済み:
+- _twisted_wire: 撚線メッシュ生成（StrandInfo, TwistedWireMesh）
+- process: StrandMeshProcess
 
-_m = _il.import_module("xkep_cae_deprecated.mesh")
-for _k in dir(_m):
-    if not _k.startswith("_"):
-        globals()[_k] = getattr(_m, _k)
+未移行機能は xkep_cae_deprecated.mesh を参照。
+"""

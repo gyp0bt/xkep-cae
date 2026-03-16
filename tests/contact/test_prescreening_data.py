@@ -11,7 +11,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.contact.prescreening_data import (
     compute_edge_features,
     compute_segment_features,

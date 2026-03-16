@@ -7,7 +7,6 @@ import math
 
 import numpy as np
 import pytest
-
 from xkep_cae.mesh.twisted_wire import (
     StrandInfo,
     TwistedWireMesh,

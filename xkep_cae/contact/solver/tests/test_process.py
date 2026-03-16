@@ -12,7 +12,53 @@ from xkep_cae.contact.solver._adaptive_stepping import (
     AdaptiveSteppingProcess,
     StepAction,
 )
+from xkep_cae.contact.solver._contact_graph import (
+    ContactGraphInput,
+    ContactGraphOutput,
+    ContactGraphProcess,
+)
+from xkep_cae.contact.solver._diagnostics import (
+    ConvergenceDiagnostics,
+    DiagnosticsInput,
+    DiagnosticsOutput,
+    DiagnosticsReportProcess,
+)
+from xkep_cae.contact.solver._initial_penetration import (
+    InitialPenetrationInput,
+    InitialPenetrationOutput,
+    InitialPenetrationProcess,
+)
 from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
+from xkep_cae.contact.solver._newton_uzawa_dynamic import NewtonUzawaDynamicProcess
+from xkep_cae.contact.solver._newton_uzawa_static import NewtonUzawaStaticProcess
+from xkep_cae.contact.solver._nuzawa_steps import (
+    ContactForceAssemblyProcess,
+    ConvergenceCheckInput,
+    ConvergenceCheckOutput,
+    ConvergenceCheckProcess,
+    ConvergenceType,
+    LinearSolveInput,
+    LinearSolveOutput,
+    LinearSolveProcess,
+    LineSearchUpdateInput,
+    LineSearchUpdateOutput,
+    LineSearchUpdateProcess,
+    TangentAssemblyProcess,
+    UzawaUpdateProcess,
+)
+from xkep_cae.contact.solver._solver_state import (
+    SolverStateInitInput,
+    SolverStateInitOutput,
+    SolverStateInitProcess,
+)
+from xkep_cae.contact.solver._utils import (
+    DeformedCoordsInput,
+    DeformedCoordsOutput,
+    DeformedCoordsProcess,
+    NCPLineSearchInput,
+    NCPLineSearchOutput,
+    NCPLineSearchProcess,
+)
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -244,19 +290,38 @@ class TestContactFrictionProcessAPI:
         assert isinstance(result, SolverResultData)
 
 
-@binds_to(NewtonUzawaProcess)
-class TestNewtonUzawaProcessAPI:
-    """NewtonUzawaProcess の API テスト."""
+@binds_to(NewtonUzawaStaticProcess)
+class TestNewtonUzawaStaticProcessAPI:
+    """NewtonUzawaStaticProcess の API テスト."""
 
     def test_is_solver_process(self):
-        proc = NewtonUzawaProcess()
+        proc = NewtonUzawaStaticProcess()
         assert isinstance(proc, SolverProcess)
 
     def test_meta_name(self):
-        assert NewtonUzawaProcess.meta.name == "NewtonUzawa"
+        assert NewtonUzawaStaticProcess.meta.name == "NewtonUzawaStatic"
 
     def test_meta_module(self):
-        assert NewtonUzawaProcess.meta.module == "solve"
+        assert NewtonUzawaStaticProcess.meta.module == "solve"
+
+    def test_backward_compat_alias(self):
+        """後方互換エイリアスが機能する."""
+        assert NewtonUzawaProcess is NewtonUzawaStaticProcess
+
+
+@binds_to(NewtonUzawaDynamicProcess)
+class TestNewtonUzawaDynamicProcessAPI:
+    """NewtonUzawaDynamicProcess の API テスト."""
+
+    def test_is_solver_process(self):
+        proc = NewtonUzawaDynamicProcess()
+        assert isinstance(proc, SolverProcess)
+
+    def test_meta_name(self):
+        assert NewtonUzawaDynamicProcess.meta.name == "NewtonUzawaDynamic"
+
+    def test_meta_module(self):
+        assert NewtonUzawaDynamicProcess.meta.module == "solve"
 
 
 @binds_to(AdaptiveSteppingProcess)
@@ -317,3 +382,273 @@ class TestAdaptiveSteppingProcessAPI:
         )
         assert fail_out.can_retry is True
         assert fail_out.next_load_frac < load_frac
+
+
+# ── InitialPenetrationProcess テスト ─────────────────────
+
+
+@binds_to(InitialPenetrationProcess)
+class TestInitialPenetrationProcessAPI:
+    """InitialPenetrationProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(InitialPenetrationProcess, SolverProcess)
+
+    def test_no_penetration(self):
+        """貫入なしの場合 n_penetrations=0."""
+        proc = InitialPenetrationProcess()
+        out = proc.process(InitialPenetrationInput(pairs=[], node_coords=np.zeros((4, 3))))
+        assert isinstance(out, InitialPenetrationOutput)
+        assert out.n_penetrations == 0
+
+    def test_with_adjust(self):
+        """adjust=True で座標調整モード."""
+        proc = InitialPenetrationProcess()
+        out = proc.process(
+            InitialPenetrationInput(
+                pairs=[],
+                node_coords=np.zeros((4, 3)),
+                adjust=True,
+            )
+        )
+        assert out.n_penetrations == 0
+        assert out.adjusted_coords is None
+
+
+# ── ContactGraphProcess テスト ───────────────────────────
+
+
+class _MockManager:
+    """テスト用 mock manager."""
+
+    def __init__(self) -> None:
+        self.pairs: list = []
+        self.n_pairs = 0
+
+
+@binds_to(ContactGraphProcess)
+class TestContactGraphProcessAPI:
+    """ContactGraphProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(ContactGraphProcess, SolverProcess)
+
+    def test_empty_manager(self):
+        """空の manager から空グラフを生成."""
+        proc = ContactGraphProcess()
+        out = proc.process(ContactGraphInput(manager=_MockManager(), step=1, load_factor=0.5))
+        assert isinstance(out, ContactGraphOutput)
+        assert len(out.graph.edges) == 0
+        assert out.graph.step == 1
+        assert out.graph.load_factor == 0.5
+
+
+# ── DiagnosticsReportProcess テスト ──────────────────────
+
+
+@binds_to(DiagnosticsReportProcess)
+class TestDiagnosticsReportProcessAPI:
+    """DiagnosticsReportProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(DiagnosticsReportProcess, SolverProcess)
+
+    def test_basic_report(self):
+        """基本的な診断レポートが生成される."""
+        proc = DiagnosticsReportProcess()
+        diag = ConvergenceDiagnostics(step=5, load_frac=0.8, res_history=[1e-3, 1e-4, 1e-5])
+        out = proc.process(DiagnosticsInput(diagnostics=diag, max_iter=50))
+        assert isinstance(out, DiagnosticsOutput)
+        assert "Step: 5" in out.report
+        assert "0.800000" in out.report
+
+
+# ── SolverStateInitProcess テスト ────────────────────────
+
+
+@binds_to(SolverStateInitProcess)
+class TestSolverStateInitProcessAPI:
+    """SolverStateInitProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(SolverStateInitProcess, SolverProcess)
+
+    def test_creates_zero_state(self):
+        """ゼロ初期状態を生成."""
+        proc = SolverStateInitProcess()
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        out = proc.process(SolverStateInitInput(ndof=12, node_coords=coords, n_pairs=5))
+        assert isinstance(out, SolverStateInitOutput)
+        assert len(out.state.u) == 12
+        assert len(out.state.lam_all) == 5
+        assert np.allclose(out.state.u, 0.0)
+
+
+# ── DeformedCoordsProcess テスト ─────────────────────────
+
+
+@binds_to(DeformedCoordsProcess)
+class TestDeformedCoordsProcessAPI:
+    """DeformedCoordsProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(DeformedCoordsProcess, SolverProcess)
+
+    def test_deformed_coords(self):
+        """変形座標を計算."""
+        proc = DeformedCoordsProcess()
+        coords_ref = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        u = np.zeros(12)
+        u[0] = 0.1  # node0 x方向
+        u[7] = 0.2  # node1 y方向
+        out = proc.process(DeformedCoordsInput(node_coords_ref=coords_ref, u=u))
+        assert isinstance(out, DeformedCoordsOutput)
+        assert out.coords[0, 0] == 0.1
+        assert out.coords[1, 1] == 0.2
+
+
+# ── NCPLineSearchProcess テスト ──────────────────────────
+
+
+@binds_to(NCPLineSearchProcess)
+class TestNCPLineSearchProcessAPI:
+    """NCPLineSearchProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        """SolverProcess を継承している."""
+        assert issubclass(NCPLineSearchProcess, SolverProcess)
+
+    def test_returns_alpha(self):
+        """alpha を返す."""
+        proc = NCPLineSearchProcess()
+        ndof = 12
+        u = np.zeros(ndof)
+        du = np.ones(ndof) * 0.001
+        f_ext = np.ones(ndof) * 0.001
+
+        out = proc.process(
+            NCPLineSearchInput(
+                u=u,
+                du=du,
+                f_ext=f_ext,
+                fixed_dofs=np.array([0]),
+                assemble_internal_force=lambda x: x * 1.0,
+                res_u_norm=1.0,
+            )
+        )
+        assert isinstance(out, NCPLineSearchOutput)
+        assert 0.0 < out.alpha <= 1.0
+
+
+# ── NewtonUzawa サブプロセス テスト ──────────────────────
+
+
+@binds_to(ContactForceAssemblyProcess)
+class TestContactForceAssemblyProcessAPI:
+    """ContactForceAssemblyProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(ContactForceAssemblyProcess, SolverProcess)
+
+
+@binds_to(ConvergenceCheckProcess)
+class TestConvergenceCheckProcessAPI:
+    """ConvergenceCheckProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(ConvergenceCheckProcess, SolverProcess)
+
+    def test_force_convergence(self):
+        """力収束を判定."""
+
+        class _MockMgr:
+            pairs = []
+
+        proc = ConvergenceCheckProcess()
+        R_u = np.array([1e-12, 0.0, 0.0])
+        out = proc.process(
+            ConvergenceCheckInput(
+                R_u=R_u,
+                du=None,
+                u=np.ones(3),
+                f_ext_ref_norm=1.0,
+                tol_force=1e-8,
+                tol_disp=1e-8,
+                dynamic_ref=False,
+                is_first_iter=True,
+                energy_ref=None,
+                manager=_MockMgr(),
+            )
+        )
+        assert isinstance(out, ConvergenceCheckOutput)
+        assert out.converged is True
+        assert out.convergence_type == ConvergenceType.FORCE
+
+
+@binds_to(TangentAssemblyProcess)
+class TestTangentAssemblyProcessAPI:
+    """TangentAssemblyProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(TangentAssemblyProcess, SolverProcess)
+
+
+@binds_to(LinearSolveProcess)
+class TestLinearSolveProcessAPI:
+    """LinearSolveProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(LinearSolveProcess, SolverProcess)
+
+    def test_simple_solve(self):
+        """単純な線形ソルブ."""
+        proc = LinearSolveProcess()
+        K = sp.eye(3, format="csr") * 2.0
+        R = np.array([1.0, 2.0, 3.0])
+        out = proc.process(LinearSolveInput(K_T=K, R_u=R, fixed_dofs=np.array([], dtype=int)))
+        assert isinstance(out, LinearSolveOutput)
+        assert out.success is True
+        assert np.allclose(out.du, [-0.5, -1.0, -1.5])
+
+
+@binds_to(LineSearchUpdateProcess)
+class TestLineSearchUpdateProcessAPI:
+    """LineSearchUpdateProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(LineSearchUpdateProcess, SolverProcess)
+
+    def test_no_line_search(self):
+        """Line search 無効時は scale=1.0."""
+        proc = LineSearchUpdateProcess()
+        du = np.array([0.1, 0.2])
+        out = proc.process(
+            LineSearchUpdateInput(
+                u=np.zeros(2),
+                du=du,
+                f_ext=np.ones(2),
+                fixed_dofs=np.array([], dtype=int),
+                assemble_internal_force=lambda x: x,
+                res_u_norm=1.0,
+                f_c=np.zeros(2),
+                use_line_search=False,
+                line_search_max_steps=5,
+                du_norm_cap=0.0,
+            )
+        )
+        assert isinstance(out, LineSearchUpdateOutput)
+        assert out.scale_factor == 1.0
+        assert np.allclose(out.du_scaled, du)
+
+
+@binds_to(UzawaUpdateProcess)
+class TestUzawaUpdateProcessAPI:
+    """UzawaUpdateProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(UzawaUpdateProcess, SolverProcess)

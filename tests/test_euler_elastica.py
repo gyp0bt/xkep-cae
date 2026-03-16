@@ -20,7 +20,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
     assemble_cosserat_beam,

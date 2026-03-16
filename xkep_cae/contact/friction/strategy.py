@@ -16,6 +16,11 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._types import ContactStatus
+from xkep_cae.contact.friction._assembly import (
+    _assemble_friction_tangent_stiffness,
+    _friction_return_mapping_loop,
+)
 from xkep_cae.contact.friction.law_friction import (
     _compute_mu_effective,
 )
@@ -151,12 +156,46 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差を評価.
 
-        空ペアリストの場合ゼロを返す。
-        実際のペアありシナリオは assembly モジュール移行後に完成。
+        NCP 法線力 + Coulomb return mapping。
+        kwargs: lambdas, u_ref, node_coords_ref (Newton-Uzawa から渡される)
         """
         if not contact_pairs:
             return np.zeros(self._ndof), np.zeros(0)
-        return np.zeros(self._ndof), np.zeros(0)
+
+        mu_eff = self.compute_mu_effective(mu)
+        lambdas = kwargs.get("lambdas")
+        u_ref = kwargs.get("u_ref")
+
+        if lambdas is None:
+            lambdas = np.zeros(len(contact_pairs))
+        if u_ref is None:
+            u_ref = np.zeros_like(u)
+
+        _delta = self._contact_compliance
+        _k_pen = self._k_pen
+
+        def compute_p_n(i: int, pair: object) -> float:
+            if pair.state.status == ContactStatus.INACTIVE:
+                return 0.0
+            lam_i = lambdas[i] if i < len(lambdas) else 0.0
+            g_i = pair.state.gap
+            g_eff = g_i + _delta * lam_i if _delta > 0.0 else g_i
+            p_n = max(0.0, lam_i + _k_pen * (-g_eff))
+            pair.state.p_n = p_n
+            return p_n
+
+        f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
+            contact_pairs,
+            u,
+            u_ref,
+            self._ndof,
+            self._ndof_per_node,
+            self._k_pen,
+            self._k_t_ratio,
+            mu_eff,
+            compute_p_n,
+        )
+        return f_friction, friction_residual
 
     def tangent(
         self,
@@ -166,7 +205,9 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         **kwargs: object,
     ) -> sp.csr_matrix:
         """摩擦接線剛性行列."""
-        return sp.csr_matrix((self._ndof, self._ndof))
+        return _assemble_friction_tangent_stiffness(
+            contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
+        )
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)
@@ -233,12 +274,33 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
     ) -> tuple[np.ndarray, np.ndarray]:
         """摩擦力と残差を評価（smooth penalty 版）.
 
-        空ペアリストの場合ゼロを返す。
-        実際のペアありシナリオは assembly モジュール移行後に完成。
+        p_n は pair.state.p_n から取得（smooth penalty 接触力で事前計算済み）。
+        kwargs: u_ref, node_coords_ref (Newton-Uzawa から渡される)
         """
         if not contact_pairs:
             return np.zeros(self._ndof), np.zeros(0)
-        return np.zeros(self._ndof), np.zeros(0)
+
+        mu_eff = self.compute_mu_effective(mu)
+        u_ref = kwargs.get("u_ref")
+
+        if u_ref is None:
+            u_ref = np.zeros_like(u)
+
+        def compute_p_n(i: int, pair: object) -> float:
+            return getattr(pair.state, "p_n", 0.0)
+
+        f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
+            contact_pairs,
+            u,
+            u_ref,
+            self._ndof,
+            self._ndof_per_node,
+            self._k_pen,
+            self._k_t_ratio,
+            mu_eff,
+            compute_p_n,
+        )
+        return f_friction, friction_residual
 
     def tangent(
         self,
@@ -248,7 +310,9 @@ class SmoothPenaltyFrictionProcess(SolverProcess[FrictionInput, FrictionOutput])
         **kwargs: object,
     ) -> sp.csr_matrix:
         """摩擦接線剛性行列."""
-        return sp.csr_matrix((self._ndof, self._ndof))
+        return _assemble_friction_tangent_stiffness(
+            contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
+        )
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)

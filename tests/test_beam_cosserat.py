@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
     _cosserat_b_matrix,

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.continuum_nl import (
     b_matrix_nl_2d,
     deformation_gradient_2d,

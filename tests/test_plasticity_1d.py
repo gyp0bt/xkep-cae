@@ -28,7 +28,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.core.state import CosseratPlasticState, PlasticState1D
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,

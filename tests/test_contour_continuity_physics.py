@@ -13,7 +13,6 @@ CLAUDE.md の物理テスト思想に基づく:
 """
 
 import numpy as np
-
 from xkep_cae.elements.beam_timo3d import (
     beam3d_section_forces,
     timo_beam3d_ke_global,

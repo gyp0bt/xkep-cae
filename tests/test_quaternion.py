@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.math.quaternion import (
     axial,
     quat_angular_velocity,

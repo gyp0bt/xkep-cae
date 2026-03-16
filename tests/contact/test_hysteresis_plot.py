@@ -2,7 +2,6 @@
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.graph import (
     ContactEdge,
     ContactGraph,

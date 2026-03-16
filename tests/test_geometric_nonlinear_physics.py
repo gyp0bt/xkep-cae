@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.beam_timo3d import (
     assemble_cr_beam3d,
     beam3d_max_bending_stress,

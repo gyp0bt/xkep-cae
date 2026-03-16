@@ -13,7 +13,6 @@ ContactGraphHistory の統計分析メソッドを検証する。
 """
 
 import pytest
-
 from xkep_cae.contact.graph import (
     ContactEdge,
     ContactGraph,

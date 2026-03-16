@@ -11,8 +11,6 @@
 from __future__ import annotations
 
 import numpy as np
-
-from xkep_cae.contact.geometry import closest_point_segments, compute_st_jacobian
 from xkep_cae.contact.line_contact import (
     compute_t_jacobian_at_gp,
     project_point_to_segment,
@@ -23,6 +21,8 @@ from xkep_cae.contact.pair import (
     ContactPair,
     ContactStatus,
 )
+
+from xkep_cae.contact.geometry import closest_point_segments, compute_st_jacobian
 
 
 def _make_pair(xA0, xA1, xB0, xB1, *, k_pen=1e4, lambda_n=0.0, radius=0.1) -> ContactPair:
@@ -310,6 +310,7 @@ class TestConsistentStStiffness:
             _contact_geometric_stiffness_local,
             _contact_shape_vector,
         )
+
         from xkep_cae.contact.geometry import compute_st_jacobian
 
         xA0 = np.array([0.0, 0.0, 0.0])
@@ -364,6 +365,7 @@ class TestConsistentStStiffness:
     def test_k_st_zero_when_s_t_interior_no_motion(self):
         """s,t が内部で変位がない場合、K_st は非ゼロ（ds/du≠0 のため）."""
         from xkep_cae.contact.assembly import _consistent_st_stiffness_local
+
         from xkep_cae.contact.geometry import compute_st_jacobian
 
         xA0 = np.array([0.0, 0.0, 0.0])

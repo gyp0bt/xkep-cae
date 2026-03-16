@@ -1,4 +1,4 @@
-"""初期貫入検出・座標調整（プライベート）.
+"""初期貫入検出・座標調整 Process.
 
 xkep_cae_deprecated/contact/initial_penetration.py からの移植。
 geometry 関数も同梱し、deprecated 依存を完全除去。
@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from xkep_cae.core import ProcessMeta, SolverProcess
+
 
 @dataclass(frozen=True)
 class _ClosestPointResult:
@@ -25,6 +27,28 @@ class _ClosestPointResult:
     distance: float
     normal: np.ndarray
     parallel: bool = False
+
+
+@dataclass(frozen=True)
+class InitialPenetrationInput:
+    """初期貫入チェック/調整の入力."""
+
+    pairs: Sequence[object]
+    node_coords: np.ndarray
+    coating_stiffness: float = 0.0
+    position_tolerance: float = 0.0
+    max_iterations: int = 10
+    adjust: bool = False
+
+
+@dataclass(frozen=True)
+class InitialPenetrationOutput:
+    """初期貫入チェック/調整の出力."""
+
+    n_penetrations: int
+    adjusted_coords: np.ndarray | None = None
+    n_pen_fixed: int = 0
+    n_gap_closed: int = 0
 
 
 def _closest_point_segments(
@@ -96,11 +120,7 @@ def _check_initial_penetration(
     node_coords: np.ndarray,
     coating_stiffness: float = 0.0,
 ) -> int:
-    """初期貫入をチェックする.
-
-    pairs は duck typing: .nodes_a, .nodes_b, .radius_a, .radius_b,
-    .core_radius_a, .core_radius_b 属性を持つオブジェクト。
-    """
+    """初期貫入をチェックする."""
     coords = np.asarray(node_coords, dtype=float)
     n_pen = 0
     use_coating = coating_stiffness > 0.0
@@ -179,3 +199,42 @@ def _adjust_initial_positions(
         coords[mask] += corrections[mask] / correction_count[mask, np.newaxis]
 
     return coords, n_pen_fixed, n_gap_closed
+
+
+class InitialPenetrationProcess(
+    SolverProcess[InitialPenetrationInput, InitialPenetrationOutput],
+):
+    """初期貫入検出・座標調整 Process.
+
+    貫入チェックのみ（adjust=False）と座標調整付き（adjust=True）の2モードを持つ。
+    """
+
+    meta = ProcessMeta(
+        name="InitialPenetration",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_friction.md",
+    )
+
+    def process(self, input_data: InitialPenetrationInput) -> InitialPenetrationOutput:
+        n_pen = _check_initial_penetration(
+            input_data.pairs,
+            input_data.node_coords,
+            input_data.coating_stiffness,
+        )
+
+        if not input_data.adjust or n_pen == 0:
+            return InitialPenetrationOutput(n_penetrations=n_pen)
+
+        adjusted, n_fixed, n_closed = _adjust_initial_positions(
+            input_data.pairs,
+            input_data.node_coords,
+            input_data.position_tolerance,
+            max_iterations=input_data.max_iterations,
+        )
+        return InitialPenetrationOutput(
+            n_penetrations=n_pen,
+            adjusted_coords=adjusted,
+            n_pen_fixed=n_fixed,
+            n_gap_closed=n_closed,
+        )

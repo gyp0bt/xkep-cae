@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.line_contact import (
     _build_tangent_shape_vector_at_gp,
     _compute_tangent_frame_at_gp,

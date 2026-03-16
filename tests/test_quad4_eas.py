@@ -11,7 +11,6 @@ Simo-Rifai EAS-4 の実装検証:
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.elements.quad4 import Quad4PlaneStrain

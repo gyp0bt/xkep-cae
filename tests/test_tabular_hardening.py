@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.core.state import PlasticState1D, PlasticState3D
 from xkep_cae.io.abaqus_inp import AbaqusMaterial
 from xkep_cae.io.material_converter import (

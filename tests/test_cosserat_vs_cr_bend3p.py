@@ -11,7 +11,6 @@ Note:
 from __future__ import annotations
 
 import pytest
-
 from xkep_cae.numerical_tests.core import DynamicTestConfig
 from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
 

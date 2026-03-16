@@ -12,7 +12,6 @@ import textwrap
 
 import numpy as np
 import pytest
-
 from xkep_cae.io.abaqus_inp import (
     AbaqusMesh,
     InpContactDef,

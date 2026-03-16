@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.core.element import ElementProtocol
 from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_local
