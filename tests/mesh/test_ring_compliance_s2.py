@@ -10,7 +10,6 @@ import math
 
 import numpy as np
 import pytest
-
 from xkep_cae.mesh.ring_compliance import (
     build_ring_compliance_matrix,
     build_variable_thickness_compliance_matrix,

@@ -10,7 +10,6 @@ import time
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.broadphase import broadphase_aabb
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 

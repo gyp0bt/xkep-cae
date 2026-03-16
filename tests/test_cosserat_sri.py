@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.beam_cosserat import (
     CosseratRod,
     cosserat_internal_force_local_sri,

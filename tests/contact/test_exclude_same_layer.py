@@ -5,7 +5,6 @@ Phase S1: exclude_same_layer オプションによる同層接触ペアの除外
 """
 
 import numpy as np
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

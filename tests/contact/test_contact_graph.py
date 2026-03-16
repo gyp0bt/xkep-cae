@@ -4,7 +4,6 @@ ContactGraph / ContactGraphHistory のデータ構造と集約機能を検証す
 """
 
 import numpy as np
-
 from xkep_cae.contact.graph import (
     ContactGraphHistory,
     snapshot_contact_graph,

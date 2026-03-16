@@ -12,7 +12,6 @@ import tempfile
 
 import numpy as np
 import pytest
-
 from xkep_cae.numerical_tests.core import (
     DynamicTestConfig,
     FrequencyResponseConfig,

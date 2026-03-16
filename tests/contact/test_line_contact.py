@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.contact.line_contact import (
     auto_select_n_gauss,
     compute_line_contact_force_local,

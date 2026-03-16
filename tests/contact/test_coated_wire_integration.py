@@ -9,7 +9,6 @@ NCP移行版: test_coated_wire_integration.py から移行。
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

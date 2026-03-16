@@ -26,7 +26,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
 from xkep_cae.materials.beam_elastic import BeamElastic1D

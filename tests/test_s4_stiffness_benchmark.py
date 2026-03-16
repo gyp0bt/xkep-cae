@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
 from xkep_cae.elements.hex8 import hex8_ke_sri_bbar
 from xkep_cae.materials.elastic import constitutive_3d

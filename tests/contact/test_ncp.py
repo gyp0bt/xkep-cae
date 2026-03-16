@@ -13,7 +13,6 @@ Fischer-Burmeister NCP 関数とその一般化微分の検証。
 import math
 
 import numpy as np
-
 from xkep_cae.contact.ncp import (
     build_augmented_residual,
     compute_gap_jacobian_wrt_u,

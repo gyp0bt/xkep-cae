@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.elements.quad4 import Quad4PlaneStrain

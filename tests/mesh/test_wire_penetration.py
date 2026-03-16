@@ -11,7 +11,6 @@ import math
 
 import numpy as np
 import pytest
-
 from xkep_cae.mesh.twisted_wire import (
     make_strand_layout,
     make_twisted_wire_mesh,

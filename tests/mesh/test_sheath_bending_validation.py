@@ -17,7 +17,6 @@ import math
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.hex8 import hex8_ke_incompatible
 from xkep_cae.materials.elastic import constitutive_3d
 from xkep_cae.mesh.tube_mesh import make_tube_mesh, tube_face_nodes

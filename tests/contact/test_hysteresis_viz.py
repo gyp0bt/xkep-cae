@@ -9,7 +9,6 @@ import math
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.graph import (
     compute_hysteresis_area,
     plot_hysteresis_curve,

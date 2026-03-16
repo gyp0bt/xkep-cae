@@ -8,7 +8,6 @@ import time
 
 import numpy as np
 import pytest
-
 from xkep_cae.assembly import (
     _assemble_parallel,
     _assemble_sequential,

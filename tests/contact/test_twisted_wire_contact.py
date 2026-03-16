@@ -10,7 +10,6 @@ NCP移行版: test_twisted_wire_contact.py から移行。
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

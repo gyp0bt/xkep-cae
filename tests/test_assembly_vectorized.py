@@ -9,7 +9,6 @@ assembly.py の以下の変更を検証:
 
 import numpy as np
 import pytest
-
 from xkep_cae.assembly import (
     _assemble_parallel,
     _assemble_sequential,

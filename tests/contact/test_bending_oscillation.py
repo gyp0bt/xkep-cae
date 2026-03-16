@@ -16,7 +16,6 @@ status-143: Mortarバグ修正後のテスト更新
 
 import numpy as np
 import pytest
-
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
     run_bending_oscillation,

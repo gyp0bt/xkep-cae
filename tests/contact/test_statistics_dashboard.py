@@ -6,7 +6,6 @@ plot_statistics_dashboard() のテスト。
 from __future__ import annotations
 
 import pytest
-
 from xkep_cae.contact.graph import (
     ContactEdge,
     ContactGraph,

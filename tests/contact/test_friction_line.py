@@ -5,7 +5,6 @@ Phase S1: NCP Semi-smooth Newton に Coulomb 摩擦と line-to-line Gauss 積分
 
 import numpy as np
 import scipy.sparse as sp
-
 from xkep_cae.contact.diagnostics import NCPSolveResult
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp

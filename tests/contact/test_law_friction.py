@@ -15,7 +15,6 @@ Phase C3: law_friction.py のユニットテスト。
 
 import numpy as np
 import pytest
-
 from xkep_cae.contact.law_friction import (
     compute_mu_effective,
     compute_tangential_displacement,

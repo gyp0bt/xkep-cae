@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.elements.hex8 import (
     Hex8BBar,
     Hex8BBarMean,

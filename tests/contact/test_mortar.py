@@ -5,7 +5,6 @@ Mortar 方式でスレーブ節点ベースの λ を使い、セグメント境
 
 import numpy as np
 import scipy.sparse as sp
-
 from xkep_cae.contact.mortar import (
     build_mortar_system,
     compute_mortar_p_n,

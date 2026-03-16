@@ -5,13 +5,11 @@ geometry.py の平行輸送フレーム更新を検証する。
 """
 
 import numpy as np
-
 from xkep_cae.contact.assembly import (
     _contact_geometric_stiffness_local,
     _contact_shape_vector,
     compute_contact_stiffness,
 )
-from xkep_cae.contact.geometry import _parallel_transport, build_contact_frame
 from xkep_cae.contact.law_friction import friction_return_mapping, friction_tangent_2x2
 from xkep_cae.contact.pair import (
     ContactConfig,
@@ -20,6 +18,8 @@ from xkep_cae.contact.pair import (
     ContactState,
     ContactStatus,
 )
+
+from xkep_cae.contact.geometry import _parallel_transport, build_contact_frame
 
 # ====================================================================
 # ヘルパー

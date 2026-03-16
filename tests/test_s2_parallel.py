@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 import scipy.sparse as sp
-
 from xkep_cae.assembly import (
     _PARALLEL_MIN_ELEMENTS,
     _assemble_parallel,

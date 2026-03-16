@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 from scipy.sparse import lil_matrix
-
 from xkep_cae.api import solve_plane_strain
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.elements.tri6 import tri6_ke_plane_strain

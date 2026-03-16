@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.contact.kpen_features import (
     extract_kpen_features,
     extract_kpen_features_from_mesh,

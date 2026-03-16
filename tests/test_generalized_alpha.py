@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.dynamics import (
     GeneralizedAlphaConfig,
     NonlinearTransientConfig,

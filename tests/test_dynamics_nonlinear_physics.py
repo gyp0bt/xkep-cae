@@ -14,7 +14,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 from scipy.linalg import eigh
-
 from xkep_cae.dynamics import (
     NonlinearTransientConfig,
     solve_nonlinear_transient,

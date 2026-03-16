@@ -5,7 +5,6 @@ Phase S3: 大規模NCP収束改善 — 11改良の単体テスト。
 
 import numpy as np
 import scipy.sparse as sp
-
 from xkep_cae.contact.pair import (
     ContactConfig,
     ContactManager,

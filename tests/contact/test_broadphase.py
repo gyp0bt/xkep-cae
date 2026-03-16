@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.contact.broadphase import (
     broadphase_aabb,
     compute_segment_aabb,

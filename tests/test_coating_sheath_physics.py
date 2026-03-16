@@ -16,7 +16,6 @@ from __future__ import annotations
 import math
 
 import numpy as np
-
 from xkep_cae.mesh.twisted_wire import (
     CoatingModel,
     SheathModel,

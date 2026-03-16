@@ -4,7 +4,6 @@ Phase C2: assembly.py の単体テスト。
 """
 
 import numpy as np
-
 from xkep_cae.contact.assembly import (
     _contact_shape_vector,
     compute_contact_force,

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-
 from xkep_cae.mesh.ring_compliance import (
     _build_michell_system,
     build_ring_compliance_matrix,

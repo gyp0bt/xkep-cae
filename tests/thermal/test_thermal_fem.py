@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 import numpy as np
-
 from xkep_cae.thermal.fem import (
     assemble_thermal_system,
     compute_heat_flux,

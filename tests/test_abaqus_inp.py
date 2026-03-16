@@ -19,7 +19,6 @@ from pathlib import Path
 from textwrap import dedent
 
 import pytest
-
 from xkep_cae.io.abaqus_inp import read_abaqus_inp
 
 
