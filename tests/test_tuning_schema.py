@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from xkep_cae.tuning import (
+from xkep_cae_deprecated.tuning import (
     AcceptanceCriterion,
     TuningParam,
     TuningResult,

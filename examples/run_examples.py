@@ -24,7 +24,7 @@ import numpy as np
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
-from xkep_cae.io import build_beam_model_from_inp, node_dof, read_abaqus_inp, solve_beam_static
+from xkep_cae_deprecated.io import build_beam_model_from_inp, node_dof, read_abaqus_inp, solve_beam_static
 
 EXAMPLES_DIR = Path(__file__).resolve().parent
 
