@@ -101,6 +101,9 @@
 | Strategy `_k_pen`/`_k_t_ratio`/`_ndof` 直接代入 | `set_k_pen()`/`set_k_t_ratio()`/`set_ndof()` 公開 API | status-192 |
 | `xkep_cae_deprecated/` ディレクトリ名 | `__xkep_cae_deprecated/`（C14 実効性強化） | status-194 |
 | `__xkep_cae_deprecated.numerical_tests` 直接参照 | `xkep_cae.numerical_tests` + BackendRegistry DI | status-195 |
+| `__xkep_cae_deprecated.elements.beam_timo3d` ULCRBeamAssembler 等 | `xkep_cae.elements._beam_*` モジュール群 | status-197 |
+| `__xkep_cae_deprecated.sections.beam` BeamSection/2D | `xkep_cae.elements._beam_section` | status-197 |
+| `__xkep_cae_deprecated.math.quaternion` (rotvec↔rotmat用) | `xkep_cae.elements._beam_cr` にインライン化 | status-197 |
 
 ## 推奨ソルバー構成
 
@@ -112,7 +115,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 315 新パッケージテスト** — 2026-03-17 | C14/C16 違反 **0件**（status-194）
+**~2260テスト + 347 新パッケージテスト** — 2026-03-17 | C14/C16 違反 **0件**（status-197）
 
 ### ターゲット
 
@@ -120,7 +123,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 13（次）** — ビームアセンブラ（CR/UL）の新 xkep_cae 移植。S3 xfail テスト Process API 対応の前提条件。
+**脱出ポット計画 Phase 14（次）** — S3 xfail テストの Process API 対応版作成。Phase 13 ビームアセンブラ移植完了済み。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
