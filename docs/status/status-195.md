@@ -92,5 +92,10 @@ BackendRegistry で Protocol ベースのインターフェースを定義し、
 ## TODO
 
 - [ ] S3 xfail テストの Process API 対応版作成
+  - **前提条件**: ULCRBeamAssembler（CR梁アセンブラ）の新 xkep_cae への移植が必要
+  - 新パッケージにはビームアセンブラが存在しない（deprecated のみ）
+  - 移植対象: `__xkep_cae_deprecated/elements/beam_timo3d.py` の `ULCRBeamAssembler` + `assemble_cr_beam3d()`
+  - 移植先候補: `xkep_cae/elements/beam/` 新パッケージ
+  - → status-196 に詳細記録
 
 ---

@@ -29,6 +29,7 @@
 | [193](status-193.md) | 2026-03-16 | deprecated 参照テスト無効化 + 状態操作ユーティリティ維持判断 | ~2260+315p(新) |
 | [194](status-194.md) | 2026-03-17 | xkep_cae_deprecated → __xkep_cae_deprecated リネーム（C14 実効性強化） | ~2260+315p(新) |
 | [195](status-195.md) | 2026-03-17 | numerical_tests モジュール新 xkep_cae 移植（BackendRegistry パターン） | ~2260+315p(新) |
+| [196](status-196.md) | 2026-03-17 | S3 xfail テスト Process API 対応の前提条件調査 | ~2260+315p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -107,6 +108,7 @@ Phase 9完了:     ~2260+315p(新) (2026-03-16) ← status-192（プライベー
 Phase 10完了:    ~2260+315p(新) (2026-03-16) ← status-193（deprecated参照テスト無効化+状態ユーティリティ維持判断）
 Phase 11完了:    ~2260+315p(新) (2026-03-17) ← status-194（deprecated→__deprecatedリネーム）
 Phase 12進行:    ~2260+315p(新) (2026-03-17) ← status-195（numerical_tests移植）
+Phase 13調査:    ~2260+315p(新) (2026-03-17) ← status-196（S3 xfail前提条件調査）
 ```
 
 ## 備考
