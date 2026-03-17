@@ -1,6 +1,6 @@
 """撚線メッシュファクトリのテスト.
 
-TwistedWireMesh の幾何整合性・素線配置・ヘリカル形状を検証する。
+TwistedWireMeshOutput の幾何整合性・素線配置・ヘリカル形状を検証する。
 """
 
 import math
@@ -8,8 +8,8 @@ import math
 import numpy as np
 import pytest
 from xkep_cae.mesh.twisted_wire import (
-    StrandInfo,
-    TwistedWireMesh,
+    StrandInfoOutput,
+    TwistedWireMeshOutput,
     compute_helix_angle,
     compute_strand_length_per_pitch,
     make_strand_layout,
@@ -89,7 +89,7 @@ class TestMakeStrandLayout:
     def test_layer_radii_monotonic(self):
         """外側の層ほど配置半径が大きい."""
         layout = make_strand_layout(19, _WIRE_R)
-        by_layer: dict[int, list[StrandInfo]] = {}
+        by_layer: dict[int, list[StrandInfoOutput]] = {}
         for info in layout:
             by_layer.setdefault(info.layer, []).append(info)
         prev_r = -1.0
@@ -103,7 +103,7 @@ class TestMakeStrandLayout:
     def test_alternating_lay_direction(self):
         """隣接層の撚り方向が交互."""
         layout = make_strand_layout(19, _WIRE_R, lay_direction=1)
-        by_layer: dict[int, list[StrandInfo]] = {}
+        by_layer: dict[int, list[StrandInfoOutput]] = {}
         for info in layout:
             by_layer.setdefault(info.layer, []).append(info)
         if 1 in by_layer and 2 in by_layer:
@@ -146,7 +146,7 @@ class TestMakeTwistedWireMesh:
     def test_basic_3_strand(self):
         """3本撚り基本生成."""
         mesh = make_twisted_wire_mesh(3, _WIRE_D, _PITCH, _LENGTH, _N_ELEM)
-        assert isinstance(mesh, TwistedWireMesh)
+        assert isinstance(mesh, TwistedWireMeshOutput)
         assert mesh.n_strands == 3
         assert mesh.n_nodes == 3 * (_N_ELEM + 1)
         assert mesh.n_elems == 3 * _N_ELEM

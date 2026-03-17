@@ -1,6 +1,6 @@
 """ContactManager メソッドの Process ラッパー.
 
-_ContactManager の detect_candidates / update_geometry を
+_ContactManagerInput の detect_candidates / update_geometry を
 SolverProcess 化し、Process API 経由でのアクセスを可能にする。
 """
 

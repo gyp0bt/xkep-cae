@@ -11,7 +11,7 @@ import math
 import numpy as np
 import pytest
 
-from xkep_cae.elements import BeamSection, BeamSection2D
+from xkep_cae.elements import BeamSection2DInput, BeamSectionInput
 from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
 from xkep_cae.elements._beam_assembly import assemble_cr_beam3d
 from xkep_cae.elements._beam_cr import (
@@ -26,16 +26,16 @@ from xkep_cae.elements._beam_cr import (
 )
 
 # =====================================================================
-# BeamSection テスト
+# BeamSectionInput テスト
 # =====================================================================
 
 
 class TestBeamSectionAPI:
-    """BeamSection/BeamSection2D の API テスト."""
+    """BeamSectionInput/BeamSection2DInput の API テスト."""
 
     def test_circle_section(self) -> None:
         d = 0.01
-        sec = BeamSection.circle(d)
+        sec = BeamSectionInput.circle(d)
         assert sec.A == pytest.approx(math.pi * (d / 2) ** 2)
         assert sec.Iy == pytest.approx(math.pi * d**4 / 64)
         assert sec.Iz == pytest.approx(math.pi * d**4 / 64)
@@ -43,52 +43,52 @@ class TestBeamSectionAPI:
         assert sec.shape == "circle"
 
     def test_rectangle_section(self) -> None:
-        sec = BeamSection.rectangle(0.02, 0.03)
+        sec = BeamSectionInput.rectangle(0.02, 0.03)
         assert sec.A == pytest.approx(0.02 * 0.03)
         assert sec.Iy == pytest.approx(0.02 * 0.03**3 / 12)
         assert sec.Iz == pytest.approx(0.03 * 0.02**3 / 12)
 
     def test_pipe_section(self) -> None:
-        sec = BeamSection.pipe(0.02, 0.01)
+        sec = BeamSectionInput.pipe(0.02, 0.01)
         assert sec.A > 0
         assert sec.Iy > 0
         assert sec.J > 0
 
     def test_pipe_invalid(self) -> None:
         with pytest.raises(ValueError):
-            BeamSection.pipe(0.01, 0.02)
+            BeamSectionInput.pipe(0.01, 0.02)
 
     def test_cowper_kappa(self) -> None:
-        sec = BeamSection.circle(0.01)
+        sec = BeamSectionInput.circle(0.01)
         kappa = sec.cowper_kappa_y(0.3)
         assert 0.8 < kappa < 0.95
 
     def test_to_2d(self) -> None:
-        sec = BeamSection.circle(0.01)
+        sec = BeamSectionInput.circle(0.01)
         sec2d = sec.to_2d()
-        assert isinstance(sec2d, BeamSection2D)
+        assert isinstance(sec2d, BeamSection2DInput)
         assert sec2d.A == sec.A
         assert sec2d.I == sec.Iz
 
     def test_frozen(self) -> None:
-        sec = BeamSection.circle(0.01)
+        sec = BeamSectionInput.circle(0.01)
         with pytest.raises(AttributeError):
             sec.A = 1.0  # type: ignore[misc]
 
     def test_2d_circle(self) -> None:
-        sec2d = BeamSection2D.circle(0.01)
+        sec2d = BeamSection2DInput.circle(0.01)
         assert sec2d.A > 0
         assert sec2d.I > 0
 
     def test_2d_rectangle(self) -> None:
-        sec2d = BeamSection2D.rectangle(0.02, 0.03)
+        sec2d = BeamSection2DInput.rectangle(0.02, 0.03)
         assert sec2d.A == pytest.approx(0.02 * 0.03)
 
     def test_invalid_section(self) -> None:
         with pytest.raises(ValueError):
-            BeamSection(A=-1, Iy=1, Iz=1, J=1)
+            BeamSectionInput(A=-1, Iy=1, Iz=1, J=1)
         with pytest.raises(ValueError):
-            BeamSection2D(A=-1, I=1)
+            BeamSection2DInput(A=-1, I=1)
 
 
 # =====================================================================
@@ -377,7 +377,7 @@ class TestBeamPhysics:
         nu = 0.3
         G = E / (2 * (1 + nu))
         d = 0.01
-        sec = BeamSection.circle(d)
+        sec = BeamSectionInput.circle(d)
         kappa = sec.cowper_kappa_y(nu)
 
         coords, conn = _cantilever_beam(n_elems, L)

@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnostics, NCPSolveResult
+from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnosticsOutput, NCPSolveResult
 from __xkep_cae_deprecated.contact.graph import ContactGraphHistory
 
 
 @dataclass
-class SolverState:
+class SolverStateOutput:
     """ソルバーの全可変状態.
 
     solver_smooth_penalty.py 内でローカル変数として散在していた状態を集約。
@@ -86,7 +86,7 @@ class SolverState:
         converged: bool,
         ul_assembler: object | None,
         time_strategy: object,
-        diagnostics: ConvergenceDiagnostics | None = None,
+        diagnostics: ConvergenceDiagnosticsOutput | None = None,
     ) -> NCPSolveResult:
         """NCPSolveResult を構築."""
         _dynamics = hasattr(time_strategy, "is_dynamic") and time_strategy.is_dynamic

@@ -23,7 +23,7 @@ from xkep_cae.elements.beam_timo2d import (
     timo_beam2d_section_forces,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection2D
+from xkep_cae.sections.beam import BeamSection2DInput
 from xkep_cae.solver import solve_displacement
 
 # =====================================================================
@@ -320,13 +320,13 @@ class TestProtocolConformance:
 
     def test_element_protocol(self):
         """TimoshenkoBeam2DがElementProtocolに適合すること."""
-        sec = BeamSection2D(A=100.0, I=833.333)
+        sec = BeamSection2DInput(A=100.0, I=833.333)
         beam = TimoshenkoBeam2D(section=sec)
         assert isinstance(beam, ElementProtocol)
 
     def test_element_class_stiffness(self):
         """クラスインタフェース経由の剛性行列が関数版と一致すること."""
-        sec = BeamSection2D(A=100.0, I=833.333)
+        sec = BeamSection2DInput(A=100.0, I=833.333)
         beam = TimoshenkoBeam2D(section=sec, kappa=KAPPA)
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -352,49 +352,49 @@ class TestCowperKappa:
 
     def test_rectangle_kappa_at_nu03(self):
         """矩形断面 ν=0.3 でのCowper κ ≈ 0.8497."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         kappa = sec.cowper_kappa(0.3)
         expected = 10.0 * 1.3 / (12.0 + 11.0 * 0.3)  # = 13/15.3 ≈ 0.8497
         assert abs(kappa - expected) < 1e-12
 
     def test_rectangle_kappa_at_nu0(self):
         """矩形断面 ν=0 でのCowper κ = 10/12 = 5/6."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         kappa = sec.cowper_kappa(0.0)
         assert abs(kappa - 5.0 / 6.0) < 1e-12
 
     def test_circle_kappa_at_nu03(self):
         """円形断面 ν=0.3 でのCowper κ ≈ 0.8864."""
-        sec = BeamSection2D.circle(d=10.0)
+        sec = BeamSection2DInput.circle(d=10.0)
         kappa = sec.cowper_kappa(0.3)
         expected = 6.0 * 1.3 / (7.0 + 6.0 * 0.3)  # = 7.8/8.8 ≈ 0.8864
         assert abs(kappa - expected) < 1e-12
 
     def test_circle_kappa_at_nu0(self):
         """円形断面 ν=0 でのCowper κ = 6/7."""
-        sec = BeamSection2D.circle(d=10.0)
+        sec = BeamSection2DInput.circle(d=10.0)
         kappa = sec.cowper_kappa(0.0)
         assert abs(kappa - 6.0 / 7.0) < 1e-12
 
     def test_general_section_fallback(self):
         """一般断面ではκ=5/6にフォールバック."""
-        sec = BeamSection2D(A=100.0, I=833.333)
+        sec = BeamSection2DInput(A=100.0, I=833.333)
         kappa = sec.cowper_kappa(0.3)
         assert abs(kappa - 5.0 / 6.0) < 1e-12
 
     def test_section_shape_rectangle(self):
         """rectangle()ファクトリでshapeが"rectangle"になること."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         assert sec.shape == "rectangle"
 
     def test_section_shape_circle(self):
         """circle()ファクトリでshapeが"circle"になること."""
-        sec = BeamSection2D.circle(d=10.0)
+        sec = BeamSection2DInput.circle(d=10.0)
         assert sec.shape == "circle"
 
     def test_section_shape_general(self):
         """直接構築でshapeが"general"になること."""
-        sec = BeamSection2D(A=100.0, I=833.333)
+        sec = BeamSection2DInput(A=100.0, I=833.333)
         assert sec.shape == "general"
 
 
@@ -420,7 +420,7 @@ class TestCowperKappaIntegration:
             kappa_cowper * G * area
         )
 
-        sec = BeamSection2D.rectangle(b=b, h=h)
+        sec = BeamSection2DInput.rectangle(b=b, h=h)
         beam = TimoshenkoBeam2D(section=sec, kappa="cowper")
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -444,7 +444,7 @@ class TestCowperKappaIntegration:
         n_elems = 20
         P = 1.0
 
-        sec = BeamSection2D.rectangle(b=b, h=h)
+        sec = BeamSection2DInput.rectangle(b=b, h=h)
         mat = BeamElastic1D(E=E, nu=NU)
 
         beam_fixed = TimoshenkoBeam2D(section=sec, kappa=5.0 / 6.0)
@@ -471,7 +471,7 @@ class TestCowperKappaIntegration:
 
     def test_invalid_kappa_string_raises(self):
         """無効なkappa文字列でValueError."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         with pytest.raises(ValueError, match="cowper"):
             TimoshenkoBeam2D(section=sec, kappa="invalid")
 
@@ -589,7 +589,7 @@ class TestSCF:
 
     def test_scf_via_class_interface(self):
         """TimoshenkoBeam2D クラスでSCFが使えること."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         beam = TimoshenkoBeam2D(section=sec, scf=0.25)
         assert beam.scf == 0.25
 
@@ -613,7 +613,7 @@ class TestSectionForces2D_Timo:
 
     def test_axial_tension(self):
         """軸引張で N = P、他成分ゼロ."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 5
         P = 50.0
@@ -657,7 +657,7 @@ class TestSectionForces2D_Timo:
 
     def test_cantilever_bending(self):
         """y方向荷重で V = P, M(x) = P·(L-x)."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0
@@ -708,7 +708,7 @@ class TestSectionForces2D_Timo:
 
     def test_section_forces_via_class(self):
         """TimoshenkoBeam2D.section_forces() が関数版と一致."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         beam = TimoshenkoBeam2D(section=sec, kappa=KAPPA)
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -753,7 +753,7 @@ class TestSectionForces2D_Timo:
 
     def test_equilibrium(self):
         """力の釣り合い: N一定, V一定, M1 - V·L = M2."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0

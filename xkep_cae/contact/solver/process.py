@@ -4,7 +4,7 @@
 設計仕様: docs/contact_friction.md
 
 内部構成:
-- SolverState: 全可変状態（frozen dataclass）
+- SolverStateOutput: 全可変状態（frozen dataclass）
 - NewtonUzawaProcess: 1荷重増分の NR + Uzawa
 - AdaptiveSteppingProcess: 適応荷重増分制御（QUERY/SUCCESS/FAILURE）
 - Strategy 5軸 + default_strategies()
@@ -25,7 +25,7 @@ from xkep_cae.contact._manager_process import (
 )
 from xkep_cae.contact.solver._adaptive_stepping import (
     AdaptiveStepInput,
-    AdaptiveSteppingConfig,
+    AdaptiveSteppingInput,
     AdaptiveSteppingProcess,
     StepAction,
 )
@@ -42,17 +42,17 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationProcess,
 )
 from xkep_cae.contact.solver._newton_uzawa_dynamic import (
-    NewtonUzawaDynamicConfig,
+    NewtonUzawaDynamicInput,
     NewtonUzawaDynamicProcess,
     NewtonUzawaDynamicStepInput,
 )
 from xkep_cae.contact.solver._newton_uzawa_static import (
-    NewtonUzawaStaticConfig,
+    NewtonUzawaStaticInput,
     NewtonUzawaStaticProcess,
     NewtonUzawaStaticStepInput,
 )
 from xkep_cae.contact.solver._solver_state import (
-    SolverState,
+    SolverStateOutput,
     _build_u_output,
     _ensure_lam_size,
     _restore_checkpoint,
@@ -199,14 +199,14 @@ class ContactFrictionProcess(
         if hasattr(_contact_force_strategy, "set_ndof"):
             _contact_force_strategy.set_ndof(ndof)
 
-        # --- SolverState 初期化 ---
+        # --- SolverStateOutput 初期化 ---
         u0 = input_data.u0.copy() if input_data.u0 is not None else np.zeros(ndof)
         node_coords_ref = input_data.mesh.node_coords.copy()
         connectivity = input_data.mesh.connectivity
         radii = input_data.mesh.radii
         core_radii = None
 
-        state = SolverState(
+        state = SolverStateOutput(
             u=u0,
             lam_all=np.zeros(manager.n_pairs),
             u_ref=u0.copy(),
@@ -310,7 +310,7 @@ class ContactFrictionProcess(
 
         # --- 適応荷重増分コントローラ ---
         dt_grow_iter = manager.config.dt_grow_iter_threshold
-        stepping_config = AdaptiveSteppingConfig(
+        stepping_config = AdaptiveSteppingInput(
             dt_initial_fraction=0.0,
             dt_grow_factor=manager.config.dt_grow_factor,
             dt_shrink_factor=manager.config.dt_shrink_factor,
@@ -324,10 +324,10 @@ class ContactFrictionProcess(
 
         # --- Newton-Uzawa プロセス（Static/Dynamic 完全分離） ---
         if _dynamics:
-            nr_config_dyn = NewtonUzawaDynamicConfig(show_progress=True)
+            nr_config_dyn = NewtonUzawaDynamicInput(show_progress=True)
             nr_process_dyn = NewtonUzawaDynamicProcess()
         else:
-            nr_config_sta = NewtonUzawaStaticConfig(show_progress=True)
+            nr_config_sta = NewtonUzawaStaticInput(show_progress=True)
             nr_process_sta = NewtonUzawaStaticProcess()
 
         # --- 最終診断 ---

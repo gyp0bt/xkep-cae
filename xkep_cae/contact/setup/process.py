@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 from xkep_cae.core import ContactSetupData, MeshData, PreProcess, ProcessMeta
 
 
@@ -45,7 +45,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
 
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:
         """接触設定の実行."""
-        config = _ContactConfig(
+        config = _ContactConfigInput(
             use_friction=input_data.use_friction,
             mu=input_data.mu,
             exclude_same_layer=input_data.exclude_same_layer,
@@ -54,7 +54,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
             use_mortar=input_data.use_mortar,
             coating_stiffness=input_data.coating_stiffness,
         )
-        manager = _ContactManager(config=config)
+        manager = _ContactManagerInput(config=config)
 
         mesh = input_data.mesh
         manager.detect_candidates(

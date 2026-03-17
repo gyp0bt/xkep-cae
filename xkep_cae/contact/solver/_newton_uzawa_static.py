@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from xkep_cae.contact.solver._diagnostics import ConvergenceDiagnostics
+from xkep_cae.contact.solver._diagnostics import ConvergenceDiagnosticsOutput
 from xkep_cae.contact.solver._nuzawa_steps import (
     ContactForceAssemblyInput,
     ContactForceAssemblyProcess,
@@ -31,18 +31,18 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class StaticStepResult:
+class StaticStepOutput:
     """1荷重増分の結果（静的）."""
 
     converged: bool
     n_newton_iters: int
     n_active: int
     f_c: np.ndarray
-    diagnostics: ConvergenceDiagnostics
+    diagnostics: ConvergenceDiagnosticsOutput
 
 
 @dataclass(frozen=True)
-class NewtonUzawaStaticConfig:
+class NewtonUzawaStaticInput:
     """Newton-Uzawa ループの設定（静的）."""
 
     max_iter: int = 50
@@ -59,7 +59,7 @@ class NewtonUzawaStaticConfig:
 class NewtonUzawaStaticStepInput:
     """1荷重増分の NR+Uzawa 入力（静的）."""
 
-    config: NewtonUzawaStaticConfig
+    config: NewtonUzawaStaticInput
     u: np.ndarray
     lam_all: np.ndarray
     f_ext: np.ndarray
@@ -81,7 +81,7 @@ class NewtonUzawaStaticStepInput:
 
 
 class NewtonUzawaStaticProcess(
-    SolverProcess[NewtonUzawaStaticStepInput, StaticStepResult],
+    SolverProcess[NewtonUzawaStaticStepInput, StaticStepOutput],
 ):
     """1荷重増分の Newton-Raphson + Uzawa イテレーション（純静的）.
 
@@ -107,7 +107,7 @@ class NewtonUzawaStaticProcess(
     def process(  # noqa: C901, PLR0912, PLR0915
         self,
         input_data: NewtonUzawaStaticStepInput,
-    ) -> StaticStepResult:
+    ) -> StaticStepOutput:
         """1荷重増分のNR+Uzawaを実行（静的）.
 
         input_data.u, input_data.lam_all は in-place で更新される。
@@ -141,7 +141,7 @@ class NewtonUzawaStaticProcess(
         _linesearch_proc = LineSearchUpdateProcess()
         _uzawa_proc = UzawaUpdateProcess()
 
-        diag = ConvergenceDiagnostics(step=step_display, load_frac=load_frac)
+        diag = ConvergenceDiagnosticsOutput(step=step_display, load_frac=load_frac)
         total_newton = 0
         f_c = np.zeros(ndof)
         energy_ref = None
@@ -340,7 +340,7 @@ class NewtonUzawaStaticProcess(
             else:
                 break
 
-        return StaticStepResult(
+        return StaticStepOutput(
             converged=step_converged,
             n_newton_iters=total_newton,
             n_active=n_active,

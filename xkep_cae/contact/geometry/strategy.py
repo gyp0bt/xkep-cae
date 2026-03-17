@@ -17,7 +17,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact._broadphase import _broadphase_aabb
-from xkep_cae.contact._contact_pair import _ContactPair, _ContactState
+from xkep_cae.contact._contact_pair import _ContactPairOutput, _ContactStateOutput
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -144,7 +144,7 @@ def _detect_candidates(
         cell_size: 格子セルサイズ
 
     Returns:
-        _ContactPair のリスト
+        _ContactPairOutput のリスト
     """
     coords = np.asarray(node_coords, dtype=float)
     conn = np.asarray(connectivity, dtype=int)
@@ -173,12 +173,12 @@ def _detect_candidates(
             if nodes_i & nodes_j:
                 continue
 
-        pair = _ContactPair(
+        pair = _ContactPairOutput(
             elem_a=ei,
             elem_b=ej,
             nodes_a=conn[ei],
             nodes_b=conn[ej],
-            state=_ContactState(),
+            state=_ContactStateOutput(),
             radius_a=float(r_arr[ei]),
             radius_b=float(r_arr[ej]),
         )

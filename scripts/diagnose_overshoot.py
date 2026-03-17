@@ -22,7 +22,7 @@ from xkep_cae.elements.beam_timo3d import (
     _rodrigues_rotation,
     _transformation_matrix_3d,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 _E = 200e9
 _NU = 0.3
@@ -43,7 +43,7 @@ def diagnose_single_element():
     print("  単一要素レベル: f_int(alpha*du) の非線形性")
     print("=" * 70)
 
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
 
@@ -188,7 +188,7 @@ def diagnose_local_stiffness_check():
     print("  局所剛性行列 K_local の確認")
     print("=" * 70)
 
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
 

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class AdaptiveSteppingConfig:
+class AdaptiveSteppingInput:
     """適応荷重増分の設定.
 
     ContactManager.config から取得していたパラメータを集約。
@@ -44,7 +44,7 @@ class AdaptiveLoadController:
     solver_smooth_penalty.py 163-189行 + 528-636行の分離。
     """
 
-    def __init__(self, config: AdaptiveSteppingConfig) -> None:
+    def __init__(self, config: AdaptiveSteppingInput) -> None:
         self.config = config
         self._queue: deque[float] = deque()
         self._consecutive_good: int = 0

@@ -17,7 +17,7 @@
 from __xkep_cae_deprecated.contact.assembly import compute_contact_force, compute_contact_stiffness
 from __xkep_cae_deprecated.contact.broadphase import broadphase_aabb, compute_segment_aabb
 from __xkep_cae_deprecated.contact.diagnostics import (
-    ConvergenceDiagnostics,
+    ConvergenceDiagnosticsOutput,
     NCPSolveResult,
     NCPSolverInput,
 )
@@ -92,7 +92,7 @@ from __xkep_cae_deprecated.contact.solver_ncp import (
 from __xkep_cae_deprecated.contact.utils import deformed_coords, ncp_line_search
 
 __all__ = [
-    "ConvergenceDiagnostics",
+    "ConvergenceDiagnosticsOutput",
     "ContactConfig",
     "ContactEdge",
     "ContactGraph",

@@ -16,7 +16,7 @@ from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
 
 class TestElemLayerMap:
-    """TwistedWireMesh.build_elem_layer_map() のテスト."""
+    """TwistedWireMeshOutput.build_elem_layer_map() のテスト."""
 
     def test_3_strand_all_layer_1(self):
         """3本撚りは全素線が layer=1."""

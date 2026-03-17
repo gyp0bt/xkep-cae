@@ -45,7 +45,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from __xkep_cae_deprecated.contact.pair import ContactConfig, ContactManager
-    from __xkep_cae_deprecated.mesh.twisted_wire import CoatingModel, SheathModel, TwistedWireMesh
+    from __xkep_cae_deprecated.mesh.twisted_wire import CoatingModel, SheathModel, TwistedWireMeshOutput
 
 
 @dataclass
@@ -165,7 +165,7 @@ class SheathContactManager:
 
 
 def build_sheath_contact_manager(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -644,7 +644,7 @@ def check_theta_rebuild_needed(
 
 def rebuild_compliance_matrix(
     manager: SheathContactManager,
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -695,7 +695,7 @@ def rebuild_compliance_matrix(
 
 
 def sheath_outer_radius(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -718,7 +718,7 @@ def sheath_outer_radius(
 
 
 def build_sheath_sheath_contact_manager(
-    meshes: list[TwistedWireMesh],
+    meshes: list[TwistedWireMeshOutput],
     sheaths: list[SheathModel],
     *,
     coatings: list[CoatingModel | None] | None = None,
@@ -841,7 +841,7 @@ def build_sheath_sheath_contact_manager(
 
 
 def sheath_sheath_merged_coords(
-    meshes: list[TwistedWireMesh],
+    meshes: list[TwistedWireMeshOutput],
 ) -> tuple[np.ndarray, np.ndarray, list[int], list[int]]:
     """シース-シース接触用の統合座標・接続を構築する.
 

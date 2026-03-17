@@ -1,7 +1,7 @@
 """StrandMeshProcess — 撚線メッシュ生成の PreProcess.
 
 設計仕様: process-architecture.md §3.1
-TwistedWireMesh を AbstractProcess として管理する。
+TwistedWireMeshOutput を AbstractProcess として管理する。
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ class StrandMeshResult:
 class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
     """撚線メッシュ生成プロセス.
 
-    TwistedWireMesh の機能を PreProcess として管理する。
+    TwistedWireMeshOutput の機能を PreProcess として管理する。
     """
 
     meta = ProcessMeta(

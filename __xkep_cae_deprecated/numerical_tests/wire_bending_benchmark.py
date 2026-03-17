@@ -37,8 +37,8 @@ import numpy as np
 from __xkep_cae_deprecated.contact.pair import ContactConfig, ContactManager, ContactStatus
 from __xkep_cae_deprecated.contact.solver_ncp import newton_raphson_contact_ncp
 from __xkep_cae_deprecated.elements.beam_timo3d import ULCRBeamAssembler, assemble_cr_beam3d
-from __xkep_cae_deprecated.mesh.twisted_wire import TwistedWireMesh, make_twisted_wire_mesh
-from __xkep_cae_deprecated.sections.beam import BeamSection
+from __xkep_cae_deprecated.mesh.twisted_wire import TwistedWireMeshOutput, make_twisted_wire_mesh
+from __xkep_cae_deprecated.sections.beam import BeamSectionInput
 
 # ====================================================================
 # AL solver_hooks 削除に伴うローカル定義
@@ -157,10 +157,10 @@ class BendingOscillationResult:
 
 
 def _make_cr_assemblers(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     E: float,
     G: float,
-    section: BeamSection,
+    section: BeamSectionInput,
     kappa: float,
     use_ul: bool = False,
 ):
@@ -228,7 +228,7 @@ def _make_cr_assemblers(
     return assemble_tangent, assemble_internal_force, ndof_total, None
 
 
-def _fix_strand_starts(mesh: TwistedWireMesh) -> np.ndarray:
+def _fix_strand_starts(mesh: TwistedWireMeshOutput) -> np.ndarray:
     """全素線の開始端（z=0）を全拘束する DOF セットを返す."""
     fixed = set()
     for sid in range(mesh.n_strands):
@@ -239,7 +239,7 @@ def _fix_strand_starts(mesh: TwistedWireMesh) -> np.ndarray:
     return np.array(sorted(fixed), dtype=int)
 
 
-def _get_strand_end_dofs(mesh: TwistedWireMesh, strand_id: int, end: str) -> np.ndarray:
+def _get_strand_end_dofs(mesh: TwistedWireMeshOutput, strand_id: int, end: str) -> np.ndarray:
     """素線の端点の DOF インデックスを取得."""
     nodes = mesh.strand_nodes(strand_id)
     node = nodes[0] if end == "start" else nodes[-1]
@@ -265,8 +265,8 @@ def _count_active_pairs(mgr: ContactManager) -> int:
 
 
 def _build_contact_manager(
-    mesh: TwistedWireMesh,
-    section: BeamSection,
+    mesh: TwistedWireMeshOutput,
+    section: BeamSectionInput,
     E: float,
     *,
     n_outer_max: int = 5,
@@ -366,7 +366,7 @@ _VIEW_2D_TO_3D = {
 
 
 def export_bending_oscillation_gif(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     displacement_snapshots: list[np.ndarray],
     snapshot_labels: list[str],
     output_dir: str | Path,
@@ -669,7 +669,7 @@ def run_bending_oscillation(
     else:
         contact_radii = mesh.radii
 
-    section = BeamSection.circle(wire_diameter)
+    section = BeamSectionInput.circle(wire_diameter)
     ndof_total = mesh.n_nodes * _NDOF_PER_NODE
     L = mesh.length
 

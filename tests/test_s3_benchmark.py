@@ -226,9 +226,9 @@ class TestParallelSpeedup:
         """TimoshenkoBeam3D + BeamElastic1D を生成."""
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
 
-        sec = BeamSection(A=1e-4, Iy=1e-8, Iz=1e-8, J=2e-8, shape="circle")
+        sec = BeamSectionInput(A=1e-4, Iy=1e-8, Iz=1e-8, J=2e-8, shape="circle")
         elem = TimoshenkoBeam3D(section=sec)
         mat = BeamElastic1D(E=200e9, nu=0.3)
         return elem, mat

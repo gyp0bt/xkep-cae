@@ -107,6 +107,9 @@
 | `numerical_tests/__init__.py` 全量 re-export | 型のみ re-export（関数除去） | status-200 |
 | C16: `__init__.py` 関数 re-export のみ検査 | クラス re-export も型検査対象 | status-200 |
 | 条例 O1 のみ | O2（BackendRegistry 検出）+ O3（backend.configure 検出）追加 | status-200 |
+| C16 のみ（プライベートモジュールスキップ） | C17 追加（プライベートモジュール dataclass 衛生） | status-202 |
+| `_ContactConfig` non-frozen | `_ContactConfigInput` frozen=True | status-202 |
+| `BeamForces3D`/`BeamSection`/etc. 命名不統一 | `*Input`/`*Output` 命名規約準拠（82ファイル） | status-202 |
 
 ## 推奨ソルバー構成
 
@@ -118,7 +121,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **0件** | O2/O3 条例違反 5件（警告, status-201）
+**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **0件** | C17 違反 **0件**（既知例外3件） | O2/O3 条例違反 5件（警告, status-202）
 
 ### ターゲット
 
@@ -126,7 +129,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 16** — BackendRegistry 完全廃止（O2/O3 条例違反5件解消）+ 被膜モデル物理検証テスト（status-201）。
+**脱出ポット計画 Phase 16** — BackendRegistry 完全廃止（O2/O3 条例違反5件解消）+ 被膜モデル物理検証テスト + C17 non-frozen例外3件解消（ContactManager Process分割）（status-202）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

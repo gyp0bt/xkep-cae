@@ -28,7 +28,7 @@ from __xkep_cae_deprecated.elements.beam_eb2d import (
 
 if TYPE_CHECKING:
     from __xkep_cae_deprecated.core.constitutive import ConstitutiveProtocol
-    from __xkep_cae_deprecated.sections.beam import BeamSection2D
+    from __xkep_cae_deprecated.sections.beam import BeamSection2DInput
 
 
 def timo_beam2d_ke_local(
@@ -217,7 +217,7 @@ class TimoshenkoBeam2D:
 
     def __init__(
         self,
-        section: BeamSection2D,
+        section: BeamSection2DInput,
         kappa: float | str = 5.0 / 6.0,
         scf: float | None = None,
     ) -> None:

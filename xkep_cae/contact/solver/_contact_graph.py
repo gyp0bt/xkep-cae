@@ -12,7 +12,7 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class _ContactEdge:
+class _ContactEdgeOutput:
     """接触グラフのエッジ（1接触ペア）."""
 
     elem_a: int
@@ -27,13 +27,13 @@ class _ContactEdge:
 
 
 @dataclass(frozen=True)
-class _ContactGraph:
+class _ContactGraphOutput:
     """接触グラフの1スナップショット."""
 
     step: int
     load_factor: float
     nodes: set[int]
-    edges: list[_ContactEdge]
+    edges: list[_ContactEdgeOutput]
     n_total_pairs: int
 
 
@@ -50,14 +50,14 @@ class ContactGraphInput:
 class ContactGraphOutput:
     """接触グラフスナップショットの出力."""
 
-    graph: _ContactGraph
+    graph: _ContactGraphOutput
 
 
 def _snapshot_contact_graph(
     manager: object,
     step: int = 0,
     load_factor: float = 0.0,
-) -> _ContactGraph:
+) -> _ContactGraphOutput:
     """ContactManager の現在の状態からグラフスナップショットを生成する.
 
     manager は duck typing: .pairs, .n_pairs 属性を持つオブジェクト。
@@ -65,7 +65,7 @@ def _snapshot_contact_graph(
     .state.stick, .state.dissipation, .state.s, .state.t を持つ。
     """
     nodes: set[int] = set()
-    edges: list[_ContactEdge] = []
+    edges: list[_ContactEdgeOutput] = []
 
     # ContactStatus.INACTIVE の文字列表現を使って判定
     for pair in manager.pairs:
@@ -80,7 +80,7 @@ def _snapshot_contact_graph(
         nodes.add(pair.elem_a)
         nodes.add(pair.elem_b)
         edges.append(
-            _ContactEdge(
+            _ContactEdgeOutput(
                 elem_a=pair.elem_a,
                 elem_b=pair.elem_b,
                 gap=pair.state.gap,
@@ -93,7 +93,7 @@ def _snapshot_contact_graph(
             )
         )
 
-    return _ContactGraph(
+    return _ContactGraphOutput(
         step=step,
         load_factor=load_factor,
         nodes=nodes,

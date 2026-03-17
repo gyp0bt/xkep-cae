@@ -180,9 +180,9 @@ class TestVectorizedCooIndices:
     def test_matches_real_beam_element(self):
         """実装 TimoshenkoBeam3D の dof_indices との一致を確認."""
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
 
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         n_elem = 20
         _, conn = _make_beam_mesh(n_elem)
@@ -230,7 +230,7 @@ class TestSequentialVectorized:
         from xkep_cae.bc import apply_dirichlet
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
         from xkep_cae.solver import solve_displacement
 
         E = 200e3
@@ -242,7 +242,7 @@ class TestSequentialVectorized:
         kappa = 5 / 6
         n_elems = 20
 
-        sec = BeamSection.circle(d=d)
+        sec = BeamSectionInput.circle(d=d)
         beam = TimoshenkoBeam3D(section=sec, kappa_y=kappa, kappa_z=kappa)
         mat = BeamElastic1D(E=E, nu=nu)
 
@@ -349,9 +349,9 @@ class TestSharedMemoryParallel:
         """実 TimoshenkoBeam3D 要素で逐次/並列一致."""
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
 
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         mat = BeamElastic1D(E=200e3, nu=0.3)
 
@@ -401,9 +401,9 @@ class TestSharedMemoryParallel:
         """並列アセンブリ結果が対称."""
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
 
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         mat = BeamElastic1D(E=200e3, nu=0.3)
 
@@ -428,7 +428,7 @@ class TestSharedMemoryParallel:
         from xkep_cae.bc import apply_dirichlet
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
         from xkep_cae.solver import solve_displacement
 
         E = 200e3
@@ -440,7 +440,7 @@ class TestSharedMemoryParallel:
         kappa = 5 / 6
         n_elems = 20
 
-        sec = BeamSection.circle(d=d)
+        sec = BeamSectionInput.circle(d=d)
         beam = TimoshenkoBeam3D(section=sec, kappa_y=kappa, kappa_z=kappa)
         mat = BeamElastic1D(E=E, nu=nu)
 
@@ -508,9 +508,9 @@ class TestAssemblyBenchmark:
 
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
         from xkep_cae.materials.beam_elastic import BeamElastic1D
-        from xkep_cae.sections.beam import BeamSection
+        from xkep_cae.sections.beam import BeamSectionInput
 
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         mat = BeamElastic1D(E=200e3, nu=0.3)
 

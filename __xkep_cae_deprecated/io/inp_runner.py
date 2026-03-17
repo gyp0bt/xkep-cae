@@ -19,7 +19,7 @@ from __xkep_cae_deprecated.elements.beam_timo2d import TimoshenkoBeam2D
 from __xkep_cae_deprecated.elements.beam_timo3d import TimoshenkoBeam3D
 from __xkep_cae_deprecated.io.abaqus_inp import AbaqusMesh
 from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from __xkep_cae_deprecated.sections.beam import BeamSection, BeamSection2D
+from __xkep_cae_deprecated.sections.beam import BeamSectionInput, BeamSection2DInput
 from __xkep_cae_deprecated.solver import LinearSolveResult, solve_displacement
 
 
@@ -199,24 +199,24 @@ def _build_material(mesh: AbaqusMesh) -> BeamElastic1D:
 
 
 def _build_section(bsec, is_3d: bool):
-    """AbaqusBeamSection から BeamSection / BeamSection2D を生成する."""
+    """AbaqusBeamSection から BeamSectionInput / BeamSection2DInput を生成する."""
     stype = bsec.section_type.upper()
     dims = bsec.dimensions
 
     if stype == "RECT":
         b, h = dims[0], dims[1]
-        return BeamSection.rectangle(b, h) if is_3d else BeamSection2D.rectangle(b, h)
+        return BeamSectionInput.rectangle(b, h) if is_3d else BeamSection2DInput.rectangle(b, h)
     elif stype == "CIRC":
         r = dims[0]
         d = 2.0 * r
-        return BeamSection.circle(d) if is_3d else BeamSection2D.circle(d)
+        return BeamSectionInput.circle(d) if is_3d else BeamSection2DInput.circle(d)
     elif stype == "PIPE":
         r_outer = dims[0]
         t_wall = dims[1]
         d_outer = 2.0 * r_outer
         d_inner = 2.0 * (r_outer - t_wall)
         if is_3d:
-            return BeamSection.pipe(d_outer, d_inner)
+            return BeamSectionInput.pipe(d_outer, d_inner)
         else:
             raise ValueError("2D梁にPIPE断面は非対応です。")
     else:

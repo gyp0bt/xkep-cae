@@ -329,14 +329,14 @@ def plot_euler_elastica_moment():
     plt = _setup_matplotlib()
     from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
     from xkep_cae.materials.beam_elastic import BeamElastic1D
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.solver import newton_raphson
 
     E = 1.0e6
     nu = 0.0
     L = 10.0
     _b, _h = 0.1, 0.1
-    sec = BeamSection.rectangle(_b, _h)
+    sec = BeamSectionInput.rectangle(_b, _h)
     EI = E * sec.Iz
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -438,14 +438,14 @@ def plot_euler_elastica_tip_load():
     plt = _setup_matplotlib()
     from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
     from xkep_cae.materials.beam_elastic import BeamElastic1D
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.solver import newton_raphson
 
     E = 1.0e6
     nu = 0.0
     L = 10.0
     _b, _h = 0.1, 0.1
-    sec = BeamSection.rectangle(_b, _h)
+    sec = BeamSectionInput.rectangle(_b, _h)
     EI = E * sec.Iz
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -542,7 +542,7 @@ def plot_beam3d_torsion_bending():
     plt = _setup_matplotlib()
     from xkep_cae.bc import apply_dirichlet
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.solver import solve_displacement
 
     E = 200e3
@@ -552,7 +552,7 @@ def plot_beam3d_torsion_bending():
     P = 1.0
     T = 100.0
 
-    sec = BeamSection.rectangle(10.0, 20.0)
+    sec = BeamSectionInput.rectangle(10.0, 20.0)
     nu = 0.3
     kappa = sec.cowper_kappa_z(nu)
 
@@ -662,13 +662,13 @@ def plot_cosserat_convergence():
     from scipy.sparse.linalg import spsolve
     from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
     from xkep_cae.materials.beam_elastic import BeamElastic1D
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
 
     E = 200_000.0
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     L = 100.0
-    sec = BeamSection.rectangle(10.0, 20.0)
+    sec = BeamSectionInput.rectangle(10.0, 20.0)
     mat = BeamElastic1D(E=E, nu=nu)
 
     n_elems_list = [2, 4, 8, 16, 32]
@@ -903,7 +903,7 @@ def plot_load_displacement_bar():
     from xkep_cae.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam_plastic
     from xkep_cae.materials.beam_elastic import BeamElastic1D
     from xkep_cae.materials.plasticity_1d import IsotropicHardening, Plasticity1D
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.solver import newton_raphson
 
     E = 200_000.0
@@ -912,7 +912,7 @@ def plot_load_displacement_bar():
     H_iso = 1000.0
     E_t = E * H_iso / (E + H_iso)
 
-    sec = BeamSection.rectangle(10.0, 20.0)
+    sec = BeamSectionInput.rectangle(10.0, 20.0)
     mat = BeamElastic1D(E=E, nu=nu)
     rod = CosseratRod(section=sec, integration_scheme="uniform", n_gauss=1)
     plas = Plasticity1D(E=E, iso=IsotropicHardening(sigma_y0=sigma_y0, H_iso=H_iso))
@@ -2310,7 +2310,7 @@ def plot_cr_stress_curvature_contour():
         assemble_cr_beam3d,
         timo_beam3d_ke_local,
     )
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.solver import newton_raphson
 
     # --- 問題設定 ---
@@ -2320,7 +2320,7 @@ def plot_cr_stress_curvature_contour():
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     d = 0.02
-    sec = BeamSection.circle(d)
+    sec = BeamSectionInput.circle(d)
     kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
 
     nodes = np.zeros((n_elems + 1, 3))
@@ -3087,7 +3087,7 @@ def plot_fiber_stress_contour():
         beam3d_section_forces,
         timo_beam3d_ke_global,
     )
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
     from xkep_cae.sections.fiber import FiberSection
 
     # 片持ち梁パラメータ
@@ -3097,7 +3097,7 @@ def plot_fiber_stress_contour():
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     d = 0.02  # 20mm直径
-    section = BeamSection.circle(d)
+    section = BeamSectionInput.circle(d)
     kappa = 5.0 / 6.0
     P = 5000.0  # 先端荷重 [N]
     R = d / 2.0
@@ -3454,14 +3454,14 @@ def plot_beam_3d_stress_contour():
     plt = _setup_matplotlib()
     from matplotlib.collections import PolyCollection
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
 
     L = 1.0
     E = 200e9
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     d = 0.04
-    section = BeamSection.circle(d)
+    section = BeamSectionInput.circle(d)
     kappa = 5.0 / 6.0
     P = 10000.0
     n_elems = 20
@@ -3570,14 +3570,14 @@ def _run_for_visualization(n_strands, *, layers=(1,), force_per_node=5.0):
     from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
     from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
     from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
 
     NDOF = 6
     E = 200e9
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     wire_d = 0.002
-    section = BeamSection.circle(wire_d)
+    section = BeamSectionInput.circle(wire_d)
     kappa_s = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
     pitch = 0.040
 

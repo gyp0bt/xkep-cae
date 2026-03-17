@@ -1,6 +1,6 @@
 """ソルバー可変状態の集約（プライベート）.
 
-SolverState を新パッケージに移植。
+SolverStateOutput を新パッケージに移植。
 __xkep_cae_deprecated/process/strategies/solver_state.py からの移植。
 deprecated 依存を除去し、duck typing で簡素化。
 """
@@ -17,7 +17,7 @@ _setattr = object.__setattr__
 
 
 @dataclass(frozen=True)
-class SolverState:
+class SolverStateOutput:
     """ソルバーの全可変状態（純粋データ）."""
 
     # --- 主要変数 ---
@@ -54,12 +54,12 @@ class SolverState:
     _ul_frac_base_ckpt: float = 0.0
 
 
-def _state_set(state: SolverState, name: str, value: object) -> None:
-    """frozen SolverState のフィールドを更新する."""
+def _state_set(state: SolverStateOutput, name: str, value: object) -> None:
+    """frozen SolverStateOutput のフィールドを更新する."""
     _setattr(state, name, value)
 
 
-def _save_checkpoint(state: SolverState) -> None:
+def _save_checkpoint(state: SolverStateOutput) -> None:
     """現在の状態をチェックポイントに保存."""
     _setattr(state, "_u_ckpt", state.u.copy())
     _setattr(state, "_lam_ckpt", state.lam_all.copy())
@@ -67,7 +67,7 @@ def _save_checkpoint(state: SolverState) -> None:
     _setattr(state, "_ul_frac_base_ckpt", state.ul_frac_base)
 
 
-def _restore_checkpoint(state: SolverState) -> None:
+def _restore_checkpoint(state: SolverStateOutput) -> None:
     """チェックポイントから状態を復元."""
     if state._u_ckpt is None:
         raise RuntimeError("チェックポイントが保存されていません")
@@ -78,7 +78,7 @@ def _restore_checkpoint(state: SolverState) -> None:
     _setattr(state, "delta_frac_prev", 0.0)
 
 
-def _ensure_lam_size(state: SolverState, n_pairs: int) -> None:
+def _ensure_lam_size(state: SolverStateOutput, n_pairs: int) -> None:
     """ペア数拡張に対応して lam_all を拡張."""
     if len(state.lam_all) < n_pairs:
         old_n = len(state.lam_all)
@@ -87,7 +87,7 @@ def _ensure_lam_size(state: SolverState, n_pairs: int) -> None:
         _setattr(state, "lam_all", lam_new)
 
 
-def _build_u_output(state: SolverState, ul_assembler: object | None) -> np.ndarray:
+def _build_u_output(state: SolverStateOutput, ul_assembler: object | None) -> np.ndarray:
     """UL込みの最終変位ベクトルを構築."""
     if ul_assembler is not None:
         return ul_assembler.u_total_accum + state.u
@@ -96,7 +96,7 @@ def _build_u_output(state: SolverState, ul_assembler: object | None) -> np.ndarr
 
 @dataclass(frozen=True)
 class SolverStateInitInput:
-    """SolverState 初期化の入力."""
+    """SolverStateOutput 初期化の入力."""
 
     ndof: int
     node_coords: np.ndarray
@@ -105,15 +105,15 @@ class SolverStateInitInput:
 
 @dataclass(frozen=True)
 class SolverStateInitOutput:
-    """SolverState 初期化の出力."""
+    """SolverStateOutput 初期化の出力."""
 
-    state: SolverState
+    state: SolverStateOutput
 
 
 class SolverStateInitProcess(
     SolverProcess[SolverStateInitInput, SolverStateInitOutput],
 ):
-    """SolverState の初期化 Process.
+    """SolverStateOutput の初期化 Process.
 
     自由度数・節点座標・ペア数からゼロ初期状態を生成する。
     """
@@ -126,7 +126,7 @@ class SolverStateInitProcess(
     )
 
     def process(self, input_data: SolverStateInitInput) -> SolverStateInitOutput:
-        state = SolverState(
+        state = SolverStateOutput(
             u=np.zeros(input_data.ndof),
             lam_all=np.zeros(max(input_data.n_pairs, 1)),
             u_ref=np.zeros(input_data.ndof),

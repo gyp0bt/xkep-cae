@@ -1,11 +1,11 @@
 """梁の断面特性モデル.
 
-2Dモデル: BeamSection2D — 平面内曲げ（Iz のみ）
-3Dモデル: BeamSection   — 二軸曲げ + ねじり（Iy, Iz, J）
+2Dモデル: BeamSection2DInput — 平面内曲げ（Iz のみ）
+3Dモデル: BeamSectionInput   — 二軸曲げ + ねじり（Iy, Iz, J）
 
 Cowperのせん断補正係数:
   Abaqus は横せん断剛性に Cowper (1966) のν依存せん断補正係数を使用する。
-  xkep-cae では BeamSection2D.cowper_kappa(nu) / BeamSection.cowper_kappa_y(nu) 等で
+  xkep-cae では BeamSection2DInput.cowper_kappa(nu) / BeamSectionInput.cowper_kappa_y(nu) 等で
   同等の値を取得できる。
 
   矩形断面: κ = 10(1+ν) / (12+11ν)   （Abaqusデフォルト）
@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class BeamSection2D:
+class BeamSection2DInput:
     """2D梁の断面特性.
 
     Attributes:
@@ -72,7 +72,7 @@ class BeamSection2D:
             return 5.0 / 6.0
 
     @classmethod
-    def rectangle(cls, b: float, h: float) -> BeamSection2D:
+    def rectangle(cls, b: float, h: float) -> BeamSection2DInput:
         """矩形断面を生成する.
 
         Args:
@@ -80,19 +80,19 @@ class BeamSection2D:
             h: 高さ
 
         Returns:
-            BeamSection2D インスタンス
+            BeamSection2DInput インスタンス
         """
         return cls(A=b * h, I=b * h**3 / 12.0, shape="rectangle")
 
     @classmethod
-    def circle(cls, d: float) -> BeamSection2D:
+    def circle(cls, d: float) -> BeamSection2DInput:
         """円形断面を生成する.
 
         Args:
             d: 直径
 
         Returns:
-            BeamSection2D インスタンス
+            BeamSection2DInput インスタンス
         """
         r = d / 2.0
         return cls(A=math.pi * r**2, I=math.pi * r**4 / 4.0, shape="circle")
@@ -109,7 +109,7 @@ def _cowper_kappa(shape: str, nu: float) -> float:
 
 
 @dataclass(frozen=True)
-class BeamSection:
+class BeamSectionInput:
     """3D梁の断面特性.
 
     二軸曲げ + ねじりに対応する一般的な梁断面モデル。
@@ -162,12 +162,12 @@ class BeamSection:
         """
         return _cowper_kappa(self.shape, nu)
 
-    def to_2d(self) -> BeamSection2D:
+    def to_2d(self) -> BeamSection2DInput:
         """xy面内（Iz ベース）の 2D 断面に変換する."""
-        return BeamSection2D(A=self.A, I=self.Iz, shape=self.shape)
+        return BeamSection2DInput(A=self.A, I=self.Iz, shape=self.shape)
 
     @classmethod
-    def rectangle(cls, b: float, h: float) -> BeamSection:
+    def rectangle(cls, b: float, h: float) -> BeamSectionInput:
         """矩形断面を生成する.
 
         Args:
@@ -175,7 +175,7 @@ class BeamSection:
             h: 高さ（z方向）
 
         Returns:
-            BeamSection インスタンス
+            BeamSectionInput インスタンス
 
         断面二次モーメント:
             Iy = b·h³/12（z方向高さ → xz面の曲げ）
@@ -198,14 +198,14 @@ class BeamSection:
         return cls(A=A, Iy=Iy, Iz=Iz, J=J, shape="rectangle")
 
     @classmethod
-    def circle(cls, d: float) -> BeamSection:
+    def circle(cls, d: float) -> BeamSectionInput:
         """円形断面を生成する.
 
         Args:
             d: 直径
 
         Returns:
-            BeamSection インスタンス
+            BeamSectionInput インスタンス
 
         断面二次モーメント:
             Iy = Iz = π·d⁴/64
@@ -221,7 +221,7 @@ class BeamSection:
         return cls(A=A, Iy=I_val, Iz=I_val, J=J, shape="circle")
 
     @classmethod
-    def pipe(cls, d_outer: float, d_inner: float) -> BeamSection:
+    def pipe(cls, d_outer: float, d_inner: float) -> BeamSectionInput:
         """中空円形（パイプ）断面を生成する.
 
         Args:
@@ -229,7 +229,7 @@ class BeamSection:
             d_inner: 内径
 
         Returns:
-            BeamSection インスタンス
+            BeamSectionInput インスタンス
         """
         if d_inner >= d_outer:
             raise ValueError(

@@ -17,7 +17,7 @@ from xkep_cae.elements.beam_timo3d import (
     timo_beam3d_cr_tangent,
     timo_beam3d_ke_local,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 _E = 200e9
 _NU = 0.3
@@ -58,7 +58,7 @@ def test_eps_sensitivity():
     print("  診断: 数値微分eps感度")
     print("=" * 70)
 
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
 
@@ -140,7 +140,7 @@ def test_tangent_consistency():
     print("  診断: 接線剛性の整合性 (f(u+du) - f(u) vs K*du)")
     print("=" * 70)
 
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
 
@@ -215,7 +215,7 @@ def test_7wire_tangent_convergence():
         7, _WIRE_D, 0.040, length=0.0,
         n_elems_per_strand=8, n_pitches=0.5, min_elems_per_pitch=16,
     )
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
     ndof = mesh.n_nodes * 6

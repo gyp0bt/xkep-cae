@@ -21,7 +21,7 @@ from xkep_cae.mesh.twisted_wire import (
     coated_radii,
     make_twisted_wire_mesh,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -35,7 +35,7 @@ _NU = 0.3
 _G = _E / (2.0 * (1.0 + _NU))
 _WIRE_D = 0.002
 _WIRE_R = _WIRE_D / 2.0
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 _PITCH = 0.040
 _N_ELEM_PER_STRAND = 16

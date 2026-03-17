@@ -27,7 +27,7 @@ from xkep_cae.elements.beam_cosserat import (
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.math.quaternion import quat_identity
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 # --- テスト用パラメータ ---
 E = 200_000.0  # MPa
@@ -38,8 +38,8 @@ B_WIDTH = 10.0  # mm
 H_HEIGHT = 20.0  # mm
 
 
-def _make_section() -> BeamSection:
-    return BeamSection.rectangle(B_WIDTH, H_HEIGHT)
+def _make_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(B_WIDTH, H_HEIGHT)
 
 
 def _make_material() -> BeamElastic1D:
@@ -179,7 +179,7 @@ def _solve_cantilever(
     beam_length: float,
     load_dof: int,
     load_value: float,
-    section: BeamSection,
+    section: BeamSectionInput,
     material: BeamElastic1D,
     n_gauss: int = 1,
 ) -> np.ndarray:
@@ -672,7 +672,7 @@ class TestCircularSection:
 
     def test_axial_circle(self):
         """円形断面の軸引張."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         mat = _make_material()
         P = 1000.0
         u = _solve_cantilever(1, L, 0, P, sec, mat)
@@ -681,7 +681,7 @@ class TestCircularSection:
 
     def test_torsion_circle(self):
         """円形断面のねじり."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         mat = _make_material()
         T = 500.0
         u = _solve_cantilever(1, L, 3, T, sec, mat)
@@ -1019,7 +1019,7 @@ class TestInitialCurvature:
 
     def test_helical_initial_curvature(self):
         """ヘリカル初期曲率（ねじり + 曲率）."""
-        sec = BeamSection.circle(d=5.0)
+        sec = BeamSectionInput.circle(d=5.0)
         kappa_0 = np.array([0.02, 0.01, 0.0])  # ねじり + y曲率
         rod = CosseratRod(section=sec, kappa_0=kappa_0)
         coords = np.array([[0.0, 0.0, 0.0], [50.0, 0.0, 0.0]])

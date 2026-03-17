@@ -26,7 +26,7 @@ from xkep_cae.elements.beam_eb2d import (
     eb_beam2d_section_forces,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection2D
+from xkep_cae.sections.beam import BeamSection2DInput
 from xkep_cae.solver import solve_displacement
 
 # =====================================================================
@@ -298,7 +298,7 @@ class TestProtocolConformance:
 
     def test_element_protocol(self):
         """EulerBernoulliBeam2DがElementProtocolに適合すること."""
-        sec = BeamSection2D(A=A, I=I_val)
+        sec = BeamSection2DInput(A=A, I=I_val)
         beam = EulerBernoulliBeam2D(section=sec)
         assert isinstance(beam, ElementProtocol)
 
@@ -309,7 +309,7 @@ class TestProtocolConformance:
 
     def test_element_class_stiffness(self):
         """クラスインタフェース経由の剛性行列が関数版と一致すること."""
-        sec = BeamSection2D(A=A, I=I_val)
+        sec = BeamSection2DInput(A=A, I=I_val)
         beam = EulerBernoulliBeam2D(section=sec)
         mat = BeamElastic1D(E=E)
 
@@ -321,7 +321,7 @@ class TestProtocolConformance:
 
     def test_dof_indices(self):
         """DOFインデックスが正しく計算されること."""
-        sec = BeamSection2D(A=A, I=I_val)
+        sec = BeamSection2DInput(A=A, I=I_val)
         beam = EulerBernoulliBeam2D(section=sec)
         edofs = beam.dof_indices(np.array([3, 7]))
         expected = np.array([9, 10, 11, 21, 22, 23], dtype=np.int64)
@@ -333,7 +333,7 @@ class TestBeamSection2D:
 
     def test_rectangle(self):
         """矩形断面の計算が正しいこと."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         assert abs(sec.A - 100.0) < 1e-10
         assert abs(sec.I - 833.333333333) < 1e-3
 
@@ -341,19 +341,19 @@ class TestBeamSection2D:
         """円形断面の計算が正しいこと."""
         import math
 
-        sec = BeamSection2D.circle(d=10.0)
+        sec = BeamSection2DInput.circle(d=10.0)
         assert abs(sec.A - math.pi * 25.0) < 1e-10
         assert abs(sec.I - math.pi * 625.0 / 4.0) < 1e-10
 
     def test_invalid_area(self):
         """A<=0のときValueErrorが発生すること."""
         with pytest.raises(ValueError, match="断面積"):
-            BeamSection2D(A=-1.0, I=100.0)
+            BeamSection2DInput(A=-1.0, I=100.0)
 
     def test_invalid_inertia(self):
         """I<=0のときValueErrorが発生すること."""
         with pytest.raises(ValueError, match="断面二次モーメント"):
-            BeamSection2D(A=100.0, I=0.0)
+            BeamSection2DInput(A=100.0, I=0.0)
 
 
 class TestSectionForces2D_EB:
@@ -361,7 +361,7 @@ class TestSectionForces2D_EB:
 
     def test_axial_tension(self):
         """軸引張の断面力が N = P であること."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 5
         P = 50.0
@@ -405,7 +405,7 @@ class TestSectionForces2D_EB:
 
         解析解: V = P（一定）, M(x) = P·(L - x)
         """
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0
@@ -455,7 +455,7 @@ class TestSectionForces2D_EB:
 
     def test_section_forces_via_class(self):
         """EulerBernoulliBeam2D.section_forces() が関数版と一致."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         beam = EulerBernoulliBeam2D(section=sec)
         mat = BeamElastic1D(E=E)
 
@@ -500,7 +500,7 @@ class TestSectionForces2D_EB:
 
     def test_equilibrium(self):
         """要素の力の釣り合い: N一定, V一定, M1 - V·L = M2."""
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0
@@ -544,7 +544,7 @@ class TestMaxBendingStress2D:
     def test_pure_axial(self):
         """純軸引張: σ = N/A."""
         forces = BeamForces2D(N=100.0, V=0.0, M=0.0)
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, 5.0)
         assert abs(sigma - 100.0 / sec.A) < 1e-10
 
@@ -552,7 +552,7 @@ class TestMaxBendingStress2D:
         """純曲げ: σ = M·y_max/I."""
         M = 1000.0
         y_max = 5.0
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         forces = BeamForces2D(N=0.0, V=0.0, M=M)
         sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, y_max)
         expected = M * y_max / sec.I
@@ -562,7 +562,7 @@ class TestMaxBendingStress2D:
         """複合荷重: σ = |N/A| + |M|·y/I."""
         N = 100.0
         M = 500.0
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         y_max = 5.0
         forces = BeamForces2D(N=N, V=0.0, M=M)
         sigma = beam2d_max_bending_stress(forces, sec.A, sec.I, y_max)
@@ -576,7 +576,7 @@ class TestMaxShearStress2D:
     def test_rectangle_shear(self):
         """矩形断面: τ = 3V/(2A)."""
         V = 10.0
-        sec = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         forces = BeamForces2D(N=0.0, V=V, M=0.0)
         tau = beam2d_max_shear_stress(forces, sec.A, shape="rectangle")
         expected = 3.0 * V / (2.0 * sec.A)
@@ -585,7 +585,7 @@ class TestMaxShearStress2D:
     def test_circle_shear(self):
         """円形断面: τ = 4V/(3A)."""
         V = 10.0
-        sec = BeamSection2D.circle(d=10.0)
+        sec = BeamSection2DInput.circle(d=10.0)
         forces = BeamForces2D(N=0.0, V=V, M=0.0)
         tau = beam2d_max_shear_stress(forces, sec.A, shape="circle")
         expected = 4.0 * V / (3.0 * sec.A)

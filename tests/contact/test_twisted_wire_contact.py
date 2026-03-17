@@ -21,10 +21,10 @@ from xkep_cae.elements.beam_timo3d import (
     timo_beam3d_ke_global,
 )
 from xkep_cae.mesh.twisted_wire import (
-    TwistedWireMesh,
+    TwistedWireMeshOutput,
     make_twisted_wire_mesh,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -39,7 +39,7 @@ _NU = 0.3
 _G = _E / (2.0 * (1.0 + _NU))
 _WIRE_D = 0.002
 _WIRE_R = _WIRE_D / 2.0
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 
 _PITCH = 0.040
@@ -51,7 +51,7 @@ _N_ELEM_PER_STRAND = 16
 # ====================================================================
 
 
-def _make_cr_assemblers(mesh: TwistedWireMesh):
+def _make_cr_assemblers(mesh: TwistedWireMeshOutput):
     """CR梁のアセンブリコールバックを構築."""
     node_coords = mesh.node_coords
     connectivity = mesh.connectivity
@@ -96,7 +96,7 @@ def _make_cr_assemblers(mesh: TwistedWireMesh):
     return assemble_tangent, assemble_internal_force, ndof_total
 
 
-def _make_timo3d_assemblers(mesh: TwistedWireMesh):
+def _make_timo3d_assemblers(mesh: TwistedWireMeshOutput):
     """Timoshenko 3D線形梁のアセンブリコールバックを構築."""
     node_coords = mesh.node_coords
     connectivity = mesh.connectivity
@@ -133,14 +133,14 @@ def _make_timo3d_assemblers(mesh: TwistedWireMesh):
     return assemble_tangent, assemble_internal_force, ndof_total
 
 
-def _get_strand_end_dofs(mesh: TwistedWireMesh, strand_id: int, end: str):
+def _get_strand_end_dofs(mesh: TwistedWireMeshOutput, strand_id: int, end: str):
     """素線の端点のDOFインデックスを取得."""
     nodes = mesh.strand_nodes(strand_id)
     node = nodes[0] if end == "start" else nodes[-1]
     return np.array([_NDOF_PER_NODE * node + d for d in range(_NDOF_PER_NODE)], dtype=int)
 
 
-def _fix_all_strand_starts(mesh: TwistedWireMesh) -> np.ndarray:
+def _fix_all_strand_starts(mesh: TwistedWireMeshOutput) -> np.ndarray:
     """全素線の開始端を全固定するDOFセットを返す."""
     fixed = set()
     for sid in range(mesh.n_strands):

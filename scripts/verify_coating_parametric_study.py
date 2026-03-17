@@ -59,7 +59,7 @@ from xkep_cae.mesh.twisted_wire import (
     make_strand_layout,
     make_twisted_wire_mesh,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 # 共通パラメータ
 WIRE_D = 0.004  # 4mm 直径
@@ -158,7 +158,7 @@ print(
 print("-" * 80)
 
 for coat_t, label in zip(thicknesses, thickness_labels, strict=True):
-    section_bare = BeamSection.circle(WIRE_D)
+    section_bare = BeamSectionInput.circle(WIRE_D)
     EA_bare = E_WIRE * section_bare.A
     EI_bare = E_WIRE * section_bare.Iy
 

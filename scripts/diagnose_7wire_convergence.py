@@ -25,7 +25,7 @@ from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 # ====================================================================
 # パラメータ
@@ -65,7 +65,7 @@ def diagnose_mesh_geometry(n_strands=7, n_pitches=0.5):
         min_elems_per_pitch=16,
     )
 
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     r = _WIRE_D / 2.0
 
     print(f"  素線数: {n_strands}")
@@ -260,7 +260,7 @@ def diagnose_kpen_sensitivity(angle_deg=20.0):
         n_pitches=0.5,
         min_elems_per_pitch=16,
     )
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     L_elem = mesh.length / (mesh.n_elems / 7)
 
     # beam_ei mode: k_pen = scale * 12*E*I/L^3
@@ -383,7 +383,7 @@ def diagnose_tangent_condition(angle_deg=20.0):
         n_pitches=0.5,
         min_elems_per_pitch=16,
     )
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
 
@@ -498,7 +498,7 @@ def _run_ncp_bending(
         n_pitches=n_pitches,
         min_elems_per_pitch=16,
     )
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
     ndof = mesh.n_nodes * _NDOF

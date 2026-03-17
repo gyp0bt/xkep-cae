@@ -17,7 +17,7 @@ from xkep_cae.elements.beam_timo3d import (
     beam3d_section_forces,
     timo_beam3d_ke_global,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 
 def _solve_cantilever_3d(
@@ -39,12 +39,12 @@ def _solve_cantilever_3d(
     Returns:
         forces_list: 各要素の (BeamForces3D_node1, BeamForces3D_node2)
         elem_centers: 各要素の中心座標 (n_elems,)
-        section: BeamSection
+        section: BeamSectionInput
     """
     nu = 0.3
     G = E / (2.0 * (1.0 + nu))
     d = 0.01  # 10mm 直径
-    section = BeamSection.circle(d)
+    section = BeamSectionInput.circle(d)
     kappa = 5.0 / 6.0
 
     n_nodes = n_elems + 1

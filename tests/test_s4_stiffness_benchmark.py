@@ -14,7 +14,7 @@ import pytest
 from xkep_cae.elements.beam_timo3d import timo_beam3d_ke_global
 from xkep_cae.elements.hex8 import hex8_ke_sri_bbar
 from xkep_cae.materials.elastic import constitutive_3d
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -28,7 +28,7 @@ _G = _E / (2.0 * (1.0 + _NU))
 _D = constitutive_3d(_E, _NU)
 
 _WIRE_D = 0.002  # 直径 2mm
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 
 _L = 0.040  # 40mm（1ピッチ長）

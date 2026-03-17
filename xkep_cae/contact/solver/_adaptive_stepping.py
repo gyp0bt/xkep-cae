@@ -16,7 +16,7 @@ _setattr = object.__setattr__
 
 
 @dataclass(frozen=True)
-class AdaptiveSteppingConfig:
+class AdaptiveSteppingInput:
     """適応荷重増分の設定."""
 
     dt_initial_fraction: float = 0.0
@@ -85,7 +85,7 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
     )
     uses = []
 
-    def __init__(self, config: AdaptiveSteppingConfig) -> None:
+    def __init__(self, config: AdaptiveSteppingInput) -> None:
         self._config = config
         self._queue: deque[float] = deque()
         self._consecutive_good: int = 0

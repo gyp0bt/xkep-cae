@@ -17,7 +17,7 @@ from xkep_cae.elements.beam_cosserat import (
     cosserat_tangent_stiffness_nonlinear,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 # --- テスト用パラメータ ---
 E = 200_000.0  # MPa
@@ -25,8 +25,8 @@ NU = 0.3
 G = E / (2.0 * (1.0 + NU))
 
 
-def _make_section() -> BeamSection:
-    return BeamSection.rectangle(10.0, 20.0)
+def _make_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(10.0, 20.0)
 
 
 def _make_material() -> BeamElastic1D:

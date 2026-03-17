@@ -36,7 +36,7 @@ import numpy as np
 
 
 @dataclass
-class StrandInfo:
+class StrandInfoOutput:
     """1素線の情報.
 
     Attributes:
@@ -57,7 +57,7 @@ class StrandInfo:
 
 
 @dataclass
-class TwistedWireMesh:
+class TwistedWireMeshOutput:
     """撚線メッシュ.
 
     Attributes:
@@ -77,7 +77,7 @@ class TwistedWireMesh:
     connectivity: np.ndarray
     strand_node_ranges: list[tuple[int, int]]
     strand_elem_ranges: list[tuple[int, int]]
-    strand_infos: list[StrandInfo]
+    strand_infos: list[StrandInfoOutput]
     n_strands: int
     wire_radius: float
     pitch: float
@@ -112,7 +112,7 @@ class TwistedWireMesh:
     def build_elem_layer_map(self) -> dict[int, int]:
         """要素インデックス→層番号のマッピングを構築する.
 
-        各素線の層情報（StrandInfo.layer）を全要素に展開する。
+        各素線の層情報（StrandInfoOutput.layer）を全要素に展開する。
         接触ペアのフィルタリング（段階的アクティベーション）に使用。
 
         Returns:
@@ -304,7 +304,7 @@ def make_strand_layout(
     lay_direction: int = 1,
     strand_diameter: float | None = None,
     coating_thickness: float = 0.0,
-) -> list[StrandInfo]:
+) -> list[StrandInfoOutput]:
     """撚線素線配置を生成する.
 
     標準的な撚線パターン:
@@ -347,7 +347,7 @@ def make_strand_layout(
     d = 2.0 * wire_radius
     # 有効直径: 被膜込みの接触直径（配置計算用）
     d_eff = 2.0 * (wire_radius + coating_thickness)
-    infos: list[StrandInfo] = []
+    infos: list[StrandInfoOutput] = []
     sid = 0
 
     if n_strands == 3:
@@ -362,7 +362,7 @@ def make_strand_layout(
         for k in range(3):
             angle = 2.0 * math.pi * k / 3.0
             infos.append(
-                StrandInfo(
+                StrandInfoOutput(
                     strand_id=sid,
                     layer=1,
                     angle_offset=angle,
@@ -378,7 +378,7 @@ def make_strand_layout(
     if n_strands >= 1:
         # 中心素線（直線）
         infos.append(
-            StrandInfo(
+            StrandInfoOutput(
                 strand_id=sid,
                 layer=0,
                 angle_offset=0.0,
@@ -432,7 +432,7 @@ def make_strand_layout(
                     else 2.0 * math.pi * j / n_in_layer
                 )
                 infos.append(
-                    StrandInfo(
+                    StrandInfoOutput(
                         strand_id=sid,
                         layer=k,
                         angle_offset=angle,
@@ -454,7 +454,7 @@ def make_strand_layout(
             for k in range(actual):
                 angle = 2.0 * math.pi * k / n_in_layer
                 infos.append(
-                    StrandInfo(
+                    StrandInfoOutput(
                         strand_id=sid,
                         layer=layer,
                         angle_offset=angle,
@@ -483,7 +483,7 @@ def make_twisted_wire_mesh(
     strand_diameter: float | None = None,
     min_elems_per_pitch: int = 16,
     coating_thickness: float = 0.0,
-) -> TwistedWireMesh:
+) -> TwistedWireMeshOutput:
     """撚線メッシュを生成するファクトリ関数.
 
     理想的なヘリカル配置に基づき、各素線の中心線を離散化して
@@ -515,7 +515,7 @@ def make_twisted_wire_mesh(
             被膜同士の初期貫入を防止する。
 
     Returns:
-        TwistedWireMesh インスタンス
+        TwistedWireMeshOutput インスタンス
 
     Raises:
         ValueError: strand_diameter が非貫入配置に必要な最小値を下回る場合
@@ -616,7 +616,7 @@ def make_twisted_wire_mesh(
         strand_node_ranges.append((node_start, node_end))
         strand_elem_ranges.append((elem_start, elem_end))
 
-    return TwistedWireMesh(
+    return TwistedWireMeshOutput(
         node_coords=node_coords,
         connectivity=connectivity,
         strand_node_ranges=strand_node_ranges,
@@ -856,7 +856,7 @@ def coated_contact_radius(wire_radius: float, coating: CoatingModel) -> float:
     return wire_radius + coating.thickness
 
 
-def coated_radii(mesh: TwistedWireMesh, coating: CoatingModel) -> np.ndarray:
+def coated_radii(mesh: TwistedWireMeshOutput, coating: CoatingModel) -> np.ndarray:
     """被膜込みの要素ごと接触半径ベクトルを返す.
 
     Args:
@@ -920,7 +920,7 @@ class SheathModel:
 
 
 def compute_envelope_radius(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     *,
     coating: CoatingModel | None = None,
 ) -> float:
@@ -943,7 +943,7 @@ def compute_envelope_radius(
 
 
 def sheath_inner_radius(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -964,7 +964,7 @@ def sheath_inner_radius(
 
 
 def sheath_section_properties(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -1000,7 +1000,7 @@ def sheath_section_properties(
 
 
 def sheath_equivalent_stiffness(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -1033,7 +1033,7 @@ def sheath_equivalent_stiffness(
     }
 
 
-def outermost_layer(mesh: TwistedWireMesh) -> int:
+def outermost_layer(mesh: TwistedWireMeshOutput) -> int:
     """最外層の層番号を返す.
 
     Args:
@@ -1045,7 +1045,7 @@ def outermost_layer(mesh: TwistedWireMesh) -> int:
     return max(info.layer for info in mesh.strand_infos)
 
 
-def outermost_strand_ids(mesh: TwistedWireMesh) -> list[int]:
+def outermost_strand_ids(mesh: TwistedWireMeshOutput) -> list[int]:
     """最外層に属する素線IDのリストを返す.
 
     Args:
@@ -1058,7 +1058,7 @@ def outermost_strand_ids(mesh: TwistedWireMesh) -> list[int]:
     return [info.strand_id for info in mesh.strand_infos if info.layer == outer]
 
 
-def outermost_strand_node_indices(mesh: TwistedWireMesh) -> np.ndarray:
+def outermost_strand_node_indices(mesh: TwistedWireMeshOutput) -> np.ndarray:
     """最外層素線の全節点インデックスを返す.
 
     シース-素線接触ペア生成時に最外層節点を特定するのに使用。
@@ -1077,7 +1077,7 @@ def outermost_strand_node_indices(mesh: TwistedWireMesh) -> np.ndarray:
 
 
 def sheath_radial_gap(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -1118,7 +1118,7 @@ def sheath_radial_gap(
 
 
 def compute_inner_surface_profile(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     *,
     n_theta: int = 360,
     coating: CoatingModel | None = None,
@@ -1137,7 +1137,7 @@ def compute_inner_surface_profile(
 
     Parameters
     ----------
-    mesh : TwistedWireMesh
+    mesh : TwistedWireMeshOutput
         撚線メッシュ
     n_theta : int
         角度の離散点数（デフォルト 360）
@@ -1197,7 +1197,7 @@ def compute_inner_surface_profile(
 
 
 def sheath_compliance_matrix(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     sheath: SheathModel,
     *,
     coating: CoatingModel | None = None,
@@ -1215,7 +1215,7 @@ def sheath_compliance_matrix(
 
     Parameters
     ----------
-    mesh : TwistedWireMesh
+    mesh : TwistedWireMeshOutput
         撚線メッシュ
     sheath : SheathModel
         シースモデル

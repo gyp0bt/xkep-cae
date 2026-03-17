@@ -5,7 +5,7 @@ matplotlib mplot3d の plot_surface でレンダリングする。
 2D投影の線図ではなく、3D表面として断面形状が視認できる描画を提供する。
 
 対応:
-  - TwistedWireMesh の各素線を円筒チューブとして描画
+  - TwistedWireMeshOutput の各素線を円筒チューブとして描画
   - 任意視角（elev/azim）でのレンダリング
   - 素線ごとの色分け
   - 端面キャップ（円形断面の閉鎖）
@@ -334,7 +334,7 @@ def render_twisted_wire_3d(
     """TwistedWireMeshを3Dチューブとしてレンダリングする（便利関数）.
 
     Args:
-        mesh: TwistedWireMesh オブジェクト
+        mesh: TwistedWireMeshOutput オブジェクト
         node_coords: 変形後の節点座標。Noneの場合はmeshの初期座標を使用
         elev: カメラ仰角 [deg]
         azim: カメラ方位角 [deg]
@@ -391,7 +391,7 @@ def render_multiview_3d(
     """複数視角から3Dレンダリングを生成する.
 
     Args:
-        mesh: TwistedWireMesh オブジェクト
+        mesh: TwistedWireMeshOutput オブジェクト
         node_coords: 変形後の節点座標。Noneの場合はmeshの初期座標を使用
         views: 視角名リスト (VIEW_PRESETS のキー)。Noneの場合は全プリセット
         title_prefix: タイトルの接頭辞

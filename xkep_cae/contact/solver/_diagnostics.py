@@ -1,6 +1,6 @@
 """収束診断情報 Process.
 
-ConvergenceDiagnostics を新パッケージに移植。
+ConvergenceDiagnosticsOutput を新パッケージに移植。
 __xkep_cae_deprecated/contact/diagnostics.py からのコピー。
 """
 
@@ -12,7 +12,7 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class ConvergenceDiagnostics:
+class ConvergenceDiagnosticsOutput:
     """収束失敗時の標準化診断情報（純粋データ）."""
 
     step: int = 0
@@ -30,7 +30,7 @@ class ConvergenceDiagnostics:
 class DiagnosticsInput:
     """診断レポート生成の入力."""
 
-    diagnostics: ConvergenceDiagnostics
+    diagnostics: ConvergenceDiagnosticsOutput
     max_iter: int = 50
 
 
@@ -41,7 +41,7 @@ class DiagnosticsOutput:
     report: str
 
 
-def _format_diagnostics_report(diag: ConvergenceDiagnostics, max_iter: int = 50) -> str:
+def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_iter: int = 50) -> str:
     """診断レポートの文字列を生成する."""
     lines = [
         "=" * 60,

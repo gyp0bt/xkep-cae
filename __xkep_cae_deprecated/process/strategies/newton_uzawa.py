@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnostics
+from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnosticsOutput
 from __xkep_cae_deprecated.contact.pair import ContactManager
 from __xkep_cae_deprecated.contact.utils import deformed_coords, ncp_line_search
 from __xkep_cae_deprecated.process.data import SolverStrategies
@@ -24,7 +24,7 @@ class StepResult:
     n_newton_iters: int
     n_active: int
     f_c: np.ndarray  # 最終接触力
-    diagnostics: ConvergenceDiagnostics
+    diagnostics: ConvergenceDiagnosticsOutput
 
 
 @dataclass
@@ -93,7 +93,7 @@ class NewtonUzawaLoop:
         n_uzawa_max = getattr(_contact_force_strategy, "_n_uzawa_max", 5)
         tol_uzawa = getattr(_contact_force_strategy, "_tol_uzawa", 1e-6)
 
-        diag = ConvergenceDiagnostics(step=step_display, load_frac=load_frac)
+        diag = ConvergenceDiagnosticsOutput(step=step_display, load_frac=load_frac)
         total_newton = 0
         f_c = np.zeros(ndof)
         energy_ref = None
