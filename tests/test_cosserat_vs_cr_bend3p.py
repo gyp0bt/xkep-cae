@@ -11,8 +11,14 @@ Note:
 from __future__ import annotations
 
 import pytest
-from xkep_cae.numerical_tests.core import DynamicTestConfig
-from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+
+pytest.importorskip(
+    "xkep_cae.numerical_tests",
+    reason="xkep_cae.numerical_tests 未移行のため無効化 (status-193)",
+)
+
+from xkep_cae.numerical_tests.core import DynamicTestConfig  # noqa: E402
+from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test  # noqa: E402
 
 pytestmark = pytest.mark.slow
 

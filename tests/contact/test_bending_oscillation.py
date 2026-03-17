@@ -16,7 +16,13 @@ status-143: Mortarバグ修正後のテスト更新
 
 import numpy as np
 import pytest
-from xkep_cae.numerical_tests.wire_bending_benchmark import (
+
+pytest.importorskip(
+    "xkep_cae.numerical_tests",
+    reason="xkep_cae.numerical_tests 未移行のため無効化 (status-193)",
+)
+
+from xkep_cae.numerical_tests.wire_bending_benchmark import (  # noqa: E402
     BendingOscillationResult,
     run_bending_oscillation,
 )

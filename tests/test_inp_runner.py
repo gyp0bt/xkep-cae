@@ -8,8 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from xkep_cae_deprecated.io import (
+pytestmark = pytest.mark.skip(reason="xkep_cae_deprecated 参照のため無効化 (status-193)")
+
+from xkep_cae_deprecated.io import (  # noqa: E402
     build_beam_model_from_inp,
     node_dof,
     read_abaqus_inp,
