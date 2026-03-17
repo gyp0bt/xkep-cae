@@ -30,7 +30,7 @@ import numpy as np
 # =====================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class BeamForces3D:
     """3D梁要素の断面力（局所座標系）."""
 

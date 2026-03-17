@@ -24,7 +24,7 @@ pytest.importorskip(
 
 from xkep_cae.numerical_tests.wire_bending_benchmark import (  # noqa: E402
     BendingOscillationResult,
-    run_bending_oscillation,
+    _run_bending_oscillation,
 )
 
 pytestmark = pytest.mark.slow
@@ -56,7 +56,7 @@ class Test7StrandBendingOscillation:
 
     def test_7strand_bending_45deg(self):
         """7本: 45度曲げのみ（揺動なし）でNCP収束を確認."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=7,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -93,7 +93,7 @@ class Test7StrandBendingOscillation:
 
     def test_7strand_bending_90deg(self):
         """7本: 90度曲げのみ（揺動なし）でNCP収束を確認."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=7,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -135,7 +135,7 @@ class Test7StrandBendingOscillation:
         S3要件: 非線形梁の90度曲げ + サイクル変位（揺動）でNCP収束。
         Phase2は接触活性セット変動で不収束の可能性あり。
         """
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=7,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -190,7 +190,7 @@ class Test19StrandBendingOscillation:
 
     def test_19strand_bending_45deg(self):
         """19本: 45度曲げのみでNCP収束を試行."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=19,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -229,7 +229,7 @@ class Test19StrandBendingOscillation:
     )
     def test_19strand_bending_oscillation(self):
         """19本: 45度曲げ + 揺動1周期でNCP収束を試行."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=19,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -279,7 +279,7 @@ class Test7StrandBendingPhysics:
 
     def test_tip_displacement_direction(self):
         """曲げ後の先端変位方向が物理的に正しい."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=7,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,
@@ -321,7 +321,7 @@ class Test7StrandBendingPhysics:
 
     def test_penetration_ratio_within_limit(self):
         """曲げ後の最大貫入量がワイヤ直径の5%以内."""
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=7,
             n_elems_per_strand=_N_ELEMS_PER_STRAND,
             n_pitches=0.5,

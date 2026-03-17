@@ -15,7 +15,7 @@ import numpy as np
 
 sys.path.insert(0, ".")
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 
 def run_comparison(n_strands: int = 7) -> None:
@@ -42,7 +42,7 @@ def run_comparison(n_strands: int = 7) -> None:
     print(f"  {n_strands}本撚線: 準静的解析（dynamics=False）")
     print("=" * 70)
     t0 = time.perf_counter()
-    result_static = run_bending_oscillation(
+    result_static = _run_bending_oscillation(
         **common_params,
         dynamics=False,
     )
@@ -65,7 +65,7 @@ def run_comparison(n_strands: int = 7) -> None:
     print(f"  {n_strands}本撚線: 動的解析（dynamics=True, f={f_osc}Hz, ξ={xi}）")
     print("=" * 70)
     t0 = time.perf_counter()
-    result_dynamic = run_bending_oscillation(
+    result_dynamic = _run_bending_oscillation(
         **common_params,
         dynamics=True,
         oscillation_frequency_hz=f_osc,

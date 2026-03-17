@@ -51,7 +51,7 @@ print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation  # noqa: E402
 
 # 共通パラメータ（point contact, mesh_gap で初期貫入防止）
 COMMON_PARAMS = dict(
@@ -85,7 +85,7 @@ def run_case(name, **extra_params):
     print(f"  {name}")
     print("=" * 70)
     t0 = time.perf_counter()
-    result = run_bending_oscillation(**COMMON_PARAMS, **extra_params)
+    result = _run_bending_oscillation(**COMMON_PARAMS, **extra_params)
     elapsed = time.perf_counter() - t0
     print(f"\n結果: converged={result.phase1_converged}, 時間={elapsed:.2f}s")
     print(f"  活性接触ペア: {result.n_active_contacts}")

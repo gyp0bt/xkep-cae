@@ -30,7 +30,8 @@ from xkep_cae.core import (
     ContactSetupData,
     MeshData,
 )
-from xkep_cae.elements import BeamSection, ULCRBeamAssembler
+from xkep_cae.elements import BeamSection
+from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
 from xkep_cae.elements._beam_cr import timo_beam3d_ke_global
 from xkep_cae.mesh._twisted_wire import _make_twisted_wire_mesh, _radii
 from xkep_cae.mesh.process import StrandMeshConfig, StrandMeshProcess

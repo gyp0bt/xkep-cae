@@ -54,7 +54,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh  # noqa: E402
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation  # noqa: E402
 from xkep_cae.output.render_beam_3d import (  # noqa: E402
     _STRAND_COLORS,
     _make_tube_mesh,
@@ -194,7 +194,7 @@ out_base = Path("docs/verification/19strand")
 out_base.mkdir(parents=True, exist_ok=True)
 
 t0 = time.perf_counter()
-result_45 = run_bending_oscillation(
+result_45 = _run_bending_oscillation(
     n_strands=19,
     n_elems_per_strand=16,
     n_pitches=0.5,
@@ -246,7 +246,7 @@ print("  Test 2: 19-strand 90deg bending + 1-cycle oscillation (UL+NCP)")
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_90 = run_bending_oscillation(
+result_90 = _run_bending_oscillation(
     n_strands=19,
     n_elems_per_strand=16,
     n_pitches=0.5,

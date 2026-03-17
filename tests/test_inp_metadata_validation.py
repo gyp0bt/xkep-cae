@@ -72,7 +72,7 @@ class TestMetadataExportImport:
 
     def test_metadata_roundtrip(self, tmp_path):
         """export_bending_oscillation_inp → load_metadata_from_inp のラウンドトリップ."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             export_bending_oscillation_inp,
             load_metadata_from_inp,
         )
@@ -110,7 +110,7 @@ class TestMetadataExportImport:
 
     def test_metadata_custom_E_nu(self, tmp_path):
         """カスタム E/nu がメタデータに正しく記録される."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             export_bending_oscillation_inp,
             load_metadata_from_inp,
         )
@@ -124,7 +124,7 @@ class TestMetadataExportImport:
 
     def test_metadata_category_d_defaults(self, tmp_path):
         """カテゴリD パラメータのデフォルト値が正しい."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             export_bending_oscillation_inp,
             load_metadata_from_inp,
         )
@@ -152,7 +152,7 @@ class TestOutputSettingsMetadata:
 
     def test_output_settings_roundtrip(self, tmp_path):
         """出力設定がメタデータにラウンドトリップする."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             export_bending_oscillation_inp,
             load_metadata_from_inp,
         )
@@ -177,7 +177,7 @@ class TestOutputSettingsMetadata:
 
     def test_custom_output_settings(self, tmp_path):
         """カスタム出力設定がメタデータに正しく記録される."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             export_bending_oscillation_inp,
             load_metadata_from_inp,
         )
@@ -207,7 +207,7 @@ class TestOutputSettingsMetadata:
 
     def test_animation_request_in_inp(self, tmp_path):
         """InpAnimationRequest が .inp ファイルに記録される."""
-        from scripts.run_bending_oscillation import export_bending_oscillation_inp
+        from scripts._run_bending_oscillation import export_bending_oscillation_inp
 
         out_dir = tmp_path / "animation"
         inp_path = export_bending_oscillation_inp(3, out_dir, params=_TEST_PARAMS)
@@ -220,7 +220,7 @@ class TestInpValidation:
 
     def test_validate_consistent_inp(self, tmp_path):
         """整合的な .inp はエラーなしで検証パス."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             _validate_inp_vs_metadata,
             export_bending_oscillation_inp,
             load_metadata_from_inp,
@@ -237,7 +237,7 @@ class TestInpValidation:
 
     def test_validate_detects_E_mismatch(self, tmp_path):
         """.inp の E をメタデータと不一致にした場合に検出."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             _validate_inp_vs_metadata,
             export_bending_oscillation_inp,
             load_metadata_from_inp,
@@ -256,7 +256,7 @@ class TestInpValidation:
 
     def test_validate_detects_nu_mismatch(self, tmp_path):
         """.inp の nu をメタデータと不一致にした場合に検出."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             _validate_inp_vs_metadata,
             export_bending_oscillation_inp,
             load_metadata_from_inp,
@@ -273,7 +273,7 @@ class TestInpValidation:
 
     def test_validate_records_node_info(self, tmp_path):
         """.inp から節点情報が読み取られる."""
-        from scripts.run_bending_oscillation import (
+        from scripts._run_bending_oscillation import (
             _validate_inp_vs_metadata,
             export_bending_oscillation_inp,
             load_metadata_from_inp,

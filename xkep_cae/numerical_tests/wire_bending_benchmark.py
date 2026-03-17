@@ -152,7 +152,7 @@ def _deformed_coords(node_coords_ref: np.ndarray, u: np.ndarray) -> np.ndarray:
 # ====================================================================
 
 
-def print_benchmark_report(result: BendingOscillationResult) -> str:
+def _print_benchmark_report(result: BendingOscillationResult) -> str:
     """ベンチマーク結果のフォーマット済みレポートを返す."""
     lines = []
     lines.append(f"{'=' * 70}")
@@ -190,7 +190,7 @@ def print_benchmark_report(result: BendingOscillationResult) -> str:
 # ====================================================================
 
 
-def run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
+def _run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
     実行ロジックは backend の bending_oscillation_runner に委譲する。
@@ -211,7 +211,7 @@ def run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     return runner(**kwargs)
 
 
-def run_scaling_benchmark(
+def _run_scaling_benchmark(
     strand_counts: list[int] | None = None,
     **kwargs: Any,
 ) -> list[BendingOscillationResult]:
@@ -221,7 +221,7 @@ def run_scaling_benchmark(
 
     results = []
     for n in strand_counts:
-        result = run_bending_oscillation(n_strands=n, **kwargs)
+        result = _run_bending_oscillation(n_strands=n, **kwargs)
         results.append(result)
 
     print(f"\n{'=' * 80}")
@@ -250,4 +250,4 @@ def run_scaling_benchmark(
 
 # 旧名との互換性
 WireBendingBenchmarkResult = BendingOscillationResult
-run_wire_bending_benchmark = run_bending_oscillation
+run_wire_bending_benchmark = _run_bending_oscillation

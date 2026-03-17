@@ -41,7 +41,7 @@ print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation  # noqa: E402
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation  # noqa: E402
 
 _COMMON_PARAMS = dict(
     use_ncp=True,
@@ -66,7 +66,7 @@ print("  7本撚線 90度曲げ+揺動1周期（UL+NCP, point contact, SVD截断
 print("=" * 70)
 
 t0 = time.perf_counter()
-result = run_bending_oscillation(
+result = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,

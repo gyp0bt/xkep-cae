@@ -9,7 +9,7 @@ import time
 
 sys.path.insert(0, ".")
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 log_path = f"/tmp/test_phase1_fric_delta_{int(time.time())}.log"
 
@@ -64,7 +64,7 @@ print("  テスト1: 7本 μ=0.15 45度曲げ（δ正則化あり）")
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_45 = run_bending_oscillation(
+result_45 = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=45.0,
@@ -87,7 +87,7 @@ print("  テスト2: 7本 μ=0.15 90度曲げ（δ正則化あり）")
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_90 = run_bending_oscillation(
+result_90 = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,

@@ -43,7 +43,7 @@ print(f"ログ: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 # ==================================================================
 # テスト1: n_load_steps=1 + adaptive (dt_initial_fraction自動)
@@ -53,7 +53,7 @@ print("  テスト1: 7本 90度曲げ n_load_steps=1 + adaptive")
 print("=" * 70)
 
 t0 = time.perf_counter()
-result = run_bending_oscillation(
+result = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,
@@ -89,7 +89,7 @@ print("  テスト2: 7本 90度曲げ n_load_steps=30 (均等分割, 比較用)"
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_hc = run_bending_oscillation(
+result_hc = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,
@@ -139,7 +139,7 @@ print("  テスト3: 7本 90度曲げ + 揺動1周期 n_load_steps=1 + adaptive"
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_full = run_bending_oscillation(
+result_full = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,

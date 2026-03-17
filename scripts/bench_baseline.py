@@ -32,10 +32,10 @@ print(f"=== ベースライン計測 (status-132相当) ===")
 print(f"ログ: {log_path}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 t0 = time.perf_counter()
-result = run_bending_oscillation(
+result = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,
