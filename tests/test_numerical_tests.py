@@ -1157,7 +1157,8 @@ class TestDynamicBend3p:
 
     def test_run_via_public_api(self):
         """公開APIからの実行."""
-        from xkep_cae.numerical_tests import DynamicTestConfig, run_dynamic_test
+        from xkep_cae.numerical_tests import DynamicTestConfig
+        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
