@@ -1,15 +1,15 @@
-# 使用例（旧 xkep_cae_deprecated API）
+# 使用例（旧 __xkep_cae_deprecated API）
 
 [← README](../../README.md) | [← reference](README.md)
 
-> **注意**: 以下の例は `xkep_cae_deprecated` パッケージ（旧 `xkep_cae`）の API です。
+> **注意**: 以下の例は `__xkep_cae_deprecated` パッケージ（旧 `xkep_cae`）の API です。
 > 脱出ポット計画により新 `xkep_cae` へ順次移行中。新 API の使用例は各 Process の
 > テストファイルを参照してください。
 
 ## 高レベルAPI（ラベルベース）
 
 ```python
-from xkep_cae_deprecated.api import solve_plane_strain
+from __xkep_cae_deprecated.api import solve_plane_strain
 
 u_map = solve_plane_strain(
     node_coord_array=nodes,
@@ -26,12 +26,12 @@ u_map = solve_plane_strain(
 ## Protocol API（低レベル）
 
 ```python
-from xkep_cae_deprecated.elements.quad4_eas_bbar import Quad4EASPlaneStrain  # EAS-4 (推奨)
-from xkep_cae_deprecated.elements.tri3 import Tri3PlaneStrain
-from xkep_cae_deprecated.materials.elastic import PlaneStrainElastic
-from xkep_cae_deprecated.assembly import assemble_global_stiffness
-from xkep_cae_deprecated.bc import apply_dirichlet
-from xkep_cae_deprecated.solver import solve_displacement
+from __xkep_cae_deprecated.elements.quad4_eas_bbar import Quad4EASPlaneStrain  # EAS-4 (推奨)
+from __xkep_cae_deprecated.elements.tri3 import Tri3PlaneStrain
+from __xkep_cae_deprecated.materials.elastic import PlaneStrainElastic
+from __xkep_cae_deprecated.assembly import assemble_global_stiffness
+from __xkep_cae_deprecated.bc import apply_dirichlet
+from __xkep_cae_deprecated.solver import solve_displacement
 
 mat = PlaneStrainElastic(E=200e3, nu=0.3)
 
@@ -49,9 +49,9 @@ u, info = solve_displacement(Kbc, fbc)
 ## 梁要素
 
 ```python
-from xkep_cae_deprecated.elements.beam_eb2d import EulerBernoulliBeam2D
-from xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from xkep_cae_deprecated.sections.beam import BeamSection2D
+from __xkep_cae_deprecated.elements.beam_eb2d import EulerBernoulliBeam2D
+from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
+from __xkep_cae_deprecated.sections.beam import BeamSection2D
 
 sec = BeamSection2D.rectangle(b=10.0, h=10.0)
 beam = EulerBernoulliBeam2D(section=sec)
@@ -63,9 +63,9 @@ K = assemble_global_stiffness(nodes_xy, [(beam, conn)], mat)
 ## 3D梁要素
 
 ```python
-from xkep_cae_deprecated.elements.beam_timo3d import TimoshenkoBeam3D
-from xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from xkep_cae_deprecated.sections.beam import BeamSection
+from __xkep_cae_deprecated.elements.beam_timo3d import TimoshenkoBeam3D
+from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
+from __xkep_cae_deprecated.sections.beam import BeamSection
 
 sec = BeamSection.rectangle(b=10.0, h=20.0)
 beam = TimoshenkoBeam3D(section=sec, kappa_y="cowper", kappa_z="cowper")
@@ -74,7 +74,7 @@ mat = BeamElastic1D(E=200e3, nu=0.3)
 K = assemble_global_stiffness(nodes_xyz, [(beam, conn)], mat)
 
 # 解析後の断面力計算
-from xkep_cae_deprecated.elements.beam_timo3d import beam3d_section_forces
+from __xkep_cae_deprecated.elements.beam_timo3d import beam3d_section_forces
 forces_1, forces_2 = beam.section_forces(coords_elem, u_elem, mat)
 print(f"軸力: {forces_1.N:.3f}, せん断力: {forces_1.Vy:.3f}, モーメント: {forces_1.Mz:.3f}")
 ```
@@ -82,9 +82,9 @@ print(f"軸力: {forces_1.N:.3f}, せん断力: {forces_1.Vy:.3f}, モーメン�
 ## Cosserat rod（四元数ベース幾何学的厳密梁）
 
 ```python
-from xkep_cae_deprecated.elements.beam_cosserat import CosseratRod
-from xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from xkep_cae_deprecated.sections.beam import BeamSection
+from __xkep_cae_deprecated.elements.beam_cosserat import CosseratRod
+from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
+from __xkep_cae_deprecated.sections.beam import BeamSection
 
 sec = BeamSection.circle(d=10.0)
 beam = CosseratRod(section=sec, kappa_y="cowper", kappa_z="cowper")
@@ -103,10 +103,10 @@ print(f"軸伸び: {strains.gamma[0]:.6f}, ねじり: {strains.kappa[0]:.6f}")
 ```python
 import numpy as np
 import scipy.sparse as sp
-from xkep_cae_deprecated.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
-from xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from xkep_cae_deprecated.sections.beam import BeamSection
-from xkep_cae_deprecated.solver import newton_raphson
+from __xkep_cae_deprecated.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam
+from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
+from __xkep_cae_deprecated.sections.beam import BeamSection
+from __xkep_cae_deprecated.solver import newton_raphson
 
 sec = BeamSection.rectangle(10.0, 10.0)
 mat = BeamElastic1D(E=200e3, nu=0.3)
@@ -128,7 +128,7 @@ result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=10)
 print(f"収束: {result.converged}, 先端変位: {result.u[6*n_elems+1]:.4f}")
 
 # 弧長法（スナップスルー・座屈追跡）
-from xkep_cae_deprecated.solver import arc_length
+from __xkep_cae_deprecated.solver import arc_length
 result_al = arc_length(f_ext, np.arange(6), tangent, fint, n_steps=50, delta_l=0.5)
 print(f"荷重パラメータ: {result_al.lam:.4f}, ステップ数: {result_al.n_steps}")
 ```
@@ -147,12 +147,12 @@ result = newton_raphson(f_ext, np.arange(6), tangent, fint, n_load_steps=20, max
 ```python
 import numpy as np
 import scipy.sparse as sp
-from xkep_cae_deprecated.core.state import CosseratPlasticState
-from xkep_cae_deprecated.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam_plastic
-from xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
-from xkep_cae_deprecated.materials.plasticity_1d import IsotropicHardening, Plasticity1D
-from xkep_cae_deprecated.sections.beam import BeamSection
-from xkep_cae_deprecated.solver import newton_raphson
+from __xkep_cae_deprecated.core.state import CosseratPlasticState
+from __xkep_cae_deprecated.elements.beam_cosserat import CosseratRod, assemble_cosserat_beam_plastic
+from __xkep_cae_deprecated.materials.beam_elastic import BeamElastic1D
+from __xkep_cae_deprecated.materials.plasticity_1d import IsotropicHardening, Plasticity1D
+from __xkep_cae_deprecated.sections.beam import BeamSection
+from __xkep_cae_deprecated.solver import newton_raphson
 
 sec = BeamSection.rectangle(10.0, 20.0)
 mat = BeamElastic1D(E=200e3, nu=0.3)
@@ -195,7 +195,7 @@ for step in range(5):
 ## 数値試験フレームワーク
 
 ```python
-from xkep_cae_deprecated.numerical_tests import (
+from __xkep_cae_deprecated.numerical_tests import (
     NumericalTestConfig, run_test, run_all_tests,
     export_static_csv, parse_test_input,
 )
@@ -230,7 +230,7 @@ export_static_csv(result, output_dir="./results")
 ## 周波数応答試験
 
 ```python
-from xkep_cae_deprecated.numerical_tests import (
+from __xkep_cae_deprecated.numerical_tests import (
     FrequencyResponseConfig, run_frequency_response,
     export_frequency_response_csv,
 )

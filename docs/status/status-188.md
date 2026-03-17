@@ -22,14 +22,14 @@ status-187 の TODO「Phase 7 後半: ContactManager 新パッケージ移植」
 
 ### 1. `contact/_broadphase.py` 新設 — broadphase AABB 空間ハッシュ移植
 
-deprecated `xkep_cae_deprecated/contact/broadphase.py` から `broadphase_aabb()` を移植:
+deprecated `__xkep_cae_deprecated/contact/broadphase.py` から `broadphase_aabb()` を移植:
 
 - `_broadphase_aabb()`: AABB 空間ハッシュ候補ペア探索（ベクトル化版）
 - プライベートモジュール + `_` prefix → C16 滅菌チェッククリア
 
 ### 2. `contact/_contact_pair.py` 新設 — ContactManager 全データ構造移植
 
-deprecated `xkep_cae_deprecated/contact/pair.py` から全クラスを移植:
+deprecated `__xkep_cae_deprecated/contact/pair.py` から全クラスを移植:
 
 - `_ContactState`: 1接触点の状態変数（19フィールド + copy()）
 - `_ContactPair`: 接触ペア定義（elem_a/b, nodes_a/b, state, radius）
@@ -46,7 +46,7 @@ deprecated `xkep_cae_deprecated/contact/pair.py` から全クラスを移植:
 
 ### 3. `contact/setup/process.py` 更新 — C14 除去
 
-- `importlib.import_module("xkep_cae_deprecated.contact.pair")` → `from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager` に変更
+- `importlib.import_module("__xkep_cae_deprecated.contact.pair")` → `from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager` に変更
 - importlib インポート削除
 
 ### 4. `contact/solver/process.py` 更新 — C14 除去
@@ -77,11 +77,11 @@ deprecated `xkep_cae_deprecated/contact/pair.py` から全クラスを移植:
 
 | 旧機能 | 新機能 | 移行status |
 |--------|--------|-----------|
-| `xkep_cae_deprecated.contact.pair.ContactManager` | `xkep_cae.contact._contact_pair._ContactManager` | status-188 |
-| `xkep_cae_deprecated.contact.pair.ContactConfig` | `xkep_cae.contact._contact_pair._ContactConfig` | status-188 |
-| `xkep_cae_deprecated.contact.pair.ContactState` | `xkep_cae.contact._contact_pair._ContactState` | status-188 |
-| `xkep_cae_deprecated.contact.pair.ContactPair` | `xkep_cae.contact._contact_pair._ContactPair` | status-188 |
-| `xkep_cae_deprecated.contact.broadphase.broadphase_aabb` | `xkep_cae.contact._broadphase._broadphase_aabb` | status-188 |
+| `__xkep_cae_deprecated.contact.pair.ContactManager` | `xkep_cae.contact._contact_pair._ContactManager` | status-188 |
+| `__xkep_cae_deprecated.contact.pair.ContactConfig` | `xkep_cae.contact._contact_pair._ContactConfig` | status-188 |
+| `__xkep_cae_deprecated.contact.pair.ContactState` | `xkep_cae.contact._contact_pair._ContactState` | status-188 |
+| `__xkep_cae_deprecated.contact.pair.ContactPair` | `xkep_cae.contact._contact_pair._ContactPair` | status-188 |
+| `__xkep_cae_deprecated.contact.broadphase.broadphase_aabb` | `xkep_cae.contact._broadphase._broadphase_aabb` | status-188 |
 | `contact/solver/process.py _create_working_strategies()` | `xkep_cae.core.data.default_strategies()` 直接使用 | status-188 |
 
 ## TODO

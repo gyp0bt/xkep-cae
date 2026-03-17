@@ -38,25 +38,25 @@ status-176 TODO の消化（C16 純粋関数 `_` prefix 化）と、
 ### 3. ドキュメント再編
 
 #### README.md
-- パッケージ構成を新 `xkep_cae/` + 旧 `xkep_cae_deprecated/` の2構成に更新
-- モジュール別ドキュメントリンクを `xkep_cae_deprecated/` 配下に修正
+- パッケージ構成を新 `xkep_cae/` + 旧 `__xkep_cae_deprecated/` の2構成に更新
+- モジュール別ドキュメントリンクを `__xkep_cae_deprecated/` 配下に修正
 - 現在の状態テーブルに「脱出ポット計画」を追加
 
 #### docs/design/README.md
 - 新 xkep_cae セクション（penalty.md のみ）+ アーカイブセクション（旧文書）に再構成
-- 全リンクを `xkep_cae_deprecated/` パスに修正
+- 全リンクを `__xkep_cae_deprecated/` パスに修正
 
 #### docs/reference/examples.md
 - 旧 API であることを明示（冒頭注意書き追加）
-- 全インポートパスを `xkep_cae_deprecated.` に修正
+- 全インポートパスを `__xkep_cae_deprecated.` に修正
 
 #### docs/reference/abaqus-differences.md
-- コード例のインポートパスを `xkep_cae_deprecated.` に修正
+- コード例のインポートパスを `__xkep_cae_deprecated.` に修正
 
 #### docs/roadmap.md
-- 設計仕様書リンクを `xkep_cae_deprecated/` パスに修正
+- 設計仕様書リンクを `__xkep_cae_deprecated/` パスに修正
 - S3完了済みリンクをアーカイブパスに修正
-- モジュール README リンクを `xkep_cae_deprecated/` パスに修正
+- モジュール README リンクを `__xkep_cae_deprecated/` パスに修正
 
 #### docs/status/status-index.md
 - アクティブ status を 175〜 のみに変更（新 xkep_cae 用）

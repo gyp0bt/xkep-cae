@@ -43,7 +43,7 @@ status-180 の TODO 2件を完了:
 
 `xkep_cae/contact/coating/` を新規作成:
 - `strategy.py`: `NoCoatingProcess` + `KelvinVoigtCoatingProcess` + `_create_coating_strategy()`
-  - 旧 `xkep_cae_deprecated/process/strategies/coating.py` から移行
+  - 旧 `__xkep_cae_deprecated/process/strategies/coating.py` から移行
   - `return_mapping_core` / `tangent_2x2_core` のインポートを `xkep_cae.contact.friction.law_friction` に変更
 - `__init__.py`: 公開エクスポート
 - `docs/coating.md`: ドキュメント
@@ -68,7 +68,7 @@ status-180 の TODO 2件を完了:
 
 | 旧機能 | 新機能 | 移行status |
 |--------|--------|-----------|
-| `xkep_cae_deprecated/process/strategies/coating.py` | `xkep_cae/contact/coating/strategy.py` | status-181 |
+| `__xkep_cae_deprecated/process/strategies/coating.py` | `xkep_cae/contact/coating/strategy.py` | status-181 |
 | `ManualPenaltyProcess`（deprecated） | `ConstantPenalty` | status-181 |
 | `default_strategies()` penalty=None | `_create_penalty_strategy()` | status-181 |
 | `default_strategies()` coating=None | `_create_coating_strategy()` | status-181 |

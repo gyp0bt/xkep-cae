@@ -20,8 +20,8 @@ NR反復の収束履歴を検証（収束判定・反復数閾値・インクリ
 
 ## 移行元
 
-- `xkep_cae_deprecated/process/verify/convergence.py`
-- `xkep_cae_deprecated/process/verify/energy.py`
-- `xkep_cae_deprecated/process/verify/contact.py`
+- `__xkep_cae_deprecated/process/verify/convergence.py`
+- `__xkep_cae_deprecated/process/verify/energy.py`
+- `__xkep_cae_deprecated/process/verify/contact.py`
 
 → status-183

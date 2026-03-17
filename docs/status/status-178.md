@@ -59,8 +59,8 @@ claude/refactor-module-migration-Fzj2W
 ### コミット 2: FrictionStrategy 完全書き直し
 
 参照元（旧コード）:
-- `xkep_cae_deprecated/process/strategies/friction.py`
-- `xkep_cae_deprecated/contact/law_friction.py`
+- `__xkep_cae_deprecated/process/strategies/friction.py`
+- `__xkep_cae_deprecated/contact/law_friction.py`
 
 新規ファイル:
 ```
@@ -155,8 +155,8 @@ xkep_cae/
 |--------|--------|-----------|
 | `xkep_cae/process/` 基盤ファイル | `xkep_cae/core/` | status-178 |
 | `process/strategies/penalty/` | `contact/penalty/` | status-178 |
-| `xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
-| `xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
+| `__xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
+| `__xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
 
 ## TODO
 

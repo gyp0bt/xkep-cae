@@ -13,8 +13,8 @@
 
 ## 依存
 
-- `xkep_cae_deprecated.contact.pair.ContactManager`（importlib 経由）
+- `__xkep_cae_deprecated.contact.pair.ContactManager`（importlib 経由）
 
 ## 移行元
 
-`xkep_cae_deprecated/process/concrete/pre_contact.py` → status-183
+`__xkep_cae_deprecated/process/concrete/pre_contact.py` → status-183

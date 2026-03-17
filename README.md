@@ -26,7 +26,7 @@
 | 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了（deprecated） |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了（deprecated） |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了（deprecated） |
-| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 10 完了 — deprecated テスト無効化 + 状態ユーティリティ維持判断** |
+| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 11 完了 — deprecated パッケージリネーム（C14 実効性強化）** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
@@ -59,12 +59,12 @@ xkep_cae/
 └── tuning/            # チューニング（移行予定）
 ```
 
-### xkep_cae_deprecated/（旧パッケージ — 段階的移行元）
+### __xkep_cae_deprecated/（旧パッケージ — 段階的移行元）
 
 全機能が実装済み。脱出ポット計画で新 xkep_cae に順次移行される。
 
 ```
-xkep_cae_deprecated/
+__xkep_cae_deprecated/
 ├── core/           # Protocol 定義（Element, Constitutive, State）
 ├── elements/       # 要素（Q4, TRI3/6, Beam, Cosserat, HEX8）
 ├── materials/      # 構成則（弾性, 1D/3D弾塑性）
@@ -99,13 +99,13 @@ xkep_cae_deprecated/
 
 ### 旧モジュール別ドキュメント
 
-各旧モジュールの設計仕様は `xkep_cae_deprecated/` 配下に配置。
+各旧モジュールの設計仕様は `__xkep_cae_deprecated/` 配下に配置。
 
 | モジュール | README | 主な設計仕様 |
 |-----------|--------|------------|
-| [contact/](xkep_cae_deprecated/contact/docs/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
-| [elements/](xkep_cae_deprecated/elements/docs/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
-| [mesh/](xkep_cae_deprecated/mesh/docs/README.md) | メッシュ生成 | 撚線/シース/被膜 |
+| [contact/](__xkep_cae_deprecated/contact/docs/README.md) | 接触アルゴリズム総覧 | NCP/AL/Mortar/摩擦/Line contact |
+| [elements/](__xkep_cae_deprecated/elements/docs/README.md) | 要素ライブラリ | Q4/TRI/Beam/Cosserat/HEX8 |
+| [mesh/](__xkep_cae_deprecated/mesh/docs/README.md) | メッシュ生成 | 撚線/シース/被膜 |
 
 ## インストール
 

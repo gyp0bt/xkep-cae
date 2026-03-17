@@ -1,7 +1,7 @@
 """ペナルティ剛性決定 Strategy の具象実装.
 
 PenaltyStrategy Protocol に従い、ペナルティ剛性 k_pen を決定する Process 群。
-旧 xkep_cae_deprecated/process/strategies/penalty.py の完全書き直し。
+旧 __xkep_cae_deprecated/process/strategies/penalty.py の完全書き直し。
 """
 
 from __future__ import annotations

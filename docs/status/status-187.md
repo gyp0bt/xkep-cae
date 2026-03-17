@@ -22,7 +22,7 @@ status-186 の TODO「Phase 7: deprecated 依存除去」を開始。mesh/proces
 
 ### 1. mesh/_twisted_wire.py 新設 — twisted_wire メッシュ生成関数移植
 
-deprecated `xkep_cae_deprecated/mesh/twisted_wire.py` から `make_twisted_wire_mesh()` と依存関数を新パッケージに移植:
+deprecated `__xkep_cae_deprecated/mesh/twisted_wire.py` から `make_twisted_wire_mesh()` と依存関数を新パッケージに移植:
 
 - `_make_twisted_wire_mesh()`: メインファクトリ関数
 - `TwistedWireMesh`, `StrandInfo`: frozen dataclass（C16 準拠）
@@ -36,12 +36,12 @@ deprecated `xkep_cae_deprecated/mesh/twisted_wire.py` から `make_twisted_wire_
 
 ### 2. mesh/process.py 更新
 
-- `importlib.import_module("xkep_cae_deprecated.mesh.twisted_wire")` → `from xkep_cae.mesh._twisted_wire import` に変更
+- `importlib.import_module("__xkep_cae_deprecated.mesh.twisted_wire")` → `from xkep_cae.mesh._twisted_wire import` に変更
 - `mesh.radii`（プロパティ）→ `_radii(mesh)`（standalone 関数）に変更
 
 ### 3. output/__init__.py — deprecated lazy-load 削除
 
-- `__getattr__` による `xkep_cae_deprecated.output` の遅延ロードを完全削除
+- `__getattr__` による `__xkep_cae_deprecated.output` の遅延ロードを完全削除
 - 調査の結果、新パッケージ内で `__getattr__` 経由でアクセスしているコードは **ゼロ件**
 - scripts は `xkep_cae.output.render_beam_3d` 等のサブモジュールを直接指定しており、`__getattr__` は無関係
 
@@ -78,7 +78,7 @@ deprecated `xkep_cae_deprecated/mesh/twisted_wire.py` から `make_twisted_wire_
 
 | 旧機能 | 新機能 | 移行status |
 |--------|--------|-----------|
-| `xkep_cae_deprecated.mesh.twisted_wire.make_twisted_wire_mesh` | `xkep_cae.mesh._twisted_wire._make_twisted_wire_mesh` | status-187 |
+| `__xkep_cae_deprecated.mesh.twisted_wire.make_twisted_wire_mesh` | `xkep_cae.mesh._twisted_wire._make_twisted_wire_mesh` | status-187 |
 | `output/__init__.py __getattr__` deprecated lazy-load | 完全削除（使用箇所ゼロ） | status-187 |
 
 ## TODO

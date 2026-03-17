@@ -18,7 +18,7 @@ Abaqus 互換の入力形式に xkep-cae 独自拡張（`*OUTPUT, FIELD ANIMATIO
 ## 使い方
 
 ```python
-from xkep_cae_deprecated.io import read_abaqus_inp
+from __xkep_cae_deprecated.io import read_abaqus_inp
 from xkep_cae.output import export_field_animation, export_field_animation_gif
 
 # .inp ファイルの読み込み

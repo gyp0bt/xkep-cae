@@ -1,6 +1,6 @@
 """ContactSetupProcess — 接触設定の PreProcess.
 
-旧 xkep_cae_deprecated/process/concrete/pre_contact.py の完全書き直し。
+旧 __xkep_cae_deprecated/process/concrete/pre_contact.py の完全書き直し。
 設計仕様: docs/contact_setup.md
 """
 
