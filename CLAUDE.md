@@ -104,6 +104,9 @@
 | `__xkep_cae_deprecated.elements.beam_timo3d` ULCRBeamAssembler 等 | `xkep_cae.elements._beam_*` モジュール群 | status-197 |
 | `__xkep_cae_deprecated.sections.beam` BeamSection/2D | `xkep_cae.elements._beam_section` | status-197 |
 | `__xkep_cae_deprecated.math.quaternion` (rotvec↔rotmat用) | `xkep_cae.elements._beam_cr` にインライン化 | status-197 |
+| `numerical_tests/__init__.py` 全量 re-export | 型のみ re-export（関数除去） | status-200 |
+| C16: `__init__.py` 関数 re-export のみ検査 | クラス re-export も型検査対象 | status-200 |
+| 条例 O1 のみ | O2（BackendRegistry 検出）+ O3（backend.configure 検出）追加 | status-200 |
 
 ## 推奨ソルバー構成
 
@@ -115,7 +118,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C14/C16 違反 **0件**（status-199）
+**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **40件**（elements/numerical_tests 監査強化, status-200）
 
 ### ターゲット
 
@@ -123,7 +126,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 15（次）** — 被膜モデル物理検証テスト + numerical_tests 再実装。Process 実行診断インフラ完成済み（status-199）。
+**脱出ポット計画 Phase 15** — elements/numerical_tests の Process Architecture 完全移行（status-200）。BackendRegistry 廃止、純粋関数 private 化、dataclass frozen 化、runner Process 化。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
