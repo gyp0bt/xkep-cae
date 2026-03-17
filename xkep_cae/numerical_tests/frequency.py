@@ -171,7 +171,7 @@ def _assemble_lumped_mass_3d(
 # ---------------------------------------------------------------------------
 # 周波数応答試験ランナー
 # ---------------------------------------------------------------------------
-def run_frequency_response(
+def _run_frequency_response(
     cfg: FrequencyResponseConfig,
 ) -> FrequencyResponseResult:
     """周波数応答試験を実行する."""

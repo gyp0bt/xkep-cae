@@ -395,7 +395,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
 # ---------------------------------------------------------------------------
 # 公開API
 # ---------------------------------------------------------------------------
-def run_test(cfg: NumericalTestConfig) -> StaticTestResult:
+def _run_test(cfg: NumericalTestConfig) -> StaticTestResult:
     """単一の静的試験を実行する."""
     dispatch = {
         "bend3p": _run_bend3p,
@@ -409,17 +409,17 @@ def run_test(cfg: NumericalTestConfig) -> StaticTestResult:
     return runner(cfg)
 
 
-def run_all_tests(
+def _run_all_tests(
     configs: list[NumericalTestConfig],
 ) -> list[StaticTestResult]:
     """複数の試験を一括実行する."""
-    return [run_test(cfg) for cfg in configs]
+    return [_run_test(cfg) for cfg in configs]
 
 
-def run_tests(
+def _run_tests(
     configs: list[NumericalTestConfig],
     names: list[str],
 ) -> list[StaticTestResult]:
     """指定した試験名のみ部分実行する."""
     filtered = [cfg for cfg in configs if cfg.name in names]
-    return [run_test(cfg) for cfg in filtered]
+    return [_run_test(cfg) for cfg in filtered]

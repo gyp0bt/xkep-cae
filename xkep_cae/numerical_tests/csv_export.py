@@ -15,7 +15,7 @@ from xkep_cae.numerical_tests.core import (
 )
 
 
-def export_static_csv(
+def _export_static_csv(
     result: StaticTestResult,
     output_dir: str | Path | None = None,
     prefix: str = "",
@@ -158,7 +158,7 @@ def export_static_csv(
     return outputs
 
 
-def export_frequency_response_csv(
+def _export_frequency_response_csv(
     result: FrequencyResponseResult,
     output_dir: str | Path | None = None,
     prefix: str = "",

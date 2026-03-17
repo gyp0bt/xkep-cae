@@ -124,7 +124,7 @@ def plot_numerical_tests_accuracy():
     """数値試験フレームワークの全試験の解析解との相対誤差."""
     plt = _setup_matplotlib()
     from xkep_cae.numerical_tests.core import NumericalTestConfig
-    from xkep_cae.numerical_tests.runner import run_test
+    from xkep_cae.numerical_tests.runner import _run_test
 
     E = 200e3
     nu = 0.3
@@ -283,7 +283,7 @@ def plot_numerical_tests_accuracy():
     labels = []
     errors = []
     for label, cfg in configs:
-        result = run_test(cfg)
+        result = _run_test(cfg)
         labels.append(label)
         errors.append(result.relative_error if result.relative_error is not None else 0.0)
 

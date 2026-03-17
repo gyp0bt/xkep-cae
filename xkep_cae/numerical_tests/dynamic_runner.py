@@ -282,7 +282,7 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
 # ---------------------------------------------------------------------------
 # 公開 API
 # ---------------------------------------------------------------------------
-def run_dynamic_test(cfg: DynamicTestConfig) -> DynamicTestResult:
+def _run_dynamic_test(cfg: DynamicTestConfig) -> DynamicTestResult:
     """動的試験を実行する."""
     dispatch = {
         "dynamic_bend3p": _run_dynamic_bend3p,
@@ -293,8 +293,8 @@ def run_dynamic_test(cfg: DynamicTestConfig) -> DynamicTestResult:
     return runner(cfg)
 
 
-def run_dynamic_tests(
+def _run_dynamic_tests(
     configs: list[DynamicTestConfig],
 ) -> list[DynamicTestResult]:
     """複数の動的試験を一括実行する."""
-    return [run_dynamic_test(cfg) for cfg in configs]
+    return [_run_dynamic_test(cfg) for cfg in configs]

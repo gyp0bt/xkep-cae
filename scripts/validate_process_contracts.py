@@ -576,11 +576,13 @@ def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
         params = getattr(cls, "__dataclass_params__", None)
         if params and params.frozen:
             # メソッド検査: frozen dataclass にメソッドがあれば違反
+            # property は派生フィールド（純粋計算）なので許可
             _methods = [
                 name
                 for name, val in vars(cls).items()
                 if not (name.startswith("__") and name.endswith("__"))
-                and (callable(val) or isinstance(val, (property, classmethod, staticmethod)))
+                and not isinstance(val, property)
+                and (callable(val) or isinstance(val, (classmethod, staticmethod)))
             ]
             if _methods:
                 errors.append(
@@ -746,12 +748,14 @@ def check_c16_sterilization() -> list[str]:
                 params = getattr(cls, "__dataclass_params__", None)
                 if params and params.frozen:
                     # メソッド検査: frozen dataclass にメソッドがあれば違反
+                    # property は派生フィールド（純粋計算）なので許可
                     _methods = [
                         name
                         for name, val in vars(cls).items()
                         if not (name.startswith("__") and name.endswith("__"))
+                        and not isinstance(val, property)
                         and (
-                            callable(val) or isinstance(val, (property, classmethod, staticmethod))
+                            callable(val) or isinstance(val, (classmethod, staticmethod))
                         )
                     ]
                     if _methods:
