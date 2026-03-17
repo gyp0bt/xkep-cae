@@ -33,6 +33,7 @@
 | [197](status-197.md) | 2026-03-17 | Phase 13 完了 — ビームアセンブラ新 xkep_cae 移植 | ~2260+347p(新) |
 | [198](status-198.md) | 2026-03-17 | Phase 14 — S3 xfail テスト Process API 対応版 | ~2260+358p(新) |
 | [199](status-199.md) | 2026-03-17 | Process 実行診断インフラ — 警告・エラー・使用レポート | ~2260+374p(新) |
+| [200](status-200.md) | 2026-03-17 | Process Architecture 監査 — elements/numerical_tests 不遵守検出強化 | ~2260+374p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 

@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-17）
 
-**~2260テスト + 374 新パッケージテスト** | Process 実行診断インフラ完成 + Phase 14 完了 | [最新status](status/status-index.md)
+**~2260テスト + 374 新パッケージテスト** | Phase 15 開始 — elements/numerical_tests 監査強化 + 段階的移行 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|

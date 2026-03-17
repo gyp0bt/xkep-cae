@@ -2,6 +2,7 @@
 
 process-architecture.md §13 で定義された契約抜け腐敗シナリオを機械的に検出する:
 
+法律（C: Contract）:
 - C3: テスト未紐付けのプロセス（_test_class is None）
 - C5: process() 内の未宣言依存（AST解析）
 - C6: Strategy Protocol の意味論的契約違反（具象クラス未検証）
@@ -14,6 +15,12 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C14: xkep_cae/ 内から __xkep_cae_deprecated をインポートしていないか検出
 - C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
 - C16: 新パッケージ滅菌 — core/ 以外の全モジュール内のクラス/関数を分類検査
+       __init__.py のクラス再エクスポートも型検査対象
+
+条例（O: Ordinance）:
+- O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
+- O2: BackendRegistry パターン（configure/reset シングルトン）の検出
+- O3: テスト conftest での backend.configure() 注入の検出
 
 使用方法:
     python scripts/validate_process_contracts.py 2>&1 | tee /tmp/log-$(date +%s).log
@@ -449,7 +456,9 @@ def check_c14_deprecated_imports() -> list[str]:
                         )
             elif isinstance(node, ast.ImportFrom):
                 if node.module and node.module.startswith("__xkep_cae_deprecated"):
-                    errors.append(f"C14: {rel}:{node.lineno} が __xkep_cae_deprecated からインポート")
+                    errors.append(
+                        f"C14: {rel}:{node.lineno} が __xkep_cae_deprecated からインポート"
+                    )
             # importlib.import_module("__xkep_cae_deprecated...") の検出
             # エイリアス（import importlib as _il → _il.import_module(...)）も検出
             elif isinstance(node, ast.Call):
@@ -547,6 +556,57 @@ def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
+    """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
+
+    private モジュール（_xxx.py）で定義されたクラスが __init__.py 経由で
+    公開される場合、そのクラスも C16 ルールに従う必要がある。
+    """
+    import dataclasses
+    import enum
+
+    errors: list[str] = []
+
+    # 1. AbstractProcess サブクラス → OK
+    if issubclass(cls, AbstractProcess):
+        return errors
+
+    # 2. frozen dataclass
+    if dataclasses.is_dataclass(cls):
+        params = getattr(cls, "__dataclass_params__", None)
+        if params and params.frozen:
+            # メソッド検査: frozen dataclass にメソッドがあれば違反
+            _methods = [
+                name
+                for name, val in vars(cls).items()
+                if not (name.startswith("__") and name.endswith("__"))
+                and (callable(val) or isinstance(val, (property, classmethod, staticmethod)))
+            ]
+            if _methods:
+                errors.append(
+                    f"C16: {rel} が re-export する {cls_name} は frozen dataclass だが"
+                    f" メソッド {_methods} を持つ"
+                    f"（frozen dataclass は純粋データのみ許可）"
+                )
+            return errors
+        errors.append(
+            f"C16: {rel} が re-export する {cls_name} は non-frozen dataclass（frozen=True が必須）"
+        )
+        return errors
+
+    # 3. Enum → OK
+    if issubclass(cls, enum.Enum):
+        return errors
+
+    # いずれにも該当しない → 違反
+    errors.append(
+        f"C16: {rel} が re-export する {cls_name} は"
+        f" Process でも frozen dataclass でもない"
+        f"（許可: AbstractProcess subclass / frozen dataclass / Enum）"
+    )
+    return errors
+
+
 def check_c16_sterilization() -> list[str]:
     """C16: 新パッケージ滅菌チェック — Process Architecture 外の型を完全検挙.
 
@@ -604,9 +664,17 @@ def check_c16_sterilization() -> list[str]:
         except (SyntaxError, OSError):
             continue
 
-        # __init__.py は re-export のみ検査（関数の公開エイリアスを検出）
+        # __init__.py は re-export を検査（関数 + クラスの公開エイリアスを検出）
         if py_file.stem == "__init__":
             rel = py_file.relative_to(_project_root)
+            # __init__.py のモジュールをインポートしてクラスの型を検査
+            init_mod_path = py_file.relative_to(_project_root).with_suffix("")
+            init_mod_name = str(init_mod_path).replace("/", ".")
+            try:
+                init_mod = importlib.import_module(init_mod_name)
+            except Exception:
+                init_mod = None
+
             for node in ast.iter_child_nodes(tree):
                 if not isinstance(node, ast.ImportFrom):
                     continue
@@ -623,15 +691,18 @@ def check_c16_sterilization() -> list[str]:
                             f" {alias.asname} として公開 re-export"
                             f"（private 関数の公開エイリアス禁止）"
                         )
-                    # 公開関数の re-export（元名が _ なしの関数）
                     exported_name = alias.asname or alias.name
-                    if (
-                        not exported_name.startswith("_")
-                        and exported_name[0].islower()
-                        and not alias.name.startswith("_")
-                    ):
-                        # 小文字開始 = 関数の可能性。ただし Process/dataclass/Enum 名は
-                        # 大文字開始なので小文字開始の re-export は関数とみなす
+                    # _prefix は内部用なのでスキップ
+                    if exported_name.startswith("_"):
+                        continue
+                    # 大文字開始 = クラスの可能性 → 型を検査
+                    if exported_name[0].isupper() and init_mod is not None:
+                        cls = getattr(init_mod, exported_name, None)
+                        if cls is not None and isinstance(cls, type):
+                            errors.extend(_check_reexported_class(cls, exported_name, rel))
+                        continue
+                    # 小文字開始 = 関数の可能性
+                    if exported_name[0].islower() and not alias.name.startswith("_"):
                         errors.append(
                             f"C16: {rel} が {exported_name}() を公開 re-export"
                             f"（純粋関数の公開エクスポート禁止）"
@@ -769,10 +840,117 @@ def check_o1_test_direct_function_calls() -> list[str]:
     return errors
 
 
+def check_o2_backend_injection() -> list[str]:
+    """O2（条例）: xkep_cae/ 内の BackendRegistry パターンを検出.
+
+    Process Architecture では依存注入はProcess.uses で宣言するのが正規手段。
+    BackendRegistry のようなモジュールレベル・シングルトン注入は
+    Process Architecture を迂回しており、廃止対象。
+    """
+    errors = []
+    xkep_root = _project_root / "xkep_cae"
+
+    # core/ は基盤モジュールなので検査対象外
+    # TypeVar, frozen dataclass インスタンス等は正当なモジュールレベル定数
+    _SAFE_FACTORY_NAMES = {"TypeVar", "ParamSpec", "NewType"}
+
+    for py_file in sorted(xkep_root.rglob("*.py")):
+        if "__pycache__" in str(py_file):
+            continue
+        if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+            continue
+        # core/ は基盤モジュール — Registry パターン検査対象外
+        try:
+            rel = py_file.relative_to(xkep_root)
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] == "core":
+            continue
+
+        try:
+            source = py_file.read_text(encoding="utf-8")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError):
+            continue
+
+        rel = py_file.relative_to(_project_root)
+        for node in ast.iter_child_nodes(tree):
+            # クラス定義: configure/reset パターンの検出（Registry 系）
+            if isinstance(node, ast.ClassDef):
+                method_names = {n.name for n in ast.walk(node) if isinstance(n, ast.FunctionDef)}
+                if "configure" in method_names and "reset" in method_names:
+                    errors.append(
+                        f"O2: {rel}:{node.lineno} の {node.name} は"
+                        f" configure()/reset() を持つ Registry パターン"
+                        f"（Process.uses による依存宣言に移行が必要）"
+                    )
+            # モジュールレベル変数: シングルトンインスタンス検出
+            if isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name) and isinstance(node.value, ast.Call):
+                        func = node.value.func
+                        if isinstance(func, ast.Name) and func.id[0].isupper():
+                            # TypeVar 等の型ユーティリティは除外
+                            if func.id in _SAFE_FACTORY_NAMES:
+                                continue
+                            # ALL_CAPS = 定数パターンは除外
+                            if target.id.isupper():
+                                continue
+                            errors.append(
+                                f"O2: {rel}:{node.lineno} の"
+                                f" {target.id} = {func.id}() は"
+                                f" モジュールレベルシングルトン"
+                                f"（Process Architecture 外の状態管理）"
+                            )
+
+    return errors
+
+
+def check_o3_test_backend_configure() -> list[str]:
+    """O3（条例）: テスト conftest 等での backend.configure() 呼び出しを検出.
+
+    BackendRegistry への注入はProcess Architecture迂回であり廃止対象。
+    """
+    errors = []
+    # tests/ と xkep_cae/ 内のテスト conftest を走査
+    scan_paths = [_project_root / "tests", _project_root / "xkep_cae"]
+
+    for scan_root in scan_paths:
+        for py_file in sorted(scan_root.rglob("conftest.py")):
+            if "__pycache__" in str(py_file):
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(source)
+            except (SyntaxError, OSError):
+                continue
+
+            rel = py_file.relative_to(_project_root)
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                # backend.configure(...) / backend.configure_frequency(...) 等
+                if (
+                    isinstance(func, ast.Attribute)
+                    and func.attr.startswith("configure")
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "backend"
+                ):
+                    errors.append(
+                        f"O3: {rel}:{node.lineno} の"
+                        f" backend.{func.attr}() 呼び出し"
+                        f"（BackendRegistry 注入は廃止対象。"
+                        f"Process API に移行が必要）"
+                    )
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C16）")
+    print("プロセス契約違反検出スクリプト（C3-C16 + O1-O3）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -829,11 +1007,32 @@ def main() -> int:
     else:
         print("  OK")
 
-    # O1: 条例違反チェック（テストでの直接関数呼び出し）
+    # O1-O3: 条例違反チェック
+    all_ordinance: list[str] = []
+
     print("\n--- O1: テスト直接関数呼び出し（条例） ---")
     o1_warnings = check_o1_test_direct_function_calls()
+    all_ordinance.extend(o1_warnings)
     if o1_warnings:
         for w in o1_warnings:
+            print(f"  WARN: {w}")
+    else:
+        print("  OK")
+
+    print("\n--- O2: BackendRegistry パターン（条例） ---")
+    o2_warnings = check_o2_backend_injection()
+    all_ordinance.extend(o2_warnings)
+    if o2_warnings:
+        for w in o2_warnings:
+            print(f"  WARN: {w}")
+    else:
+        print("  OK")
+
+    print("\n--- O3: テスト backend.configure() 注入（条例） ---")
+    o3_warnings = check_o3_test_backend_configure()
+    all_ordinance.extend(o3_warnings)
+    if o3_warnings:
+        for w in o3_warnings:
             print(f"  WARN: {w}")
     else:
         print("  OK")
@@ -841,8 +1040,9 @@ def main() -> int:
     print("\n" + "=" * 60)
     if all_errors:
         print(f"契約違反: {len(all_errors)} 件")
-        if o1_warnings:
-            print(f"条例違反: {len(o1_warnings)} 件（警告）")
+    if all_ordinance:
+        print(f"条例違反: {len(all_ordinance)} 件（警告）")
+    if all_errors:
         print("\n修正ガイド:")
         print("  C3  → concrete/test_*.py を作成し @binds_to で紐付け")
         print("  C6  → test_contracts.py の意味論テストを実装で解消")
@@ -853,13 +1053,16 @@ def main() -> int:
         print("  C15 → ProcessMeta.document_path が指すドキュメントを作成")
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
         print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")
+        print("       __init__.py の re-export クラスも検査対象")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
+        print("  O2  → BackendRegistry パターンを Process.uses に移行")
+        print("  O3  → conftest の backend.configure() を廃止し Process API に移行")
         return 1
+    elif all_ordinance:
+        print(f"\n契約違反なし（条例違反 {len(all_ordinance)} 件は警告のみ）")
+        return 0
     else:
-        if o1_warnings:
-            print(f"契約違反なし（条例違反 {len(o1_warnings)} 件は警告のみ）")
-        else:
-            print("契約違反なし、条例違反なし")
+        print("契約違反なし、条例違反なし")
         return 0
 
 

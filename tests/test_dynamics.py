@@ -463,6 +463,7 @@ def _build_cantilever_beam_matrices(
         M, C, K, fixed_dofs
     """
     from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+
     from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
     from xkep_cae.numerical_tests.frequency import _assemble_mass_2d
     from xkep_cae.numerical_tests.runner import _assemble_2d
@@ -739,6 +740,7 @@ class TestLumpedMass:
         """
         from scipy.linalg import eigh
         from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+
         from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import (
             _assemble_lumped_mass_2d,
@@ -788,6 +790,7 @@ class TestLumpedMass:
     def test_lumped_mass_beam_transient(self):
         """集中質量でカンチレバー先端荷重が静的解に収束する."""
         from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
+
         from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_2d
         from xkep_cae.numerical_tests.runner import _assemble_2d
@@ -898,8 +901,9 @@ class TestElementMassMatrix:
     def test_eb2d_matches_frequency_module(self):
         """EB2D mass_matrix() と frequency.py の結果が一致."""
         from xkep_cae.elements.beam_eb2d import EulerBernoulliBeam2D
-        from xkep_cae.numerical_tests.frequency import _beam2d_mass_global
         from xkep_cae.sections.beam import BeamSection2D
+
+        from xkep_cae.numerical_tests.frequency import _beam2d_mass_global
 
         A = 1e-3
         rho = 7800.0
@@ -1012,8 +1016,9 @@ class TestElementMassMatrix:
     def test_timo3d_matches_frequency_module(self):
         """Timo3D mass_matrix() と frequency.py の結果が一致."""
         from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
-        from xkep_cae.numerical_tests.frequency import _beam3d_mass_global
         from xkep_cae.sections.beam import BeamSection
+
+        from xkep_cae.numerical_tests.frequency import _beam3d_mass_global
 
         rho = 7800.0
         sec = BeamSection.circle(d=0.02)
