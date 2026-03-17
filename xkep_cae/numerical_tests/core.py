@@ -26,7 +26,7 @@ SupportCondition = Literal["roller", "pin"]
 # ---------------------------------------------------------------------------
 # 静的試験コンフィグ
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class NumericalTestConfig:
     """数値試験の定義.
 
@@ -86,7 +86,7 @@ class NumericalTestConfig:
 # ---------------------------------------------------------------------------
 # 周波数応答試験コンフィグ
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class FrequencyResponseConfig:
     """周波数応答試験の定義.
 
@@ -144,7 +144,7 @@ class FrequencyResponseConfig:
 # ---------------------------------------------------------------------------
 # 静的試験結果
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class StaticTestResult:
     """静的試験の結果.
 
@@ -178,7 +178,7 @@ class StaticTestResult:
 # ---------------------------------------------------------------------------
 # 周波数応答試験結果
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class FrequencyResponseResult:
     """周波数応答試験の結果.
 
@@ -204,7 +204,7 @@ class FrequencyResponseResult:
 # ---------------------------------------------------------------------------
 # 動的試験コンフィグ
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class DynamicTestConfig:
     """動的試験（非線形過渡応答）の定義.
 
@@ -301,7 +301,7 @@ class DynamicTestConfig:
 # ---------------------------------------------------------------------------
 # 動的試験結果
 # ---------------------------------------------------------------------------
-@dataclass
+@dataclass(frozen=True)
 class DynamicTestResult:
     """動的試験の結果.
 
@@ -337,7 +337,7 @@ class DynamicTestResult:
 # ---------------------------------------------------------------------------
 # メッシュ生成
 # ---------------------------------------------------------------------------
-def generate_beam_mesh_2d(
+def _generate_beam_mesh_2d(
     n_elems: int,
     total_length: float,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -358,7 +358,7 @@ def generate_beam_mesh_2d(
     return nodes, connectivity
 
 
-def generate_beam_mesh_3d(
+def _generate_beam_mesh_3d(
     n_elems: int,
     total_length: float,
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -379,7 +379,7 @@ def generate_beam_mesh_3d(
     return nodes, connectivity
 
 
-def generate_beam_mesh_2d_nonuniform(
+def _generate_beam_mesh_2d_nonuniform(
     total_length: float,
     refinement_points: list[float],
     base_n_elems: int = 10,
@@ -427,7 +427,7 @@ def generate_beam_mesh_2d_nonuniform(
     return nodes, connectivity
 
 
-def generate_beam_mesh_3d_nonuniform(
+def _generate_beam_mesh_3d_nonuniform(
     total_length: float,
     refinement_points: list[float],
     base_n_elems: int = 10,
@@ -447,7 +447,7 @@ def generate_beam_mesh_3d_nonuniform(
         nodes: (n_nodes, 3) 節点座標
         connectivity: (n_elems, 2) 要素接続
     """
-    nodes_2d, conn = generate_beam_mesh_2d_nonuniform(
+    nodes_2d, conn = _generate_beam_mesh_2d_nonuniform(
         total_length,
         refinement_points,
         base_n_elems,
@@ -534,7 +534,7 @@ def _build_section_props(
 # ---------------------------------------------------------------------------
 # 解析解
 # ---------------------------------------------------------------------------
-def analytical_bend3p(
+def _analytical_bend3p(
     P: float,
     L: float,
     E: float,
@@ -570,7 +570,7 @@ def analytical_bend3p(
     }
 
 
-def analytical_bend4p(
+def _analytical_bend4p(
     P: float,
     L: float,
     a: float,
@@ -617,7 +617,7 @@ def analytical_bend4p(
     }
 
 
-def analytical_tensile(
+def _analytical_tensile(
     P: float,
     L: float,
     E: float,
@@ -634,7 +634,7 @@ def analytical_tensile(
     }
 
 
-def analytical_torsion(
+def _analytical_torsion(
     T: float,
     L: float,
     G: float,
@@ -656,7 +656,7 @@ def analytical_torsion(
 # ---------------------------------------------------------------------------
 # 摩擦滑り影響の評価
 # ---------------------------------------------------------------------------
-def assess_friction_effect(
+def _assess_friction_effect(
     test_name: str,
     span_ratio: float,
     support_condition: SupportCondition,

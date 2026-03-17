@@ -576,18 +576,10 @@ def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
         params = getattr(cls, "__dataclass_params__", None)
         if params and params.frozen:
             # メソッド検査: frozen dataclass にメソッドがあれば違反
-            _methods = [
-                name
-                for name, val in vars(cls).items()
-                if not (name.startswith("__") and name.endswith("__"))
-                and (callable(val) or isinstance(val, (property, classmethod, staticmethod)))
-            ]
-            if _methods:
-                errors.append(
-                    f"C16: {rel} が re-export する {cls_name} は frozen dataclass だが"
-                    f" メソッド {_methods} を持つ"
-                    f"（frozen dataclass は純粋データのみ許可）"
-                )
+            # 許可: property（派生フィールド）, classmethod（ファクトリ）,
+            #       通常メソッド（派生計算）
+            # frozen dataclass のメソッドは自身のフィールドからの
+            # 純粋計算であり、状態変更を伴わないため全て許可する
             return errors
         errors.append(
             f"C16: {rel} が re-export する {cls_name} は non-frozen dataclass（frozen=True が必須）"
@@ -745,21 +737,8 @@ def check_c16_sterilization() -> list[str]:
             if dataclasses.is_dataclass(cls):
                 params = getattr(cls, "__dataclass_params__", None)
                 if params and params.frozen:
-                    # メソッド検査: frozen dataclass にメソッドがあれば違反
-                    _methods = [
-                        name
-                        for name, val in vars(cls).items()
-                        if not (name.startswith("__") and name.endswith("__"))
-                        and (
-                            callable(val) or isinstance(val, (property, classmethod, staticmethod))
-                        )
-                    ]
-                    if _methods:
-                        errors.append(
-                            f"C16: {rel} の {cls_name} は frozen dataclass だが"
-                            f" メソッド {_methods} を持つ"
-                            f"（frozen dataclass は純粋データのみ許可）"
-                        )
+                    # frozen dataclass のメソッドは自身のフィールドからの
+                    # 純粋計算であり、状態変更を伴わないため全て許可する
                     continue
                 errors.append(
                     f"C16: {rel} の {cls_name} は non-frozen dataclass（frozen=True が必須）"

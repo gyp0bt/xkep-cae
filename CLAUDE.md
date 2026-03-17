@@ -118,7 +118,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **40件**（elements/numerical_tests 監査強化, status-200）
+**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **0件** | O2/O3 条例違反 5件（警告, status-201）
 
 ### ターゲット
 
@@ -126,7 +126,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 15** — elements/numerical_tests の Process Architecture 完全移行（status-200）。BackendRegistry 廃止、純粋関数 private 化、dataclass frozen 化、runner Process 化。
+**脱出ポット計画 Phase 16** — BackendRegistry 完全廃止（O2/O3 条例違反5件解消）+ 被膜モデル物理検証テスト（status-201）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

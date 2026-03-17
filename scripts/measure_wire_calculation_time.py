@@ -26,8 +26,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from xkep_cae.mesh.twisted_wire import minimum_strand_diameter
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
-    print_benchmark_report,
-    run_bending_oscillation,
+    _print_benchmark_report,
+    _run_bending_oscillation,
 )
 
 # ====================================================================
@@ -70,7 +70,7 @@ def run_measurement() -> list[BendingOscillationResult]:
         try:
             # 非貫入配置: 最小外径を自動計算
             sd = minimum_strand_diameter(n_strands, COMMON_PARAMS.get("wire_diameter", 0.002))
-            result = run_bending_oscillation(
+            result = _run_bending_oscillation(
                 n_strands=n_strands,
                 strand_diameter=sd,
                 **COMMON_PARAMS,
@@ -78,7 +78,7 @@ def run_measurement() -> list[BendingOscillationResult]:
             results.append(result)
 
             # 途中経過をコンソールに出力
-            report = print_benchmark_report(result)
+            report = _print_benchmark_report(result)
             print(report)
 
         except Exception as e:
@@ -237,7 +237,7 @@ def generate_report(results: list[BendingOscillationResult]) -> str:
         lines.append(f"### {r.n_strands}本撚線")
         lines.append("")
         lines.append("```")
-        lines.append(print_benchmark_report(r))
+        lines.append(_print_benchmark_report(r))
         lines.append("```")
         lines.append("")
 

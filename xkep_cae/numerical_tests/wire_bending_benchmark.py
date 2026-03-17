@@ -23,7 +23,7 @@ from xkep_cae.numerical_tests._backend import backend
 # ====================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class ContactSolveResult:
     """ソルバー結果."""
 
@@ -39,22 +39,24 @@ class ContactSolveResult:
     graph_history: list = field(default_factory=list)
 
 
+@dataclass(frozen=True)
 class BenchmarkTimingCollector:
-    """タイミング収集."""
+    """タイミング収集（frozen dataclass）."""
 
-    def __init__(self) -> None:
-        self._records: list[dict] = []
+    _records: tuple[dict, ...] = ()
 
-    def record(self, phase: int, step: int, iteration: int, label: str, elapsed: float) -> None:
-        self._records.append(
-            {
-                "phase": phase,
-                "step": step,
-                "iteration": iteration,
-                "label": label,
-                "elapsed": elapsed,
-            }
-        )
+    def record(
+        self, phase: int, step: int, iteration: int, label: str, elapsed: float
+    ) -> BenchmarkTimingCollector:
+        """新しいレコードを追加した新インスタンスを返す."""
+        new_record = {
+            "phase": phase,
+            "step": step,
+            "iteration": iteration,
+            "label": label,
+            "elapsed": elapsed,
+        }
+        return BenchmarkTimingCollector(_records=(*self._records, new_record))
 
     def summary_table(self) -> str:
         lines = ["  Timing Summary:"]
@@ -88,7 +90,7 @@ def _compute_kappa(nu: float) -> float:
 # ====================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class BendingOscillationResult:
     """曲げ揺動ベンチマーク結果.
 
@@ -150,7 +152,7 @@ def _deformed_coords(node_coords_ref: np.ndarray, u: np.ndarray) -> np.ndarray:
 # ====================================================================
 
 
-def print_benchmark_report(result: BendingOscillationResult) -> str:
+def _print_benchmark_report(result: BendingOscillationResult) -> str:
     """ベンチマーク結果のフォーマット済みレポートを返す."""
     lines = []
     lines.append(f"{'=' * 70}")
@@ -188,7 +190,7 @@ def print_benchmark_report(result: BendingOscillationResult) -> str:
 # ====================================================================
 
 
-def run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
+def _run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
     実行ロジックは backend の bending_oscillation_runner に委譲する。
@@ -209,7 +211,7 @@ def run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     return runner(**kwargs)
 
 
-def run_scaling_benchmark(
+def _run_scaling_benchmark(
     strand_counts: list[int] | None = None,
     **kwargs: Any,
 ) -> list[BendingOscillationResult]:
@@ -219,7 +221,7 @@ def run_scaling_benchmark(
 
     results = []
     for n in strand_counts:
-        result = run_bending_oscillation(n_strands=n, **kwargs)
+        result = _run_bending_oscillation(n_strands=n, **kwargs)
         results.append(result)
 
     print(f"\n{'=' * 80}")
@@ -248,4 +250,4 @@ def run_scaling_benchmark(
 
 # 旧名との互換性
 WireBendingBenchmarkResult = BendingOscillationResult
-run_wire_bending_benchmark = run_bending_oscillation
+run_wire_bending_benchmark = _run_bending_oscillation

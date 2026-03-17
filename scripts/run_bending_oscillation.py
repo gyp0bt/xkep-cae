@@ -14,13 +14,13 @@
 == 使い方 ==
 
   # プリ処理のみ（.inp 生成）
-  python scripts/run_bending_oscillation.py export --strands 7,19
+  python scripts/_run_bending_oscillation.py export --strands 7,19
 
   # .inp から計算（結果出力フック付き）
-  python scripts/run_bending_oscillation.py solve --inpdir scripts/results/bending
+  python scripts/_run_bending_oscillation.py solve --inpdir scripts/results/bending
 
   # 一気通貫
-  python scripts/run_bending_oscillation.py all --strands 7,19,37,61,91
+  python scripts/_run_bending_oscillation.py all --strands 7,19,37,61,91
 
 == .inp 構造 ==
 
@@ -77,7 +77,7 @@ from xkep_cae.mesh.twisted_wire import (
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
     export_bending_oscillation_gif,
-    run_bending_oscillation,
+    _run_bending_oscillation,
 )
 from xkep_cae.output.database import OutputDatabase
 from xkep_cae.output.export_vtk import VTK_LINE, export_vtk
@@ -567,7 +567,7 @@ def solve_from_inp(
     """Abaqus .inp ファイルから曲げ揺動を実行.
 
     .inp のメッシュ + メタデータを読み込み、
-    run_bending_oscillation に橋渡しする。
+    _run_bending_oscillation に橋渡しする。
     標準 Abaqus データ（*ELASTIC 等）とメタデータの整合を検証し、
     不整合時は .inp の値を truth として採用する。
 
@@ -599,7 +599,7 @@ def solve_from_inp(
 
     t0 = time.perf_counter()
     try:
-        result = run_bending_oscillation(
+        result = _run_bending_oscillation(
             n_strands=n_strands,
             wire_diameter=meta["wire_diameter"],
             pitch=meta["pitch"],

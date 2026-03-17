@@ -464,11 +464,11 @@ def _build_cantilever_beam_matrices(
     """
     from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
 
-    from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+    from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d
     from xkep_cae.numerical_tests.frequency import _assemble_mass_2d
     from xkep_cae.numerical_tests.runner import _assemble_2d
 
-    nodes, conn = generate_beam_mesh_2d(n_elems, L)
+    nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
     ke_func = lambda coords: eb_beam2d_ke_global(coords, E, A, I)  # noqa: E731
 
@@ -692,7 +692,7 @@ class TestLumpedMass:
 
     def test_lumped_mass_2d_global_total_mass(self):
         """2Dグローバル集中質量の全体質量が正しい."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_2d
 
         n_elems = 10
@@ -700,7 +700,7 @@ class TestLumpedMass:
         rho, A = 7800.0, 0.001
         m_total = rho * A * L
 
-        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, L)
         M = _assemble_lumped_mass_2d(nodes, conn, rho, A)
 
         # 対角行列
@@ -713,7 +713,7 @@ class TestLumpedMass:
 
     def test_lumped_mass_3d_global_total_mass(self):
         """3Dグローバル集中質量の全体質量が正しい."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_3d
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_3d
         from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_3d
 
         n_elems = 8
@@ -722,7 +722,7 @@ class TestLumpedMass:
         Iy, Iz = 1e-8, 2e-8
         m_total = rho * A * L
 
-        nodes, conn = generate_beam_mesh_3d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_3d(n_elems, L)
         M = _assemble_lumped_mass_3d(nodes, conn, rho, A, Iy, Iz)
 
         # 対角行列
@@ -741,7 +741,7 @@ class TestLumpedMass:
         from scipy.linalg import eigh
         from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
 
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import (
             _assemble_lumped_mass_2d,
             _assemble_mass_2d,
@@ -761,7 +761,7 @@ class TestLumpedMass:
         fixed_dofs = np.array([0, 1, 2])
 
         for n_elems in [10, 20]:
-            nodes, conn = generate_beam_mesh_2d(n_elems, L)
+            nodes, conn = _generate_beam_mesh_2d(n_elems, L)
             ke_func = lambda coords: eb_beam2d_ke_global(coords, E_mod, A, Iz)  # noqa: E731
             K_full, _ = _assemble_2d(nodes, conn, ke_func)
 
@@ -791,7 +791,7 @@ class TestLumpedMass:
         """集中質量でカンチレバー先端荷重が静的解に収束する."""
         from xkep_cae.elements.beam_eb2d import eb_beam2d_ke_global
 
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d
         from xkep_cae.numerical_tests.frequency import _assemble_lumped_mass_2d
         from xkep_cae.numerical_tests.runner import _assemble_2d
 
@@ -811,7 +811,7 @@ class TestLumpedMass:
         omega1 = 2.0 * np.pi * f1
         T1 = 1.0 / f1
 
-        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, L)
         ke_func = lambda coords: eb_beam2d_ke_global(coords, E_mod, A, Iz)  # noqa: E731
         K, _ = _assemble_2d(nodes, conn, ke_func)
         M = _assemble_lumped_mass_2d(nodes, conn, rho, A)

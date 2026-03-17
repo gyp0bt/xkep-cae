@@ -5,9 +5,7 @@
 
 旧 ``__xkep_cae_deprecated.numerical_tests`` からの移植。
 純粋関数のre-exportは廃止 (status-200)。
-サブモジュールから直接importすること:
-  from xkep_cae.numerical_tests.core import analytical_bend3p
-  from xkep_cae.numerical_tests.runner import run_test
+純粋関数は _ prefix で private 化済み (status-201)。
 """
 
 from xkep_cae.numerical_tests.core import (

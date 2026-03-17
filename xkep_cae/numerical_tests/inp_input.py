@@ -15,7 +15,7 @@ from xkep_cae.numerical_tests.core import (
 )
 
 
-def parse_test_input(
+def _parse_test_input(
     text: str,
     beam_type: str = "timo2d",
 ) -> NumericalTestConfig | FrequencyResponseConfig:

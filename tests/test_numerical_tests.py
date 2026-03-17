@@ -18,21 +18,21 @@ from xkep_cae.numerical_tests.core import (
     FrequencyResponseConfig,
     NumericalTestConfig,
     StaticTestResult,
-    analytical_bend3p,
-    analytical_bend4p,
-    analytical_tensile,
-    analytical_torsion,
-    assess_friction_effect,
-    generate_beam_mesh_2d,
-    generate_beam_mesh_3d,
+    _analytical_bend3p,
+    _analytical_bend4p,
+    _analytical_tensile,
+    _analytical_torsion,
+    _assess_friction_effect,
+    _generate_beam_mesh_2d,
+    _generate_beam_mesh_3d,
 )
 from xkep_cae.numerical_tests.csv_export import (
-    export_frequency_response_csv,
-    export_static_csv,
+    _export_frequency_response_csv,
+    _export_static_csv,
 )
-from xkep_cae.numerical_tests.frequency import run_frequency_response
-from xkep_cae.numerical_tests.inp_input import parse_test_input
-from xkep_cae.numerical_tests.runner import run_all_tests, run_test, run_tests
+from xkep_cae.numerical_tests.frequency import _run_frequency_response
+from xkep_cae.numerical_tests.inp_input import _parse_test_input
+from xkep_cae.numerical_tests.runner import _run_all_tests, _run_test, _run_tests
 
 pytestmark = pytest.mark.slow
 
@@ -56,22 +56,22 @@ CIRC_PARAMS = {"d": 10.0}
 # ===========================================================================
 class TestMeshGeneration:
     def test_2d_mesh_shape(self):
-        nodes, conn = generate_beam_mesh_2d(10, 100.0)
+        nodes, conn = _generate_beam_mesh_2d(10, 100.0)
         assert nodes.shape == (11, 2)
         assert conn.shape == (10, 2)
 
     def test_3d_mesh_shape(self):
-        nodes, conn = generate_beam_mesh_3d(10, 100.0)
+        nodes, conn = _generate_beam_mesh_3d(10, 100.0)
         assert nodes.shape == (11, 3)
         assert conn.shape == (10, 2)
 
     def test_mesh_endpoints(self):
-        nodes, _ = generate_beam_mesh_2d(5, 50.0)
+        nodes, _ = _generate_beam_mesh_2d(5, 50.0)
         assert nodes[0, 0] == pytest.approx(0.0)
         assert nodes[-1, 0] == pytest.approx(50.0)
 
     def test_connectivity(self):
-        _, conn = generate_beam_mesh_2d(4, 40.0)
+        _, conn = _generate_beam_mesh_2d(4, 40.0)
         np.testing.assert_array_equal(conn[0], [0, 1])
         np.testing.assert_array_equal(conn[-1], [3, 4])
 
@@ -83,7 +83,7 @@ class TestAnalyticalSolutions:
     def test_bend3p_eb(self):
         """3点曲げ Euler-Bernoulli 解析解."""
         Ixy = 10.0 * 20.0**3 / 12.0
-        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy)
+        ana = _analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy)
         delta_ref = 1000.0 * 100.0**3 / (48.0 * E_STEEL * Ixy)
         assert ana["delta_mid"] == pytest.approx(delta_ref, rel=1e-10)
         assert ana["V_max"] == pytest.approx(500.0)
@@ -95,14 +95,14 @@ class TestAnalyticalSolutions:
         A = 10.0 * 20.0
         G = E_STEEL / (2 * (1 + NU_STEEL))
         kappa = 10.0 * (1.0 + NU_STEEL) / (12.0 + 11.0 * NU_STEEL)
-        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy, kappa=kappa, G=G, A=A)
+        ana = _analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy, kappa=kappa, G=G, A=A)
         assert ana["delta_shear"] > 0
         assert ana["delta_mid"] > ana["delta_eb"]
 
     def test_bend4p(self):
         """4点曲げ解析解（24EI, 2点対称荷重の重ね合わせ）."""
         Ixy = 10.0 * 20.0**3 / 12.0
-        ana = analytical_bend4p(1000.0, 100.0, 25.0, E_STEEL, Ixy)
+        ana = _analytical_bend4p(1000.0, 100.0, 25.0, E_STEEL, Ixy)
         delta_ref = 1000.0 * 25.0 * (3 * 100.0**2 - 4 * 25.0**2) / (24.0 * E_STEEL * Ixy)
         assert ana["delta_mid"] == pytest.approx(delta_ref, rel=1e-10)
         assert ana["M_max"] == pytest.approx(25000.0)
@@ -110,7 +110,7 @@ class TestAnalyticalSolutions:
     def test_tensile(self):
         """引張解析解."""
         A = 10.0 * 20.0
-        ana = analytical_tensile(1000.0, 100.0, E_STEEL, A)
+        ana = _analytical_tensile(1000.0, 100.0, E_STEEL, A)
         assert ana["delta"] == pytest.approx(1000.0 * 100.0 / (E_STEEL * A))
         assert ana["N"] == 1000.0
 
@@ -120,7 +120,7 @@ class TestAnalyticalSolutions:
         J = math.pi * d**4 / 32.0
         G = E_STEEL / (2 * (1 + NU_STEEL))
         r_max = d / 2.0
-        ana = analytical_torsion(500.0, 100.0, G, J, r_max)
+        ana = _analytical_torsion(500.0, 100.0, G, J, r_max)
         assert ana["theta"] == pytest.approx(500.0 * 100.0 / (G * J), rel=1e-10)
         assert ana["Mx"] == 500.0
         assert ana["tau_max"] == pytest.approx(500.0 * r_max / J)
@@ -131,19 +131,19 @@ class TestAnalyticalSolutions:
 # ===========================================================================
 class TestFrictionAssessment:
     def test_slender_beam_no_warning(self):
-        msg = assess_friction_effect("bend3p", 15.0, "roller")
+        msg = _assess_friction_effect("bend3p", 15.0, "roller")
         assert "無視可能" in msg
 
     def test_moderate_beam_warning(self):
-        msg = assess_friction_effect("bend3p", 7.0, "roller")
+        msg = _assess_friction_effect("bend3p", 7.0, "roller")
         assert "軽微" in msg
 
     def test_thick_beam_warning(self):
-        msg = assess_friction_effect("bend3p", 3.0, "roller")
+        msg = _assess_friction_effect("bend3p", 3.0, "roller")
         assert "警告" in msg
 
     def test_non_bending_no_msg(self):
-        msg = assess_friction_effect("tensile", 5.0, "roller")
+        msg = _assess_friction_effect("tensile", 5.0, "roller")
         assert msg == ""
 
 
@@ -167,29 +167,29 @@ class TestBend3p:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert isinstance(result, StaticTestResult)
         assert result.relative_error is not None
         assert result.relative_error < 1e-6
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_section_forces_exist(self):
         cfg = self._make_config("timo2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert len(result.element_forces) == N_ELEMS
 
     def test_friction_warning_present(self):
         cfg = self._make_config("timo2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         # L/h = 100/20 = 5 → 軽微の範囲
         assert result.friction_warning != ""
 
@@ -215,17 +215,17 @@ class TestBend4p:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
 
@@ -249,18 +249,18 @@ class TestTensile:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-10
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-10
 
 
@@ -284,7 +284,7 @@ class TestTorsion:
 
     def test_torsion_analytical(self):
         cfg = self._make_config()
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -332,11 +332,11 @@ class TestRunAPI:
         ]
 
     def test_run_all(self):
-        results = run_all_tests(self._configs())
+        results = _run_all_tests(self._configs())
         assert len(results) == 2
 
     def test_run_partial(self):
-        results = run_tests(self._configs(), ["tensile"])
+        results = _run_tests(self._configs(), ["tensile"])
         assert len(results) == 1
         assert results[0].config.name == "tensile"
 
@@ -367,7 +367,7 @@ class TestFrequencyResponse:
 
     def test_displacement_excitation_2d(self):
         cfg = self._make_config("timo2d", "displacement")
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         assert len(result.frequencies) == 50
         assert len(result.magnitude) == 50
         # 伝達関数の低周波極限は≈1（変位入出力で同一DOF）
@@ -375,20 +375,20 @@ class TestFrequencyResponse:
 
     def test_acceleration_excitation_2d(self):
         cfg = self._make_config("timo2d", "acceleration")
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         assert len(result.frequencies) == 50
         assert np.all(result.magnitude >= 0)
 
     def test_displacement_excitation_3d(self):
         cfg = self._make_config("timo3d", "displacement")
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         assert len(result.frequencies) == 50
         assert result.magnitude[0] > 0.5
 
     def test_natural_frequency_detection(self):
         """固有振動数のピーク検出が動作するか."""
         cfg = self._make_config("timo2d", "acceleration")
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         # ピークが1つ以上検出されること
         # （パラメータによってはゼロの可能性もあるため soft check）
         assert isinstance(result.natural_frequencies, np.ndarray)
@@ -409,7 +409,7 @@ class TestFrequencyResponse:
             excitation_type="displacement",
             excitation_dof="uy",
         )
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         assert len(result.frequencies) == 20
 
 
@@ -429,8 +429,8 @@ class TestCSVExport:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = run_test(cfg)
-        outputs = export_static_csv(result)
+        result = _run_test(cfg)
+        outputs = _export_static_csv(result)
         assert "summary" in outputs
         assert "nodal_disp" in outputs
         assert "element_forces" in outputs
@@ -449,9 +449,9 @@ class TestCSVExport:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         with tempfile.TemporaryDirectory() as tmpdir:
-            outputs = export_static_csv(result, output_dir=tmpdir)
+            outputs = _export_static_csv(result, output_dir=tmpdir)
             for key, path in outputs.items():
                 assert os.path.isfile(path), f"{key}: {path} not found"
 
@@ -471,8 +471,8 @@ class TestCSVExport:
             excitation_type="displacement",
             excitation_dof="uy",
         )
-        result = run_frequency_response(cfg)
-        outputs = export_frequency_response_csv(result)
+        result = _run_frequency_response(cfg)
+        outputs = _export_frequency_response_csv(result)
         assert "summary" in outputs
         assert "frf" in outputs
         assert "freq_Hz" in outputs["frf"]
@@ -493,9 +493,9 @@ class TestCSVExport:
             excitation_type="displacement",
             excitation_dof="uy",
         )
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         with tempfile.TemporaryDirectory() as tmpdir:
-            outputs = export_frequency_response_csv(result, output_dir=tmpdir)
+            outputs = _export_frequency_response_csv(result, output_dir=tmpdir)
             for key, path in outputs.items():
                 assert os.path.isfile(path), f"{key}: {path} not found"
 
@@ -518,7 +518,7 @@ class TestInpInput:
  1000.0
 *SUPPORT, TYPE=ROLLER
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert isinstance(cfg, NumericalTestConfig)
         assert cfg.name == "bend3p"
         assert cfg.E == 200000.0
@@ -539,7 +539,7 @@ class TestInpInput:
 *LOAD
  1000.0, 25.0
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert cfg.name == "bend4p"
         assert cfg.load_span == 25.0
         assert cfg.n_elems == 20
@@ -557,7 +557,7 @@ class TestInpInput:
 *LOAD
  500.0
 """
-        cfg = parse_test_input(text)
+        cfg = _parse_test_input(text)
         assert cfg.name == "torsion"
         assert cfg.beam_type == "timo3d"
 
@@ -577,7 +577,7 @@ class TestInpInput:
 *EXCITATION, TYPE=DISPLACEMENT, DOF=uy
 *DAMPING, ALPHA=0.0, BETA=1e-7
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert isinstance(cfg, FrequencyResponseConfig)
         assert cfg.rho == pytest.approx(7.85e-9)
         assert cfg.freq_min == 10.0
@@ -600,8 +600,8 @@ class TestInpInput:
 *LOAD
  1000.0
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
-        result = run_test(cfg)
+        cfg = _parse_test_input(text, beam_type="timo2d")
+        result = _run_test(cfg)
         assert result.relative_error < 1e-10
 
     def test_parse_pipe_section(self):
@@ -616,7 +616,7 @@ class TestInpInput:
 *LOAD
  1000.0
 """
-        cfg = parse_test_input(text, beam_type="timo3d")
+        cfg = _parse_test_input(text, beam_type="timo3d")
         assert cfg.section_shape == "pipe"
         assert cfg.section_params["d_outer"] == 20.0
 
@@ -637,7 +637,7 @@ class TestCircularSection:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-4
 
     def test_tensile_circle_3d(self):
@@ -652,7 +652,7 @@ class TestCircularSection:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error < 1e-10
 
 
@@ -729,7 +729,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -746,7 +746,7 @@ class TestCosseratNumerical:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -763,7 +763,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         # Cosserat rod は B行列定式化のため 20要素ではTimo3Dほど正確でないが収束する
         assert result.relative_error < 0.05
@@ -782,7 +782,7 @@ class TestCosseratNumerical:
             section_params=RECT_PARAMS,
             load_span=25.0,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 0.05
 
@@ -799,7 +799,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = run_test(cfg)
+        result = _run_test(cfg)
         assert len(result.element_forces) == 4
 
 
@@ -842,7 +842,7 @@ class TestFrequencyResponseAnalytical:
             damping_alpha=0.0,
             damping_beta=1e-8,
         )
-        result = run_frequency_response(cfg)
+        result = _run_frequency_response(cfg)
         assert len(result.natural_frequencies) > 0, "固有振動数が検出されなかった"
         f1_fem = result.natural_frequencies[0]
         rel_error = abs(f1_fem - f1_analytical) / f1_analytical
@@ -861,9 +861,9 @@ class TestNonUniformMesh:
 
     def test_2d_nonuniform_basic(self):
         """2D非一様メッシュの基本テスト."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d_nonuniform
 
-        nodes, conn = generate_beam_mesh_2d_nonuniform(
+        nodes, conn = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,
@@ -879,9 +879,9 @@ class TestNonUniformMesh:
 
     def test_3d_nonuniform_basic(self):
         """3D非一様メッシュの基本テスト."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_3d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_3d_nonuniform
 
-        nodes, conn = generate_beam_mesh_3d_nonuniform(
+        nodes, conn = _generate_beam_mesh_3d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,
@@ -893,9 +893,9 @@ class TestNonUniformMesh:
 
     def test_nonuniform_multiple_points(self):
         """複数の細分割ポイント."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d_nonuniform
 
-        nodes, conn = generate_beam_mesh_2d_nonuniform(
+        nodes, conn = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [25.0, 75.0],
             base_n_elems=10,
@@ -907,12 +907,12 @@ class TestNonUniformMesh:
     def test_nonuniform_refinement_increases_elements(self):
         """細分割すると要素数が増加する."""
         from xkep_cae.numerical_tests.core import (
-            generate_beam_mesh_2d,
-            generate_beam_mesh_2d_nonuniform,
+            _generate_beam_mesh_2d,
+            _generate_beam_mesh_2d_nonuniform,
         )
 
-        _, conn_uniform = generate_beam_mesh_2d(10, 100.0)
-        _, conn_nonuniform = generate_beam_mesh_2d_nonuniform(
+        _, conn_uniform = _generate_beam_mesh_2d(10, 100.0)
+        _, conn_nonuniform = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,
@@ -981,7 +981,7 @@ class TestDynamicBend3p:
 
     def test_step_load_converges(self):
         """ステップ荷重の動的3点曲げが収束する."""
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -995,7 +995,7 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=50,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged, "全ステップ収束すべき"
         assert result.displacement.shape == (51, 3 * 11)
         assert result.time.shape == (51,)
@@ -1007,7 +1007,7 @@ class TestDynamicBend3p:
         Rayleigh減衰を十分大きくすると、振動が減衰して
         最終的に静的たわみに収束する。
         """
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         # 十分な減衰と長い解析時間
         cfg = DynamicTestConfig(
@@ -1024,7 +1024,7 @@ class TestDynamicBend3p:
             damping_alpha=500.0,  # 強い質量比例減衰
             damping_beta=1e-5,  # 軽い剛性比例減衰
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         # 静的解との比較（十分な減衰後は10%以内に収束）
         assert result.displacement_analytical is not None
@@ -1035,7 +1035,7 @@ class TestDynamicBend3p:
 
     def test_ramp_load(self):
         """ランプ荷重の動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1051,7 +1051,7 @@ class TestDynamicBend3p:
             load_type="ramp",
             ramp_time=0.002,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
 
         # ランプ荷重初期は変位がゼロに近い
@@ -1062,7 +1062,7 @@ class TestDynamicBend3p:
 
     def test_eb2d_beam_type(self):
         """EB2D 梁タイプでの動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1076,13 +1076,13 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=20,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         assert result.displacement_analytical is not None
 
     def test_3d_beam_type(self):
         """3D Timoshenko 梁タイプでの動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1096,13 +1096,13 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=20,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         assert result.displacement.shape[1] == 6 * 11
 
     def test_lumped_mass(self):
         """集中質量行列での動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1117,7 +1117,7 @@ class TestDynamicBend3p:
             n_steps=20,
             mass_type="lumped",
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         assert result.solver_info["mass_type"] == "lumped"
 
@@ -1127,7 +1127,7 @@ class TestDynamicBend3p:
         減衰なしのステップ荷重では、線形系の最大応答は
         静的解の2倍（動的増幅係数 = 2）に近づく。
         """
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1141,7 +1141,7 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=500,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
 
         mid_node = result.solver_info["mid_node"]
@@ -1158,7 +1158,7 @@ class TestDynamicBend3p:
     def test_run_via_public_api(self):
         """公開APIからの実行."""
         from xkep_cae.numerical_tests import DynamicTestConfig
-        from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1172,5 +1172,5 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=10,
         )
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged

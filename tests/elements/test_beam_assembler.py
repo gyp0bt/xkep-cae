@@ -11,7 +11,8 @@ import math
 import numpy as np
 import pytest
 
-from xkep_cae.elements import BeamSection, BeamSection2D, ULCRBeamAssembler
+from xkep_cae.elements import BeamSection, BeamSection2D
+from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
 from xkep_cae.elements._beam_assembly import assemble_cr_beam3d
 from xkep_cae.elements._beam_cr import (
     timo_beam3d_cr_internal_force,

@@ -41,7 +41,7 @@ print(f"=== NCP 7本撚線プロファイリング ===")
 print(f"ログ出力先: {log_path}")
 print()
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 # --- 45度曲げのプロファイリング ---
 print("--- 7本撚線 45度 UL+NCP曲げ プロファイリング ---")
@@ -50,7 +50,7 @@ profiler = cProfile.Profile()
 profiler.enable()
 
 t0 = time.perf_counter()
-result = run_bending_oscillation(
+result = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=45,

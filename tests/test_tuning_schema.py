@@ -359,7 +359,7 @@ class TestTuningExecutorAPI:
             raise RuntimeError("mock solver failure")
 
         monkeypatch.setattr(
-            "xkep_cae.numerical_tests.wire_bending_benchmark.run_bending_oscillation",
+            "xkep_cae.numerical_tests.wire_bending_benchmark._run_bending_oscillation",
             _mock_run_bending,
         )
         run = executor_mod.execute_s3_benchmark(7)

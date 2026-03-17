@@ -17,7 +17,7 @@ from datetime import datetime
 
 from xkep_cae.numerical_tests.wire_bending_benchmark import (
     BendingOscillationResult,
-    run_bending_oscillation,
+    _run_bending_oscillation,
 )
 
 
@@ -57,7 +57,7 @@ def run_case(
     """1ケースを実行."""
     _header(f"{label}: {n_strands}本 {bend_angle_deg}°曲げ μ={mu} [{contact_mode}]")
     t0 = time.perf_counter()
-    result = run_bending_oscillation(
+    result = _run_bending_oscillation(
         n_strands=n_strands,
         bend_angle_deg=bend_angle_deg,
         oscillation_amplitude_mm=0.0,

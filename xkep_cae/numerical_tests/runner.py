@@ -16,14 +16,14 @@ from xkep_cae.numerical_tests._backend import backend
 from xkep_cae.numerical_tests.core import (
     NumericalTestConfig,
     StaticTestResult,
+    _analytical_bend3p,
+    _analytical_bend4p,
+    _analytical_tensile,
+    _analytical_torsion,
+    _assess_friction_effect,
     _build_section_props,
-    analytical_bend3p,
-    analytical_bend4p,
-    analytical_tensile,
-    analytical_torsion,
-    assess_friction_effect,
-    generate_beam_mesh_2d,
-    generate_beam_mesh_3d,
+    _generate_beam_mesh_2d,
+    _generate_beam_mesh_3d,
 )
 
 
@@ -147,9 +147,9 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
-        nodes, conn = generate_beam_mesh_3d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_3d(n_elems, L)
     else:
-        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
     ke_func = backend.ke_func_factory(cfg, sec)
     if is_3d:
@@ -171,7 +171,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     u, info = _solve_static(K, f, fixed_dofs)
 
     use_timo = cfg.beam_type in ("timo2d", "timo3d")
-    ana = analytical_bend3p(
+    ana = _analytical_bend3p(
         abs(P),
         L,
         cfg.E,
@@ -190,7 +190,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
     element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
-    friction_msg = assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
+    friction_msg = _assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
         config=cfg,
@@ -221,9 +221,9 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
-        nodes, conn = generate_beam_mesh_3d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_3d(n_elems, L)
     else:
-        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
     x_coords = nodes[:, 0]
     load_node_left = int(np.argmin(np.abs(x_coords - a)))
@@ -252,7 +252,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     u, info = _solve_static(K, f, fixed_dofs)
 
     use_timo = cfg.beam_type in ("timo2d", "timo3d")
-    ana = analytical_bend4p(
+    ana = _analytical_bend4p(
         abs(P),
         L,
         a_actual,
@@ -272,7 +272,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
     element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
-    friction_msg = assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
+    friction_msg = _assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
         config=cfg,
@@ -302,9 +302,9 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
     is_3d = cfg.beam_type in ("timo3d", "cosserat")
 
     if is_3d:
-        nodes, conn = generate_beam_mesh_3d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_3d(n_elems, L)
     else:
-        nodes, conn = generate_beam_mesh_2d(n_elems, L)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
     ke_func = backend.ke_func_factory(cfg, sec)
     if is_3d:
@@ -325,7 +325,7 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
 
     u, info = _solve_static(K, f, fixed_dofs)
 
-    ana = analytical_tensile(P, L, cfg.E, sec["A"])
+    ana = _analytical_tensile(P, L, cfg.E, sec["A"])
 
     if is_3d:
         delta_fem = u[6 * n_elems + 0]
@@ -359,7 +359,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     L = cfg.length
     n_elems = cfg.n_elems
 
-    nodes, conn = generate_beam_mesh_3d(n_elems, L)
+    nodes, conn = _generate_beam_mesh_3d(n_elems, L)
     ke_func = backend.ke_func_factory(cfg, sec)
     K, ndof = _assemble_3d(nodes, conn, ke_func)
 
@@ -371,7 +371,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     u, info = _solve_static(K, f, fixed_dofs)
 
     r_max = sec["r_max_y"]
-    ana = analytical_torsion(T, L, cfg.G, sec["J"], r_max)
+    ana = _analytical_torsion(T, L, cfg.G, sec["J"], r_max)
 
     theta_fem = u[6 * n_elems + 3]
     theta_ana = ana["theta"]
@@ -395,7 +395,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
 # ---------------------------------------------------------------------------
 # 公開API
 # ---------------------------------------------------------------------------
-def run_test(cfg: NumericalTestConfig) -> StaticTestResult:
+def _run_test(cfg: NumericalTestConfig) -> StaticTestResult:
     """単一の静的試験を実行する."""
     dispatch = {
         "bend3p": _run_bend3p,
@@ -409,17 +409,17 @@ def run_test(cfg: NumericalTestConfig) -> StaticTestResult:
     return runner(cfg)
 
 
-def run_all_tests(
+def _run_all_tests(
     configs: list[NumericalTestConfig],
 ) -> list[StaticTestResult]:
     """複数の試験を一括実行する."""
-    return [run_test(cfg) for cfg in configs]
+    return [_run_test(cfg) for cfg in configs]
 
 
-def run_tests(
+def _run_tests(
     configs: list[NumericalTestConfig],
     names: list[str],
 ) -> list[StaticTestResult]:
     """指定した試験名のみ部分実行する."""
     filtered = [cfg for cfg in configs if cfg.name in names]
-    return [run_test(cfg) for cfg in filtered]
+    return [_run_test(cfg) for cfg in filtered]

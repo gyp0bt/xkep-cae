@@ -18,7 +18,7 @@ pytest.importorskip(
 )
 
 from xkep_cae.numerical_tests.core import DynamicTestConfig  # noqa: E402
-from xkep_cae.numerical_tests.dynamic_runner import run_dynamic_test  # noqa: E402
+from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test  # noqa: E402
 
 pytestmark = pytest.mark.slow
 
@@ -75,7 +75,7 @@ class TestSmallLoadLinearMatch:
     def test_cr_small_load_matches_analytical(self):
         """CR梁（nlgeom=True）で荷重 100N → 解析解に一致."""
         cfg = _make_config("timo3d", load_value=100.0, nlgeom=True)
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         assert result.relative_error_final is not None
         assert result.relative_error_final < 0.05
@@ -83,7 +83,7 @@ class TestSmallLoadLinearMatch:
     def test_cosserat_nl_small_load_matches_analytical(self):
         """Cosserat rod 非線形（nlgeom=True）で荷重 100N → 解析解に一致."""
         cfg = _make_config("cosserat", load_value=100.0, nlgeom=True)
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
         assert result.relative_error_final is not None
         assert result.relative_error_final < 0.05
@@ -92,8 +92,8 @@ class TestSmallLoadLinearMatch:
         """CR梁と Cosserat rod 非線形の最終変位が近い（100N）."""
         cfg_cr = _make_config("timo3d", load_value=100.0, nlgeom=True)
         cfg_cos = _make_config("cosserat", load_value=100.0, nlgeom=True)
-        res_cr = run_dynamic_test(cfg_cr)
-        res_cos = run_dynamic_test(cfg_cos)
+        res_cr = _run_dynamic_test(cfg_cr)
+        res_cos = _run_dynamic_test(cfg_cos)
         assert res_cr.converged
         assert res_cos.converged
         rel_diff = abs(res_cr.displacement_max_final - res_cos.displacement_max_final) / max(
@@ -108,13 +108,13 @@ class TestLargeLoadNonlinear:
     def test_cr_large_load_converges(self):
         """CR梁で大荷重 500N → 収束."""
         cfg = _make_config("timo3d", load_value=500.0, nlgeom=True)
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
 
     def test_cosserat_nl_large_load_converges(self):
         """Cosserat rod 非線形で大荷重 500N → 収束."""
         cfg = _make_config("cosserat", load_value=500.0, nlgeom=True)
-        result = run_dynamic_test(cfg)
+        result = _run_dynamic_test(cfg)
         assert result.converged
 
     @pytest.mark.slow
@@ -122,8 +122,8 @@ class TestLargeLoadNonlinear:
         """大荷重域で CR梁と Cosserat rod 非線形が定性的に同じ応答."""
         cfg_cr = _make_config("timo3d", load_value=500.0, nlgeom=True)
         cfg_cos = _make_config("cosserat", load_value=500.0, nlgeom=True)
-        res_cr = run_dynamic_test(cfg_cr)
-        res_cos = run_dynamic_test(cfg_cos)
+        res_cr = _run_dynamic_test(cfg_cr)
+        res_cos = _run_dynamic_test(cfg_cos)
         assert res_cr.converged
         assert res_cos.converged
         ratio = res_cr.displacement_max_final / max(res_cos.displacement_max_final, 1e-12)
@@ -132,7 +132,7 @@ class TestLargeLoadNonlinear:
     def test_nonlinear_stiffening_effect(self):
         """非線形により線形解析解より変位が小さくなる（硬化効果）."""
         cfg_cr = _make_config("timo3d", load_value=500.0, nlgeom=True)
-        res_cr = run_dynamic_test(cfg_cr)
+        res_cr = _run_dynamic_test(cfg_cr)
         assert res_cr.converged
         if res_cr.displacement_analytical is not None:
             assert res_cr.displacement_max_final < res_cr.displacement_analytical * 1.1
@@ -145,8 +145,8 @@ class TestLinearVsNonlinearSmallLoad:
         """Timoshenko 3D: 線形 vs nlgeom（100N）."""
         cfg_lin = _make_config("timo3d", load_value=100.0, nlgeom=False)
         cfg_nl = _make_config("timo3d", load_value=100.0, nlgeom=True)
-        res_lin = run_dynamic_test(cfg_lin)
-        res_nl = run_dynamic_test(cfg_nl)
+        res_lin = _run_dynamic_test(cfg_lin)
+        res_nl = _run_dynamic_test(cfg_nl)
         assert res_lin.converged
         assert res_nl.converged
         rel_diff = abs(res_lin.displacement_max_final - res_nl.displacement_max_final) / max(
@@ -158,8 +158,8 @@ class TestLinearVsNonlinearSmallLoad:
         """Cosserat rod: 線形 vs nlgeom（100N）."""
         cfg_lin = _make_config("cosserat", load_value=100.0, nlgeom=False)
         cfg_nl = _make_config("cosserat", load_value=100.0, nlgeom=True)
-        res_lin = run_dynamic_test(cfg_lin)
-        res_nl = run_dynamic_test(cfg_nl)
+        res_lin = _run_dynamic_test(cfg_lin)
+        res_nl = _run_dynamic_test(cfg_nl)
         assert res_lin.converged
         assert res_nl.converged
         rel_diff = abs(res_lin.displacement_max_final - res_nl.displacement_max_final) / max(

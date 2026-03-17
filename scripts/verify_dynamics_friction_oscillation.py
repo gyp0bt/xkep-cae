@@ -22,7 +22,7 @@ import numpy as np
 
 sys.path.insert(0, ".")
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 # --- ログ tee設定 ---
 log_path = f"/tmp/verify_dyn_fric_osc_{int(time.time())}.log"
@@ -99,7 +99,7 @@ print("  テスト1: 7本 摩擦あり（μ=0.15）45度曲げ（動的+mu_ramp=
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_45 = run_bending_oscillation(
+result_45 = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=45.0,
@@ -127,7 +127,7 @@ print(f"  Rayleigh: β_R={beta_R:.4e}, ρ∞={_DYNAMICS_PARAMS['rho_inf']:.2f}")
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_45_osc = run_bending_oscillation(
+result_45_osc = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=45.0,
@@ -162,7 +162,7 @@ print("  テスト3: 7本 摩擦あり（μ=0.15）90度曲げ+揺動（動的+m
 print("=" * 70)
 
 t0 = time.perf_counter()
-result_90_osc = run_bending_oscillation(
+result_90_osc = _run_bending_oscillation(
     n_strands=7,
     n_pitches=0.5,
     bend_angle_deg=90.0,

@@ -4,7 +4,7 @@ import sys
 import time
 
 sys.path.insert(0, ".")
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 
 log_path = f"/tmp/test_p1_nodelta_{int(time.time())}.log"
 
@@ -47,7 +47,7 @@ print("=" * 70)
 print("  テスト1: μ=0.15 45° δ=0 (正則化なし)")
 print("=" * 70)
 t0 = time.perf_counter()
-r1 = run_bending_oscillation(
+r1 = _run_bending_oscillation(
     n_strands=7, n_pitches=0.5, bend_angle_deg=45.0,
     max_iter=50, tol_force=1e-4, n_cycles=0,
     use_friction=True, mu=0.15,
@@ -63,7 +63,7 @@ print("=" * 70)
 print("  テスト2: μ=0.1 45° δ=0")
 print("=" * 70)
 t0 = time.perf_counter()
-r2 = run_bending_oscillation(
+r2 = _run_bending_oscillation(
     n_strands=7, n_pitches=0.5, bend_angle_deg=45.0,
     max_iter=50, tol_force=1e-4, n_cycles=0,
     use_friction=True, mu=0.1,

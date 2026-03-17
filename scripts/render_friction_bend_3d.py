@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-from xkep_cae.numerical_tests.wire_bending_benchmark import run_bending_oscillation
+from xkep_cae.numerical_tests.wire_bending_benchmark import _run_bending_oscillation
 from xkep_cae.output.render_beam_3d import render_twisted_wire_3d
 
 
@@ -103,7 +103,7 @@ def main():
     # --- Case 1: 45度曲げ ---
     print("\n=== Case 1: 45度曲げ 計算中 ===")
     t0 = time.perf_counter()
-    r1 = run_bending_oscillation(
+    r1 = _run_bending_oscillation(
         n_strands=7,
         bend_angle_deg=45.0,
         oscillation_amplitude_mm=0.0,
@@ -133,7 +133,7 @@ def main():
     # --- Case 2: 90度曲げ ---
     print("\n=== Case 2: 90度曲げ 計算中 ===")
     t0 = time.perf_counter()
-    r2 = run_bending_oscillation(
+    r2 = _run_bending_oscillation(
         n_strands=7,
         bend_angle_deg=90.0,
         oscillation_amplitude_mm=0.0,
@@ -164,7 +164,7 @@ def main():
     if r2.phase1_converged:
         print("\n=== Case 3: 90度曲げ + 揺動1周期 計算中 ===")
         t0 = time.perf_counter()
-        r3 = run_bending_oscillation(
+        r3 = _run_bending_oscillation(
             n_strands=7,
             bend_angle_deg=90.0,
             oscillation_amplitude_mm=2.0,
