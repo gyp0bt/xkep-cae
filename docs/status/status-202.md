@@ -66,11 +66,16 @@ non-frozen dataclass および Input/Output で終わらないクラス名を違
 
 ## TODO
 
-- [ ] `_ContactStateOutput`/`_ContactPairOutput` → frozen=True 化（50+箇所の変異を `dataclasses.replace()` に移行）
+- [ ] `_ContactStateOutput`/`_ContactPairOutput` → frozen=True 化
+  - **`dataclasses.replace()` は禁止**
+  - Process または Strategy の戻り値として新インスタンスを再作成する方式
+  - 例: `pair.state.gap = v` → Strategy/Process が新しい `_ContactStateOutput` を返す
+  - 50+箇所の変異を全てProcess/Strategy出力に変換
 - [ ] `_ContactManagerInput` → Process 分割（Input共有 + 各操作をProcess APIで管理）
   - ContactManagerのmutableオブジェクト渡しでは改変追跡が不可能
   - detect_candidates / update_geometry / initialize_penalty は既にProcess化済み
   - 残りの直接変異（pair.state.xxx = ...）をProcess出力として管理すべき
+  - 各ProcessがInput（旧state）を受け取りOutput（新state）を返すパターンに統一
 - [ ] Phase 16: BackendRegistry 完全廃止（O2/O3 条例違反5件解消）
 - [ ] 被膜モデル物理検証テスト
 
