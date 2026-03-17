@@ -120,7 +120,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 12 完了** — `numerical_tests` モジュール新 xkep_cae 移植（BackendRegistry パターン）。
+**脱出ポット計画 Phase 13（次）** — ビームアセンブラ（CR/UL）の新 xkep_cae 移植。S3 xfail テスト Process API 対応の前提条件。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
