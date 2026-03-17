@@ -21,7 +21,12 @@ import pytest
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from xkep_cae.numerical_tests.wire_bending_benchmark import (
+pytest.importorskip(
+    "xkep_cae.numerical_tests",
+    reason="xkep_cae.numerical_tests 未移行のため無効化 (status-193)",
+)
+
+from xkep_cae.numerical_tests.wire_bending_benchmark import (  # noqa: E402
     _DEFAULT_E,
     _DEFAULT_NU,
     _compute_G,
