@@ -27,6 +27,7 @@
 | [191](status-191.md) | 2026-03-16 | process.py Process API 移行 + ContactManager Process 分割 | ~2260+315p(新) |
 | [192](status-192.md) | 2026-03-16 | Process 内部プライベート関数移行 + Strategy 公開 API + O1 条例検知 | ~2260+315p(新) |
 | [193](status-193.md) | 2026-03-16 | deprecated 参照テスト無効化 + 状態操作ユーティリティ維持判断 | ~2260+315p(新) |
+| [194](status-194.md) | 2026-03-17 | xkep_cae_deprecated → __xkep_cae_deprecated リネーム（C14 実効性強化） | ~2260+315p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -102,7 +103,8 @@ Phase 8完了:     ~2260+284p(新) (2026-03-16) ← status-189（Phase 8 完了 
 Phase 9進行:     ~2260+301p(新) (2026-03-16) ← status-190（solver Process化+NUzawa分離）
 Phase 9続:      ~2260+315p(新) (2026-03-16) ← status-191（Process API移行+CM Process分割）
 Phase 9完了:     ~2260+315p(新) (2026-03-16) ← status-192（プライベート関数移行+Strategy公開API+O1条例検知）
-現在:           ~2260+315p(新) (2026-03-16) ← status-193（deprecated参照テスト無効化+状態ユーティリティ維持判断）
+Phase 10完了:    ~2260+315p(新) (2026-03-16) ← status-193（deprecated参照テスト無効化+状態ユーティリティ維持判断）
+現在:           ~2260+315p(新) (2026-03-17) ← status-194（deprecated→__deprecatedリネーム）
 ```
 
 ## 備考

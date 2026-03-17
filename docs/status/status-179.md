@@ -169,7 +169,7 @@ xkep_cae/
 
 - StrandBendingBatchProcess は Phase 2 時点でスタブ実装。concrete プロセス移行後にフル実装予定。
 - `contact/geometry/_compute.py` の関数は `_` prefix で private 化（C16 準拠）。
-- `contact/_types.py` の ContactStatus は `xkep_cae_deprecated/contact/pair.py` からのコピー。
+- `contact/_types.py` の ContactStatus は `__xkep_cae_deprecated/contact/pair.py` からのコピー。
   deprecated 側はそのまま残す（既存コードの互換性維持）。
 
 ---

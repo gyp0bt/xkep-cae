@@ -1,6 +1,6 @@
 """接触ペア・接触状態のデータ構造 + ContactManager.
 
-xkep_cae_deprecated/contact/pair.py から移植。
+__xkep_cae_deprecated/contact/pair.py から移植。
 プライベートモジュール（C16 準拠）。
 
 依存: _broadphase, geometry/_compute のみ（deprecated 参照なし）。

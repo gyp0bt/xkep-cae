@@ -13,8 +13,8 @@
 
 ## 依存
 
-- `xkep_cae_deprecated.mesh.twisted_wire.make_twisted_wire_mesh`（importlib 経由）
+- `__xkep_cae_deprecated.mesh.twisted_wire.make_twisted_wire_mesh`（importlib 経由）
 
 ## 移行元
 
-`xkep_cae_deprecated/process/concrete/pre_mesh.py` → status-183
+`__xkep_cae_deprecated/process/concrete/pre_mesh.py` → status-183

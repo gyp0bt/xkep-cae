@@ -1,6 +1,6 @@
 """ContactForce Strategy 具象実装.
 
-旧 xkep_cae_deprecated/process/strategies/contact_force.py の完全書き直し。
+旧 __xkep_cae_deprecated/process/strategies/contact_force.py の完全書き直し。
 ContactForceStrategy Protocol に従い、接触力を評価する Process 群。
 
 2クラス構成:

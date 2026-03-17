@@ -9,7 +9,7 @@
 ## 概要
 
 後方互換を完全に捨てる「脱出ポット計画」の Phase 1。
-旧 `xkep_cae/` を `xkep_cae_deprecated/` にリネームし、
+旧 `xkep_cae/` を `__xkep_cae_deprecated/` にリネームし、
 新 `xkep_cae/` を Process Architecture でゼロから構築開始。
 
 **設計動機**: 旧パッケージに新コードを継ぎ足す方式では、deprecated インポートの
@@ -20,8 +20,8 @@
 
 ### コミット 1: xkep_cae リネーム + 新パッケージ骨格
 
-- `git mv xkep_cae xkep_cae_deprecated`
-- 旧パッケージ内の全118箇所の内部インポートを `xkep_cae_deprecated.` に更新
+- `git mv xkep_cae __xkep_cae_deprecated`
+- 旧パッケージ内の全118箇所の内部インポートを `__xkep_cae_deprecated.` に更新
 - 新 `xkep_cae/` を作成（process 基盤ファイルは deprecated からコピー、インポート不可）
 - 新パッケージ構成:
 
@@ -47,8 +47,8 @@ xkep_cae/
 ### コミット 2: PenaltyStrategy 完全書き直し
 
 参照元（旧コード）:
-- `xkep_cae_deprecated/process/strategies/penalty.py`
-- `xkep_cae_deprecated/contact/law_normal.py`
+- `__xkep_cae_deprecated/process/strategies/penalty.py`
+- `__xkep_cae_deprecated/contact/law_normal.py`
 
 新規ファイル:
 ```
@@ -79,7 +79,7 @@ xkep_cae/process/strategies/penalty/
 
 ### コミット 4: C14/C15 契約ルール追加
 
-- **C14**: `xkep_cae/` 内から `xkep_cae_deprecated` をインポートしていないかAST検出
+- **C14**: `xkep_cae/` 内から `__xkep_cae_deprecated` をインポートしていないかAST検出
 - **C15**: `ProcessMeta.document_path` で指定されたドキュメントが実在するか検証
 
 ## テスト結果
@@ -106,15 +106,15 @@ xkep_cae/process/strategies/penalty/
 
 - `solver_ncp.py` 収束ロジック変更禁止
 - 数学的出力は旧実装と一致（テストで保証）
-- 新 `xkep_cae/` から旧 `xkep_cae_deprecated/` のインポート禁止（C14 で機械検出）
+- 新 `xkep_cae/` から旧 `__xkep_cae_deprecated/` のインポート禁止（C14 で機械検出）
 
 ## 互換ヒストリー
 
 | 旧機能 | 新機能 | 移行status |
 |--------|--------|-----------|
-| `xkep_cae/` | `xkep_cae_deprecated/`（参照用のみ） | status-175 |
-| `xkep_cae_deprecated/process/strategies/penalty.py` | `xkep_cae/process/strategies/penalty/strategy.py`（完全書き直し） | status-175 |
-| `xkep_cae_deprecated/contact/law_normal.py` | `xkep_cae/process/strategies/penalty/law_normal.py`（純関数化） | status-175 |
+| `xkep_cae/` | `__xkep_cae_deprecated/`（参照用のみ） | status-175 |
+| `__xkep_cae_deprecated/process/strategies/penalty.py` | `xkep_cae/process/strategies/penalty/strategy.py`（完全書き直し） | status-175 |
+| `__xkep_cae_deprecated/contact/law_normal.py` | `xkep_cae/process/strategies/penalty/law_normal.py`（純関数化） | status-175 |
 
 ## 今後の TODO
 

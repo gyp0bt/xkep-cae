@@ -1,7 +1,7 @@
 """収束診断情報 Process.
 
 ConvergenceDiagnostics を新パッケージに移植。
-xkep_cae_deprecated/contact/diagnostics.py からのコピー。
+__xkep_cae_deprecated/contact/diagnostics.py からのコピー。
 """
 
 from __future__ import annotations

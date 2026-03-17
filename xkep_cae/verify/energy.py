@@ -1,6 +1,6 @@
 """EnergyBalanceVerifyProcess — エネルギー収支検証.
 
-旧 xkep_cae_deprecated/process/verify/energy.py の完全書き直し。
+旧 __xkep_cae_deprecated/process/verify/energy.py の完全書き直し。
 設計仕様: docs/verify.md
 """
 

@@ -40,4 +40,4 @@ f_coat = k × δ + c × δ̇
 ## 移行履歴
 
 - status-169: `ContactManager.compute_coating_*()` → `CoatingStrategy`
-- status-181: `xkep_cae_deprecated/process/strategies/coating.py` → `xkep_cae/contact/coating/strategy.py`
+- status-181: `__xkep_cae_deprecated/process/strategies/coating.py` → `xkep_cae/contact/coating/strategy.py`

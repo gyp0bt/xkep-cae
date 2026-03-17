@@ -34,7 +34,7 @@ deprecated モジュールへの依存は `importlib.import_module()` 経由で 
 
 ## 参照
 
-- `xkep_cae_deprecated/process/concrete/solve_contact_friction.py`（旧実装）
-- `xkep_cae_deprecated/process/strategies/newton_uzawa.py`（NR+Uzawa）
-- `xkep_cae_deprecated/process/strategies/adaptive_stepping.py`（適応荷重増分）
-- `xkep_cae_deprecated/process/strategies/solver_state.py`（状態管理）
+- `__xkep_cae_deprecated/process/concrete/solve_contact_friction.py`（旧実装）
+- `__xkep_cae_deprecated/process/strategies/newton_uzawa.py`（NR+Uzawa）
+- `__xkep_cae_deprecated/process/strategies/adaptive_stepping.py`（適応荷重増分）
+- `__xkep_cae_deprecated/process/strategies/solver_state.py`（状態管理）

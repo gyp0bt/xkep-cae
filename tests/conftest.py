@@ -1,6 +1,6 @@
 """テスト設定 — deprecated 参照テストの収集を抑制.
 
-xkep_cae_deprecated → xkep_cae 移行に伴い、旧パッケージパスを参照する
+__xkep_cae_deprecated → xkep_cae 移行に伴い、旧パッケージパスを参照する
 テストファイルは ImportError で収集失敗する。
 ここでは収集自体をスキップして、pytest のエラーカウントに含めない。
 
@@ -30,8 +30,8 @@ def pytest_ignore_collect(collection_path, config):
     except OSError:
         return False
 
-    # xkep_cae_deprecated を参照しているファイル
-    if "xkep_cae_deprecated" in text:
+    # __xkep_cae_deprecated を参照しているファイル
+    if "__xkep_cae_deprecated" in text:
         return True
 
     # テストモジュールとして import を試行

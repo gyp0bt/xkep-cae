@@ -1,6 +1,6 @@
 """Coulomb 摩擦則 — return mapping + consistent tangent.
 
-旧 xkep_cae_deprecated/contact/law_friction.py の完全書き直し。
+旧 __xkep_cae_deprecated/contact/law_friction.py の完全書き直し。
 mutable な ContactPair への副作用を排除し、純粋関数 + frozen dataclass で実装。
 
 摩擦の return mapping:

@@ -71,8 +71,8 @@
 | `contact/solver_smooth_penalty.py` | `process/strategies/{solver_state,newton_uzawa,adaptive_stepping}.py` + Process実体化 | status-174 |
 | `xkep_cae/process/` 基盤ファイル | `xkep_cae/core/` | status-178 |
 | `process/strategies/penalty/` | `contact/penalty/` | status-178 |
-| `xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
-| `xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
+| `__xkep_cae_deprecated/contact/law_friction.py` | `contact/friction/law_friction.py` | status-178 |
+| `__xkep_cae_deprecated/process/strategies/friction.py` | `contact/friction/strategy.py` | status-178 |
 | `xkep_cae/core/time_integration/` | `xkep_cae/time_integration/` | status-182 |
 | `xkep_cae/process/`（re-export shim） | 完全削除（core 直接参照） | status-182 |
 | C16: `core/strategies/` + `contact/` のみ | C16: core/ 以外の全モジュール | status-182 |
@@ -82,10 +82,10 @@
 | `output/__init__.py` 全量 re-export | 明示的エクスポート + `__getattr__` 遅延ロード | status-185 |
 | `contact/solver/process.py` importlib 9箇所 | プライベートモジュール群 + `_create_working_strategies` | status-186 |
 | C14: direct import のみ検出 | importlib.import_module() も検出 | status-186 |
-| `xkep_cae_deprecated.mesh.twisted_wire` importlib | `xkep_cae.mesh._twisted_wire` 直接 import | status-187 |
+| `__xkep_cae_deprecated.mesh.twisted_wire` importlib | `xkep_cae.mesh._twisted_wire` 直接 import | status-187 |
 | `output/__init__.py __getattr__` deprecated lazy-load | 完全削除（使用箇所ゼロ） | status-187 |
-| `xkep_cae_deprecated.contact.pair.ContactManager` | `xkep_cae.contact._contact_pair._ContactManager` | status-188 |
-| `xkep_cae_deprecated.contact.broadphase.broadphase_aabb` | `xkep_cae.contact._broadphase._broadphase_aabb` | status-188 |
+| `__xkep_cae_deprecated.contact.pair.ContactManager` | `xkep_cae.contact._contact_pair._ContactManager` | status-188 |
+| `__xkep_cae_deprecated.contact.broadphase.broadphase_aabb` | `xkep_cae.contact._broadphase._broadphase_aabb` | status-188 |
 | `solver/process.py _create_working_strategies()` | `core.data.default_strategies()` 直接使用 | status-188 |
 | C14: `importlib` のみ検出 | `importlib` + エイリアス検出 | status-189 |
 | 8モジュール暫定 re-export (`_il.import_module`) | 空化（deprecated 直接参照に移行） | status-189 |
@@ -99,6 +99,7 @@
 | `NewtonUzawaProcess = StaticProcess` | `NewtonUzawaProcess = DynamicProcess` | status-191 |
 | `_deformed_coords()` / `_ncp_line_search()` Process内直接呼び出し | `DeformedCoordsProcess` / `NCPLineSearchProcess` API 経由 | status-192 |
 | Strategy `_k_pen`/`_k_t_ratio`/`_ndof` 直接代入 | `set_k_pen()`/`set_k_t_ratio()`/`set_ndof()` 公開 API | status-192 |
+| `xkep_cae_deprecated/` ディレクトリ名 | `__xkep_cae_deprecated/`（C14 実効性強化） | status-194 |
 
 ## 推奨ソルバー構成
 
@@ -110,7 +111,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 315 新パッケージテスト** — 2026-03-16 | C14/C16 違反 **0件**（status-191）
+**~2260テスト + 315 新パッケージテスト** — 2026-03-17 | C14/C16 違反 **0件**（status-194）
 
 ### ターゲット
 
@@ -118,7 +119,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 9 完了** — Process 内部のプライベート関数を全て Process API 経由に移行。Strategy クラスのプライベート属性アクセスを公開 setter/property に移行。O1 条例違反検知（テストでの直接関数呼び出し検出）を追加。
+**脱出ポット計画 Phase 11 完了** — `xkep_cae_deprecated` → `__xkep_cae_deprecated` リネームで C14 実効性強化。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

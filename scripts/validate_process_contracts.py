@@ -11,7 +11,7 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C11: uses チェーンの推移的依存漏れ
 - C12: BatchProcess 具象クラスの順序依存検証
 - C13: active プロセスが CompatibilityProcess を uses している場合はエラー
-- C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出
+- C14: xkep_cae/ 内から __xkep_cae_deprecated をインポートしていないか検出
 - C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
 - C16: 新パッケージ滅菌 — core/ 以外の全モジュール内のクラス/関数を分類検査
 
@@ -418,13 +418,13 @@ def check_c13_compatibility_uses(registry: dict[str, type]) -> list[str]:
 
 
 def check_c14_deprecated_imports() -> list[str]:
-    """C14: xkep_cae/ 内から xkep_cae_deprecated をインポートしていないか検出.
+    """C14: xkep_cae/ 内から __xkep_cae_deprecated をインポートしていないか検出.
 
     新パッケージが旧パッケージに依存していると脱出ポット計画が破綻する。
     AST 解析で以下を走査:
-    - import xkep_cae_deprecated...
-    - from xkep_cae_deprecated... import ...
-    - importlib.import_module("xkep_cae_deprecated...")
+    - import __xkep_cae_deprecated...
+    - from __xkep_cae_deprecated... import ...
+    - importlib.import_module("__xkep_cae_deprecated...")
     """
     errors = []
     new_pkg = _project_root / "xkep_cae"
@@ -443,20 +443,20 @@ def check_c14_deprecated_imports() -> list[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if alias.name.startswith("xkep_cae_deprecated"):
+                    if alias.name.startswith("__xkep_cae_deprecated"):
                         errors.append(
-                            f"C14: {rel}:{node.lineno} が xkep_cae_deprecated をインポート"
+                            f"C14: {rel}:{node.lineno} が __xkep_cae_deprecated をインポート"
                         )
             elif isinstance(node, ast.ImportFrom):
-                if node.module and node.module.startswith("xkep_cae_deprecated"):
-                    errors.append(f"C14: {rel}:{node.lineno} が xkep_cae_deprecated からインポート")
-            # importlib.import_module("xkep_cae_deprecated...") の検出
+                if node.module and node.module.startswith("__xkep_cae_deprecated"):
+                    errors.append(f"C14: {rel}:{node.lineno} が __xkep_cae_deprecated からインポート")
+            # importlib.import_module("__xkep_cae_deprecated...") の検出
             # エイリアス（import importlib as _il → _il.import_module(...)）も検出
             elif isinstance(node, ast.Call):
                 if _is_importlib_deprecated_call(node, importlib_aliases):
                     errors.append(
                         f"C14: {rel}:{node.lineno} が importlib 経由で"
-                        f" xkep_cae_deprecated をインポート"
+                        f" __xkep_cae_deprecated をインポート"
                     )
 
     return errors
@@ -483,10 +483,10 @@ def _is_importlib_deprecated_call(
     node: ast.Call,
     importlib_aliases: set[str] | None = None,
 ) -> bool:
-    """importlib.import_module("xkep_cae_deprecated...") パターンを検出.
+    """importlib.import_module("__xkep_cae_deprecated...") パターンを検出.
 
     importlib_aliases が指定された場合、エイリアス名も検出対象に含める。
-    例: import importlib as _il → _il.import_module("xkep_cae_deprecated...")
+    例: import importlib as _il → _il.import_module("__xkep_cae_deprecated...")
     """
     func = node.func
     aliases = importlib_aliases or {"importlib"}
@@ -498,21 +498,21 @@ def _is_importlib_deprecated_call(
         and isinstance(func.value, ast.Name)
         and func.value.id in aliases
     )
-    # _import_deprecated("xkep_cae_deprecated...") 等のヘルパー関数パターン
+    # _import_deprecated("__xkep_cae_deprecated...") 等のヘルパー関数パターン
     # → 引数の文字列リテラルを検査
     if not is_importlib:
         # ヘルパー関数呼び出しも引数に deprecated 文字列があれば検出
         if isinstance(func, ast.Name) and node.args:
             arg = node.args[0]
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                return arg.value.startswith("xkep_cae_deprecated")
+                return arg.value.startswith("__xkep_cae_deprecated")
         return False
 
-    # importlib.import_module の第1引数が "xkep_cae_deprecated..." であるか
+    # importlib.import_module の第1引数が "__xkep_cae_deprecated..." であるか
     if node.args:
         arg = node.args[0]
         if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            return arg.value.startswith("xkep_cae_deprecated")
+            return arg.value.startswith("__xkep_cae_deprecated")
     return False
 
 

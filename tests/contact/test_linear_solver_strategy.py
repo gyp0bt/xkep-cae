@@ -8,15 +8,15 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-pytestmark = pytest.mark.skip(reason="xkep_cae_deprecated 参照のため無効化 (status-193)")
+pytestmark = pytest.mark.skip(reason="__xkep_cae_deprecated 参照のため無効化 (status-193)")
 
-from xkep_cae.core.strategies.protocols import LinearSolverStrategy  # noqa: E402
-from xkep_cae_deprecated.process.strategies.linear_solver import (  # noqa: E402
+from __xkep_cae_deprecated.process.strategies.linear_solver import (  # noqa: E402
     AutoLinearSolver,
     DirectLinearSolver,
     IterativeLinearSolver,
     create_linear_solver,
 )
+from xkep_cae.core.strategies.protocols import LinearSolverStrategy  # noqa: E402
 
 
 def _make_spd_system(n: int = 50, seed: int = 42):
