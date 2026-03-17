@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import time
+import warnings
 
 import numpy as np
 
@@ -107,6 +108,15 @@ class ContactFrictionProcess(
     def __init__(self, strategies: object | None = None) -> None:
         if strategies is None:
             strategies = _default_strategies()
+        else:
+            from xkep_cae.core.diagnostics import NonDefaultStrategyWarning
+
+            warnings.warn(
+                "ContactFrictionProcess: デフォルトではない Strategy 構成が指定されました。"
+                " default_strategies() で生成されていない Strategy を使用しています。",
+                NonDefaultStrategyWarning,
+                stacklevel=2,
+            )
         self.strategies = strategies
 
         self.penalty_slot = self.strategies.penalty
@@ -146,6 +156,18 @@ class ContactFrictionProcess(
         _friction_strategy = strategies.friction
         _contact_force_strategy = strategies.contact_force
         _dynamics = _time_strategy.is_dynamic
+
+        # --- 静的ソルバー使用警告 ---
+        if not _dynamics:
+            from xkep_cae.core.diagnostics import StaticSolverWarning
+
+            warnings.warn(
+                "ContactFrictionProcess: 準静的ソルバー（NewtonUzawaStaticProcess）を使用。"
+                " mass_matrix / dt_physical を指定すると動的ソルバー"
+                "（NewtonUzawaDynamicProcess）に切り替わります。",
+                StaticSolverWarning,
+                stacklevel=2,
+            )
 
         # --- 固定DOF + 処方変位 ---
         fixed_dofs = np.asarray(input_data.boundary.fixed_dofs, dtype=int)

@@ -61,16 +61,56 @@ class ProcessMetaclass(type(ABC)):
             @functools.wraps(original)
             def traced_process(self, input_data):  # noqa: ANN001
                 cls_name = type(self).__name__
+
+                # --- deprecated プロセス実行エラー ---
+                meta = getattr(type(self), "meta", None)
+                if meta is not None and getattr(meta, "deprecated", False):
+                    from xkep_cae.core.diagnostics import DeprecatedProcessError
+
+                    successor = getattr(meta, "deprecated_by", None) or "不明"
+                    raise DeprecatedProcessError(
+                        f"{cls_name} は deprecated です。 後継プロセス: {successor}"
+                    )
+
+                # --- 実行ログ記録 ---
+                from xkep_cae.core.diagnostics import ProcessExecutionLog
+
+                log = ProcessExecutionLog.instance()
+                ctx = None
+                if log.enabled:
+                    ctx = log.record_start(cls_name)
+
                 ProcessMetaclass._call_stack.append(cls_name)
                 t0 = time.perf_counter()
+                warning_type = None
                 try:
-                    result = original(self, input_data)
+                    with warnings.catch_warnings(record=True) as caught:
+                        warnings.simplefilter("always")
+                        result = original(self, input_data)
+                    # 補足した警告を再送出 + warning_type 記録
+                    for w in caught:
+                        warnings.warn_explicit(
+                            w.message,
+                            w.category,
+                            w.filename,
+                            w.lineno,
+                        )
+                        wname = type(w.message).__name__
+                        if wname == "StaticSolverWarning":
+                            warning_type = "static_solver"
+                        elif "Deprecated" in wname:
+                            warning_type = "deprecated"
                 finally:
                     elapsed = time.perf_counter() - t0
                     ProcessMetaclass._call_stack.pop()
                     if cls_name not in ProcessMetaclass._profile_data:
                         ProcessMetaclass._profile_data[cls_name] = []
                     ProcessMetaclass._profile_data[cls_name].append(elapsed)
+
+                    # 実行ログ完了記録
+                    if ctx is not None and log.enabled:
+                        log.record_end(ctx, warning_type=warning_type)
+
                 return result
 
             cls.process = traced_process

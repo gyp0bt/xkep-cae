@@ -31,6 +31,8 @@
 | [195](status-195.md) | 2026-03-17 | numerical_tests モジュール新 xkep_cae 移植（BackendRegistry パターン） | ~2260+315p(新) |
 | [196](status-196.md) | 2026-03-17 | S3 xfail テスト Process API 対応の前提条件調査 | ~2260+315p(新) |
 | [197](status-197.md) | 2026-03-17 | Phase 13 完了 — ビームアセンブラ新 xkep_cae 移植 | ~2260+347p(新) |
+| [198](status-198.md) | 2026-03-17 | Phase 14 — S3 xfail テスト Process API 対応版 | ~2260+358p(新) |
+| [199](status-199.md) | 2026-03-17 | Process 実行診断インフラ — 警告・エラー・使用レポート | ~2260+374p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -111,6 +113,8 @@ Phase 11完了:    ~2260+315p(新) (2026-03-17) ← status-194（deprecated→__
 Phase 12進行:    ~2260+315p(新) (2026-03-17) ← status-195（numerical_tests移植）
 Phase 13調査:    ~2260+315p(新) (2026-03-17) ← status-196（S3 xfail前提条件調査）
 Phase 13完了:    ~2260+347p(新) (2026-03-17) ← status-197（ビームアセンブラ移植）
+Phase 14完了:    ~2260+358p(新) (2026-03-17) ← status-198（S3 xfail Process API版）
+診断インフラ:    ~2260+374p(新) (2026-03-17) ← status-199（Process実行診断）
 ```
 
 ## 備考

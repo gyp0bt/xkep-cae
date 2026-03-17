@@ -24,6 +24,12 @@ from xkep_cae.core.data import (
     VerifyResult,
     default_strategies,
 )
+from xkep_cae.core.diagnostics import (
+    DeprecatedProcessError,
+    NonDefaultStrategyWarning,
+    ProcessExecutionLog,
+    StaticSolverWarning,
+)
 from xkep_cae.core.registry import ProcessRegistry
 from xkep_cae.core.runner import ExecutionContext, ProcessRunner
 from xkep_cae.core.slots import StrategySlot, collect_strategy_slots, collect_strategy_types
@@ -60,4 +66,8 @@ __all__ = [
     "collect_strategy_slots",
     "collect_strategy_types",
     "default_strategies",
+    "ProcessExecutionLog",
+    "StaticSolverWarning",
+    "NonDefaultStrategyWarning",
+    "DeprecatedProcessError",
 ]
