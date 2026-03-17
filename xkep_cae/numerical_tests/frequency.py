@@ -15,8 +15,8 @@ from xkep_cae.numerical_tests.core import (
     FrequencyResponseConfig,
     FrequencyResponseResult,
     _build_section_props,
-    generate_beam_mesh_2d,
-    generate_beam_mesh_3d,
+    _generate_beam_mesh_2d,
+    _generate_beam_mesh_3d,
 )
 from xkep_cae.numerical_tests.runner import _assemble_2d, _assemble_3d
 
@@ -180,9 +180,9 @@ def run_frequency_response(
     dof_per_node = 6 if is_3d else 3
 
     if is_3d:
-        nodes, conn = generate_beam_mesh_3d(cfg.n_elems, cfg.length)
+        nodes, conn = _generate_beam_mesh_3d(cfg.n_elems, cfg.length)
     else:
-        nodes, conn = generate_beam_mesh_2d(cfg.n_elems, cfg.length)
+        nodes, conn = _generate_beam_mesh_2d(cfg.n_elems, cfg.length)
 
     n_nodes = len(nodes)
     n_elems = cfg.n_elems

@@ -18,20 +18,20 @@ from xkep_cae.numerical_tests.core import (
     FrequencyResponseConfig,
     NumericalTestConfig,
     StaticTestResult,
-    analytical_bend3p,
-    analytical_bend4p,
-    analytical_tensile,
-    analytical_torsion,
-    assess_friction_effect,
-    generate_beam_mesh_2d,
-    generate_beam_mesh_3d,
+    _analytical_bend3p,
+    _analytical_bend4p,
+    _analytical_tensile,
+    _analytical_torsion,
+    _assess_friction_effect,
+    _generate_beam_mesh_2d,
+    _generate_beam_mesh_3d,
 )
 from xkep_cae.numerical_tests.csv_export import (
     export_frequency_response_csv,
     export_static_csv,
 )
 from xkep_cae.numerical_tests.frequency import run_frequency_response
-from xkep_cae.numerical_tests.inp_input import parse_test_input
+from xkep_cae.numerical_tests.inp_input import _parse_test_input
 from xkep_cae.numerical_tests.runner import run_all_tests, run_test, run_tests
 
 pytestmark = pytest.mark.slow
@@ -56,22 +56,22 @@ CIRC_PARAMS = {"d": 10.0}
 # ===========================================================================
 class TestMeshGeneration:
     def test_2d_mesh_shape(self):
-        nodes, conn = generate_beam_mesh_2d(10, 100.0)
+        nodes, conn = _generate_beam_mesh_2d(10, 100.0)
         assert nodes.shape == (11, 2)
         assert conn.shape == (10, 2)
 
     def test_3d_mesh_shape(self):
-        nodes, conn = generate_beam_mesh_3d(10, 100.0)
+        nodes, conn = _generate_beam_mesh_3d(10, 100.0)
         assert nodes.shape == (11, 3)
         assert conn.shape == (10, 2)
 
     def test_mesh_endpoints(self):
-        nodes, _ = generate_beam_mesh_2d(5, 50.0)
+        nodes, _ = _generate_beam_mesh_2d(5, 50.0)
         assert nodes[0, 0] == pytest.approx(0.0)
         assert nodes[-1, 0] == pytest.approx(50.0)
 
     def test_connectivity(self):
-        _, conn = generate_beam_mesh_2d(4, 40.0)
+        _, conn = _generate_beam_mesh_2d(4, 40.0)
         np.testing.assert_array_equal(conn[0], [0, 1])
         np.testing.assert_array_equal(conn[-1], [3, 4])
 
@@ -83,7 +83,7 @@ class TestAnalyticalSolutions:
     def test_bend3p_eb(self):
         """3点曲げ Euler-Bernoulli 解析解."""
         Ixy = 10.0 * 20.0**3 / 12.0
-        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy)
+        ana = _analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy)
         delta_ref = 1000.0 * 100.0**3 / (48.0 * E_STEEL * Ixy)
         assert ana["delta_mid"] == pytest.approx(delta_ref, rel=1e-10)
         assert ana["V_max"] == pytest.approx(500.0)
@@ -95,14 +95,14 @@ class TestAnalyticalSolutions:
         A = 10.0 * 20.0
         G = E_STEEL / (2 * (1 + NU_STEEL))
         kappa = 10.0 * (1.0 + NU_STEEL) / (12.0 + 11.0 * NU_STEEL)
-        ana = analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy, kappa=kappa, G=G, A=A)
+        ana = _analytical_bend3p(1000.0, 100.0, E_STEEL, Ixy, kappa=kappa, G=G, A=A)
         assert ana["delta_shear"] > 0
         assert ana["delta_mid"] > ana["delta_eb"]
 
     def test_bend4p(self):
         """4点曲げ解析解（24EI, 2点対称荷重の重ね合わせ）."""
         Ixy = 10.0 * 20.0**3 / 12.0
-        ana = analytical_bend4p(1000.0, 100.0, 25.0, E_STEEL, Ixy)
+        ana = _analytical_bend4p(1000.0, 100.0, 25.0, E_STEEL, Ixy)
         delta_ref = 1000.0 * 25.0 * (3 * 100.0**2 - 4 * 25.0**2) / (24.0 * E_STEEL * Ixy)
         assert ana["delta_mid"] == pytest.approx(delta_ref, rel=1e-10)
         assert ana["M_max"] == pytest.approx(25000.0)
@@ -110,7 +110,7 @@ class TestAnalyticalSolutions:
     def test_tensile(self):
         """引張解析解."""
         A = 10.0 * 20.0
-        ana = analytical_tensile(1000.0, 100.0, E_STEEL, A)
+        ana = _analytical_tensile(1000.0, 100.0, E_STEEL, A)
         assert ana["delta"] == pytest.approx(1000.0 * 100.0 / (E_STEEL * A))
         assert ana["N"] == 1000.0
 
@@ -120,7 +120,7 @@ class TestAnalyticalSolutions:
         J = math.pi * d**4 / 32.0
         G = E_STEEL / (2 * (1 + NU_STEEL))
         r_max = d / 2.0
-        ana = analytical_torsion(500.0, 100.0, G, J, r_max)
+        ana = _analytical_torsion(500.0, 100.0, G, J, r_max)
         assert ana["theta"] == pytest.approx(500.0 * 100.0 / (G * J), rel=1e-10)
         assert ana["Mx"] == 500.0
         assert ana["tau_max"] == pytest.approx(500.0 * r_max / J)
@@ -131,19 +131,19 @@ class TestAnalyticalSolutions:
 # ===========================================================================
 class TestFrictionAssessment:
     def test_slender_beam_no_warning(self):
-        msg = assess_friction_effect("bend3p", 15.0, "roller")
+        msg = _assess_friction_effect("bend3p", 15.0, "roller")
         assert "無視可能" in msg
 
     def test_moderate_beam_warning(self):
-        msg = assess_friction_effect("bend3p", 7.0, "roller")
+        msg = _assess_friction_effect("bend3p", 7.0, "roller")
         assert "軽微" in msg
 
     def test_thick_beam_warning(self):
-        msg = assess_friction_effect("bend3p", 3.0, "roller")
+        msg = _assess_friction_effect("bend3p", 3.0, "roller")
         assert "警告" in msg
 
     def test_non_bending_no_msg(self):
-        msg = assess_friction_effect("tensile", 5.0, "roller")
+        msg = _assess_friction_effect("tensile", 5.0, "roller")
         assert msg == ""
 
 
@@ -518,7 +518,7 @@ class TestInpInput:
  1000.0
 *SUPPORT, TYPE=ROLLER
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert isinstance(cfg, NumericalTestConfig)
         assert cfg.name == "bend3p"
         assert cfg.E == 200000.0
@@ -539,7 +539,7 @@ class TestInpInput:
 *LOAD
  1000.0, 25.0
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert cfg.name == "bend4p"
         assert cfg.load_span == 25.0
         assert cfg.n_elems == 20
@@ -557,7 +557,7 @@ class TestInpInput:
 *LOAD
  500.0
 """
-        cfg = parse_test_input(text)
+        cfg = _parse_test_input(text)
         assert cfg.name == "torsion"
         assert cfg.beam_type == "timo3d"
 
@@ -577,7 +577,7 @@ class TestInpInput:
 *EXCITATION, TYPE=DISPLACEMENT, DOF=uy
 *DAMPING, ALPHA=0.0, BETA=1e-7
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         assert isinstance(cfg, FrequencyResponseConfig)
         assert cfg.rho == pytest.approx(7.85e-9)
         assert cfg.freq_min == 10.0
@@ -600,7 +600,7 @@ class TestInpInput:
 *LOAD
  1000.0
 """
-        cfg = parse_test_input(text, beam_type="timo2d")
+        cfg = _parse_test_input(text, beam_type="timo2d")
         result = run_test(cfg)
         assert result.relative_error < 1e-10
 
@@ -616,7 +616,7 @@ class TestInpInput:
 *LOAD
  1000.0
 """
-        cfg = parse_test_input(text, beam_type="timo3d")
+        cfg = _parse_test_input(text, beam_type="timo3d")
         assert cfg.section_shape == "pipe"
         assert cfg.section_params["d_outer"] == 20.0
 
@@ -861,9 +861,9 @@ class TestNonUniformMesh:
 
     def test_2d_nonuniform_basic(self):
         """2D非一様メッシュの基本テスト."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d_nonuniform
 
-        nodes, conn = generate_beam_mesh_2d_nonuniform(
+        nodes, conn = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,
@@ -879,9 +879,9 @@ class TestNonUniformMesh:
 
     def test_3d_nonuniform_basic(self):
         """3D非一様メッシュの基本テスト."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_3d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_3d_nonuniform
 
-        nodes, conn = generate_beam_mesh_3d_nonuniform(
+        nodes, conn = _generate_beam_mesh_3d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,
@@ -893,9 +893,9 @@ class TestNonUniformMesh:
 
     def test_nonuniform_multiple_points(self):
         """複数の細分割ポイント."""
-        from xkep_cae.numerical_tests.core import generate_beam_mesh_2d_nonuniform
+        from xkep_cae.numerical_tests.core import _generate_beam_mesh_2d_nonuniform
 
-        nodes, conn = generate_beam_mesh_2d_nonuniform(
+        nodes, conn = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [25.0, 75.0],
             base_n_elems=10,
@@ -907,12 +907,12 @@ class TestNonUniformMesh:
     def test_nonuniform_refinement_increases_elements(self):
         """細分割すると要素数が増加する."""
         from xkep_cae.numerical_tests.core import (
-            generate_beam_mesh_2d,
-            generate_beam_mesh_2d_nonuniform,
+            _generate_beam_mesh_2d,
+            _generate_beam_mesh_2d_nonuniform,
         )
 
-        _, conn_uniform = generate_beam_mesh_2d(10, 100.0)
-        _, conn_nonuniform = generate_beam_mesh_2d_nonuniform(
+        _, conn_uniform = _generate_beam_mesh_2d(10, 100.0)
+        _, conn_nonuniform = _generate_beam_mesh_2d_nonuniform(
             100.0,
             [50.0],
             base_n_elems=10,

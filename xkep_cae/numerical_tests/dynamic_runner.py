@@ -12,10 +12,10 @@ from xkep_cae.numerical_tests._backend import backend
 from xkep_cae.numerical_tests.core import (
     DynamicTestConfig,
     DynamicTestResult,
+    _analytical_bend3p,
     _build_section_props,
-    analytical_bend3p,
-    generate_beam_mesh_2d,
-    generate_beam_mesh_3d,
+    _generate_beam_mesh_2d,
+    _generate_beam_mesh_3d,
 )
 from xkep_cae.numerical_tests.frequency import (
     _assemble_lumped_mass_2d,
@@ -132,9 +132,9 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
     dof_per_node = 6 if is_3d else 3
 
     if is_3d:
-        nodes, conn = generate_beam_mesh_3d(n_elems, cfg.length)
+        nodes, conn = _generate_beam_mesh_3d(n_elems, cfg.length)
     else:
-        nodes, conn = generate_beam_mesh_2d(n_elems, cfg.length)
+        nodes, conn = _generate_beam_mesh_2d(n_elems, cfg.length)
 
     n_nodes = len(nodes)
     ndof = dof_per_node * n_nodes
@@ -244,7 +244,7 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
         delta_fem = abs(result.displacement[-1, 3 * mid_node + 1])
 
     use_timo = cfg.beam_type in ("timo2d", "timo3d")
-    ana = analytical_bend3p(
+    ana = _analytical_bend3p(
         abs(cfg.load_value),
         cfg.length,
         cfg.E,
