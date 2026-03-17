@@ -100,6 +100,7 @@
 | `_deformed_coords()` / `_ncp_line_search()` Process内直接呼び出し | `DeformedCoordsProcess` / `NCPLineSearchProcess` API 経由 | status-192 |
 | Strategy `_k_pen`/`_k_t_ratio`/`_ndof` 直接代入 | `set_k_pen()`/`set_k_t_ratio()`/`set_ndof()` 公開 API | status-192 |
 | `xkep_cae_deprecated/` ディレクトリ名 | `__xkep_cae_deprecated/`（C14 実効性強化） | status-194 |
+| `__xkep_cae_deprecated.numerical_tests` 直接参照 | `xkep_cae.numerical_tests` + BackendRegistry DI | status-195 |
 
 ## 推奨ソルバー構成
 
@@ -119,7 +120,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 11 完了** — `xkep_cae_deprecated` → `__xkep_cae_deprecated` リネームで C14 実効性強化。
+**脱出ポット計画 Phase 12 完了** — `numerical_tests` モジュール新 xkep_cae 移植（BackendRegistry パターン）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
