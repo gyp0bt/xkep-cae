@@ -1,12 +1,16 @@
-"""S3 撚線接触テスト — Process API 版.
+"""S3 撚線接触テスト — Process API 準静的ソルバー版.
 
 Phase 14: 新 xkep_cae パッケージの Process API のみで構成された
 撚線接触テスト。deprecated import を一切使用しない。
 
+ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess（準静的）
+  - mass_matrix / dt_physical 未指定のため、全テストで準静的パスを使用
+  - 動的パス（NewtonUzawaDynamicProcess）のテストは別途作成が必要
+
 テスト構成:
-- 7本撚線の径方向圧縮（線形梁 + ContactFrictionProcess）
-- 7本撚線の曲げ（UL CR 梁 + ContactFrictionProcess）
-- xfail: 曲げ揺動、摩擦、大規模撚線
+- 7本撚線の径方向圧縮（線形梁 + CFP 準静的）
+- 7本撚線の曲げ（UL CR 梁 + CFP 準静的）
+- xfail: 曲げ揺動、摩擦、大規模撚線（全て準静的）
 
 [← README](../../README.md)
 """
@@ -349,9 +353,10 @@ class TestContactSetupProcessAPI:
 
 
 class TestSevenStrandRadialProcessAPI:
-    """7本撚線の径方向圧縮テスト（線形梁 + ContactFrictionProcess）.
+    """7本撚線の径方向圧縮テスト（線形梁 + CFP 準静的パス）.
 
     旧 test_convergence_19strand.py::Test7Strand の Process API 版。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     def test_7strand_radial_converges(self):
@@ -400,10 +405,11 @@ class TestSevenStrandRadialProcessAPI:
 
 
 class TestSevenStrandBendingProcessAPI:
-    """7本撚線の CR 梁曲げテスト（ULCRBeamAssembler + ContactFrictionProcess）.
+    """7本撚線の CR 梁曲げテスト（ULCRBeamAssembler + CFP 準静的パス）.
 
     Phase 13 で移植した ULCRBeamAssembler を ContactFrictionProcess と
     組み合わせた統合テスト。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     def test_7strand_bending_45deg(self):
@@ -501,10 +507,11 @@ class TestSevenStrandBendingProcessAPI:
 
 
 class TestSevenStrandBendingOscillationProcess:
-    """7本撚線の曲げ揺動テスト（Process API 版）.
+    """7本撚線の曲げ揺動テスト（CFP 準静的パス）.
 
     旧 test_bending_oscillation.py::Test7StrandBendingOscillation の
     Process API 対応版。Phase2 揺動の接触活性セット変動により xfail。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     @pytest.mark.xfail(
@@ -599,10 +606,11 @@ class TestSevenStrandBendingOscillationProcess:
 
 
 class TestStrandFrictionProcess:
-    """摩擦接触テスト（Process API 版）.
+    """摩擦接触テスト（CFP 準静的パス）.
 
     旧 test_friction_validation.py / test_real_beam_contact.py の
     Process API 対応版。NCP 摩擦接線剛性符号問題により xfail。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     @pytest.mark.xfail(
@@ -664,10 +672,11 @@ class TestStrandFrictionProcess:
 
 
 class TestLargeStrandProcessAPI:
-    """大規模撚線テスト（Process API 版）.
+    """大規模撚線テスト（CFP 準静的パス）.
 
     旧 test_convergence_19strand.py::Test19Strand の Process API 対応版。
     CI タイムアウトにより xfail。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     @pytest.mark.xfail(
@@ -721,10 +730,11 @@ class TestLargeStrandProcessAPI:
 
 
 class TestStrandBendingPhysicsProcess:
-    """曲げ変形の物理的妥当性テスト（Process API 版）.
+    """曲げ変形の物理的妥当性テスト（CFP 準静的パス）.
 
     旧 test_bending_oscillation.py::Test7StrandBendingPhysics の
     Process API 対応版。
+    ソルバーパス: ContactFrictionProcess → NewtonUzawaStaticProcess
     """
 
     def test_bending_tip_displacement_direction(self):
