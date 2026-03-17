@@ -21,7 +21,7 @@ from xkep_cae.contact.geometry._compute import (
 
 
 @dataclass
-class _ContactState:
+class _ContactStateOutput:
     """1接触点の状態変数."""
 
     s: float = 0.0
@@ -49,9 +49,9 @@ class _ContactState:
     gp_stick: list[bool] | None = None
     gp_q_trial_norm: list[float] | None = None
 
-    def copy(self) -> _ContactState:
+    def copy(self) -> _ContactStateOutput:
         """深いコピーを返す."""
-        return _ContactState(
+        return _ContactStateOutput(
             s=self.s,
             t=self.t,
             gap=self.gap,
@@ -82,14 +82,14 @@ class _ContactState:
 
 
 @dataclass
-class _ContactPair:
+class _ContactPairOutput:
     """接触ペアの定義."""
 
     elem_a: int
     elem_b: int
     nodes_a: np.ndarray
     nodes_b: np.ndarray
-    state: _ContactState = field(default_factory=_ContactState)
+    state: _ContactStateOutput = field(default_factory=_ContactStateOutput)
     radius_a: float = 0.0
     radius_b: float = 0.0
     core_radius_a: float = 0.0
@@ -105,8 +105,8 @@ class _ContactPair:
         return self.state.status != ContactStatus.INACTIVE
 
 
-@dataclass
-class _ContactConfig:
+@dataclass(frozen=True)
+class _ContactConfigInput:
     """接触解析の設定."""
 
     k_pen_scale: float = 0.1
@@ -199,11 +199,11 @@ class _ContactConfig:
 
 
 @dataclass
-class _ContactManager:
+class _ContactManagerInput:
     """接触ペアの管理."""
 
-    pairs: list[_ContactPair] = field(default_factory=list)
-    config: _ContactConfig = field(default_factory=_ContactConfig)
+    pairs: list[_ContactPairOutput] = field(default_factory=list)
+    config: _ContactConfigInput = field(default_factory=_ContactConfigInput)
 
     @property
     def n_pairs(self) -> int:
@@ -225,9 +225,9 @@ class _ContactManager:
         radius_b: float = 0.0,
         core_radius_a: float = 0.0,
         core_radius_b: float = 0.0,
-    ) -> _ContactPair:
+    ) -> _ContactPairOutput:
         """接触ペアを追加する."""
-        pair = _ContactPair(
+        pair = _ContactPairOutput(
             elem_a=elem_a,
             elem_b=elem_b,
             nodes_a=np.asarray(nodes_a, dtype=int),
@@ -243,9 +243,9 @@ class _ContactManager:
     def reset_all(self) -> None:
         """全ペアの状態をリセットする."""
         for pair in self.pairs:
-            pair.state = _ContactState()
+            pair.state = _ContactStateOutput()
 
-    def get_active_pairs(self) -> list[_ContactPair]:
+    def get_active_pairs(self) -> list[_ContactPairOutput]:
         """有効な接触ペアのリストを返す."""
         return [p for p in self.pairs if p.is_active()]
 
@@ -417,7 +417,7 @@ class _ContactManager:
 
     def _update_active_set(
         self,
-        pair: _ContactPair,
+        pair: _ContactPairOutput,
         *,
         allow_deactivation: bool = True,
     ) -> None:
