@@ -23,7 +23,7 @@ from xkep_cae.numerical_tests._backend import backend
 # ====================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class ContactSolveResult:
     """ソルバー結果."""
 
@@ -39,22 +39,24 @@ class ContactSolveResult:
     graph_history: list = field(default_factory=list)
 
 
+@dataclass(frozen=True)
 class BenchmarkTimingCollector:
-    """タイミング収集."""
+    """タイミング収集（frozen dataclass）."""
 
-    def __init__(self) -> None:
-        self._records: list[dict] = []
+    _records: tuple[dict, ...] = ()
 
-    def record(self, phase: int, step: int, iteration: int, label: str, elapsed: float) -> None:
-        self._records.append(
-            {
-                "phase": phase,
-                "step": step,
-                "iteration": iteration,
-                "label": label,
-                "elapsed": elapsed,
-            }
-        )
+    def record(
+        self, phase: int, step: int, iteration: int, label: str, elapsed: float
+    ) -> BenchmarkTimingCollector:
+        """新しいレコードを追加した新インスタンスを返す."""
+        new_record = {
+            "phase": phase,
+            "step": step,
+            "iteration": iteration,
+            "label": label,
+            "elapsed": elapsed,
+        }
+        return BenchmarkTimingCollector(_records=(*self._records, new_record))
 
     def summary_table(self) -> str:
         lines = ["  Timing Summary:"]
@@ -88,7 +90,7 @@ def _compute_kappa(nu: float) -> float:
 # ====================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class BendingOscillationResult:
     """曲げ揺動ベンチマーク結果.
 
