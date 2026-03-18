@@ -5,6 +5,7 @@
 - 全ての回答・設計仕様は**日本語**で記述
 - markdown 文書には `README.md` へのバックリンクを貼る
 - lint/format: `ruff check xkep_cae/ tests/` && `ruff format xkep_cae/ tests/`
+- 機能は可能な限りprocessクラスとして実装すること。
 
 ## 2交代制運用（Codex / Claude Code）
 
@@ -79,14 +80,11 @@
 
 **以下を厳守すること。違反は作業のやり直しになる。**
 
-### やるべきこと
-- **S3 凍結解除**: 変位制御7本撚線曲げ揺動のPhase2 xfail解消
-- `contracts/validate_process_contracts.py` のエラーを**減らす**
-- 被膜モデル物理検証テスト
+## やるべきこと
+- 単線の剛体支えと押しジグによる動的三点曲げの解析解一致
 
-### やってはいけないこと
-- ソルバー性能改善（スパース最適化、並列化、メモリ削減）
-- NCP ソルバー（solver_ncp.py）の収束ロジック変更
+## やってはいけないこと
+- 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
 
 ### セッション開始時の確認手順
 1. `docs/status/status-index.md` → 最新 status 番号を確認
