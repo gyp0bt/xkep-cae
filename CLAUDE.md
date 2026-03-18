@@ -112,6 +112,7 @@
 | `BeamForces3D`/`BeamSection`/etc. 命名不統一 | `*Input`/`*Output` 命名規約準拠（82ファイル） | status-202 |
 | C17: `_KNOWN_NON_FROZEN` 例外リスト | 廃止（違反は正規報告） | status-203 |
 | C17: `dataclasses.replace()` 未検知 | プライベートモジュール内で検知 | status-203 |
+| `_ContactStateOutput`/`_ContactPairOutput`/`_ContactManagerInput` non-frozen | frozen=True + `_evolve()` パターン | status-204 |
 
 ## 推奨ソルバー構成
 
@@ -123,7 +124,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-18 | C16 違反 **0件** | C17 違反 **3件**（non-frozen dataclass, status-203） | O2 条例違反 2件（警告）
+**~2260テスト + 374 新パッケージテスト** — 2026-03-18 | C16 違反 **0件** | C17 違反 **0件**（frozen 化完了, status-204） | O2 条例違反 2件（警告）
 
 ### ターゲット
 
@@ -131,7 +132,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 16** — C17 違反3件解消（`_ContactStateOutput`/`_ContactPairOutput`/`_ContactManagerInput` の frozen 化。`replace()` 禁止、Process 出力パターンで構造改革）+ BackendRegistry 完全廃止（O2 条例違反2件解消）+ 被膜モデル物理検証テスト（status-203）。
+**脱出ポット計画 Phase 17** — BackendRegistry 完全廃止（O2 条例違反2件解消）+ 被膜モデル物理検証テスト。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
