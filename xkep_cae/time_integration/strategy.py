@@ -1,6 +1,5 @@
 """TimeIntegration Strategy 具象実装.
 
-旧 __xkep_cae_deprecated/process/strategies/time_integration.py の完全書き直し。
 TimeIntegrationStrategy Protocol に従い、時間積分方法を実装する Process 群。
 
 2クラス構成:

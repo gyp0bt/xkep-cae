@@ -1,7 +1,6 @@
 """Coating Strategy 具象実装.
 
 被膜接触モデル（Kelvin-Voigt弾性+粘性ダッシュポット）を Strategy として実装する。
-旧 __xkep_cae_deprecated/process/strategies/coating.py からの移行（status-181）。
 
 実装:
 - KelvinVoigtCoatingProcess: 弾性+粘性被膜モデル（status-137/140）

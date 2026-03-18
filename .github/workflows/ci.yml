@@ -85,7 +85,7 @@ jobs:
 
       - name: Validate process contracts
         run: |
-          python scripts/validate_process_contracts.py
+          python contracts/validate_process_contracts.py
 
   # -------------------------------------------------------
   # slow テスト（接触・非線形・PINN・GNN比較）

@@ -1,6 +1,5 @@
 """StrandMeshProcess — 撚線メッシュ生成の PreProcess.
 
-旧 __xkep_cae_deprecated/process/concrete/pre_mesh.py の完全書き直し。
 設計仕様: docs/mesh_process.md
 """
 

@@ -1,6 +1,5 @@
 """ExportProcess — 結果出力の PostProcess.
 
-旧 __xkep_cae_deprecated/process/concrete/post_export.py の完全書き直し。
 設計仕様: docs/export.md
 """
 

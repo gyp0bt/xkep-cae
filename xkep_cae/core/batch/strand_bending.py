@@ -1,6 +1,5 @@
 """StrandBendingBatchProcess — 撚線曲げ揺動ワークフロー.
 
-旧 __xkep_cae_deprecated/process/batch/strand_bending.py の完全書き直し。
 設計仕様: docs/strand_bending.md
 
 Phase 5: ソルバー結果連携 — Export/Render/Verify ワイヤリング完成。

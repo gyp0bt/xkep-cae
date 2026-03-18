@@ -1,7 +1,6 @@
 """法線接触力則 — AL + Smooth Penalty.
 
-旧 __xkep_cae_deprecated/contact/law_normal.py の完全書き直し。
-mutable な ContactPair への副作用を排除し、純粋関数 + frozen dataclass で実装。
+純粋関数 + frozen dataclass で実装。
 
 接触反力（AL）:
     p_n = max(0, λ_n + k_pen × (-g))
