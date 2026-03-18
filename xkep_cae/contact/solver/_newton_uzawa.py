@@ -8,20 +8,20 @@ Static は保存用。
 from __future__ import annotations
 
 from xkep_cae.contact.solver._newton_uzawa_dynamic import (  # noqa: F401
-    DynamicStepResult,
-    NewtonUzawaDynamicConfig,
+    DynamicStepOutput,
+    NewtonUzawaDynamicInput,
     NewtonUzawaDynamicProcess,
     NewtonUzawaDynamicStepInput,
 )
 from xkep_cae.contact.solver._newton_uzawa_static import (  # noqa: F401
-    NewtonUzawaStaticConfig,
+    NewtonUzawaStaticInput,
     NewtonUzawaStaticProcess,
     NewtonUzawaStaticStepInput,
-    StaticStepResult,
+    StaticStepOutput,
 )
 
 # --- Dynamic を正統 Process とする ---
 NewtonUzawaProcess = NewtonUzawaDynamicProcess
-NewtonUzawaConfig = NewtonUzawaDynamicConfig
+NewtonUzawaConfig = NewtonUzawaDynamicInput
 NewtonUzawaStepInput = NewtonUzawaDynamicStepInput
-StepResult = DynamicStepResult
+StepResult = DynamicStepOutput

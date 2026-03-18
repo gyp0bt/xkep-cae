@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 from xkep_cae.contact._types import ContactStatus
 from xkep_cae.contact.setup.process import ContactSetupConfig, ContactSetupProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
@@ -30,7 +30,7 @@ from xkep_cae.core import (
     ContactSetupData,
     MeshData,
 )
-from xkep_cae.elements import BeamSection
+from xkep_cae.elements import BeamSectionInput
 from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
 from xkep_cae.elements._beam_cr import timo_beam3d_ke_global
 from xkep_cae.mesh._twisted_wire import _make_twisted_wire_mesh, _radii
@@ -47,7 +47,7 @@ _E = 200e9  # Pa
 _NU = 0.3
 _G = _E / (2.0 * (1.0 + _NU))
 _WIRE_D = 0.002  # m
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = _SECTION.cowper_kappa_y(_NU)
 _PITCH = 0.040  # m
 _RHO = 7800.0  # kg/m^3 (steel)
@@ -97,7 +97,7 @@ def _make_mesh_and_data(
 
 
 def _build_elem_layer_map(mesh):
-    """TwistedWireMesh から elem_layer_map を構築."""
+    """TwistedWireMeshOutput から elem_layer_map を構築."""
     elem_layer_map = {}
     for info in mesh.strand_infos:
         start, end = mesh.strand_elem_ranges[info.strand_id]
@@ -213,7 +213,7 @@ def _bending_prescribed_dofs(mesh, n_strands: int, ndof_total: int, angle_deg: f
 def _build_contact_setup(mesh, mesh_data: MeshData, *, k_pen_scale=0.1, mu=0.0):
     """ContactManager + ContactSetupData を Process API で構築."""
     elem_layer_map = _build_elem_layer_map(mesh)
-    config = _ContactConfig(
+    config = _ContactConfigInput(
         k_pen_scale=k_pen_scale,
         k_pen_mode="beam_ei",
         beam_E=_E,
@@ -240,7 +240,7 @@ def _build_contact_setup(mesh, mesh_data: MeshData, *, k_pen_scale=0.1, mu=0.0):
         n_uzawa_max=5,
         tol_uzawa=1e-6,
     )
-    manager = _ContactManager(config=config)
+    manager = _ContactManagerInput(config=config)
     manager.detect_candidates(
         mesh_data.node_coords,
         mesh_data.connectivity,

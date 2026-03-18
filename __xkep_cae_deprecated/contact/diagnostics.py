@@ -2,7 +2,7 @@
 
 solver_ncp.py / solver_smooth_penalty.py 共通のデータ構造。
 
-- ConvergenceDiagnostics: 収束失敗時の診断情報
+- ConvergenceDiagnosticsOutput: 収束失敗時の診断情報
 - NCPSolveResult: ソルバー結果
 - NCPSolverInput: ソルバー入力（構造化パラメータ）
 """
@@ -19,7 +19,7 @@ from __xkep_cae_deprecated.contact.pair import ContactManager
 
 
 @dataclass
-class ConvergenceDiagnostics:
+class ConvergenceDiagnosticsOutput:
     """収束失敗時の標準化診断情報.
 
     Newton反復の履歴情報を収集し、収束失敗の原因特定を支援する。
@@ -162,7 +162,7 @@ class NCPSolveResult:
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
     graph_history: ContactGraphHistory = field(default_factory=ContactGraphHistory)
-    diagnostics: ConvergenceDiagnostics | None = None
+    diagnostics: ConvergenceDiagnosticsOutput | None = None
     # 動的解析結果（dynamics=True 時のみ有効）
     velocity: np.ndarray | None = None
     acceleration: np.ndarray | None = None

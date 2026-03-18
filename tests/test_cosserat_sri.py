@@ -20,7 +20,7 @@ from xkep_cae.elements.beam_cosserat import (
     cosserat_ke_local_sri,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 # --- テスト用パラメータ ---
 E = 200_000.0  # MPa
@@ -31,8 +31,8 @@ B_WIDTH = 10.0  # mm
 H_HEIGHT = 20.0  # mm
 
 
-def _make_section() -> BeamSection:
-    return BeamSection.rectangle(B_WIDTH, H_HEIGHT)
+def _make_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(B_WIDTH, H_HEIGHT)
 
 
 def _make_material() -> BeamElastic1D:

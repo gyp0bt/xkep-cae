@@ -30,7 +30,7 @@ from xkep_cae.materials.plasticity_1d import (
     KinematicHardening,
     Plasticity1D,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.sections.fiber import FiberSection
 from xkep_cae.solver import newton_raphson
 
@@ -398,8 +398,8 @@ def _make_fiber_section(ny: int = 10, nz: int = 20) -> FiberSection:
     return FiberSection.rectangle(10.0, 20.0, ny=ny, nz=nz)
 
 
-def _make_beam_section() -> BeamSection:
-    return BeamSection.rectangle(10.0, 20.0)
+def _make_beam_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(10.0, 20.0)
 
 
 def _make_material() -> BeamElastic1D:
@@ -407,7 +407,7 @@ def _make_material() -> BeamElastic1D:
 
 
 def _make_rod(
-    section: BeamSection | FiberSection | None = None,
+    section: BeamSectionInput | FiberSection | None = None,
     integration_scheme: str = "uniform",
 ) -> CosseratRod:
     sec = section if section is not None else _make_beam_section()

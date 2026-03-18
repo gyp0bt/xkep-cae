@@ -15,7 +15,7 @@ sys.path.insert(0, ".")
 
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 _E = 200e9
 _NU = 0.3
@@ -35,7 +35,7 @@ def test_disp_control(node_coords, connectivity, n_strands,
                       strand_nodes_fn, bend_angle_deg, n_steps,
                       max_iter=50, tol=1e-8, label=""):
     """変位制御（処方回転）でのNR収束テスト."""
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
     n_nodes = len(node_coords)
@@ -152,7 +152,7 @@ def main():
 
     # 外周1本、変位制御、反復詳細
     print("\n--- 外周strand 1 変位制御 10° 反復詳細 ---")
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
     n_nodes_s = len(coords_s)

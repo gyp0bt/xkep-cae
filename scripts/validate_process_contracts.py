@@ -16,6 +16,8 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
 - C16: 新パッケージ滅菌 — core/ 以外の全モジュール内のクラス/関数を分類検査
        __init__.py のクラス再エクスポートも型検査対象
+- C17: プライベートモジュール dataclass 衛生 — _xxx.py 内の dataclass が
+       frozen=True でない場合、またはクラス名が Input/Output で終わらない場合を検出
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -770,6 +772,124 @@ def check_c16_sterilization() -> list[str]:
     return errors
 
 
+def check_c17_private_dataclass_hygiene() -> list[str]:
+    """C17: プライベートモジュール内 dataclass 衛生チェック.
+
+    _xxx.py（プライベートモジュール）内で定義された dataclass を走査し、
+    以下を違反として検出する:
+
+    1. frozen=True でない dataclass（mutable state の温床）
+    2. クラス名が Input / Output で終わらない dataclass
+       （データ型の役割が不明瞭）
+    3. dataclasses.replace() の使用（frozen 化の代替にならない）
+
+    C16 はプライベートモジュールをスキップするため、
+    このチェックが内部実装の品質を補完する。
+    """
+    import dataclasses
+
+    errors: list[str] = []
+    xkep_root = _project_root / "xkep_cae"
+    scan_roots = [
+        d
+        for d in sorted(xkep_root.iterdir())
+        if d.is_dir() and d.name != "__pycache__" and d.name != "core"
+    ]
+
+    for root in scan_roots:
+        if not root.exists():
+            continue
+        for py_file in sorted(root.rglob("*.py")):
+            if "__pycache__" in str(py_file):
+                continue
+            # テストファイルはスキップ
+            if py_file.parent.name == "tests" or py_file.name.startswith("test_"):
+                continue
+            # プライベートモジュールのみ対象（__init__.py は C16 で検査済み）
+            if not py_file.stem.startswith("_") or py_file.stem == "__init__":
+                continue
+
+            # AST でクラス名を収集
+            try:
+                source = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(source)
+            except (SyntaxError, OSError):
+                continue
+
+            class_names = [
+                node.name for node in ast.iter_child_nodes(tree) if isinstance(node, ast.ClassDef)
+            ]
+            if not class_names:
+                continue
+
+            # モジュールをインポートして実際の型を検査
+            mod_path = py_file.relative_to(_project_root).with_suffix("")
+            mod_name = str(mod_path).replace("/", ".")
+            try:
+                mod = importlib.import_module(mod_name)
+            except Exception:
+                continue
+
+            rel = py_file.relative_to(_project_root)
+
+            for cls_name in class_names:
+                cls = getattr(mod, cls_name, None)
+                if cls is None:
+                    continue
+                if not dataclasses.is_dataclass(cls):
+                    continue
+
+                params = getattr(cls, "__dataclass_params__", None)
+                if not (params and params.frozen):
+                    errors.append(
+                        f"C17: {rel} の {cls_name} は non-frozen dataclass（frozen=True が必須）"
+                    )
+
+                # クラス名が Input / Result で終わるか検査
+                if not (cls_name.endswith("Input") or cls_name.endswith("Output")):
+                    errors.append(
+                        f"C17: {rel} の {cls_name} は"
+                        f" Input/Output で終わらない dataclass 名"
+                        f"（データ型の役割を明示する命名が必要）"
+                    )
+
+            # dataclasses.replace() の使用を検出
+            _replace_patterns = [
+                r"\bdataclasses\.replace\s*\(",
+                r"\breplace\s*\(",
+            ]
+            # import 文から replace を取得しているか確認
+            _imports_replace = False
+            for node in ast.iter_child_nodes(tree):
+                if isinstance(node, ast.ImportFrom):
+                    if node.module == "dataclasses" and node.names:
+                        for alias in node.names:
+                            if alias.name == "replace":
+                                _imports_replace = True
+            # dataclasses.replace() 直接呼び出し
+            import re
+
+            for line_no, line in enumerate(source.splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                if "dataclasses.replace(" in line:
+                    errors.append(
+                        f"C17: {rel}:{line_no} で dataclasses.replace() を使用"
+                        f"（frozen 化の代替にならない — 構造的な不変設計が必要）"
+                    )
+                elif _imports_replace and re.search(r"\breplace\s*\(", line):
+                    # from dataclasses import replace を使っている場合
+                    # ただし def replace や他の replace は除外
+                    if "def replace" not in line and "str.replace" not in line:
+                        errors.append(
+                            f"C17: {rel}:{line_no} で dataclasses.replace() を使用"
+                            f"（frozen 化の代替にならない — 構造的な不変設計が必要）"
+                        )
+
+    return errors
+
+
 def check_o1_test_direct_function_calls() -> list[str]:
     """O1（条例）: テストが Process ラッパーのある関数を直接呼び出していないか検出.
 
@@ -986,6 +1106,16 @@ def main() -> int:
     else:
         print("  OK")
 
+    # C17: プライベートモジュール dataclass 衛生
+    print("\n--- C17: プライベートモジュール dataclass 衛生 ---")
+    c17_errors = check_c17_private_dataclass_hygiene()
+    all_errors.extend(c17_errors)
+    if c17_errors:
+        for e in c17_errors:
+            print(f"  NG: {e}")
+    else:
+        print("  OK")
+
     # O1-O3: 条例違反チェック
     all_ordinance: list[str] = []
 
@@ -1033,6 +1163,8 @@ def main() -> int:
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
         print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")
         print("       __init__.py の re-export クラスも検査対象")
+        print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
+        print("       クラス名は Input/Output で終わる命名が必要")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
         print("  O2  → BackendRegistry パターンを Process.uses に移行")
         print("  O3  → conftest の backend.configure() を廃止し Process API に移行")

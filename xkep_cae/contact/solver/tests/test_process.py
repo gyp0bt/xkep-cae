@@ -17,7 +17,7 @@ from xkep_cae.contact._manager_process import (
 from xkep_cae.contact.solver._adaptive_stepping import (
     AdaptiveStepInput,
     AdaptiveStepOutput,
-    AdaptiveSteppingConfig,
+    AdaptiveSteppingInput,
     AdaptiveSteppingProcess,
     StepAction,
 )
@@ -27,7 +27,7 @@ from xkep_cae.contact.solver._contact_graph import (
     ContactGraphProcess,
 )
 from xkep_cae.contact.solver._diagnostics import (
-    ConvergenceDiagnostics,
+    ConvergenceDiagnosticsOutput,
     DiagnosticsInput,
     DiagnosticsOutput,
     DiagnosticsReportProcess,
@@ -338,7 +338,7 @@ class TestAdaptiveSteppingProcessAPI:
     """AdaptiveSteppingProcess の API テスト."""
 
     def test_is_solver_process(self):
-        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        config = AdaptiveSteppingInput(dt_initial_fraction=0.5)
         proc = AdaptiveSteppingProcess(config)
         assert isinstance(proc, SolverProcess)
 
@@ -349,7 +349,7 @@ class TestAdaptiveSteppingProcessAPI:
         assert AdaptiveSteppingProcess.meta.module == "solve"
 
     def test_query_returns_output(self):
-        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        config = AdaptiveSteppingInput(dt_initial_fraction=0.5)
         proc = AdaptiveSteppingProcess(config)
         out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
         assert isinstance(out, AdaptiveStepOutput)
@@ -358,7 +358,7 @@ class TestAdaptiveSteppingProcessAPI:
 
     def test_full_cycle(self):
         """QUERY → SUCCESS → QUERY で完了まで回る."""
-        config = AdaptiveSteppingConfig(dt_initial_fraction=1.0)
+        config = AdaptiveSteppingInput(dt_initial_fraction=1.0)
         proc = AdaptiveSteppingProcess(config)
 
         out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
@@ -376,7 +376,7 @@ class TestAdaptiveSteppingProcessAPI:
 
     def test_failure_triggers_retry(self):
         """FAILURE でカットバック → can_retry=True."""
-        config = AdaptiveSteppingConfig(dt_initial_fraction=0.5)
+        config = AdaptiveSteppingInput(dt_initial_fraction=0.5)
         proc = AdaptiveSteppingProcess(config)
 
         out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
@@ -468,7 +468,7 @@ class TestDiagnosticsReportProcessAPI:
     def test_basic_report(self):
         """基本的な診断レポートが生成される."""
         proc = DiagnosticsReportProcess()
-        diag = ConvergenceDiagnostics(step=5, load_frac=0.8, res_history=[1e-3, 1e-4, 1e-5])
+        diag = ConvergenceDiagnosticsOutput(step=5, load_frac=0.8, res_history=[1e-3, 1e-4, 1e-5])
         out = proc.process(DiagnosticsInput(diagnostics=diag, max_iter=50))
         assert isinstance(out, DiagnosticsOutput)
         assert "Step: 5" in out.report
@@ -677,9 +677,9 @@ class TestDetectCandidatesProcessAPI:
 
     def test_detect_basic(self):
         """基本的な候補検出."""
-        from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+        from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 
-        manager = _ContactManager(config=_ContactConfig(exclude_same_layer=False))
+        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_layer=False))
         mesh = _make_two_beam_mesh()
         proc = DetectCandidatesProcess()
         out = proc.process(
@@ -703,9 +703,9 @@ class TestUpdateGeometryProcessAPI:
 
     def test_update_basic(self):
         """基本的な幾何更新."""
-        from xkep_cae.contact._contact_pair import _ContactConfig, _ContactManager
+        from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 
-        manager = _ContactManager(config=_ContactConfig(exclude_same_layer=False))
+        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_layer=False))
         mesh = _make_two_beam_mesh()
         # まず候補検出
         manager.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii)

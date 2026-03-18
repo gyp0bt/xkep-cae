@@ -17,7 +17,7 @@ sys.path.insert(0, ".")
 
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 _E = 200e9
 _NU = 0.3
@@ -35,7 +35,7 @@ def _kappa(nu):
 
 def run_nr_force_control(node_coords, connectivity, bend_angle_deg, n_steps, max_iter=50, tol=1e-8):
     """純NR力制御曲げテスト."""
-    section = BeamSection.circle(_WIRE_D)
+    section = BeamSectionInput.circle(_WIRE_D)
     G = _G(_E, _NU)
     kappa = _kappa(_NU)
     n_nodes = len(node_coords)

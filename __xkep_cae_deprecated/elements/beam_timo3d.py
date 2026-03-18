@@ -27,11 +27,11 @@ import numpy as np
 
 if TYPE_CHECKING:
     from __xkep_cae_deprecated.core.constitutive import ConstitutiveProtocol
-    from __xkep_cae_deprecated.sections.beam import BeamSection
+    from __xkep_cae_deprecated.sections.beam import BeamSectionInput
 
 
 @dataclass
-class BeamForces3D:
+class BeamForces3DOutput:
     """3D梁要素の断面力（局所座標系）.
 
     符号規約:
@@ -373,7 +373,7 @@ def beam3d_section_forces(
     kappa_z: float,
     v_ref: np.ndarray | None = None,
     scf: float | None = None,
-) -> tuple[BeamForces3D, BeamForces3D]:
+) -> tuple[BeamForces3DOutput, BeamForces3DOutput]:
     """要素両端の断面力を計算する（局所座標系）.
 
     全体座標系の変位ベクトルから局所座標系に変換し、
@@ -422,7 +422,7 @@ def beam3d_section_forces(
     f_local = Ke_local @ u_local
 
     # 節点1: 断面力 = -f_local[0:6]
-    forces_1 = BeamForces3D(
+    forces_1 = BeamForces3DOutput(
         N=-f_local[0],
         Vy=-f_local[1],
         Vz=-f_local[2],
@@ -431,7 +431,7 @@ def beam3d_section_forces(
         Mz=-f_local[5],
     )
     # 節点2: 断面力 = f_local[6:12]
-    forces_2 = BeamForces3D(
+    forces_2 = BeamForces3DOutput(
         N=f_local[6],
         Vy=f_local[7],
         Vz=f_local[8],
@@ -443,7 +443,7 @@ def beam3d_section_forces(
 
 
 def beam3d_max_bending_stress(
-    section_forces: BeamForces3D,
+    section_forces: BeamForces3DOutput,
     A: float,
     Iy: float,
     Iz: float,
@@ -475,7 +475,7 @@ def beam3d_max_bending_stress(
 
 
 def beam3d_max_shear_stress(
-    section_forces: BeamForces3D,
+    section_forces: BeamForces3DOutput,
     A: float,
     J: float,
     r_max: float,
@@ -706,7 +706,7 @@ class TimoshenkoBeam3D:
 
     def __init__(
         self,
-        section: BeamSection,
+        section: BeamSectionInput,
         kappa_y: float | str = 5.0 / 6.0,
         kappa_z: float | str = 5.0 / 6.0,
         v_ref: np.ndarray | None = None,
@@ -855,7 +855,7 @@ class TimoshenkoBeam3D:
         coords: np.ndarray,
         u_elem_global: np.ndarray,
         material: ConstitutiveProtocol,
-    ) -> tuple[BeamForces3D, BeamForces3D]:
+    ) -> tuple[BeamForces3DOutput, BeamForces3DOutput]:
         """要素両端の断面力を計算する.
 
         Args:

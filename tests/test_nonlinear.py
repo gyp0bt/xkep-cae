@@ -16,7 +16,7 @@ from xkep_cae.elements.beam_cosserat import (
     assemble_cosserat_beam,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import NonlinearResult, newton_raphson
 
 # --- テスト用パラメータ ---
@@ -25,8 +25,8 @@ NU = 0.3
 G = E / (2.0 * (1.0 + NU))
 
 
-def _make_section() -> BeamSection:
-    return BeamSection.rectangle(10.0, 20.0)
+def _make_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(10.0, 20.0)
 
 
 def _make_material() -> BeamElastic1D:
@@ -315,7 +315,7 @@ class TestLargeDeformationCantilever:
 
     def test_large_deflection_converges(self):
         """大変位荷重で NR が収束すること."""
-        sec = BeamSection.rectangle(10.0, 10.0)
+        sec = BeamSectionInput.rectangle(10.0, 10.0)
         mat = _make_material()
         n_elems = 20
         L = 200.0
@@ -381,7 +381,7 @@ class TestLargeDeformationCantilever:
         軸力が作用している状態で曲げ荷重を加えると、
         幾何剛性による剛性増加効果で変位が小さくなる。
         """
-        sec = BeamSection.rectangle(10.0, 10.0)
+        sec = BeamSectionInput.rectangle(10.0, 10.0)
         mat = _make_material()
         n_elems = 20
         L = 200.0
@@ -531,7 +531,7 @@ class TestLargeDeformationCantilever:
 
     def test_sri_large_deflection(self):
         """SRI スキームでも大変形解析が収束すること."""
-        sec = BeamSection.rectangle(10.0, 10.0)
+        sec = BeamSectionInput.rectangle(10.0, 10.0)
         mat = _make_material()
         n_elems = 20
         L = 200.0

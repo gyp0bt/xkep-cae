@@ -40,7 +40,7 @@ class StrandMeshResult:
 class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
     """撚線メッシュ生成プロセス.
 
-    TwistedWireMesh の機能を PreProcess として管理する。
+    TwistedWireMeshOutput の機能を PreProcess として管理する。
     """
 
     meta = ProcessMeta(

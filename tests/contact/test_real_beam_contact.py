@@ -28,7 +28,7 @@ from xkep_cae.elements.beam_timo3d import (
     assemble_cr_beam3d,
     timo_beam3d_ke_global,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -44,7 +44,7 @@ _NU = 0.33
 _G = _E / (2.0 * (1.0 + _NU))
 _D = 0.02
 _RADIUS = _D / 2.0
-_SECTION = BeamSection.circle(_D)
+_SECTION = BeamSectionInput.circle(_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 
 _L = 0.5

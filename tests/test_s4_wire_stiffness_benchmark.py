@@ -36,13 +36,13 @@ from xkep_cae.elements.beam_timo3d import (
 from xkep_cae.mesh.twisted_wire import (
     CoatingModel,
     SheathModel,
-    TwistedWireMesh,
+    TwistedWireMeshOutput,
     coated_beam_section,
     coated_radii,
     make_twisted_wire_mesh,
     sheath_equivalent_stiffness,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -56,7 +56,7 @@ _NU = 0.3
 _G = _E / (2.0 * (1.0 + _NU))
 _WIRE_D = 0.002  # 直径 2mm
 _WIRE_R = _WIRE_D / 2.0
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 _PITCH = 0.040  # 40mm ピッチ
 
@@ -89,7 +89,7 @@ _N_PITCHES = 0.5
 
 
 def _make_timo3d_assemblers(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     *,
     coating: CoatingModel | None = None,
 ):
@@ -142,7 +142,7 @@ def _make_timo3d_assemblers(
 # ====================================================================
 
 
-def _fix_all_strand_starts(mesh: TwistedWireMesh):
+def _fix_all_strand_starts(mesh: TwistedWireMeshOutput):
     """全素線の開始端を全固定."""
     fixed = []
     for sid in range(mesh.n_strands):
@@ -152,7 +152,7 @@ def _fix_all_strand_starts(mesh: TwistedWireMesh):
     return np.array(sorted(set(fixed)), dtype=int)
 
 
-def _get_strand_end_dofs(mesh: TwistedWireMesh, strand_id: int, end: str):
+def _get_strand_end_dofs(mesh: TwistedWireMeshOutput, strand_id: int, end: str):
     """素線の端点のDOFインデックスを取得."""
     start_node, end_node = mesh.strand_node_ranges[strand_id]
     node = start_node if end == "start" else end_node - 1
@@ -160,7 +160,7 @@ def _get_strand_end_dofs(mesh: TwistedWireMesh, strand_id: int, end: str):
 
 
 def _apply_load(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     ndof_total: int,
     mode: str,
     value: float,
@@ -196,7 +196,7 @@ def _apply_load(
 
 
 def _solve_twisted_wire(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     mode: str,
     load_value: float,
     *,
@@ -267,7 +267,7 @@ def _solve_twisted_wire(
 
 
 def _extract_tip_displacement(
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     u: np.ndarray,
     mode: str,
 ) -> float:
@@ -508,7 +508,7 @@ class TestS4SheathStiffness:
     ここではシース剛性を裸撚線の剛性に加算して比較する。
     """
 
-    def _sheath_stiffness(self, mesh: TwistedWireMesh):
+    def _sheath_stiffness(self, mesh: TwistedWireMeshOutput):
         """シースの等価梁剛性を取得."""
         return sheath_equivalent_stiffness(mesh, _SHEATH)
 

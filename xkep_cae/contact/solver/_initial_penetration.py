@@ -17,7 +17,7 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class _ClosestPointResult:
+class _ClosestPointOutput:
     """最近接点計算の結果."""
 
     s: float
@@ -58,7 +58,7 @@ def _closest_point_segments(
     xB1: np.ndarray,
     *,
     tol_parallel: float = 1e-10,
-) -> _ClosestPointResult:
+) -> _ClosestPointOutput:
     """2線分間の最近接点を計算する."""
     dA = xA1 - xA0
     dB = xB1 - xB0
@@ -99,7 +99,7 @@ def _closest_point_segments(
     else:
         normal = np.array([0.0, 0.0, 1.0])
 
-    return _ClosestPointResult(
+    return _ClosestPointOutput(
         s=s,
         t=t,
         point_a=point_a,

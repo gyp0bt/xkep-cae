@@ -24,7 +24,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from __xkep_cae_deprecated.core.constitutive import ConstitutiveProtocol
-    from __xkep_cae_deprecated.sections.beam import BeamSection2D
+    from __xkep_cae_deprecated.sections.beam import BeamSection2DInput
 
 
 @dataclass
@@ -309,7 +309,7 @@ class EulerBernoulliBeam2D:
     nnodes: int = 2
     ndof: int = 6
 
-    def __init__(self, section: BeamSection2D) -> None:
+    def __init__(self, section: BeamSection2DInput) -> None:
         self.section = section
 
     def local_stiffness(

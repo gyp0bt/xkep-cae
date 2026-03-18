@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-17時点 | C16 違反 **0件** | O2/O3 条例違反 5件（警告） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**~2260テスト + 374 新パッケージテスト** — 2026-03-18時点 | C16 違反 **0件** | C17 違反 **3件**（non-frozen dataclass） | O2 条例違反 2件（警告） | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 | 状態 |
 |------|------|------|
@@ -26,7 +26,7 @@
 | 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 | 完了（deprecated） |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス | 完了（deprecated） |
 | 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 | 完了（deprecated） |
-| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 15 完了 — C16 違反ゼロ達成** |
+| **脱出ポット計画** | **新 xkep_cae を Process Architecture でゼロ構築** | **Phase 15 完了 + C17 衛生チェック — C16 違反ゼロ / C17 違反3件** |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 

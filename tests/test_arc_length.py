@@ -16,7 +16,7 @@ from xkep_cae.elements.beam_cosserat import (
     assemble_cosserat_beam,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import ArcLengthResult, arc_length, newton_raphson
 
 # --- 共通パラメータ ---
@@ -45,7 +45,7 @@ class TestArcLengthLinear:
 
     def test_axial_cantilever(self):
         """軸引張: 弧長法と NR の結果が一致."""
-        sec = BeamSection.rectangle(10.0, 20.0)
+        sec = BeamSectionInput.rectangle(10.0, 20.0)
         mat = BeamElastic1D(E=E, nu=NU)
         n_elems = 5
         L = 100.0
@@ -114,7 +114,7 @@ class TestArcLengthLinear:
 
     def test_bending_cantilever(self):
         """曲げ荷重: 弧長法と NR が一致."""
-        sec = BeamSection.rectangle(10.0, 20.0)
+        sec = BeamSectionInput.rectangle(10.0, 20.0)
         mat = BeamElastic1D(E=E, nu=NU)
         n_elems = 10
         L = 100.0

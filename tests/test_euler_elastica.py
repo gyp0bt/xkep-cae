@@ -25,7 +25,7 @@ from xkep_cae.elements.beam_cosserat import (
     assemble_cosserat_beam,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import newton_raphson
 
 # --- 共通パラメータ ---
@@ -37,7 +37,7 @@ L = 10.0  # 梁長さ
 # 正方形断面 (薄い)
 _b = 0.1  # 幅
 _h = 0.1  # 高さ
-SEC = BeamSection.rectangle(_b, _h)
+SEC = BeamSectionInput.rectangle(_b, _h)
 EI = E * SEC.Iz  # = E * b*h³/12
 
 

@@ -23,7 +23,7 @@ from xkep_cae.elements.tri6 import Tri6PlaneStrain
 from xkep_cae.materials.beam_elastic import BeamElastic1D
 from xkep_cae.materials.elastic import IsotropicElastic3D, PlaneStrainElastic
 from xkep_cae.materials.plasticity_1d import Plasticity1D
-from xkep_cae.sections.beam import BeamSection, BeamSection2D
+from xkep_cae.sections.beam import BeamSection2DInput, BeamSectionInput
 from xkep_cae.solver import solve_displacement
 
 
@@ -56,9 +56,9 @@ def test_protocol_isinstance():
 def test_nonlinear_element_protocol():
     """NonlinearElementProtocol 適合テスト — CosseratRod."""
     from xkep_cae.elements.beam_cosserat import CosseratRod
-    from xkep_cae.sections.beam import BeamSection
+    from xkep_cae.sections.beam import BeamSectionInput
 
-    sec = BeamSection.circle(d=10.0)
+    sec = BeamSectionInput.circle(d=10.0)
     rod = CosseratRod(section=sec)
     assert isinstance(rod, ElementProtocol)
     assert isinstance(rod, NonlinearElementProtocol)
@@ -66,8 +66,8 @@ def test_nonlinear_element_protocol():
 
 def test_dynamic_element_protocol():
     """DynamicElementProtocol 適合テスト — 梁要素が mass_matrix を持つこと."""
-    sec2d = BeamSection2D(A=100.0, I=833.333)
-    sec3d = BeamSection.circle(d=10.0)
+    sec2d = BeamSection2DInput(A=100.0, I=833.333)
+    sec3d = BeamSectionInput.circle(d=10.0)
 
     eb = EulerBernoulliBeam2D(section=sec2d)
     timo2d = TimoshenkoBeam2D(section=sec2d)
@@ -218,7 +218,7 @@ def test_assembly_beam_eb():
     n_elems = 10
     P = 1.0
 
-    sec = BeamSection2D(A=A, I=I_val)
+    sec = BeamSection2DInput(A=A, I=I_val)
     beam = EulerBernoulliBeam2D(section=sec)
     mat = BeamElastic1D(E=E)
 
@@ -267,7 +267,7 @@ def test_assembly_beam_timo():
     kappa = 5.0 / 6.0
     G = E / (2.0 * (1.0 + nu))
 
-    sec = BeamSection2D(A=A, I=I_val)
+    sec = BeamSection2DInput(A=A, I=I_val)
     beam = TimoshenkoBeam2D(section=sec, kappa=kappa)
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -306,7 +306,7 @@ def test_assembly_beam_timo():
 
 def test_assembly_beam_timo3d_single():
     """3D Timoshenko梁 単一要素のアセンブリテスト（対称性・半正定値性）."""
-    sec = BeamSection.circle(d=10.0)
+    sec = BeamSectionInput.circle(d=10.0)
     beam = TimoshenkoBeam3D(section=sec)
     mat = BeamElastic1D(E=200e3, nu=0.3)
 
@@ -350,7 +350,7 @@ def test_assembly_beam_timo3d_cantilever_y():
     P = 1.0
     kappa = 5.0 / 6.0
 
-    sec = BeamSection.circle(d=d)
+    sec = BeamSectionInput.circle(d=d)
     beam = TimoshenkoBeam3D(section=sec, kappa_y=kappa, kappa_z=kappa)
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -399,7 +399,7 @@ def test_assembly_beam_timo3d_cantilever_z():
     P = 1.0
     kappa = 5.0 / 6.0
 
-    sec = BeamSection.circle(d=d)
+    sec = BeamSectionInput.circle(d=d)
     beam = TimoshenkoBeam3D(section=sec, kappa_y=kappa, kappa_z=kappa)
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -442,7 +442,7 @@ def test_assembly_beam_timo3d_torsion():
     n_elems = 10
     T_torque = 10.0
 
-    sec = BeamSection.circle(d=d)
+    sec = BeamSectionInput.circle(d=d)
     beam = TimoshenkoBeam3D(section=sec)
     mat = BeamElastic1D(E=E, nu=nu)
 
@@ -487,7 +487,7 @@ def test_assembly_beam_timo3d_inclined():
     P = 1.0
     kappa = 5.0 / 6.0
 
-    sec = BeamSection.circle(d=d)
+    sec = BeamSectionInput.circle(d=d)
     beam = TimoshenkoBeam3D(section=sec, kappa_y=kappa, kappa_z=kappa)
     mat = BeamElastic1D(E=E, nu=nu)
 

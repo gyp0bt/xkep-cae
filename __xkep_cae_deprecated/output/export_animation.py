@@ -395,7 +395,7 @@ def export_3d_animation(
     各フレーム × 各視角のPNG画像を出力する。
 
     Args:
-        mesh: TwistedWireMesh オブジェクト
+        mesh: TwistedWireMeshOutput オブジェクト
         output_dir: 出力ディレクトリパス
         node_coords_frames: フレームごとの節点座標リスト。
             Noneの場合は初期配置のみ1フレーム出力
@@ -474,7 +474,7 @@ def export_3d_animation_gif(
     各視角ごとに1つのGIFファイルを生成する。
 
     Args:
-        mesh: TwistedWireMesh オブジェクト
+        mesh: TwistedWireMeshOutput オブジェクト
         output_dir: 出力ディレクトリパス
         node_coords_frames: フレームごとの節点座標リスト
         frame_labels: フレームのラベルリスト

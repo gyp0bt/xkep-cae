@@ -15,7 +15,7 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class StrandInfo:
+class StrandInfoOutput:
     """1素線の情報."""
 
     strand_id: int
@@ -27,14 +27,14 @@ class StrandInfo:
 
 
 @dataclass(frozen=True)
-class TwistedWireMesh:
+class TwistedWireMeshOutput:
     """撚線メッシュ."""
 
     node_coords: np.ndarray
     connectivity: np.ndarray
     strand_node_ranges: tuple[tuple[int, int], ...]
     strand_elem_ranges: tuple[tuple[int, int], ...]
-    strand_infos: tuple[StrandInfo, ...]
+    strand_infos: tuple[StrandInfoOutput, ...]
     n_strands: int
     wire_radius: float
     pitch: float
@@ -42,15 +42,15 @@ class TwistedWireMesh:
     n_elems_per_strand: int
 
 
-def _n_nodes(mesh: TwistedWireMesh) -> int:
+def _n_nodes(mesh: TwistedWireMeshOutput) -> int:
     return mesh.node_coords.shape[0]
 
 
-def _n_elems(mesh: TwistedWireMesh) -> int:
+def _n_elems(mesh: TwistedWireMeshOutput) -> int:
     return mesh.connectivity.shape[0]
 
 
-def _radii(mesh: TwistedWireMesh) -> np.ndarray:
+def _radii(mesh: TwistedWireMeshOutput) -> np.ndarray:
     return np.full(_n_elems(mesh), mesh.wire_radius)
 
 
@@ -156,10 +156,10 @@ def _make_strand_layout(
     lay_direction: int = 1,
     strand_diameter: float | None = None,
     coating_thickness: float = 0.0,
-) -> list[StrandInfo]:
+) -> list[StrandInfoOutput]:
     d = 2.0 * wire_radius
     d_eff = 2.0 * (wire_radius + coating_thickness)
-    infos: list[StrandInfo] = []
+    infos: list[StrandInfoOutput] = []
     sid = 0
 
     if n_strands == 3:
@@ -171,7 +171,7 @@ def _make_strand_layout(
         for k in range(3):
             angle = 2.0 * math.pi * k / 3.0
             infos.append(
-                StrandInfo(
+                StrandInfoOutput(
                     strand_id=sid,
                     layer=1,
                     angle_offset=angle,
@@ -185,7 +185,7 @@ def _make_strand_layout(
 
     if n_strands >= 1:
         infos.append(
-            StrandInfo(
+            StrandInfoOutput(
                 strand_id=sid,
                 layer=0,
                 angle_offset=0.0,
@@ -228,7 +228,7 @@ def _make_strand_layout(
                     else 2.0 * math.pi * j / n_in_layer
                 )
                 infos.append(
-                    StrandInfo(
+                    StrandInfoOutput(
                         strand_id=sid,
                         layer=k,
                         angle_offset=angle,
@@ -248,7 +248,7 @@ def _make_strand_layout(
             for k in range(actual):
                 angle = 2.0 * math.pi * k / n_in_layer
                 infos.append(
-                    StrandInfo(
+                    StrandInfoOutput(
                         strand_id=sid,
                         layer=layer,
                         angle_offset=angle,
@@ -282,7 +282,7 @@ def _make_twisted_wire_mesh(
     strand_diameter: float | None = None,
     min_elems_per_pitch: int = 16,
     coating_thickness: float = 0.0,
-) -> TwistedWireMesh:
+) -> TwistedWireMeshOutput:
     """撚線メッシュを生成する."""
     wire_radius = wire_diameter / 2.0
 
@@ -370,7 +370,7 @@ def _make_twisted_wire_mesh(
         strand_node_ranges.append((node_start, node_end))
         strand_elem_ranges.append((elem_start, elem_end))
 
-    return TwistedWireMesh(
+    return TwistedWireMeshOutput(
         node_coords=node_coords,
         connectivity=connectivity,
         strand_node_ranges=tuple(strand_node_ranges),

@@ -140,10 +140,10 @@ def extract_kpen_features_from_mesh(
     ndof_per_node: int = 6,
     broadphase_margin: float = 0.01,
 ) -> np.ndarray:
-    """TwistedWireMesh から k_pen 特徴量を抽出する（高レベルAPI）.
+    """TwistedWireMeshOutput から k_pen 特徴量を抽出する（高レベルAPI）.
 
     Args:
-        mesh: TwistedWireMesh インスタンス
+        mesh: TwistedWireMeshOutput インスタンス
         E: ヤング率
         Iy: 断面二次モーメント
         r_contact: 接触半径（None の場合は mesh.radii[0] を使用）

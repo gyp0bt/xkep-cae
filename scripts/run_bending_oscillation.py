@@ -70,7 +70,7 @@ from xkep_cae.io.abaqus_inp import (
     write_abaqus_model,
 )
 from xkep_cae.mesh.twisted_wire import (
-    TwistedWireMesh,
+    TwistedWireMeshOutput,
     make_twisted_wire_mesh,
     minimum_strand_diameter,
 )
@@ -719,7 +719,7 @@ def solve_from_inp(
 
 def _hook_vtk(
     result: BendingOscillationResult,
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     out_dir: Path,
     *,
     prefix: str = "result",
@@ -756,7 +756,7 @@ def _hook_vtk(
 
 def _hook_gif(
     result: BendingOscillationResult,
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     out_dir: Path,
     *,
     views: list[str] | None = None,
@@ -793,7 +793,7 @@ def _hook_gif(
 
 def _hook_contact_graph(
     result: BendingOscillationResult,
-    mesh: TwistedWireMesh,
+    mesh: TwistedWireMeshOutput,
     out_dir: Path,
     *,
     fps: int = 2,

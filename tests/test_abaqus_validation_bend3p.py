@@ -29,7 +29,7 @@ import scipy.sparse as sp
 from xkep_cae.assembly import assemble_global_stiffness
 from xkep_cae.elements.beam_timo3d import TimoshenkoBeam3D
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 ASSET_DIR = (
     Path(__file__).resolve().parent.parent / "assets" / "test_assets" / "Abaqus" / "1-bend3p"
@@ -71,7 +71,7 @@ def build_bend3p_half_model(
 
     conn = np.column_stack([np.arange(n_elems), np.arange(1, n_nodes)])
 
-    section = BeamSection.circle(diameter)
+    section = BeamSectionInput.circle(diameter)
     material = BeamElastic1D(E=E, nu=nu)
     beam = TimoshenkoBeam3D(
         section=section,

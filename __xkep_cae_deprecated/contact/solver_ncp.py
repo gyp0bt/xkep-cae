@@ -39,7 +39,7 @@ from __xkep_cae_deprecated.contact.assembly import (
     compute_contact_stiffness,
 )
 from __xkep_cae_deprecated.contact.diagnostics import (
-    ConvergenceDiagnostics,
+    ConvergenceDiagnosticsOutput,
     NCPSolveResult,
     NCPSolverInput,  # noqa: F401 — re-export for backward compatibility
 )
@@ -63,7 +63,7 @@ from __xkep_cae_deprecated.contact.staged_activation import (
 from __xkep_cae_deprecated.contact.utils import deformed_coords, ncp_line_search
 
 # NCPSolverInput は diagnostics.py からの re-export（後方互換）
-# ConvergenceDiagnostics, NCPSolveResult も同様
+# ConvergenceDiagnosticsOutput, NCPSolveResult も同様
 
 
 # _deformed_coords: utils.deformed_coords からの互換エイリアス
@@ -1600,7 +1600,7 @@ def newton_raphson_contact_ncp(
         _active_history: list[np.ndarray] = []  # 直近N反復のNCP active mask履歴
 
         # --- 収束診断データ収集 ---
-        _diag = ConvergenceDiagnostics(step=step_display, load_frac=load_frac)
+        _diag = ConvergenceDiagnosticsOutput(step=step_display, load_frac=load_frac)
 
         # =================================================================
         # NCP Newton ループ（鞍点系）

@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnostics
+from __xkep_cae_deprecated.contact.diagnostics import ConvergenceDiagnosticsOutput
 from __xkep_cae_deprecated.contact.graph import snapshot_contact_graph
 from __xkep_cae_deprecated.contact.initial_penetration import (
     adjust_initial_positions,
@@ -35,7 +35,7 @@ from __xkep_cae_deprecated.process.data import (
 from __xkep_cae_deprecated.process.slots import StrategySlot, collect_strategy_types
 from __xkep_cae_deprecated.process.strategies.adaptive_stepping import (
     AdaptiveLoadController,
-    AdaptiveSteppingConfig,
+    AdaptiveSteppingInput,
 )
 from __xkep_cae_deprecated.process.strategies.newton_uzawa import (
     NewtonUzawaConfig,
@@ -48,7 +48,7 @@ from __xkep_cae_deprecated.process.strategies.protocols import (
     PenaltyStrategy,
     TimeIntegrationStrategy,
 )
-from __xkep_cae_deprecated.process.strategies.solver_state import SolverState
+from __xkep_cae_deprecated.process.strategies.solver_state import SolverStateOutput
 
 
 class ContactFrictionProcess(SolverProcess[ContactFrictionInputData, SolverResultData]):
@@ -59,7 +59,7 @@ class ContactFrictionProcess(SolverProcess[ContactFrictionInputData, SolverResul
     - 準静的: 荷重制御 or 変位制御
 
     内部構成:
-    - SolverState: 全可変状態の集約
+    - SolverStateOutput: 全可変状態の集約
     - NewtonUzawaLoop: 1荷重増分のNR+Uzawa
     - AdaptiveLoadController: 適応荷重増分制御
     - Strategy 5軸: penalty, friction, time_integration, contact_force, coating
@@ -167,14 +167,14 @@ class ContactFrictionProcess(SolverProcess[ContactFrictionInputData, SolverResul
         if hasattr(_contact_force_strategy, "_ndof"):
             _contact_force_strategy._ndof = ndof
 
-        # --- SolverState 初期化 ---
+        # --- SolverStateOutput 初期化 ---
         u0 = input_data.u0.copy() if input_data.u0 is not None else np.zeros(ndof)
         node_coords_ref = input_data.mesh.node_coords.copy()
         connectivity = input_data.mesh.connectivity
         radii = input_data.mesh.radii
         core_radii = None  # ContactFrictionInputData にフィールドがあれば使用
 
-        state = SolverState(
+        state = SolverStateOutput(
             u=u0,
             lam_all=np.zeros(manager.n_pairs),
             u_ref=u0.copy(),
@@ -256,7 +256,7 @@ class ContactFrictionProcess(SolverProcess[ContactFrictionInputData, SolverResul
 
         # --- 適応荷重増分コントローラ ---
         dt_grow_iter = manager.config.dt_grow_iter_threshold
-        stepping_config = AdaptiveSteppingConfig(
+        stepping_config = AdaptiveSteppingInput(
             dt_initial_fraction=0.0,  # ContactFrictionProcess では input_data に含まれない
             dt_grow_factor=manager.config.dt_grow_factor,
             dt_shrink_factor=manager.config.dt_shrink_factor,
@@ -272,7 +272,7 @@ class ContactFrictionProcess(SolverProcess[ContactFrictionInputData, SolverResul
         nr_loop = NewtonUzawaLoop(NewtonUzawaConfig(show_progress=True))
 
         # --- 最終診断 ---
-        last_diag: ConvergenceDiagnostics | None = None
+        last_diag: ConvergenceDiagnosticsOutput | None = None
 
         # ====================================================================
         # 荷重ステップループ

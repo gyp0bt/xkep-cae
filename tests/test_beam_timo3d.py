@@ -17,7 +17,7 @@ import pytest
 from xkep_cae.bc import apply_dirichlet
 from xkep_cae.core.element import ElementProtocol
 from xkep_cae.elements.beam_timo3d import (
-    BeamForces3D,
+    BeamForces3DOutput,
     TimoshenkoBeam3D,
     _build_local_axes,
     _transformation_matrix_3d,
@@ -29,7 +29,7 @@ from xkep_cae.elements.beam_timo3d import (
     timo_beam3d_ke_local,
 )
 from xkep_cae.materials.beam_elastic import BeamElastic1D
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import solve_displacement
 
 # =====================================================================
@@ -139,7 +139,7 @@ class TestLocalStiffnessMatrix:
 
     @pytest.fixture()
     def rect_section(self):
-        return BeamSection.rectangle(b=10.0, h=10.0)
+        return BeamSectionInput.rectangle(b=10.0, h=10.0)
 
     def test_shape(self, rect_section):
         """Keの形状が(12,12)であること."""
@@ -205,7 +205,7 @@ class TestLocalStiffnessMatrix:
 
     def test_circular_section(self):
         """円形断面で Iy=Iz が保たれること."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         assert abs(sec.Iy - sec.Iz) < 1e-12
 
 
@@ -291,7 +291,7 @@ class TestAxialLoad:
 
     def test_axial_deflection_x_beam(self):
         """x方向梁の軸引張たわみが解析解と一致すること."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 5
         P = 100.0
@@ -324,7 +324,7 @@ class TestTorsion:
 
     def test_torsion_angle(self):
         """ねじりモーメントに対する先端回転角が解析解と一致すること."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         total_length = 100.0
         n_elems = 5
         T_torque = 10.0
@@ -358,7 +358,7 @@ class TestBending:
     @pytest.fixture()
     def beam_params(self):
         """梁パラメータ."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         return {
             "sec": sec,
             "total_length": 100.0,
@@ -431,11 +431,11 @@ class TestBending:
     def test_bending_matches_2d_for_plane_problem(self, beam_params):
         """xy面内曲げが2D Timoshenko梁の結果と一致すること."""
         from xkep_cae.elements.beam_timo2d import timo_beam2d_ke_global
-        from xkep_cae.sections.beam import BeamSection2D
+        from xkep_cae.sections.beam import BeamSection2DInput
 
         p = beam_params
         sec = p["sec"]
-        sec2d = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec2d = BeamSection2DInput.rectangle(b=10.0, h=10.0)
 
         # 3D解
         def ke_func_3d(coords):
@@ -494,7 +494,7 @@ class TestRectangularAsymmetricBending:
 
     def test_asymmetric_section_different_deflections(self):
         """b=5, h=20 の長方形で、y方向とz方向のたわみ比が Iz/Iy と一致."""
-        sec = BeamSection.rectangle(b=5.0, h=20.0)
+        sec = BeamSectionInput.rectangle(b=5.0, h=20.0)
         total_length = 200.0
         n_elems = 20
         P = 1.0
@@ -546,7 +546,7 @@ class TestInclinedBeam:
 
     def test_y_direction_cantilever(self):
         """y方向片持ち梁の先端たわみ（局所y方向荷重）."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 20
         P = 1.0
@@ -588,7 +588,7 @@ class TestSCF3D:
 
     def test_scf_reduces_deflection(self):
         """SCF適用でEB解に近づく → たわみが減少すること."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         total_length = 200.0
         n_elems = 20
         P = 1.0
@@ -635,13 +635,13 @@ class TestProtocolConformance:
 
     def test_element_protocol(self):
         """TimoshenkoBeam3DがElementProtocolに適合すること."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         assert isinstance(beam, ElementProtocol)
 
     def test_element_class_stiffness(self):
         """クラスインタフェース経由の剛性行列が関数版と一致すること."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         beam = TimoshenkoBeam3D(section=sec, kappa_y=KAPPA, kappa_z=KAPPA)
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -663,7 +663,7 @@ class TestProtocolConformance:
 
     def test_dof_indices(self):
         """DOFインデックスが正しく計算されること."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         beam = TimoshenkoBeam3D(section=sec)
         node_indices = np.array([3, 5])
         edofs = beam.dof_indices(node_indices)
@@ -672,13 +672,13 @@ class TestProtocolConformance:
 
     def test_invalid_kappa_y_raises(self):
         """無効なkappa_y文字列でValueError."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         with pytest.raises(ValueError, match="cowper"):
             TimoshenkoBeam3D(section=sec, kappa_y="invalid")
 
     def test_invalid_kappa_z_raises(self):
         """無効なkappa_z文字列でValueError."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         with pytest.raises(ValueError, match="cowper"):
             TimoshenkoBeam3D(section=sec, kappa_z="invalid")
 
@@ -688,7 +688,7 @@ class TestCowperKappa3D:
 
     def test_cowper_tip_deflection(self):
         """kappa="cowper" 指定の先端たわみが解析解と一致."""
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 20
         P = 1.0
@@ -723,7 +723,7 @@ class TestDistributedLoad3D:
         """
         import scipy.sparse as sp
 
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
         total_length = 100.0
         n_elems = 20
         q = 0.01
@@ -766,11 +766,11 @@ class TestDistributedLoad3D:
 
 
 class TestBeamSectionProperties:
-    """BeamSection の断面特性テスト."""
+    """BeamSectionInput の断面特性テスト."""
 
     def test_rectangle_properties(self):
         """矩形断面の特性値が正しいこと."""
-        sec = BeamSection.rectangle(b=10.0, h=20.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=20.0)
         assert abs(sec.A - 200.0) < 1e-12
         assert abs(sec.Iy - 10.0 * 20.0**3 / 12.0) < 1e-10
         assert abs(sec.Iz - 20.0 * 10.0**3 / 12.0) < 1e-10
@@ -780,7 +780,7 @@ class TestBeamSectionProperties:
         """円形断面の特性値が正しいこと."""
         import math
 
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         assert abs(sec.A - math.pi * 25.0) < 1e-10
         assert abs(sec.Iy - sec.Iz) < 1e-12  # 対称
         assert abs(sec.J - 2.0 * sec.Iy) < 1e-10  # 円形: J = 2I
@@ -789,7 +789,7 @@ class TestBeamSectionProperties:
         """パイプ断面の特性値が正しいこと."""
         import math
 
-        sec = BeamSection.pipe(d_outer=20.0, d_inner=16.0)
+        sec = BeamSectionInput.pipe(d_outer=20.0, d_inner=16.0)
         A_expected = math.pi * (10.0**2 - 8.0**2)
         assert abs(sec.A - A_expected) < 1e-10
         assert sec.Iy > 0
@@ -798,11 +798,11 @@ class TestBeamSectionProperties:
     def test_pipe_invalid_raises(self):
         """パイプ断面で内径≥外径の場合にValueError."""
         with pytest.raises(ValueError, match="内径"):
-            BeamSection.pipe(d_outer=10.0, d_inner=10.0)
+            BeamSectionInput.pipe(d_outer=10.0, d_inner=10.0)
 
     def test_to_2d(self):
         """3D断面から2D断面への変換が正しいこと."""
-        sec = BeamSection.rectangle(b=10.0, h=20.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=20.0)
         sec2d = sec.to_2d()
         assert abs(sec2d.A - sec.A) < 1e-12
         assert abs(sec2d.I - sec.Iz) < 1e-12
@@ -811,20 +811,20 @@ class TestBeamSectionProperties:
     def test_section_validation(self):
         """不正な断面特性でValueError."""
         with pytest.raises(ValueError, match="断面積"):
-            BeamSection(A=-1.0, Iy=1.0, Iz=1.0, J=1.0)
+            BeamSectionInput(A=-1.0, Iy=1.0, Iz=1.0, J=1.0)
         with pytest.raises(ValueError, match="Iy"):
-            BeamSection(A=1.0, Iy=-1.0, Iz=1.0, J=1.0)
+            BeamSectionInput(A=1.0, Iy=-1.0, Iz=1.0, J=1.0)
         with pytest.raises(ValueError, match="Iz"):
-            BeamSection(A=1.0, Iy=1.0, Iz=-1.0, J=1.0)
+            BeamSectionInput(A=1.0, Iy=1.0, Iz=-1.0, J=1.0)
         with pytest.raises(ValueError, match="J"):
-            BeamSection(A=1.0, Iy=1.0, Iz=1.0, J=-1.0)
+            BeamSectionInput(A=1.0, Iy=1.0, Iz=1.0, J=-1.0)
 
     def test_cowper_kappa_y(self):
-        """Cowper κ_y が BeamSection2D と一致すること."""
-        from xkep_cae.sections.beam import BeamSection2D
+        """Cowper κ_y が BeamSection2DInput と一致すること."""
+        from xkep_cae.sections.beam import BeamSection2DInput
 
-        sec3d = BeamSection.rectangle(b=10.0, h=10.0)
-        sec2d = BeamSection2D.rectangle(b=10.0, h=10.0)
+        sec3d = BeamSectionInput.rectangle(b=10.0, h=10.0)
+        sec2d = BeamSection2DInput.rectangle(b=10.0, h=10.0)
         assert abs(sec3d.cowper_kappa_y(0.3) - sec2d.cowper_kappa(0.3)) < 1e-12
 
 
@@ -833,7 +833,7 @@ class TestSectionForces:
 
     def test_axial_tension(self):
         """軸引張の断面力が N = P であること（円形断面）."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         total_length = 100.0
         n_elems = 5
         P = 50.0
@@ -885,7 +885,7 @@ class TestSectionForces:
 
     def test_torsion(self):
         """ねじりの断面力が Mx = T であること（円形断面）."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         total_length = 100.0
         n_elems = 5
         T_torque = 10.0
@@ -938,7 +938,7 @@ class TestSectionForces:
           Vy = P（全要素で一定）
           Mz(x) = P·(L - x)（根元で PL、先端で 0）
         """
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0
@@ -998,7 +998,7 @@ class TestSectionForces:
 
     def test_section_forces_via_class(self):
         """TimoshenkoBeam3D.section_forces() メソッドが関数版と一致（円形断面）."""
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         beam = TimoshenkoBeam3D(section=sec, kappa_y=KAPPA, kappa_z=KAPPA)
         mat = BeamElastic1D(E=E, nu=NU)
 
@@ -1056,7 +1056,7 @@ class TestSectionForces:
 
         外力なしの要素では: N1 = N2, Vy1 = Vy2, Mz1 + Vy1·L = Mz2
         """
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         total_length = 100.0
         n_elems = 10
         P = 1.0
@@ -1112,8 +1112,8 @@ class TestMaxBendingStress:
 
     def test_pure_axial(self):
         """純軸引張の応力が N/A であること."""
-        forces = BeamForces3D(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
-        sec = BeamSection.circle(d=10.0)
+        forces = BeamForces3DOutput(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        sec = BeamSectionInput.circle(d=10.0)
         sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, 5.0, 5.0)
         assert abs(sigma - 100.0 / sec.A) < 1e-10
 
@@ -1121,8 +1121,8 @@ class TestMaxBendingStress:
         """純曲げ（Mz）の応力が Mz·y_max/Iz であること."""
         Mz = 1000.0
         y_max = 5.0
-        sec = BeamSection.circle(d=10.0)
-        forces = BeamForces3D(N=0.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=Mz)
+        sec = BeamSectionInput.circle(d=10.0)
+        forces = BeamForces3DOutput(N=0.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=Mz)
         sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, y_max, 5.0)
         expected = Mz * y_max / sec.Iz
         assert abs(sigma - expected) / expected < 1e-10
@@ -1132,10 +1132,10 @@ class TestMaxBendingStress:
         N = 100.0
         Mz = 500.0
         My = 300.0
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         y_max = 5.0
         z_max = 5.0
-        forces = BeamForces3D(N=N, Vy=0.0, Vz=0.0, Mx=0.0, My=My, Mz=Mz)
+        forces = BeamForces3DOutput(N=N, Vy=0.0, Vz=0.0, Mx=0.0, My=My, Mz=Mz)
         sigma = beam3d_max_bending_stress(forces, sec.A, sec.Iy, sec.Iz, y_max, z_max)
         expected = abs(N / sec.A) + Mz * y_max / sec.Iz + My * z_max / sec.Iy
         assert abs(sigma - expected) / expected < 1e-10
@@ -1147,9 +1147,9 @@ class TestMaxShearStress3D:
     def test_pure_torsion(self):
         """純ねじり: τ = |Mx|·r/J."""
         Mx = 100.0
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         r_max = 5.0
-        forces = BeamForces3D(N=0.0, Vy=0.0, Vz=0.0, Mx=Mx, My=0.0, Mz=0.0)
+        forces = BeamForces3DOutput(N=0.0, Vy=0.0, Vz=0.0, Mx=Mx, My=0.0, Mz=0.0)
         tau = beam3d_max_shear_stress(forces, sec.A, sec.J, r_max, shape="circle")
         expected = Mx * r_max / sec.J
         assert abs(tau - expected) / expected < 1e-10
@@ -1157,8 +1157,8 @@ class TestMaxShearStress3D:
     def test_transverse_shear_circle(self):
         """円形断面の横せん断: τ = 4V/(3A)."""
         Vy = 10.0
-        sec = BeamSection.circle(d=10.0)
-        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        sec = BeamSectionInput.circle(d=10.0)
+        forces = BeamForces3DOutput(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
         tau = beam3d_max_shear_stress(forces, sec.A, sec.J, 5.0, shape="circle")
         expected = 4.0 * Vy / (3.0 * sec.A)
         assert abs(tau - expected) / expected < 1e-10
@@ -1166,8 +1166,8 @@ class TestMaxShearStress3D:
     def test_transverse_shear_rectangle(self):
         """矩形断面の横せん断: τ = 3V/(2A)."""
         Vy = 10.0
-        sec = BeamSection.rectangle(b=10.0, h=10.0)
-        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
+        sec = BeamSectionInput.rectangle(b=10.0, h=10.0)
+        forces = BeamForces3DOutput(N=0.0, Vy=Vy, Vz=0.0, Mx=0.0, My=0.0, Mz=0.0)
         tau = beam3d_max_shear_stress(forces, sec.A, sec.J, 5.0, shape="rectangle")
         expected = 3.0 * Vy / (2.0 * sec.A)
         assert abs(tau - expected) / expected < 1e-10
@@ -1177,9 +1177,9 @@ class TestMaxShearStress3D:
         Mx = 100.0
         Vy = 10.0
         Vz = 5.0
-        sec = BeamSection.circle(d=10.0)
+        sec = BeamSectionInput.circle(d=10.0)
         r_max = 5.0
-        forces = BeamForces3D(N=0.0, Vy=Vy, Vz=Vz, Mx=Mx, My=0.0, Mz=0.0)
+        forces = BeamForces3DOutput(N=0.0, Vy=Vy, Vz=Vz, Mx=Mx, My=0.0, Mz=0.0)
         tau = beam3d_max_shear_stress(forces, sec.A, sec.J, r_max, shape="circle")
         tau_torsion = Mx * r_max / sec.J
         tau_transverse = 4.0 * max(Vy, Vz) / (3.0 * sec.A)
@@ -1188,6 +1188,6 @@ class TestMaxShearStress3D:
 
     def test_zero_shear(self):
         """全せん断成分ゼロの場合 τ=0."""
-        forces = BeamForces3D(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=500.0)
+        forces = BeamForces3DOutput(N=100.0, Vy=0.0, Vz=0.0, Mx=0.0, My=0.0, Mz=500.0)
         tau = beam3d_max_shear_stress(forces, 100.0, 50.0, 5.0, shape="circle")
         assert abs(tau) < 1e-15

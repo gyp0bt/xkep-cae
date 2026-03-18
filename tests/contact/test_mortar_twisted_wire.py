@@ -21,10 +21,10 @@ from xkep_cae.elements.beam_timo3d import (
     timo_beam3d_ke_global,
 )
 from xkep_cae.mesh.twisted_wire import (
-    TwistedWireMesh,
+    TwistedWireMeshOutput,
     make_twisted_wire_mesh,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 
 pytestmark = pytest.mark.slow
 
@@ -38,7 +38,7 @@ _NU = 0.3
 _G = _E / (2.0 * (1.0 + _NU))
 _WIRE_D = 0.002  # 直径 2mm
 _WIRE_R = _WIRE_D / 2.0
-_SECTION = BeamSection.circle(_WIRE_D)
+_SECTION = BeamSectionInput.circle(_WIRE_D)
 _KAPPA = 6.0 * (1.0 + _NU) / (7.0 + 6.0 * _NU)
 _PITCH = 0.040  # 40mm ピッチ
 
@@ -48,7 +48,7 @@ _PITCH = 0.040  # 40mm ピッチ
 # ====================================================================
 
 
-def _make_timo3d_assemblers(mesh: TwistedWireMesh):
+def _make_timo3d_assemblers(mesh: TwistedWireMeshOutput):
     """Timoshenko 3D 線形梁のアセンブリコールバックを構築."""
     node_coords = mesh.node_coords
     connectivity = mesh.connectivity
@@ -85,7 +85,7 @@ def _make_timo3d_assemblers(mesh: TwistedWireMesh):
     return assemble_tangent, assemble_internal_force, ndof_total
 
 
-def _fix_all_strand_starts(mesh: TwistedWireMesh):
+def _fix_all_strand_starts(mesh: TwistedWireMeshOutput):
     """全素線の開始端を全固定."""
     fixed = []
     for sid in range(mesh.n_strands):
@@ -95,7 +95,7 @@ def _fix_all_strand_starts(mesh: TwistedWireMesh):
     return np.array(sorted(set(fixed)), dtype=int)
 
 
-def _get_strand_end_dofs(mesh: TwistedWireMesh, strand_id: int, end: str):
+def _get_strand_end_dofs(mesh: TwistedWireMeshOutput, strand_id: int, end: str):
     """素線の端点のDOFインデックスを取得."""
     start_node, end_node = mesh.strand_node_ranges[strand_id]
     node = start_node if end == "start" else end_node - 1

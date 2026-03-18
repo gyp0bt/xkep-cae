@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     )
     from __xkep_cae_deprecated.core.state import CosseratFiberPlasticState, CosseratPlasticState
     from __xkep_cae_deprecated.materials.plasticity_1d import Plasticity1D
-    from __xkep_cae_deprecated.sections.beam import BeamSection
+    from __xkep_cae_deprecated.sections.beam import BeamSectionInput
     from __xkep_cae_deprecated.sections.fiber import FiberSection
 
 
@@ -1286,7 +1286,7 @@ class CosseratRod:
 
     def __init__(
         self,
-        section: BeamSection,
+        section: BeamSectionInput,
         kappa_y: float | str = 5.0 / 6.0,
         kappa_z: float | str = 5.0 / 6.0,
         v_ref: np.ndarray | None = None,

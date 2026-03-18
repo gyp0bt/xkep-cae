@@ -19,7 +19,7 @@ from xkep_cae.elements.beam_timo3d import (
     beam3d_max_bending_stress,
     beam3d_section_forces,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import newton_raphson
 
 pytestmark = pytest.mark.slow
@@ -39,7 +39,7 @@ def _build_cantilever_cr(
 ):
     """CR用カンチレバー構築."""
     G = E / (2.0 * (1.0 + nu))
-    sec = BeamSection.circle(d)
+    sec = BeamSectionInput.circle(d)
     kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
 
     nodes = np.zeros((n_elems + 1, 3))
@@ -506,7 +506,7 @@ class TestCRSymmetryPhysics:
         nu = 0.3
         G = E / (2.0 * (1.0 + nu))
         d = 0.02
-        sec = BeamSection.circle(d)
+        sec = BeamSectionInput.circle(d)
         kappa = 6.0 * (1.0 + nu) / (7.0 + 6.0 * nu)
 
         nodes = np.zeros((n_elems + 1, 3))

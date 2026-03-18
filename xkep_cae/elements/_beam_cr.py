@@ -31,7 +31,7 @@ import numpy as np
 
 
 @dataclass(frozen=True)
-class BeamForces3D:
+class BeamForces3DOutput:
     """3D梁要素の断面力（局所座標系）."""
 
     N: float

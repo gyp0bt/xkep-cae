@@ -10,7 +10,7 @@
 
 import numpy as np
 import scipy.sparse as sp
-from xkep_cae.contact.diagnostics import ConvergenceDiagnostics, NCPSolveResult
+from xkep_cae.contact.diagnostics import ConvergenceDiagnosticsOutput, NCPSolveResult
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 
@@ -495,11 +495,11 @@ class TestConstraintJacobianAndForce:
 
 
 class TestConvergenceDiagnostics:
-    """ConvergenceDiagnostics の単体テスト."""
+    """ConvergenceDiagnosticsOutput の単体テスト."""
 
     def test_format_report_basic(self):
         """基本的なレポート生成ができること."""
-        diag = ConvergenceDiagnostics(step=3, load_frac=0.75)
+        diag = ConvergenceDiagnosticsOutput(step=3, load_frac=0.75)
         diag.res_history = [1.0, 0.5, 0.3, 0.2]
         diag.ncp_history = [0.1, 0.05, 0.02, 0.01]
         diag.ncp_t_history = [0.0, 0.0, 0.0, 0.0]
@@ -515,14 +515,14 @@ class TestConvergenceDiagnostics:
 
     def test_format_report_empty(self):
         """空の診断データでもレポート生成できること."""
-        diag = ConvergenceDiagnostics()
+        diag = ConvergenceDiagnosticsOutput()
         report = diag.format_report()
         assert "Step: 0" in report
         assert "Iterations: 0 / 50" in report
 
     def test_divergence_warning(self):
         """残差増大時に警告が出ること."""
-        diag = ConvergenceDiagnostics(step=1, load_frac=0.5)
+        diag = ConvergenceDiagnosticsOutput(step=1, load_frac=0.5)
         diag.res_history = [0.1, 5.0, 100.0]
         diag.ncp_history = [0.0, 0.0, 0.0]
         diag.ncp_t_history = [0.0, 0.0, 0.0]
@@ -535,7 +535,7 @@ class TestConvergenceDiagnostics:
 
     def test_chattering_warning(self):
         """アクティブセットが頻繁に変動する場合に警告が出ること."""
-        diag = ConvergenceDiagnostics(step=1, load_frac=0.5)
+        diag = ConvergenceDiagnosticsOutput(step=1, load_frac=0.5)
         diag.res_history = [0.1] * 10
         diag.ncp_history = [0.01] * 10
         diag.ncp_t_history = [0.0] * 10
@@ -549,7 +549,7 @@ class TestConvergenceDiagnostics:
 
     def test_convergence_order(self):
         """収束次数が推定されること."""
-        diag = ConvergenceDiagnostics(step=1, load_frac=1.0)
+        diag = ConvergenceDiagnosticsOutput(step=1, load_frac=1.0)
         # 線形収束: 各反復で半分に
         diag.res_history = [1.0, 0.5, 0.25, 0.125, 0.0625]
         diag.ncp_history = [0.0] * 5

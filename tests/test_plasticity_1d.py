@@ -40,7 +40,7 @@ from xkep_cae.materials.plasticity_1d import (
     KinematicHardening,
     Plasticity1D,
 )
-from xkep_cae.sections.beam import BeamSection
+from xkep_cae.sections.beam import BeamSectionInput
 from xkep_cae.solver import newton_raphson
 
 # ===== テスト用パラメータ =====
@@ -311,8 +311,8 @@ class TestPlasticity1DStateImmutability:
 # ================================================================
 
 
-def _make_section() -> BeamSection:
-    return BeamSection.rectangle(10.0, 20.0)
+def _make_section() -> BeamSectionInput:
+    return BeamSectionInput.rectangle(10.0, 20.0)
 
 
 def _make_material() -> BeamElastic1D:
