@@ -16,6 +16,7 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._types import ContactStatus
 from xkep_cae.contact.friction._assembly import (
     _assemble_friction_tangent_stiffness,
@@ -193,7 +194,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
             g_i = pair.state.gap
             g_eff = g_i + _delta * lam_i if _delta > 0.0 else g_i
             p_n = max(0.0, lam_i + _k_pen * (-g_eff))
-            contact_pairs[i] = pair._evolve(state=pair.state._evolve(p_n=p_n))
+            contact_pairs[i] = _evolve_pair(pair, state=_evolve_state(pair.state, p_n=p_n))
             return p_n
 
         f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(

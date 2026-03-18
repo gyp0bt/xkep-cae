@@ -19,7 +19,15 @@ import numpy as np
 import pytest
 import scipy.sparse as sp
 
-from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact._contact_pair import (
+    _ContactConfigInput,
+    _ContactManagerInput,
+    _is_active_pair,
+)
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
 from xkep_cae.contact._types import ContactStatus
 from xkep_cae.contact.setup.process import ContactSetupConfig, ContactSetupProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
@@ -241,12 +249,16 @@ def _build_contact_setup(mesh, mesh_data: MeshData, *, k_pen_scale=0.1, mu=0.0):
         tol_uzawa=1e-6,
     )
     manager = _ContactManagerInput(config=config)
-    manager.detect_candidates(
-        mesh_data.node_coords,
-        mesh_data.connectivity,
-        mesh_data.radii,
-        margin=0.01,
+    detect_result = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=manager,
+            node_coords=mesh_data.node_coords,
+            connectivity=mesh_data.connectivity,
+            radii=mesh_data.radii,
+            margin=0.01,
+        )
     )
+    manager = detect_result.manager
     k_pen = k_pen_scale * _E * _SECTION.Iy / (_PITCH**2)
     return ContactSetupData(
         manager=manager,
@@ -831,5 +843,5 @@ class TestStrandBendingPhysicsProcess:
 
         print(
             f"\n  物理テスト（接触力）: active={n_active}, "
-            f"max_pn={max(p.state.p_n for p in contact.manager.pairs if p.is_active()) if n_active > 0 else 0:.2e}"
+            f"max_pn={max(p.state.p_n for p in contact.manager.pairs if _is_active_pair(p)) if n_active > 0 else 0:.2e}"
         )

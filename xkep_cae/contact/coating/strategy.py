@@ -13,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 
@@ -231,13 +232,15 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             cc = pair.state.coating_compression
             if cc <= 0.0:
                 # 非接触: 摩擦履歴リセット
-                pairs[pi] = pair._evolve(
-                    state=pair.state._evolve(
+                pairs[pi] = _evolve_pair(
+                    pair,
+                    state=_evolve_state(
+                        pair.state,
                         coating_z_t=np.zeros(2),
                         coating_stick=True,
                         coating_q_trial_norm=0.0,
                         coating_dissipation=0.0,
-                    )
+                    ),
                 )
                 continue
 
@@ -270,13 +273,15 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             )
 
             # 状態更新
-            pairs[pi] = pair._evolve(
-                state=pair.state._evolve(
+            pairs[pi] = _evolve_pair(
+                pair,
+                state=_evolve_state(
+                    pair.state,
                     coating_z_t=q.copy(),
                     coating_stick=is_stick,
                     coating_q_trial_norm=q_trial_norm,
                     coating_dissipation=dissipation,
-                )
+                ),
             )
 
             # 接線力を節点力に分配

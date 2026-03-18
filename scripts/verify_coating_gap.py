@@ -18,6 +18,10 @@ import numpy as np
 
 sys.path.insert(0, ".")
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.mesh.twisted_wire import (
     CoatingModel,
@@ -43,9 +47,11 @@ def check_initial_penetration(mesh, radii_arr, label: str) -> tuple[int, float]:
             midpoint_prescreening=True,
         )
     )
-    mgr.detect_candidates(
-        mesh.node_coords, mesh.connectivity, radii_arr, margin=0.005
-    )
+    det_out = DetectCandidatesProcess().process(DetectCandidatesInput(
+        manager=mgr, node_coords=mesh.node_coords,
+        connectivity=mesh.connectivity, radii=radii_arr, margin=0.005,
+    ))
+    mgr = det_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     # 最大貫入量を計算

@@ -52,6 +52,12 @@ print(f"ログ出力先: {log_path}")
 print(f"日時: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 print()
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+    UpdateGeometryInput,
+    UpdateGeometryProcess,
+)
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.mesh.twisted_wire import (
     CoatingModel,
@@ -114,7 +120,11 @@ for coat_t, label in zip(thicknesses, thickness_labels, strict=True):
             midpoint_prescreening=True,
         )
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, radii, margin=0.005)
+    det_out = DetectCandidatesProcess().process(DetectCandidatesInput(
+        manager=mgr, node_coords=mesh.node_coords,
+        connectivity=mesh.connectivity, radii=radii, margin=0.005,
+    ))
+    mgr = det_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     # 最大貫入量
@@ -219,8 +229,15 @@ for k_coat, klabel in zip(coat_stiffnesses, coat_stiffness_labels, strict=True):
             coating_stiffness=k_coat,
         )
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, radii, margin=0.005)
-    mgr.update_geometry(mesh.node_coords)
+    det_out = DetectCandidatesProcess().process(DetectCandidatesInput(
+        manager=mgr, node_coords=mesh.node_coords,
+        connectivity=mesh.connectivity, radii=radii, margin=0.005,
+    ))
+    mgr = det_out.manager
+    upd_out = UpdateGeometryProcess().process(UpdateGeometryInput(
+        manager=mgr, node_coords=mesh.node_coords,
+    ))
+    mgr = upd_out.manager
 
     n_coat_comp = 0
     max_coat_comp = 0.0
