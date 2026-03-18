@@ -223,32 +223,39 @@ class DetectCandidatesProcess(
             key = (min(p.elem_a, p.elem_b), max(p.elem_a, p.elem_b))
             existing[key] = idx
 
-        # 候補外の既存ペアを INACTIVE に
+        # 候補外の既存ペアを INACTIVE に（smooth_penalty は除外）
+        _is_smooth = config.contact_mode == "smooth_penalty"
         candidate_set = set(candidates)
         for key, idx in existing.items():
             if key not in candidate_set:
                 old_pair = pairs[idx]
-                pairs[idx] = _evolve_pair(
-                    old_pair,
-                    state=_evolve_state(old_pair.state, status=ContactStatus.INACTIVE),
-                )
+                if not _is_smooth:
+                    pairs[idx] = _evolve_pair(
+                        old_pair,
+                        state=_evolve_state(old_pair.state, status=ContactStatus.INACTIVE),
+                    )
 
-        # 新規候補を追加
+        # 新規候補を追加（smooth_penalty は ACTIVE で作成）
+        _init_status = ContactStatus.ACTIVE if _is_smooth else ContactStatus.INACTIVE
         for i, j in candidates:
             key = (min(i, j), max(i, j))
             if key not in existing:
-                pairs.append(
-                    _make_pair(
-                        elem_a=i,
-                        elem_b=j,
-                        nodes_a=conn[i],
-                        nodes_b=conn[j],
-                        radius_a=float(r_arr[i]),
-                        radius_b=float(r_arr[j]),
-                        core_radius_a=float(cr_arr[i]),
-                        core_radius_b=float(cr_arr[j]),
-                    )
+                new_pair = _make_pair(
+                    elem_a=i,
+                    elem_b=j,
+                    nodes_a=conn[i],
+                    nodes_b=conn[j],
+                    radius_a=float(r_arr[i]),
+                    radius_b=float(r_arr[j]),
+                    core_radius_a=float(cr_arr[i]),
+                    core_radius_b=float(cr_arr[j]),
                 )
+                if _is_smooth:
+                    new_pair = _evolve_pair(
+                        new_pair,
+                        state=_evolve_state(new_pair.state, status=_init_status),
+                    )
+                pairs.append(new_pair)
 
         new_manager = _ContactManagerInput(pairs=pairs, config=config)
         return DetectCandidatesOutput(
@@ -392,9 +399,15 @@ class UpdateGeometryProcess(
             new_state = _evolve_state(pair.state, **geom_kw)
 
             if not input_data.freeze_active_set:
-                new_state = _update_active_set_state(
-                    config, new_state, allow_deactivation=input_data.allow_deactivation
-                )
+                if config.contact_mode == "smooth_penalty":
+                    # smooth_penalty: active set 不要。softplus が C∞ で
+                    # 自然にゼロに近づくため、離散的な status 切替は廃止。
+                    if new_state.status == ContactStatus.INACTIVE:
+                        new_state = _evolve_state(new_state, status=ContactStatus.ACTIVE)
+                else:
+                    new_state = _update_active_set_state(
+                        config, new_state, allow_deactivation=input_data.allow_deactivation
+                    )
             new_pairs.append(_evolve_pair(pair, state=new_state))
 
         new_manager = _ContactManagerInput(pairs=new_pairs, config=config)

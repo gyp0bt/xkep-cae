@@ -43,6 +43,7 @@
 | [207](status-207.md) | 2026-03-18 | deprecated コード完全削除 + コンテキスト大掃除 | 248p(新) |
 | [208](status-208.md) | 2026-03-18 | BackendRegistry 完全廃止 + 被膜モデル物理検証テスト | 412p(新) |
 | [209](status-209.md) | 2026-03-18 | 単線の剛体支え＋押しジグ三点曲げ解析解一致 | 412+14p(新) |
+| [210](status-210.md) | 2026-03-18 | smooth_penalty ソルバー復元 + HEX8 連続体要素ジグ基盤 | 412+14p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -133,6 +134,7 @@ CM Process分割:  ~2260+374p(新) (2026-03-18) ← status-205（ContactManager 
 大掃除:          248p(新) (2026-03-18) ← status-207（deprecated完全削除+scripts/examples/docs/旧テスト一掃）
 Phase 17:        412p(新) (2026-03-18) ← status-208（BackendRegistry廃止+被膜物理テスト）
 三点曲げ解析:    412+14p(新) (2026-03-18) ← status-209（三点曲げジグ解析解一致）
+ソルバー復元:    412+14p(新) (2026-03-18) ← status-210（smooth_penalty復元+HEX8基盤）
 ```
 
 ## 備考

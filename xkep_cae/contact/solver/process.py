@@ -137,6 +137,16 @@ class ContactFrictionProcess(
         ul_assembler = input_data.callbacks.ul_assembler
 
         # --- Strategy 生成（deprecated 版: Phase 7-8 で新パッケージに完全移行予定） ---
+        # beam_L 推定: メッシュ平均要素長
+        _conn = input_data.mesh.connectivity
+        _nc = input_data.mesh.node_coords
+        _beam_L = 0.0
+        if len(_conn) > 0:
+            _lens = np.array(
+                [float(np.linalg.norm(_nc[int(c[1])] - _nc[int(c[0])])) for c in _conn]
+            )
+            _beam_L = float(np.mean(_lens))
+
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -146,10 +156,16 @@ class ContactFrictionProcess(
             velocity=input_data.velocity,
             acceleration=input_data.acceleration,
             k_pen=input_data.contact.k_pen,
+            beam_E=manager.config.beam_E,
+            beam_I=manager.config.beam_I,
+            beam_L=_beam_L,
             use_friction=True,
             mu=input_data.contact.mu or 0.15,
             contact_mode="smooth_penalty",
             line_contact=True,
+            smoothing_delta=manager.config.smoothing_delta,
+            n_uzawa_max=manager.config.n_uzawa_max,
+            tol_uzawa=manager.config.tol_uzawa,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
