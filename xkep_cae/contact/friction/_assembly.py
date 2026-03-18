@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._types import ContactStatus
 from xkep_cae.contact.friction.law_friction import (
     _return_mapping_core,
@@ -197,8 +198,8 @@ def _friction_return_mapping_loop(
         # ペナルティ剛性の初期化（未設定時）
         cur_state = pair.state
         if cur_state.k_pen <= 0.0:
-            cur_state = cur_state._evolve(k_pen=k_pen, k_t=k_pen * k_t_ratio)
-            contact_pairs[i] = pair._evolve(state=cur_state)
+            cur_state = _evolve_state(cur_state, k_pen=k_pen, k_t=k_pen * k_t_ratio)
+            contact_pairs[i] = _evolve_pair(pair, state=cur_state)
             pair = contact_pairs[i]
 
         # 接線変位
@@ -210,14 +211,16 @@ def _friction_return_mapping_loop(
         )
 
         # pair.state を更新
-        contact_pairs[i] = pair._evolve(
-            state=cur_state._evolve(
+        contact_pairs[i] = _evolve_pair(
+            pair,
+            state=_evolve_state(
+                cur_state,
                 z_t=q.copy(),
                 stick=is_stick,
                 q_trial_norm=q_trial_norm,
                 dissipation=dissipation,
                 status=ContactStatus.ACTIVE if is_stick else ContactStatus.SLIDING,
-            )
+            ),
         )
         pair = contact_pairs[i]
 

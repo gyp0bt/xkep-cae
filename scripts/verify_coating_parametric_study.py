@@ -61,6 +61,13 @@ from xkep_cae.mesh.twisted_wire import (
 )
 from xkep_cae.sections.beam import BeamSectionInput
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+    UpdateGeometryInput,
+    UpdateGeometryProcess,
+)
+
 # 共通パラメータ
 WIRE_D = 0.004  # 4mm 直径
 WIRE_R = WIRE_D / 2.0
@@ -114,7 +121,16 @@ for coat_t, label in zip(thicknesses, thickness_labels, strict=True):
             midpoint_prescreening=True,
         )
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, radii, margin=0.005)
+    _dc_out = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=mgr,
+            node_coords=mesh.node_coords,
+            connectivity=mesh.connectivity,
+            radii=radii,
+            margin=0.005,
+        )
+    )
+    mgr = _dc_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     # 最大貫入量
@@ -219,8 +235,20 @@ for k_coat, klabel in zip(coat_stiffnesses, coat_stiffness_labels, strict=True):
             coating_stiffness=k_coat,
         )
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, radii, margin=0.005)
-    mgr.update_geometry(mesh.node_coords)
+    _dc_out = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=mgr,
+            node_coords=mesh.node_coords,
+            connectivity=mesh.connectivity,
+            radii=radii,
+            margin=0.005,
+        )
+    )
+    mgr = _dc_out.manager
+    _ug_out = UpdateGeometryProcess().process(
+        UpdateGeometryInput(manager=mgr, node_coords=mesh.node_coords)
+    )
+    mgr = _ug_out.manager
 
     n_coat_comp = 0
     max_coat_comp = 0.0

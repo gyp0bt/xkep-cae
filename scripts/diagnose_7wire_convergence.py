@@ -27,6 +27,8 @@ from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 from xkep_cae.sections.beam import BeamSectionInput
 
+from xkep_cae.contact._manager_process import DetectCandidatesInput, DetectCandidatesProcess
+
 # ====================================================================
 # パラメータ
 # ====================================================================
@@ -127,7 +129,16 @@ def diagnose_mesh_geometry(n_strands=7, n_pitches=0.5):
             use_mortar=False,
         ),
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    _dc_out = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=mgr,
+            node_coords=mesh.node_coords,
+            connectivity=mesh.connectivity,
+            radii=mesh.radii,
+            margin=0.01,
+        )
+    )
+    mgr = _dc_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     print(f"\n  ContactManager 初期貫入ペア数: {n_pen}/{len(mgr.pairs)}")
@@ -578,7 +589,16 @@ def _run_ncp_bending(
             use_geometric_stiffness=True,
         ),
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    _dc_out = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=mgr,
+            node_coords=mesh.node_coords,
+            connectivity=mesh.connectivity,
+            radii=mesh.radii,
+            margin=0.01,
+        )
+    )
+    mgr = _dc_out.manager
     mgr.check_initial_penetration(mesh.node_coords)
 
     result = newton_raphson_contact_ncp(

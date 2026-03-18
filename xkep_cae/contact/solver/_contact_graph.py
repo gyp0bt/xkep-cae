@@ -60,7 +60,7 @@ def _snapshot_contact_graph(
 ) -> _ContactGraphOutput:
     """ContactManager の現在の状態からグラフスナップショットを生成する.
 
-    manager は duck typing: .pairs, .n_pairs 属性を持つオブジェクト。
+    manager は duck typing: .pairs 属性を持つオブジェクト。
     各 pair は .state.status, .elem_a, .elem_b, .state.gap, .state.p_n,
     .state.stick, .state.dissipation, .state.s, .state.t を持つ。
     """
@@ -98,7 +98,7 @@ def _snapshot_contact_graph(
         load_factor=load_factor,
         nodes=nodes,
         edges=edges,
-        n_total_pairs=manager.n_pairs,
+        n_total_pairs=len(manager.pairs),
     )
 
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact._manager_process import DetectCandidatesInput, DetectCandidatesProcess
 from xkep_cae.core import ContactSetupData, MeshData, PreProcess, ProcessMeta
 
 
@@ -57,13 +58,17 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
         manager = _ContactManagerInput(config=config)
 
         mesh = input_data.mesh
-        manager.detect_candidates(
-            mesh.node_coords,
-            mesh.connectivity,
-            mesh.radii,
-            margin=input_data.broadphase_margin,
-            cell_size=input_data.broadphase_cell_size,
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=manager,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=mesh.radii,
+                margin=input_data.broadphase_margin,
+                cell_size=input_data.broadphase_cell_size,
+            )
         )
+        manager = _dc_out.manager
 
         return ContactSetupData(
             manager=manager,

@@ -16,6 +16,11 @@ from xkep_cae.contact.broadphase import broadphase_aabb
 from xkep_cae.contact.pair import ContactConfig, ContactManager
 from xkep_cae.mesh.twisted_wire import make_strand_layout, make_twisted_wire_mesh
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
+
 pytestmark = pytest.mark.slow
 
 # ========== 共通パラメータ ==========
@@ -132,9 +137,17 @@ class TestMidpointPrescreening:
             exclude_same_layer=True,
         )
         mgr_off = ContactManager(config=cfg_off)
-        cands_off = mgr_off.detect_candidates(
-            mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_off,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=radii,
+                margin=_WIRE_D * 0.5,
+            )
         )
+        mgr_off = _dc_out.manager
+        cands_off = _dc_out.candidates
 
         # プリスクリーニング ON（デフォルト）
         cfg_on = ContactConfig(
@@ -143,9 +156,17 @@ class TestMidpointPrescreening:
             exclude_same_layer=True,
         )
         mgr_on = ContactManager(config=cfg_on)
-        cands_on = mgr_on.detect_candidates(
-            mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_on,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=radii,
+                margin=_WIRE_D * 0.5,
+            )
         )
+        mgr_on = _dc_out.manager
+        cands_on = _dc_out.candidates
 
         # ON の方が候補数が少ない or 同数（削減効果）
         assert len(cands_on) <= len(cands_off)
@@ -157,9 +178,17 @@ class TestMidpointPrescreening:
 
         cfg = ContactConfig(midpoint_prescreening=True)
         mgr = ContactManager(config=cfg)
-        cands = mgr.detect_candidates(
-            mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=radii,
+                margin=_WIRE_D * 0.5,
+            )
         )
+        mgr = _dc_out.manager
+        cands = _dc_out.candidates
 
         # 候補が存在する（7本撚りでは必ず接触ペアがある）
         assert len(cands) > 0
@@ -184,9 +213,17 @@ class TestCombinedFilters:
             exclude_same_layer=False,
         )
         mgr_none = ContactManager(config=cfg_none)
-        cands_none = mgr_none.detect_candidates(
-            mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_none,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=radii,
+                margin=_WIRE_D * 0.5,
+            )
         )
+        mgr_none = _dc_out.manager
+        cands_none = _dc_out.candidates
 
         # 両方有効
         cfg_both = ContactConfig(
@@ -195,9 +232,17 @@ class TestCombinedFilters:
             elem_layer_map=lmap,
         )
         mgr_both = ContactManager(config=cfg_both)
-        cands_both = mgr_both.detect_candidates(
-            mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_both,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=radii,
+                margin=_WIRE_D * 0.5,
+            )
         )
+        mgr_both = _dc_out.manager
+        cands_both = _dc_out.candidates
 
         # 併用の方が少ない
         assert len(cands_both) < len(cands_none)
@@ -353,16 +398,33 @@ class TestBroadphasePerformance:
 
             # ウォームアップ
             mgr = ContactManager(config=cfg)
-            mgr.detect_candidates(mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5)
+            _dc_out = DetectCandidatesProcess().process(
+                DetectCandidatesInput(
+                    manager=mgr,
+                    node_coords=mesh.node_coords,
+                    connectivity=mesh.connectivity,
+                    radii=radii,
+                    margin=_WIRE_D * 0.5,
+                )
+            )
+            mgr = _dc_out.manager
 
             n_trials = 3
             times = []
             for _ in range(n_trials):
                 mgr2 = ContactManager(config=cfg)
                 t0 = time.perf_counter()
-                cands = mgr2.detect_candidates(
-                    mesh.node_coords, mesh.connectivity, radii, margin=_WIRE_D * 0.5
+                _dc_out = DetectCandidatesProcess().process(
+                    DetectCandidatesInput(
+                        manager=mgr2,
+                        node_coords=mesh.node_coords,
+                        connectivity=mesh.connectivity,
+                        radii=radii,
+                        margin=_WIRE_D * 0.5,
+                    )
                 )
+                mgr2 = _dc_out.manager
+                cands = _dc_out.candidates
                 times.append(time.perf_counter() - t0)
 
             results[n_strands] = {

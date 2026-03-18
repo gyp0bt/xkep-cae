@@ -17,7 +17,12 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact._broadphase import _broadphase_aabb
-from xkep_cae.contact._contact_pair import _ContactPairOutput, _ContactStateOutput
+from xkep_cae.contact._contact_pair import (
+    _ContactPairOutput,
+    _ContactStateOutput,
+    _evolve_pair,
+    _evolve_state,
+)
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -69,10 +74,10 @@ def _update_active_set_hysteresis(
 
     if state.status == ContactStatus.INACTIVE:
         if gap <= g_on or coat_active:
-            return state._evolve(status=ContactStatus.ACTIVE)
+            return _evolve_state(state, status=ContactStatus.ACTIVE)
     else:
         if allow_deactivation and gap >= g_off and not coat_active:
-            return state._evolve(status=ContactStatus.INACTIVE)
+            return _evolve_state(state, status=ContactStatus.INACTIVE)
     return state
 
 
@@ -289,7 +294,7 @@ def _batch_update_geometry(
         }
         if _use_coating:
             geom_kw["coating_compression"] = float(coat_comp[i])
-        new_state = pair.state._evolve(**geom_kw)
+        new_state = _evolve_state(pair.state, **geom_kw)
 
         new_state = _update_active_set_hysteresis(
             new_state,
@@ -298,7 +303,7 @@ def _batch_update_geometry(
             allow_deactivation=allow_deact,
             coating_stiffness=coating_stiffness,
         )
-        pairs[i] = pair._evolve(state=new_state)
+        pairs[i] = _evolve_pair(pair, state=new_state)
 
 
 # ── 具象 Process ──────────────────────────────────────────

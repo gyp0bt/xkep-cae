@@ -19,6 +19,12 @@ from xkep_cae.contact.pair import (
 )
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 
+from xkep_cae.contact._contact_pair import _is_active_pair
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
+
 pytestmark = pytest.mark.slow
 
 _NDOF_PER_NODE = 6
@@ -223,7 +229,7 @@ class TestBroadphaseEfficiency:
         """16セグメントで候補ペア数が全組み合わせ未満."""
         result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         n_total_possible = 16 * 16
-        n_pairs = mgr.n_pairs
+        n_pairs = len(mgr.pairs)
         assert n_pairs < n_total_possible, f"候補ペア数 {n_pairs} >= 全ペア数 {n_total_possible}"
 
     def test_broadphase_sublinear_scaling(self):
@@ -241,13 +247,17 @@ class TestBroadphaseEfficiency:
                 _,
             ) = _make_large_crossing_beams(n_seg_a=n_seg, n_seg_b=n_seg)
             mgr = ContactManager(config=ContactConfig())
-            mgr.detect_candidates(
-                node_coords_ref,
-                conn,
-                radii_val,
-                margin=0.05,
+            _dc_out = DetectCandidatesProcess().process(
+                DetectCandidatesInput(
+                    manager=mgr,
+                    node_coords=node_coords_ref,
+                    connectivity=conn,
+                    radii=radii_val,
+                    margin=0.05,
+                )
             )
-            pairs_counts[n_seg] = mgr.n_pairs
+            mgr = _dc_out.manager
+            pairs_counts[n_seg] = len(mgr.pairs)
 
         if pairs_counts[8] > 0:
             ratio = pairs_counts[32] / pairs_counts[8]
@@ -273,14 +283,15 @@ class TestLargeScale16Segment:
         """16セグメント梁で接触が検出される."""
         result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
-        assert mgr.n_active > 0, "接触が検出されなかった"
+        n_active = sum(1 for p in mgr.pairs if _is_active_pair(p))
+        assert n_active > 0, "接触が検出されなかった"
 
     def test_16seg_active_pairs_localized(self):
         """接触ペアは交差点近傍に局在する."""
         result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
-        n_total = mgr.n_pairs
-        n_active = mgr.n_active
+        n_total = len(mgr.pairs)
+        n_active = sum(1 for p in mgr.pairs if _is_active_pair(p))
         if n_total > 0:
             active_ratio = n_active / n_total
             assert active_ratio < 0.5, f"Active比が高すぎる: {n_active}/{n_total}"
@@ -290,7 +301,7 @@ class TestLargeScale16Segment:
         result, mgr, _ = _solve_large_problem(n_seg_a=16, n_seg_b=16)
         assert result.converged
         for pair in mgr.pairs:
-            if pair.is_active():
+            if _is_active_pair(pair):
                 assert pair.state.p_n >= 0, f"p_n={pair.state.p_n} < 0"
 
 
@@ -310,7 +321,8 @@ class TestScalability:
                 n_seg_b=n_seg,
             )
             assert result.converged, f"n_seg={n_seg} で収束しなかった"
-            assert mgr.n_active > 0, f"n_seg={n_seg} で接触未検出"
+            n_active = sum(1 for p in mgr.pairs if _is_active_pair(p))
+            assert n_active > 0, f"n_seg={n_seg} で接触未検出"
 
     def test_contact_force_positive_all_scales(self):
         """4, 8, 16 全スケールで接触力が正値."""
@@ -320,7 +332,7 @@ class TestScalability:
                 n_seg_b=n_seg,
             )
             assert result.converged, f"n_seg={n_seg} で収束しなかった"
-            active_pns = [p.state.p_n for p in mgr.pairs if p.is_active()]
+            active_pns = [p.state.p_n for p in mgr.pairs if _is_active_pair(p)]
             assert len(active_pns) > 0, f"n_seg={n_seg} で接触力なし"
             total_force = sum(active_pns)
             assert total_force > 0, f"n_seg={n_seg}: 総接触力 {total_force:.3f} <= 0"

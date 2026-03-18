@@ -14,6 +14,11 @@ from xkep_cae.contact.pair import (
 from xkep_cae.contact.staged_activation import count_same_layer_pairs
 from xkep_cae.mesh.twisted_wire import make_twisted_wire_mesh
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
+
 
 class TestExcludeSameLayerConfig:
     """ContactConfig.exclude_same_layer の基本動作."""
@@ -43,7 +48,16 @@ class TestExcludeSameLayerConfig:
             dtype=float,
         )
         conn = np.array([[0, 1], [2, 3]], dtype=int)
-        candidates = mgr.detect_candidates(coords, conn, radii=0.5)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=conn,
+                radii=0.5,
+            )
+        )
+        mgr = _dc_out.manager
+        candidates = _dc_out.candidates
         # layer_map なしなので除外されない
         assert len(candidates) == 1
 
@@ -92,7 +106,16 @@ class TestExcludeSameLayerDetection:
             exclude_same_layer=False,
         )
         mgr = ContactManager(config=cfg)
-        candidates = mgr.detect_candidates(coords, conn, radii=0.2)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=conn,
+                radii=0.2,
+            )
+        )
+        mgr = _dc_out.manager
+        candidates = _dc_out.candidates
         # 4要素 → C(4,2)=6 だが共有節点なしなので全6ペア
         assert len(candidates) == 6
 
@@ -104,7 +127,16 @@ class TestExcludeSameLayerDetection:
             exclude_same_layer=True,
         )
         mgr = ContactManager(config=cfg)
-        candidates = mgr.detect_candidates(coords, conn, radii=0.2)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=conn,
+                radii=0.2,
+            )
+        )
+        mgr = _dc_out.manager
+        candidates = _dc_out.candidates
         # 同層ペア (0,1) と (2,3) が除外 → 4ペア
         assert len(candidates) == 4
         for i, j in candidates:
@@ -120,7 +152,15 @@ class TestExcludeSameLayerDetection:
             exclude_same_layer=True,
         )
         mgr = ContactManager(config=cfg)
-        mgr.detect_candidates(coords, conn, radii=0.2)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=conn,
+                radii=0.2,
+            )
+        )
+        mgr = _dc_out.manager
         for pair in mgr.pairs:
             layer_a = lmap[pair.elem_a]
             layer_b = lmap[pair.elem_b]
@@ -136,7 +176,16 @@ class TestExcludeSameLayerDetection:
             exclude_same_layer=True,
         )
         mgr = ContactManager(config=cfg)
-        candidates = mgr.detect_candidates(coords, conn, radii=0.2)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=conn,
+                radii=0.2,
+            )
+        )
+        mgr = _dc_out.manager
+        candidates = _dc_out.candidates
         # elem 3 は layer 不明 → -1 扱い → 同層判定されない
         # (0,1) のみ同層除外 → 5ペア
         assert len(candidates) == 5
@@ -161,7 +210,16 @@ class TestExcludeSameLayerTwistedWire:
             exclude_same_layer=False,
         )
         mgr_no = ContactManager(config=cfg_no)
-        cands_no = mgr_no.detect_candidates(coords, mesh.connectivity, radii=0.001)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_no,
+                node_coords=coords,
+                connectivity=mesh.connectivity,
+                radii=0.001,
+            )
+        )
+        mgr_no = _dc_out.manager
+        cands_no = _dc_out.candidates
 
         # 除外あり
         cfg_yes = ContactConfig(
@@ -169,7 +227,16 @@ class TestExcludeSameLayerTwistedWire:
             exclude_same_layer=True,
         )
         mgr_yes = ContactManager(config=cfg_yes)
-        cands_yes = mgr_yes.detect_candidates(coords, mesh.connectivity, radii=0.001)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_yes,
+                node_coords=coords,
+                connectivity=mesh.connectivity,
+                radii=0.001,
+            )
+        )
+        mgr_yes = _dc_out.manager
+        cands_yes = _dc_out.candidates
 
         # 除外ありのほうがペアが少ない
         assert len(cands_yes) < len(cands_no)
@@ -195,7 +262,16 @@ class TestExcludeSameLayerTwistedWire:
             exclude_same_layer=True,
         )
         mgr = ContactManager(config=cfg)
-        cands = mgr.detect_candidates(coords, mesh.connectivity, radii=0.001)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr,
+                node_coords=coords,
+                connectivity=mesh.connectivity,
+                radii=0.001,
+            )
+        )
+        mgr = _dc_out.manager
+        cands = _dc_out.candidates
         # 全素線が同層なので全ペア除外
         assert len(cands) == 0
 
@@ -208,12 +284,30 @@ class TestExcludeSameLayerTwistedWire:
         # 除外なし
         cfg_no = ContactConfig(elem_layer_map=lmap, exclude_same_layer=False)
         mgr_no = ContactManager(config=cfg_no)
-        cands_no = mgr_no.detect_candidates(coords, mesh.connectivity, radii=0.001)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_no,
+                node_coords=coords,
+                connectivity=mesh.connectivity,
+                radii=0.001,
+            )
+        )
+        mgr_no = _dc_out.manager
+        cands_no = _dc_out.candidates
 
         # 除外あり
         cfg_yes = ContactConfig(elem_layer_map=lmap, exclude_same_layer=True)
         mgr_yes = ContactManager(config=cfg_yes)
-        cands_yes = mgr_yes.detect_candidates(coords, mesh.connectivity, radii=0.001)
+        _dc_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=mgr_yes,
+                node_coords=coords,
+                connectivity=mesh.connectivity,
+                radii=0.001,
+            )
+        )
+        mgr_yes = _dc_out.manager
+        cands_yes = _dc_out.candidates
 
         # 大幅削減（50%以上削減を期待）
         if len(cands_no) > 0:

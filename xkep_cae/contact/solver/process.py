@@ -17,6 +17,7 @@ import warnings
 
 import numpy as np
 
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state, _n_pairs
 from xkep_cae.contact._manager_process import (
     DetectCandidatesInput,
     DetectCandidatesProcess,
@@ -208,7 +209,7 @@ class ContactFrictionProcess(
 
         state = SolverStateOutput(
             u=u0,
-            lam_all=np.zeros(manager.n_pairs),
+            lam_all=np.zeros(_n_pairs(manager)),
             u_ref=u0.copy(),
             node_coords_ref=node_coords_ref,
             u_prev_converged=u0.copy(),
@@ -236,7 +237,7 @@ class ContactFrictionProcess(
         broadphase_cell_size = None
         _detect_proc = DetectCandidatesProcess()
         _geom_proc = UpdateGeometryProcess()
-        _detect_proc.process(
+        _dc_init = _detect_proc.process(
             DetectCandidatesInput(
                 manager=manager,
                 node_coords=node_coords_ref,
@@ -247,6 +248,7 @@ class ContactFrictionProcess(
                 core_radii=core_radii,
             )
         )
+        manager = _dc_init.manager
         _pen_proc = InitialPenetrationProcess()
         _use_adjust = manager.config.adjust_initial_penetration
         if _use_adjust and _ul:
@@ -269,7 +271,7 @@ class ContactFrictionProcess(
                     f"ギャップ閉鎖={pen_out.n_gap_closed}ペア"
                 )
             _state_set(state, "node_coords_ref", node_coords_ref)
-            _detect_proc.process(
+            _dc_adj = _detect_proc.process(
                 DetectCandidatesInput(
                     manager=manager,
                     node_coords=node_coords_ref,
@@ -280,6 +282,7 @@ class ContactFrictionProcess(
                     core_radii=core_radii,
                 )
             )
+            manager = _dc_adj.manager
 
         _ul_has_accum = (
             _ul
@@ -300,7 +303,7 @@ class ContactFrictionProcess(
                 f"メッシュ生成時のgapを増やしてください。"
             )
 
-        _ensure_lam_size(state, manager.n_pairs)
+        _ensure_lam_size(state, _n_pairs(manager))
 
         # --- チェックポイント初期化 ---
         _save_checkpoint(state)
@@ -382,7 +385,7 @@ class ContactFrictionProcess(
                 )
             )
             coords_def = _dc_out.coords
-            _detect_proc.process(
+            _dc_out = _detect_proc.process(
                 DetectCandidatesInput(
                     manager=manager,
                     node_coords=coords_def,
@@ -393,8 +396,12 @@ class ContactFrictionProcess(
                     core_radii=core_radii,
                 )
             )
-            _geom_proc.process(UpdateGeometryInput(manager=manager, node_coords=coords_def))
-            _ensure_lam_size(state, manager.n_pairs)
+            manager = _dc_out.manager
+            _ug_out = _geom_proc.process(
+                UpdateGeometryInput(manager=manager, node_coords=coords_def)
+            )
+            manager = _ug_out.manager
+            _ensure_lam_size(state, _n_pairs(manager))
 
             # --- NR + Uzawa 実行（Static/Dynamic 完全分離） ---
             if _dynamics:
@@ -497,10 +504,12 @@ class ContactFrictionProcess(
             # 被膜圧縮量保存
             if use_coating:
                 for ci, pair in enumerate(manager.pairs):
-                    manager.pairs[ci] = pair._evolve(
-                        state=pair.state._evolve(
-                            coating_compression_prev=pair.state.coating_compression
-                        )
+                    manager.pairs[ci] = _evolve_pair(
+                        pair,
+                        state=_evolve_state(
+                            pair.state,
+                            coating_compression_prev=pair.state.coating_compression,
+                        ),
                     )
 
             # 動的解析: 速度・加速度更新
@@ -540,11 +549,13 @@ class ContactFrictionProcess(
             _state_set(state, "load_frac_prev", load_frac)
             for i, pair in enumerate(manager.pairs):
                 if i < len(state.lam_all):
-                    manager.pairs[i] = pair._evolve(
-                        state=pair.state._evolve(
+                    manager.pairs[i] = _evolve_pair(
+                        pair,
+                        state=_evolve_state(
+                            pair.state,
                             lambda_n=state.lam_all[i],
                             p_n=max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap)),
-                        )
+                        ),
                     )
             _state_set(state, "u_ref", state.u.copy())
 

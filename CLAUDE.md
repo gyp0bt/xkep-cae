@@ -117,6 +117,8 @@
 | `_ContactStateOutput._evolve()` / `.copy()` | `_evolve_state()` / `_copy_state()` | status-205 |
 | `_ContactPairOutput._evolve()` / `.is_active()` / `.search_radius` | `_evolve_pair()` / `_is_active_pair()` / `_pair_search_radius()` | status-205 |
 | DetectCandidates/UpdateGeometry/InitializePenalty v1.0.0 | v2.0.0（ロジック直接実装 + manager 出力） | status-205 |
+| `_ContactForceStrategy` 内 `_MockState`/`_MockPair` mock | 実 frozen dataclass + `_make_test_pair()` | status-206 |
+| `process.py` DetectCandidates 結果無視 | 出力キャプチャ + manager 再代入 | status-206 |
 
 ## 推奨ソルバー構成
 
@@ -128,7 +130,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-18 | C16 違反 **0件** | C17 違反 **0件**（frozen 化完了, status-204） | O2 条例違反 2件（警告）
+**~2260テスト + 315 新パッケージテスト** — 2026-03-18 | C16 違反 **0件** | C17 違反 **0件**（frozen 化完了, status-204） | API 整合完了（status-206） | O2 条例違反 2件（警告）
 
 ### ターゲット
 

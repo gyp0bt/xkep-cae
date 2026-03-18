@@ -26,6 +26,8 @@ from xkep_cae.mesh.twisted_wire import (
     make_twisted_wire_mesh,
 )
 
+from xkep_cae.contact._manager_process import DetectCandidatesInput, DetectCandidatesProcess
+
 
 def check_initial_penetration(mesh, radii_arr, label: str) -> tuple[int, float]:
     """メッシュの初期貫入をContactManagerでチェックする."""
@@ -43,9 +45,16 @@ def check_initial_penetration(mesh, radii_arr, label: str) -> tuple[int, float]:
             midpoint_prescreening=True,
         )
     )
-    mgr.detect_candidates(
-        mesh.node_coords, mesh.connectivity, radii_arr, margin=0.005
+    _dc_out = DetectCandidatesProcess().process(
+        DetectCandidatesInput(
+            manager=mgr,
+            node_coords=mesh.node_coords,
+            connectivity=mesh.connectivity,
+            radii=radii_arr,
+            margin=0.005,
+        )
     )
+    mgr = _dc_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     # 最大貫入量を計算
@@ -63,8 +72,10 @@ def check_initial_penetration(mesh, radii_arr, label: str) -> tuple[int, float]:
             if gap < 0:
                 max_pen = max(max_pen, abs(gap))
 
-    print(f"  [{label}] 候補ペア: {len(mgr.pairs)}, 貫入ペア: {n_pen}, "
-          f"最大貫入: {max_pen * 1000:.6f} mm")
+    print(
+        f"  [{label}] 候補ペア: {len(mgr.pairs)}, 貫入ペア: {n_pen}, "
+        f"最大貫入: {max_pen * 1000:.6f} mm"
+    )
     return n_pen, max_pen
 
 
@@ -176,8 +187,7 @@ def test_case_4_layout_radius_comparison():
 
     print(f"  被膜なし: r_lay = {r_no * 1000:.4f} mm (期待: d={d * 1000:.4f} mm)")
     print(f"  被膜あり: r_lay = {r_with * 1000:.4f} mm (期待: d_eff={d_eff * 1000:.4f} mm)")
-    print(f"  差分: {(r_with - r_no) * 1000:.4f} mm "
-          f"(期待: 2*coat_t={2 * coat_t * 1000:.4f} mm)")
+    print(f"  差分: {(r_with - r_no) * 1000:.4f} mm (期待: 2*coat_t={2 * coat_t * 1000:.4f} mm)")
 
     assert abs(r_no - d) < 1e-12
     assert abs(r_with - d_eff) < 1e-12

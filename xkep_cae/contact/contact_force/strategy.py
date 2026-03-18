@@ -16,6 +16,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact._assembly_utils import _contact_dofs
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._types import ContactStatus
 from xkep_cae.core import ProcessMeta, SolverProcess
 
@@ -254,7 +255,7 @@ class SmoothPenaltyContactForceProcess(
                 lam_i = lambdas[i] if i < len(lambdas) else 0.0
 
                 p_n = k_pen * self._softplus(g_i, self._smoothing_delta)
-                manager.pairs[i] = pair._evolve(state=pair.state._evolve(p_n=p_n))
+                manager.pairs[i] = _evolve_pair(pair, state=_evolve_state(pair.state, p_n=p_n))
                 pair = manager.pairs[i]
 
                 uzawa_update = max(0.0, lam_i + k_pen * (-g_i))
