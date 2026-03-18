@@ -113,3 +113,14 @@ ruff format: 111 files already formatted
 
 - [ ] S3 凍結解除: 変位制御7本撚線曲げ揺動の Phase2 xfail 解消
 - [ ] numerical_tests の slow テスト復旧（backendあり→直接実装で動くようになった）
+
+## 移行見送り判断
+
+status-207 で削除した空 stub モジュール（math/, sections/, materials/, io/, thermal/）は
+現在のターゲット（1000本撚線曲げ揺動）に不要と判断し、移行見送り。
+
+- **math**: 回転演算は `elements/_beam_cr.py` に自己完結
+- **sections**: `elements/_beam_section.py` の `BeamSectionInput` で提供
+- **materials**: E, G, nu をパラメータ直接渡し（材料クラス不要）
+- **Cosserat**: 線形は timo3d 共用、非線形 CR は `_beam_assembly.py` 統合済み
+- **io/thermal**: 将来課題（異方性材料、熱-構造連成が必要になった時点で再検討）
