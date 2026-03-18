@@ -1,6 +1,5 @@
 """ContactFrictionProcess — 摩擦接触ソルバー（SolverProcess）.
 
-旧 __xkep_cae_deprecated/process/concrete/solve_contact_friction.py の完全書き直し。
 設計仕様: docs/contact_friction.md
 
 内部構成:

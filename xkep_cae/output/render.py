@@ -1,6 +1,5 @@
 """BeamRenderProcess — 梁3Dレンダリングの PostProcess.
 
-旧 __xkep_cae_deprecated/process/concrete/post_render.py の完全書き直し。
 設計仕様: docs/render.md
 """
 

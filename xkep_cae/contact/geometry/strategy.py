@@ -1,6 +1,5 @@
 """ContactGeometry Strategy 具象実装.
 
-旧 __xkep_cae_deprecated/process/strategies/contact_geometry.py の完全書き直し。
 ContactGeometryStrategy Protocol に従い、接触幾何の検出・更新を行う Process 群。
 
 3クラス構成:

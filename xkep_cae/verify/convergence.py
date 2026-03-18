@@ -1,6 +1,5 @@
 """ConvergenceVerifyProcess — NR反復の収束検証.
 
-旧 __xkep_cae_deprecated/process/verify/convergence.py の完全書き直し。
 設計仕様: docs/verify.md
 """
 

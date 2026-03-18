@@ -1,6 +1,5 @@
 """Friction Strategy 具象実装.
 
-旧 __xkep_cae_deprecated/process/strategies/friction.py の完全書き直し。
 FrictionStrategy Protocol に従い、摩擦力を評価する Process 群。
 
 3クラス構成:
