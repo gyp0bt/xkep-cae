@@ -188,12 +188,13 @@ class TestSmoothPenaltyContactForceProcess:
         assert K.nnz == 0
 
     def test_tangent_with_penetration(self):
+        """smooth_penalty は AL+Uzawa でゼロ接線を返す（v2.0.0）."""
         proc = SmoothPenaltyContactForceProcess(ndof=24)
         pair = _make_pair(gap=-0.01)
         manager = _MockManager([pair])
         K = proc.tangent(np.zeros(24), np.zeros(0), manager, k_pen=1e4)
         assert K.shape == (24, 24)
-        assert K.nnz > 0
+        assert K.nnz == 0  # AL+Uzawa: ゼロ接線（NR安定性のため）
 
     def test_process_returns_output(self):
         proc = SmoothPenaltyContactForceProcess(ndof=24)

@@ -103,6 +103,8 @@ def default_strategies(
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
     coating_stiffness: float = 0.0,
+    n_uzawa_max: int = 5,
+    tol_uzawa: float = 1e-3,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
@@ -149,6 +151,8 @@ def default_strategies(
             ndof_per_node=ndof_per_node,
             contact_compliance=contact_compliance,
             smoothing_delta=smoothing_delta,
+            n_uzawa_max=n_uzawa_max,
+            tol_uzawa=tol_uzawa,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,

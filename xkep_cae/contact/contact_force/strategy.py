@@ -177,7 +177,7 @@ class SmoothPenaltyContactForceProcess(
     meta = ProcessMeta(
         name="SmoothPenaltyContactForce",
         module="solve",
-        version="1.0.0",
+        version="2.0.0",
         document_path="docs/contact_force.md",
     )
 
@@ -247,13 +247,18 @@ class SmoothPenaltyContactForceProcess(
             for i, pair in enumerate(manager.pairs):
                 if not hasattr(pair, "state"):
                     continue
-                if pair.state.status == ContactStatus.INACTIVE:
-                    continue
+                # softplus は C∞ なので INACTIVE でも常に評価する。
+                # gap が大きいペアでは力が自然にゼロに近づくため、
+                # ヒステリシス境界での接触チャタリングを防止する。
 
                 g_i = pair.state.gap
                 lam_i = lambdas[i] if i < len(lambdas) else 0.0
 
-                p_n = k_pen * self._softplus(g_i, self._smoothing_delta)
+                # 拡大ラグランジアン: p_n = λ + k_pen * softplus(g)
+                # λ は Uzawa 外部ループで更新される。
+                # penalty 項のみだと接線剛性が負定値になり NR 不収束。
+                # λ が接触力の大部分を担い、penalty は滑らかな補正項。
+                p_n = max(0.0, lam_i) + k_pen * self._softplus(g_i, self._smoothing_delta)
                 manager.pairs[i] = _evolve_pair(pair, state=_evolve_state(pair.state, p_n=p_n))
                 pair = manager.pairs[i]
 
@@ -283,50 +288,12 @@ class SmoothPenaltyContactForceProcess(
     ) -> sp.csr_matrix:
         """接触接線剛性行列.
 
-        K_c = Σ k_pen * softplus'(g) * g_shape @ g_shape^T
+        拡大ラグランジアン + Uzawa 方式では接触剛性は Uzawa 外部ループ
+        が担うため、ゼロ行列を返す（NCP と同様）。
+        softplus の接線 dp/dg < 0（負定値）を直接含めると、
+        K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
         """
-        rows: list[int] = []
-        cols: list[int] = []
-        data: list[float] = []
-
-        if hasattr(manager, "pairs"):
-            for pair in manager.pairs:
-                if not hasattr(pair, "state"):
-                    continue
-                if pair.state.status == ContactStatus.INACTIVE:
-                    continue
-
-                g_i = pair.state.gap
-                dp_dg = k_pen * self._softplus_derivative(g_i, self._smoothing_delta)
-                if abs(dp_dg) < 1e-30:
-                    continue
-
-                g_shape = _contact_shape_vector(pair)
-                dofs = _contact_dofs(pair, self._ndof_per_node)
-
-                for ki in range(4):
-                    for di in range(3):
-                        local_i = ki * 3 + di
-                        global_i = dofs[ki * self._ndof_per_node + di]
-                        if abs(g_shape[local_i]) < 1e-30:
-                            continue
-                        for kj in range(4):
-                            for dj in range(3):
-                                local_j = kj * 3 + dj
-                                global_j = dofs[kj * self._ndof_per_node + dj]
-                                val = dp_dg * g_shape[local_i] * g_shape[local_j]
-                                if abs(val) > 1e-30:
-                                    rows.append(global_i)
-                                    cols.append(global_j)
-                                    data.append(val)
-
-        if len(data) == 0:
-            return sp.csr_matrix((self._ndof, self._ndof))
-
-        return sp.coo_matrix(
-            (data, (rows, cols)),
-            shape=(self._ndof, self._ndof),
-        ).tocsr()
+        return sp.csr_matrix((self._ndof, self._ndof))
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:
         f, r = self.evaluate(
