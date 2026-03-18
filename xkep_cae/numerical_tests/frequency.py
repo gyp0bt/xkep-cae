@@ -2,15 +2,20 @@
 
 片端保持（カンチレバー）のもう片端への変位付加 or 加速度付加による
 周波数応答関数（FRF）を計算する。
-
-質量行列の要素レベル計算は _backend 経由で注入する（C14 準拠）。
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from xkep_cae.numerical_tests._backend import backend
+from xkep_cae.numerical_tests._backend import (
+    _beam2d_lumped_mass_local,
+    _beam2d_mass_global,
+    _ke_func_factory,
+    beam3d_length_and_direction,
+    beam3d_lumped_mass_local,
+    beam3d_mass_global,
+)
 from xkep_cae.numerical_tests.core import (
     FrequencyResponseConfig,
     FrequencyResponseResult,
@@ -42,26 +47,26 @@ def _dof_name_to_local_index(dof_name: str, beam_type: str) -> int:
 # ---------------------------------------------------------------------------
 # 質量行列 — backend 経由ラッパー（後方互換エイリアス）
 # ---------------------------------------------------------------------------
-def _beam2d_lumped_mass_local(rho: float, A: float, L: float) -> np.ndarray:
-    """2D梁の集中質量行列（ローカル、後方互換ラッパー）."""
-    return backend.beam2d_lumped_mass_local(rho, A, L)
+def _local_beam2d_lumped_mass(rho: float, A: float, L: float) -> np.ndarray:
+    """2D梁の集中質量行列（ローカル）."""
+    return _beam2d_lumped_mass_local(rho, A, L)
 
 
-def _beam3d_lumped_mass_local(rho: float, A: float, Iy: float, Iz: float, L: float) -> np.ndarray:
-    """3D梁の集中質量行列（ローカル、後方互換ラッパー）."""
-    return backend.beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
+def _local_beam3d_lumped_mass(rho: float, A: float, Iy: float, Iz: float, L: float) -> np.ndarray:
+    """3D梁の集中質量行列（ローカル）."""
+    return beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
 
 
-def _beam2d_mass_global(coords: np.ndarray, rho: float, A: float) -> np.ndarray:
-    """2D梁の全体座標系の整合質量行列（後方互換ラッパー）."""
-    return backend.beam2d_mass_global(coords, rho, A)
+def _global_beam2d_mass(coords: np.ndarray, rho: float, A: float) -> np.ndarray:
+    """2D梁の全体座標系の整合質量行列."""
+    return _beam2d_mass_global(coords, rho, A)
 
 
-def _beam3d_mass_global(
+def _global_beam3d_mass(
     coords: np.ndarray, rho: float, A: float, Iy: float, Iz: float
 ) -> np.ndarray:
-    """3D梁の全体座標系の整合質量行列（後方互換ラッパー）."""
-    return backend.beam3d_mass_global(coords, rho, A, Iy, Iz)
+    """3D梁の全体座標系の整合質量行列."""
+    return beam3d_mass_global(coords, rho, A, Iy, Iz)
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +85,7 @@ def _assemble_mass_2d(
     for elem_nodes in connectivity:
         n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
         coords = nodes[[n1, n2]]
-        Me = _beam2d_mass_global(coords, rho, A)
+        Me = _global_beam2d_mass(coords, rho, A)
         edofs = np.array(
             [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2], dtype=int
         )
@@ -105,7 +110,7 @@ def _assemble_mass_3d(
     for elem_nodes in connectivity:
         n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
         coords = nodes[[n1, n2]]
-        Me = _beam3d_mass_global(coords, rho, A, Iy, Iz)
+        Me = _global_beam3d_mass(coords, rho, A, Iy, Iz)
         edofs = np.empty(12, dtype=int)
         for i, n in enumerate([n1, n2]):
             for d in range(6):
@@ -132,7 +137,7 @@ def _assemble_lumped_mass_2d(
         dx = coords[1, 0] - coords[0, 0]
         dy = coords[1, 1] - coords[0, 1]
         L = np.sqrt(dx**2 + dy**2)
-        Me = _beam2d_lumped_mass_local(rho, A, L)
+        Me = _local_beam2d_lumped_mass(rho, A, L)
         edofs = np.array(
             [3 * n1, 3 * n1 + 1, 3 * n1 + 2, 3 * n2, 3 * n2 + 1, 3 * n2 + 2],
             dtype=int,
@@ -157,8 +162,8 @@ def _assemble_lumped_mass_3d(
     for elem_nodes in connectivity:
         n1, n2 = int(elem_nodes[0]), int(elem_nodes[1])
         coords = nodes[[n1, n2]]
-        L, _ = backend.beam3d_length_and_direction(coords)
-        Me = _beam3d_lumped_mass_local(rho, A, Iy, Iz, L)
+        L, _ = beam3d_length_and_direction(coords)
+        Me = _local_beam3d_lumped_mass(rho, A, Iy, Iz, L)
         edofs = np.empty(12, dtype=int)
         for i, n in enumerate([n1, n2]):
             for d in range(6):
@@ -198,7 +203,7 @@ def _run_frequency_response(
             "G": cfg.G,
         },
     )()
-    ke_func = backend.ke_func_factory(_dummy_cfg, sec)
+    ke_func = _ke_func_factory(_dummy_cfg, sec)
 
     if is_3d:
         K, _ = _assemble_3d(nodes, conn, ke_func)

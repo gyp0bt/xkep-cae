@@ -1,14 +1,19 @@
 """数値試験フレームワーク — 動的試験ランナー.
 
 3点曲げ等の動的（過渡応答）解析を実行する。
-非線形動解析ソルバーは _backend 経由で注入する（C14 準拠）。
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from xkep_cae.numerical_tests._backend import backend
+from xkep_cae.numerical_tests._backend import (
+    _cosserat_nl_assembler_factory,
+    _cr_assembler_factory,
+    _ke_func_factory,
+    _transient_solver,
+    _TransientConfigInput,
+)
 from xkep_cae.numerical_tests.core import (
     DynamicTestConfig,
     DynamicTestResult,
@@ -96,7 +101,7 @@ def _make_cr_beam_assemblers(
     kappa_z: float,
 ) -> tuple[callable, callable]:
     """CR梁要素用の assemble_internal_force / assemble_tangent を返す."""
-    return backend.cr_assembler_factory(nodes, conn, E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    return _cr_assembler_factory(nodes, conn, E, G, A, Iy, Iz, J, kappa_y, kappa_z)
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +120,7 @@ def _make_cosserat_nl_beam_assemblers(
     kappa_z: float,
 ) -> tuple[callable, callable]:
     """非線形 Cosserat rod 用の assemble_internal_force / assemble_tangent を返す."""
-    return backend.cosserat_nl_assembler_factory(nodes, conn, E, G, A, Iy, Iz, J, kappa_y, kappa_z)
+    return _cosserat_nl_assembler_factory(nodes, conn, E, G, A, Iy, Iz, J, kappa_y, kappa_z)
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +154,7 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
             "G": cfg.G,
         },
     )()
-    ke_func = backend.ke_func_factory(_dummy_cfg, sec)
+    ke_func = _ke_func_factory(_dummy_cfg, sec)
     if is_3d:
         K, _ = _assemble_3d(nodes, conn, ke_func)
     else:
@@ -215,7 +220,7 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
     u0 = np.zeros(ndof, dtype=float)
     v0 = np.zeros(ndof, dtype=float)
 
-    nl_config = backend.transient_config_class(
+    nl_config = _TransientConfigInput(
         dt=cfg.dt,
         n_steps=cfg.n_steps,
         beta=cfg.beta_newmark,
@@ -225,7 +230,7 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
         tol_force=cfg.tol_force,
     )
 
-    result = backend.transient_solver(
+    result = _transient_solver(
         M=M,
         f_ext=get_force,
         u0=u0,
