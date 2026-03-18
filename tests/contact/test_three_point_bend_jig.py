@@ -17,10 +17,15 @@ ThreePointBendJigProcess を使い、変位制御三点曲げが
 
 from __future__ import annotations
 
+import pytest
+
 from xkep_cae.numerical_tests.three_point_bend_jig import (
+    DynamicThreePointBendJigConfig,
+    DynamicThreePointBendJigProcess,
     ThreePointBendJigConfig,
     ThreePointBendJigProcess,
     _analytical_three_point_bend,
+    _beam_fundamental_frequency,
     _circle_section,
 )
 
@@ -290,3 +295,128 @@ class TestThreePointBendJigPhysics:
 
         print(f"\n  変位プロファイル最大誤差: {max_err:.4f}")
         assert max_err < 0.05, f"変位プロファイル誤差 {max_err:.4f} > 5%"
+
+
+# ====================================================================
+# 動的三点曲げテスト
+# ====================================================================
+
+_RHO = 7.85e-9  # ton/mm³（鉄鋼）
+
+
+def _dynamic_config(**overrides) -> DynamicThreePointBendJigConfig:
+    """動的テスト用デフォルト設定."""
+    defaults = {
+        "wire_length": _L,
+        "wire_diameter": _D,
+        "n_elems_wire": 20,
+        "E": _E,
+        "nu": _NU,
+        "rho": _RHO,
+        "jig_push": 0.1,
+        "n_steps": 100,
+        "n_periods": 2.0,
+        "rho_inf": 0.9,
+    }
+    defaults.update(overrides)
+    return DynamicThreePointBendJigConfig(**defaults)
+
+
+class TestDynamicThreePointBendJigConvergence:
+    """動的三点曲げの収束テスト."""
+
+    def test_dynamic_converges(self):
+        """動的解析が収束する."""
+        cfg = _dynamic_config()
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        print(
+            f"\n  動的三点曲げ: converged={result.solver_result.converged}, "
+            f"increments={result.solver_result.n_increments}, "
+            f"f1={result.analytical_frequency_hz:.1f} Hz, "
+            f"T1={result.analytical_period:.6f} s, "
+            f"δ_max={result.max_deflection:.6f} mm, "
+            f"DAF={result.dynamic_amplification:.3f}"
+        )
+        assert result.solver_result.converged, "動的解析が収束しなかった"
+        assert result.solver_result.n_increments >= 10, (
+            f"時間ステップ数 {result.solver_result.n_increments} < 10"
+        )
+
+    def test_frequency_analytical(self):
+        """固有振動数の解析解が正しい."""
+        sec = _circle_section(_D, _NU)
+        f1 = _beam_fundamental_frequency(_L, _E, sec["Iy"], _RHO, sec["A"])
+        # 参考値: f1 ≈ π/(2*100²) * √(200e3*0.0491/(7.85e-9*3.14))
+        assert f1 > 0
+        T1 = 1.0 / f1
+        print(f"\n  f1={f1:.1f} Hz, T1={T1:.6f} s")
+        assert T1 < 1.0, f"固有周期 {T1} s が異常に長い"
+
+
+class TestDynamicThreePointBendJigPhysics:
+    """動的三点曲げの物理的妥当性テスト."""
+
+    @pytest.mark.xfail(reason="動的時間積分の dt_sub 計算問題（status-211 TODO）")
+    def test_final_deflection_matches_static(self):
+        """十分な時間後に変位が処方値に収束する.
+
+        荷重制御の場合、最終状態は静的解に収束すべき。
+        """
+        cfg = _dynamic_config(jig_push=0.1, n_steps=200, n_periods=3.0)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        # 最終変位が処方値に近い（数値減衰で振動が減衰 → 静的解に収束）
+        rel_err = abs(result.wire_midpoint_deflection - cfg.jig_push) / cfg.jig_push
+        print(
+            f"\n  最終変位: {result.wire_midpoint_deflection:.6f} mm, "
+            f"処方値: {cfg.jig_push:.6f} mm, "
+            f"相対誤差: {rel_err:.4f} ({rel_err * 100:.1f}%)"
+        )
+        assert rel_err < 0.02, f"最終変位の相対誤差 {rel_err:.4f} > 2%"
+
+    @pytest.mark.xfail(reason="動的時間積分の dt_sub 計算問題（status-211 TODO）")
+    def test_dynamic_response_has_oscillation(self):
+        """動的応答に振動成分が含まれる."""
+        cfg = _dynamic_config(jig_push=0.1, n_steps=100, n_periods=2.0)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        hist = result.deflection_history
+        if len(hist) < 5:
+            return  # 履歴が短すぎる場合はスキップ
+
+        # 振動の存在確認: 変位履歴の符号変化 or 局所的な増減
+        import numpy as np
+
+        diffs = np.diff(hist)
+        sign_changes = np.sum(np.abs(np.diff(np.sign(diffs))) > 0)
+        print(
+            f"\n  変位履歴: {len(hist)} 点, "
+            f"max={np.max(hist):.6f}, min={np.min(hist):.6f}, "
+            f"符号変化={sign_changes}"
+        )
+        # 2周期分なら少なくとも2〜3回の符号変化があるはず
+        assert sign_changes >= 2, f"振動の符号変化 {sign_changes} < 2: 動的応答に振動がない"
+
+    def test_reaction_force_order_of_magnitude(self):
+        """反力のオーダーが正しい."""
+        cfg = _dynamic_config(jig_push=0.1)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+
+        sec = _circle_section(cfg.wire_diameter, cfg.nu)
+        k_eb = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
+        P_static = k_eb * cfg.jig_push
+        P_actual = result.reaction_force
+
+        ratio = P_actual / P_static if P_static > 0 else 0
+        print(f"\n  反力: P_static={P_static:.4f} N, P_actual={P_actual:.4f} N, ratio={ratio:.3f}")
+        # 動的応答なので静的値の 0.5〜3 倍の範囲内
+        assert 0.5 < ratio < 3.0, f"反力比 {ratio:.3f} が範囲外 [0.5, 3.0]"

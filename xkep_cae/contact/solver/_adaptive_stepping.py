@@ -91,6 +91,9 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         self._consecutive_good: int = 0
 
         base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
+        # dt_max_fraction が設定されている場合、初期ステップもそれに制限
+        if config.dt_max_fraction > 0.0:
+            base_delta = min(base_delta, config.dt_max_fraction)
         self._queue.append(min(base_delta, 1.0))
 
     def process(self, input_data: AdaptiveStepInput) -> AdaptiveStepOutput:
