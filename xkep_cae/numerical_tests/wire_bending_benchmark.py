@@ -3,8 +3,8 @@
 z軸上に配置した撚線の一端を固定し、他端の回転角を処方（変位制御）して ~90° 曲げ、
 曲がった状態で z 方向にサイクル変位を2周期与える。
 
-実行ロジックは _backend 経由で注入する（C14 準拠）。
 データクラス・定数・純粋関数のみをこのモジュールで定義する。
+実行ロジックは Process Architecture 経由で実行する。
 
 [← README](../../README.md)
 """
@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-
-from xkep_cae.numerical_tests._backend import backend
 
 # ====================================================================
 # ローカルデータクラス
@@ -193,8 +191,8 @@ def _print_benchmark_report(result: BendingOscillationResult) -> str:
 def _run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     """曲げ揺動ベンチマークを実行.
 
-    実行ロジックは backend の bending_oscillation_runner に委譲する。
-    backend が未設定の場合は RuntimeError を送出する。
+    実行ロジックは Process Architecture 経由で実行する。
+    StrandBendingBatchProcess が未実装の場合は RuntimeError を送出する。
 
     Args:
         **kwargs: run_bending_oscillation の全引数（n_strands, wire_diameter, etc.）
@@ -202,13 +200,16 @@ def _run_bending_oscillation(**kwargs: Any) -> BendingOscillationResult:
     Returns:
         BendingOscillationResult
     """
-    runner = getattr(backend, "_bending_oscillation_runner", None)
-    if runner is None:
-        raise RuntimeError(
-            "Backend 未設定（bending_oscillation_runner）。"
-            "conftest.py で backend._bending_oscillation_runner を注入してください。"
+    try:
+        from xkep_cae.core.batch.strand_bending import (
+            run_bending_oscillation as _process_runner,
         )
-    return runner(**kwargs)
+    except ImportError:
+        raise RuntimeError(
+            "曲げ揺動ベンチマーク実行には "
+            "xkep_cae.core.batch.strand_bending.run_bending_oscillation が必要です。"
+        ) from None
+    return _process_runner(**kwargs)
 
 
 def _run_scaling_benchmark(

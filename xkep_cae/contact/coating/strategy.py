@@ -212,7 +212,7 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         u_ref: np.ndarray,
     ) -> np.ndarray:
         """被膜接触面のCoulomb摩擦力を計算する."""
-        from xkep_cae.contact.friction.law_friction import return_mapping_core
+        from xkep_cae.contact.friction.law_friction import _return_mapping_core
 
         mu = config.coating_mu
         if mu <= 0.0:
@@ -267,7 +267,7 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             delta_ut = np.array([float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))])
 
             # Coulomb return mapping（純粋関数）
-            q, is_stick, q_trial_norm, dissipation = return_mapping_core(
+            q, is_stick, q_trial_norm, dissipation = _return_mapping_core(
                 pair.state.coating_z_t.copy(), delta_ut, k_t, p_n, mu
             )
 
@@ -304,7 +304,7 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         ndof_total: int,
     ) -> sp.csr_matrix:
         """被膜摩擦の接線剛性行列を計算する."""
-        from xkep_cae.contact.friction.law_friction import tangent_2x2_core
+        from xkep_cae.contact.friction.law_friction import _tangent_2x2_core
 
         mu = config.coating_mu
         if mu <= 0.0:
@@ -326,7 +326,7 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             p_n = k_coat * cc
 
             # 2x2接線剛性
-            D_t = tangent_2x2_core(
+            D_t = _tangent_2x2_core(
                 k_t=k_t,
                 p_n=p_n,
                 mu=mu,

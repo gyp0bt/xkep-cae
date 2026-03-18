@@ -116,7 +116,9 @@ AbstractProcess + Strategy分解によるソルバー契約化。status-150〜17
 | 14 | 198 | S3 xfail テスト Process API 版 |
 | 15-16 | 200-206 | C16/C17 違反ゼロ + frozen dataclass + 旧テスト一掃 |
 
-- **Phase 17（次）**: BackendRegistry 完全廃止（O2 条例違反2件解消）+ 被膜モデル物理検証テスト
+| 17 | 208 | BackendRegistry 完全廃止 + 被膜モデル物理検証テスト（O2 条例違反0件） |
+
+- **次**: S3 凍結解除（変位制御7本撚線曲げ揺動 Phase2 xfail 解消）
 
 ### S4: 撚線構造剛性比較
 

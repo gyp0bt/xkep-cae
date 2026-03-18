@@ -2,9 +2,6 @@
 
 3点曲げ・4点曲げ・引張・ねん回の各試験を
 統一インタフェースで実行する。
-
-要素剛性・BC適用・線形ソルバーは _backend.backend 経由で注入する。
-xkep_cae 内から deprecated パッケージへの直接 import を回避する（C14 準拠）。
 """
 
 from __future__ import annotations
@@ -12,7 +9,12 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.numerical_tests._backend import backend
+from xkep_cae.numerical_tests._backend import (
+    _apply_dirichlet,
+    _ke_func_factory,
+    _section_force_computer,
+    _solve_linear,
+)
 from xkep_cae.numerical_tests.core import (
     NumericalTestConfig,
     StaticTestResult,
@@ -128,8 +130,8 @@ def _solve_static(
 ) -> tuple[np.ndarray, dict]:
     """剛性行列を疎行列化 → BC 適用 → 線形ソルブ."""
     K_sp = sp.csr_matrix(K)
-    Kbc, fbc = backend.apply_dirichlet(K_sp, f, fixed_dofs)
-    return backend.solve(Kbc, fbc, show_progress=False)
+    Kbc, fbc = _apply_dirichlet(K_sp, f, fixed_dofs)
+    return _solve_linear(Kbc, fbc, show_progress=False)
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +153,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     else:
         nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
-    ke_func = backend.ke_func_factory(cfg, sec)
+    ke_func = _ke_func_factory(cfg, sec)
     if is_3d:
         K, ndof = _assemble_3d(nodes, conn, ke_func)
     else:
@@ -189,7 +191,7 @@ def _run_bend3p(cfg: NumericalTestConfig) -> StaticTestResult:
     delta_ana = ana["delta_mid"]
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
-    element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
+    element_forces = _section_force_computer(cfg, sec, nodes, conn, u)
     friction_msg = _assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
@@ -231,7 +233,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     load_node_right = int(np.argmin(np.abs(x_coords - (L - a_actual))))
     mid_node = int(np.argmin(np.abs(x_coords - L / 2.0)))
 
-    ke_func = backend.ke_func_factory(cfg, sec)
+    ke_func = _ke_func_factory(cfg, sec)
     if is_3d:
         K, ndof = _assemble_3d(nodes, conn, ke_func)
     else:
@@ -271,7 +273,7 @@ def _run_bend4p(cfg: NumericalTestConfig) -> StaticTestResult:
     delta_ana = ana["delta_mid"]
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
-    element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
+    element_forces = _section_force_computer(cfg, sec, nodes, conn, u)
     friction_msg = _assess_friction_effect(cfg.name, cfg.span_ratio, cfg.support_condition)
 
     return StaticTestResult(
@@ -306,7 +308,7 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
     else:
         nodes, conn = _generate_beam_mesh_2d(n_elems, L)
 
-    ke_func = backend.ke_func_factory(cfg, sec)
+    ke_func = _ke_func_factory(cfg, sec)
     if is_3d:
         K, ndof = _assemble_3d(nodes, conn, ke_func)
     else:
@@ -335,7 +337,7 @@ def _run_tensile(cfg: NumericalTestConfig) -> StaticTestResult:
     delta_ana = ana["delta"]
     rel_err = abs(delta_fem - delta_ana) / abs(delta_ana) if delta_ana != 0 else None
 
-    element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
+    element_forces = _section_force_computer(cfg, sec, nodes, conn, u)
 
     return StaticTestResult(
         config=cfg,
@@ -360,7 +362,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     n_elems = cfg.n_elems
 
     nodes, conn = _generate_beam_mesh_3d(n_elems, L)
-    ke_func = backend.ke_func_factory(cfg, sec)
+    ke_func = _ke_func_factory(cfg, sec)
     K, ndof = _assemble_3d(nodes, conn, ke_func)
 
     f = np.zeros(ndof)
@@ -377,7 +379,7 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     theta_ana = ana["theta"]
     rel_err = abs(theta_fem - theta_ana) / abs(theta_ana) if theta_ana != 0 else None
 
-    element_forces = backend.section_force_computer(cfg, sec, nodes, conn, u)
+    element_forces = _section_force_computer(cfg, sec, nodes, conn, u)
 
     return StaticTestResult(
         config=cfg,

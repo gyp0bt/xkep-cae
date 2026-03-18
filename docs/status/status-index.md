@@ -41,6 +41,7 @@
 | [205](status-205.md) | 2026-03-18 | ContactManager Process 分割 — dataclass メソッド完全除去 | ~2260+374p(新) |
 | [206](status-206.md) | 2026-03-18 | 旧API呼び出し元整合 + 旧テスト一掃 — 契約違反0件 | 248p(新) |
 | [207](status-207.md) | 2026-03-18 | deprecated コード完全削除 + コンテキスト大掃除 | 248p(新) |
+| [208](status-208.md) | 2026-03-18 | BackendRegistry 完全廃止 + 被膜モデル物理検証テスト | 412p(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -129,6 +130,7 @@ C17違反ゼロ:     ~2260+374p(新) (2026-03-18) ← status-204（frozen datacl
 CM Process分割:  ~2260+374p(新) (2026-03-18) ← status-205（ContactManager メソッド完全除去→Process化）
 旧テスト一掃:    248p(新) (2026-03-18) ← status-206（呼び出し元整合+旧テスト89件削除+契約違反0件）
 大掃除:          248p(新) (2026-03-18) ← status-207（deprecated完全削除+scripts/examples/docs/旧テスト一掃）
+Phase 17:        412p(新) (2026-03-18) ← status-208（BackendRegistry廃止+被膜物理テスト）
 ```
 
 ## 備考
