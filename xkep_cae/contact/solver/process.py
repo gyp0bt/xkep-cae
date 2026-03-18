@@ -496,8 +496,12 @@ class ContactFrictionProcess(
 
             # 被膜圧縮量保存
             if use_coating:
-                for pair in manager.pairs:
-                    pair.state.coating_compression_prev = pair.state.coating_compression
+                for ci, pair in enumerate(manager.pairs):
+                    manager.pairs[ci] = pair._evolve(
+                        state=pair.state._evolve(
+                            coating_compression_prev=pair.state.coating_compression
+                        )
+                    )
 
             # 動的解析: 速度・加速度更新
             if _dynamics and dt_sub > 1e-30:
@@ -536,8 +540,12 @@ class ContactFrictionProcess(
             _state_set(state, "load_frac_prev", load_frac)
             for i, pair in enumerate(manager.pairs):
                 if i < len(state.lam_all):
-                    pair.state.lambda_n = state.lam_all[i]
-                    pair.state.p_n = max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap))
+                    manager.pairs[i] = pair._evolve(
+                        state=pair.state._evolve(
+                            lambda_n=state.lam_all[i],
+                            p_n=max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap)),
+                        )
+                    )
             _state_set(state, "u_ref", state.u.copy())
 
             # チェックポイント保存

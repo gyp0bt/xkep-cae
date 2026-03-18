@@ -227,14 +227,18 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         f_fric = np.zeros(n_nodes * ndof_per_node)
         du = u_cur - u_ref
 
-        for pair in pairs:
+        for pi, pair in enumerate(pairs):
             cc = pair.state.coating_compression
             if cc <= 0.0:
                 # 非接触: 摩擦履歴リセット
-                pair.state.coating_z_t[:] = 0.0
-                pair.state.coating_stick = True
-                pair.state.coating_q_trial_norm = 0.0
-                pair.state.coating_dissipation = 0.0
+                pairs[pi] = pair._evolve(
+                    state=pair.state._evolve(
+                        coating_z_t=np.zeros(2),
+                        coating_stick=True,
+                        coating_q_trial_norm=0.0,
+                        coating_dissipation=0.0,
+                    )
+                )
                 continue
 
             # 被膜法線力（弾性成分のみ — 摩擦のCoulomb条件に使用）
@@ -266,10 +270,14 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             )
 
             # 状態更新
-            pair.state.coating_z_t = q.copy()
-            pair.state.coating_stick = is_stick
-            pair.state.coating_q_trial_norm = q_trial_norm
-            pair.state.coating_dissipation = dissipation
+            pairs[pi] = pair._evolve(
+                state=pair.state._evolve(
+                    coating_z_t=q.copy(),
+                    coating_stick=is_stick,
+                    coating_q_trial_norm=q_trial_norm,
+                    coating_dissipation=dissipation,
+                )
+            )
 
             # 接線力を節点力に分配
             f_t_3d = q[0] * t1 + q[1] * t2

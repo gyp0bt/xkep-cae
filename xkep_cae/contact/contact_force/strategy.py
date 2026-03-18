@@ -254,7 +254,8 @@ class SmoothPenaltyContactForceProcess(
                 lam_i = lambdas[i] if i < len(lambdas) else 0.0
 
                 p_n = k_pen * self._softplus(g_i, self._smoothing_delta)
-                pair.state.p_n = p_n
+                manager.pairs[i] = pair._evolve(state=pair.state._evolve(p_n=p_n))
+                pair = manager.pairs[i]
 
                 uzawa_update = max(0.0, lam_i + k_pen * (-g_i))
                 residuals.append(abs(uzawa_update - lam_i))

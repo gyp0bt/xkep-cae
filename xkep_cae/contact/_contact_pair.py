@@ -8,7 +8,9 @@ __xkep_cae_deprecated/contact/pair.py から移植。
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 
@@ -20,7 +22,7 @@ from xkep_cae.contact.geometry._compute import (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ContactStateOutput:
     """1接触点の状態変数."""
 
@@ -80,8 +82,17 @@ class _ContactStateOutput:
             else None,
         )
 
+    def _evolve(self, **kwargs: Any) -> _ContactStateOutput:
+        """指定フィールドを更新した新インスタンスを返す."""
+        updates: dict[str, Any] = {}
+        for f in dataclasses.fields(self):
+            updates[f.name] = kwargs.pop(f.name, getattr(self, f.name))
+        if kwargs:
+            raise TypeError(f"Unknown fields: {set(kwargs)}")
+        return _ContactStateOutput(**updates)
 
-@dataclass
+
+@dataclass(frozen=True)
 class _ContactPairOutput:
     """接触ペアの定義."""
 
@@ -103,6 +114,15 @@ class _ContactPairOutput:
     def is_active(self) -> bool:
         """接触が有効か."""
         return self.state.status != ContactStatus.INACTIVE
+
+    def _evolve(self, **kwargs: Any) -> _ContactPairOutput:
+        """指定フィールドを更新した新インスタンスを返す."""
+        updates: dict[str, Any] = {}
+        for f in dataclasses.fields(self):
+            updates[f.name] = kwargs.pop(f.name, getattr(self, f.name))
+        if kwargs:
+            raise TypeError(f"Unknown fields: {set(kwargs)}")
+        return _ContactPairOutput(**updates)
 
 
 @dataclass(frozen=True)
@@ -198,7 +218,7 @@ class _ContactConfigInput:
     tol_uzawa: float = 1e-6
 
 
-@dataclass
+@dataclass(frozen=True)
 class _ContactManagerInput:
     """接触ペアの管理."""
 
@@ -242,8 +262,8 @@ class _ContactManagerInput:
 
     def reset_all(self) -> None:
         """全ペアの状態をリセットする."""
-        for pair in self.pairs:
-            pair.state = _ContactStateOutput()
+        for i, pair in enumerate(self.pairs):
+            self.pairs[i] = pair._evolve(state=_ContactStateOutput())
 
     def get_active_pairs(self) -> list[_ContactPairOutput]:
         """有効な接触ペアのリストを返す."""
@@ -328,7 +348,9 @@ class _ContactManagerInput:
         candidate_set = set(candidates)
         for key, idx in existing.items():
             if key not in candidate_set:
-                self.pairs[idx].state.status = ContactStatus.INACTIVE
+                self.pairs[idx] = self.pairs[idx]._evolve(
+                    state=self.pairs[idx].state._evolve(status=ContactStatus.INACTIVE)
+                )
 
         for i, j in candidates:
             key = (min(i, j), max(i, j))
@@ -403,42 +425,50 @@ class _ContactManagerInput:
         )
 
         for i, pair in enumerate(self.pairs):
-            pair.state.s = float(s_all[i])
-            pair.state.t = float(t_all[i])
-            pair.state.gap = float(gap_all[i])
-            pair.state.normal = n_all[i]
-            pair.state.tangent1 = t1_all[i]
-            pair.state.tangent2 = t2_all[i]
+            geom_kw: dict[str, Any] = {
+                "s": float(s_all[i]),
+                "t": float(t_all[i]),
+                "gap": float(gap_all[i]),
+                "normal": n_all[i],
+                "tangent1": t1_all[i],
+                "tangent2": t2_all[i],
+            }
             if _use_coating:
-                pair.state.coating_compression = float(coat_comp[i])
+                geom_kw["coating_compression"] = float(coat_comp[i])
+            new_state = pair.state._evolve(**geom_kw)
 
             if not freeze_active_set:
-                self._update_active_set(pair, allow_deactivation=allow_deactivation)
+                new_state = self._update_active_set_state(
+                    new_state, allow_deactivation=allow_deactivation
+                )
+            self.pairs[i] = pair._evolve(state=new_state)
 
-    def _update_active_set(
+    def _update_active_set_state(
         self,
-        pair: _ContactPairOutput,
+        state: _ContactStateOutput,
         *,
         allow_deactivation: bool = True,
-    ) -> None:
-        """Active-set をヒステリシス付きで更新する."""
-        gap = pair.state.gap
+    ) -> _ContactStateOutput:
+        """Active-set をヒステリシス付きで更新し新 state を返す."""
+        gap = state.gap
         g_on = self.config.g_on
         g_off = self.config.g_off
 
-        _coat_active = self.config.coating_stiffness > 0.0 and pair.state.coating_compression > 0.0
+        _coat_active = self.config.coating_stiffness > 0.0 and state.coating_compression > 0.0
 
-        if pair.state.status == ContactStatus.INACTIVE:
+        if state.status == ContactStatus.INACTIVE:
             if gap <= g_on or _coat_active:
-                pair.state.status = ContactStatus.ACTIVE
+                return state._evolve(status=ContactStatus.ACTIVE)
         else:
             if allow_deactivation and gap >= g_off and not _coat_active:
-                pair.state.status = ContactStatus.INACTIVE
+                return state._evolve(status=ContactStatus.INACTIVE)
+        return state
 
     def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
         """全 ACTIVE ペアのペナルティ剛性を初期化する."""
         ratio = k_t_ratio if k_t_ratio is not None else self.config.k_t_ratio
-        for pair in self.pairs:
+        for i, pair in enumerate(self.pairs):
             if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                pair.state.k_pen = k_pen
-                pair.state.k_t = ratio * k_pen
+                self.pairs[i] = pair._evolve(
+                    state=pair.state._evolve(k_pen=k_pen, k_t=ratio * k_pen)
+                )

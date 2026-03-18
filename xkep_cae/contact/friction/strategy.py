@@ -193,7 +193,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
             g_i = pair.state.gap
             g_eff = g_i + _delta * lam_i if _delta > 0.0 else g_i
             p_n = max(0.0, lam_i + _k_pen * (-g_eff))
-            pair.state.p_n = p_n
+            contact_pairs[i] = pair._evolve(state=pair.state._evolve(p_n=p_n))
             return p_n
 
         f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
