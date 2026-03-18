@@ -1,9 +1,25 @@
-"""接触ペア・接触状態のデータ構造 + ContactManager.
+"""接触ペア・接触状態のデータ構造 + ユーティリティ関数.
 
-__xkep_cae_deprecated/contact/pair.py から移植。
-プライベートモジュール（C16 準拠）。
+frozen dataclass（純データ）+ モジュールレベル関数を定義。
+ビジネスロジック（detect, update_geometry 等）は _manager_process.py の
+Process クラスに実装。プライベートモジュール（C16 準拠）。
 
-依存: _broadphase, geometry/_compute のみ（deprecated 参照なし）。
+status-205: dataclass メソッド完全除去（純データ化）。
+旧メソッド → 移行先:
+  _ContactStateOutput.copy()       → _copy_state()
+  _ContactStateOutput._evolve()    → _evolve_state()
+  _ContactPairOutput.search_radius → _pair_search_radius()
+  _ContactPairOutput.is_active()   → _is_active_pair()
+  _ContactPairOutput._evolve()     → _evolve_pair()
+  _ContactManagerInput.n_pairs     → _n_pairs()
+  _ContactManagerInput.n_active    → _n_active()
+  _ContactManagerInput.add_pair()  → AddPairProcess
+  _ContactManagerInput.reset_all() → ResetAllPairsProcess
+  _ContactManagerInput.get_active_pairs() → _get_active_pairs()
+  _ContactManagerInput.detect_candidates() → DetectCandidatesProcess
+  _ContactManagerInput.update_geometry()   → UpdateGeometryProcess
+  _ContactManagerInput._update_active_set_state() → UpdateGeometryProcess 内部
+  _ContactManagerInput.initialize_penalty() → InitializePenaltyProcess
 """
 
 from __future__ import annotations
@@ -14,12 +30,9 @@ from typing import Any
 
 import numpy as np
 
-from xkep_cae.contact._broadphase import _broadphase_aabb
 from xkep_cae.contact._types import ContactStatus
-from xkep_cae.contact.geometry._compute import (
-    _build_contact_frame_batch,
-    _closest_point_segments_batch,
-)
+
+# ── frozen dataclass 定義（純データのみ） ──
 
 
 @dataclass(frozen=True)
@@ -51,46 +64,6 @@ class _ContactStateOutput:
     gp_stick: list[bool] | None = None
     gp_q_trial_norm: list[float] | None = None
 
-    def copy(self) -> _ContactStateOutput:
-        """深いコピーを返す."""
-        return _ContactStateOutput(
-            s=self.s,
-            t=self.t,
-            gap=self.gap,
-            normal=self.normal.copy(),
-            tangent1=self.tangent1.copy(),
-            tangent2=self.tangent2.copy(),
-            lambda_n=self.lambda_n,
-            k_pen=self.k_pen,
-            k_t=self.k_t,
-            p_n=self.p_n,
-            z_t=self.z_t.copy(),
-            q_trial_norm=self.q_trial_norm,
-            status=self.status,
-            stick=self.stick,
-            dissipation=self.dissipation,
-            coating_compression=self.coating_compression,
-            coating_compression_prev=self.coating_compression_prev,
-            coating_z_t=self.coating_z_t.copy(),
-            coating_stick=self.coating_stick,
-            coating_q_trial_norm=self.coating_q_trial_norm,
-            coating_dissipation=self.coating_dissipation,
-            gp_z_t=[z.copy() for z in self.gp_z_t] if self.gp_z_t is not None else None,
-            gp_stick=list(self.gp_stick) if self.gp_stick is not None else None,
-            gp_q_trial_norm=list(self.gp_q_trial_norm)
-            if self.gp_q_trial_norm is not None
-            else None,
-        )
-
-    def _evolve(self, **kwargs: Any) -> _ContactStateOutput:
-        """指定フィールドを更新した新インスタンスを返す."""
-        updates: dict[str, Any] = {}
-        for f in dataclasses.fields(self):
-            updates[f.name] = kwargs.pop(f.name, getattr(self, f.name))
-        if kwargs:
-            raise TypeError(f"Unknown fields: {set(kwargs)}")
-        return _ContactStateOutput(**updates)
-
 
 @dataclass(frozen=True)
 class _ContactPairOutput:
@@ -105,24 +78,6 @@ class _ContactPairOutput:
     radius_b: float = 0.0
     core_radius_a: float = 0.0
     core_radius_b: float = 0.0
-
-    @property
-    def search_radius(self) -> float:
-        """探索半径: 断面半径の和."""
-        return self.radius_a + self.radius_b
-
-    def is_active(self) -> bool:
-        """接触が有効か."""
-        return self.state.status != ContactStatus.INACTIVE
-
-    def _evolve(self, **kwargs: Any) -> _ContactPairOutput:
-        """指定フィールドを更新した新インスタンスを返す."""
-        updates: dict[str, Any] = {}
-        for f in dataclasses.fields(self):
-            updates[f.name] = kwargs.pop(f.name, getattr(self, f.name))
-        if kwargs:
-            raise TypeError(f"Unknown fields: {set(kwargs)}")
-        return _ContactPairOutput(**updates)
 
 
 @dataclass(frozen=True)
@@ -220,255 +175,111 @@ class _ContactConfigInput:
 
 @dataclass(frozen=True)
 class _ContactManagerInput:
-    """接触ペアの管理."""
+    """接触ペアの管理（純データ）.
+
+    全操作は _manager_process.py の Process クラスで行う。
+    """
 
     pairs: list[_ContactPairOutput] = field(default_factory=list)
     config: _ContactConfigInput = field(default_factory=_ContactConfigInput)
 
-    @property
-    def n_pairs(self) -> int:
-        """ペア数."""
-        return len(self.pairs)
 
-    @property
-    def n_active(self) -> int:
-        """有効な接触ペア数."""
-        return sum(1 for p in self.pairs if p.is_active())
+# ── モジュールレベルユーティリティ関数 ──
 
-    def add_pair(
-        self,
-        elem_a: int,
-        elem_b: int,
-        nodes_a: np.ndarray,
-        nodes_b: np.ndarray,
-        radius_a: float = 0.0,
-        radius_b: float = 0.0,
-        core_radius_a: float = 0.0,
-        core_radius_b: float = 0.0,
-    ) -> _ContactPairOutput:
-        """接触ペアを追加する."""
-        pair = _ContactPairOutput(
-            elem_a=elem_a,
-            elem_b=elem_b,
-            nodes_a=np.asarray(nodes_a, dtype=int),
-            nodes_b=np.asarray(nodes_b, dtype=int),
-            radius_a=radius_a,
-            radius_b=radius_b,
-            core_radius_a=core_radius_a,
-            core_radius_b=core_radius_b,
-        )
-        self.pairs.append(pair)
-        return pair
 
-    def reset_all(self) -> None:
-        """全ペアの状態をリセットする."""
-        for i, pair in enumerate(self.pairs):
-            self.pairs[i] = pair._evolve(state=_ContactStateOutput())
+def _evolve_state(state: _ContactStateOutput, **kwargs: Any) -> _ContactStateOutput:
+    """_ContactStateOutput の指定フィールドを更新した新インスタンスを返す."""
+    updates: dict[str, Any] = {}
+    for f in dataclasses.fields(state):
+        updates[f.name] = kwargs.pop(f.name, getattr(state, f.name))
+    if kwargs:
+        raise TypeError(f"Unknown fields: {set(kwargs)}")
+    return _ContactStateOutput(**updates)
 
-    def get_active_pairs(self) -> list[_ContactPairOutput]:
-        """有効な接触ペアのリストを返す."""
-        return [p for p in self.pairs if p.is_active()]
 
-    def detect_candidates(
-        self,
-        node_coords: np.ndarray,
-        connectivity: np.ndarray,
-        radii: np.ndarray | float = 0.0,
-        *,
-        margin: float = 0.0,
-        cell_size: float | None = None,
-        core_radii: np.ndarray | float | None = None,
-    ) -> list[tuple[int, int]]:
-        """Broadphase で接触候補ペアを検出し pairs を更新する."""
-        conn = np.asarray(connectivity, dtype=int)
-        coords = np.asarray(node_coords, dtype=float)
-        n_elems = len(conn)
+def _evolve_pair(pair: _ContactPairOutput, **kwargs: Any) -> _ContactPairOutput:
+    """_ContactPairOutput の指定フィールドを更新した新インスタンスを返す."""
+    updates: dict[str, Any] = {}
+    for f in dataclasses.fields(pair):
+        updates[f.name] = kwargs.pop(f.name, getattr(pair, f.name))
+    if kwargs:
+        raise TypeError(f"Unknown fields: {set(kwargs)}")
+    return _ContactPairOutput(**updates)
 
-        if np.isscalar(radii):
-            r_arr = np.full(n_elems, float(radii))
-        else:
-            r_arr = np.asarray(radii, dtype=float)
 
-        if core_radii is None:
-            cr_arr = r_arr.copy()
-        elif np.isscalar(core_radii):
-            cr_arr = np.full(n_elems, float(core_radii))
-        else:
-            cr_arr = np.asarray(core_radii, dtype=float)
+def _copy_state(state: _ContactStateOutput) -> _ContactStateOutput:
+    """_ContactStateOutput の深いコピーを返す."""
+    return _ContactStateOutput(
+        s=state.s,
+        t=state.t,
+        gap=state.gap,
+        normal=state.normal.copy(),
+        tangent1=state.tangent1.copy(),
+        tangent2=state.tangent2.copy(),
+        lambda_n=state.lambda_n,
+        k_pen=state.k_pen,
+        k_t=state.k_t,
+        p_n=state.p_n,
+        z_t=state.z_t.copy(),
+        q_trial_norm=state.q_trial_norm,
+        status=state.status,
+        stick=state.stick,
+        dissipation=state.dissipation,
+        coating_compression=state.coating_compression,
+        coating_compression_prev=state.coating_compression_prev,
+        coating_z_t=state.coating_z_t.copy(),
+        coating_stick=state.coating_stick,
+        coating_q_trial_norm=state.coating_q_trial_norm,
+        coating_dissipation=state.coating_dissipation,
+        gp_z_t=[z.copy() for z in state.gp_z_t] if state.gp_z_t is not None else None,
+        gp_stick=list(state.gp_stick) if state.gp_stick is not None else None,
+        gp_q_trial_norm=list(state.gp_q_trial_norm) if state.gp_q_trial_norm is not None else None,
+    )
 
-        segments = []
-        for e in range(n_elems):
-            ni, nj = conn[e]
-            segments.append((coords[ni], coords[nj]))
 
-        raw_candidates = _broadphase_aabb(segments, r_arr, margin=margin, cell_size=cell_size)
+def _pair_search_radius(pair: _ContactPairOutput) -> float:
+    """探索半径: 断面半径の和."""
+    return pair.radius_a + pair.radius_b
 
-        candidates = []
-        lm = self.config.elem_layer_map
-        exclude_same = self.config.exclude_same_layer and lm is not None
-        for i, j in raw_candidates:
-            nodes_i = set(int(n) for n in conn[i])
-            nodes_j = set(int(n) for n in conn[j])
-            if nodes_i & nodes_j:
-                continue
-            if exclude_same:
-                layer_i = lm.get(i, -1)
-                layer_j = lm.get(j, -1)
-                if layer_i == layer_j and layer_i >= 0:
-                    continue
-            candidates.append((i, j))
 
-        # 中点距離プリスクリーニング
-        if self.config.midpoint_prescreening and candidates:
-            cand_arr = np.array(candidates, dtype=int)
-            n0 = conn[cand_arr[:, 0], 0]
-            n1 = conn[cand_arr[:, 0], 1]
-            m0 = conn[cand_arr[:, 1], 0]
-            m1 = conn[cand_arr[:, 1], 1]
-            mid_a = 0.5 * (coords[n0] + coords[n1])
-            mid_b = 0.5 * (coords[m0] + coords[m1])
-            half_len_a = 0.5 * np.linalg.norm(coords[n1] - coords[n0], axis=1)
-            half_len_b = 0.5 * np.linalg.norm(coords[m1] - coords[m0], axis=1)
-            mid_dist = np.linalg.norm(mid_a - mid_b, axis=1)
-            r_a = r_arr[cand_arr[:, 0]]
-            r_b = r_arr[cand_arr[:, 1]]
-            min_possible_dist = np.maximum(0.0, mid_dist - half_len_a - half_len_b)
-            extra_margin = self.config.prescreening_margin
-            if extra_margin <= 0.0:
-                extra_margin = float(np.mean(r_a + r_b)) * 0.5
-            cutoff = r_a + r_b + extra_margin
-            keep = min_possible_dist <= cutoff
-            candidates = [candidates[k] for k in range(len(candidates)) if keep[k]]
+def _is_active_pair(pair: _ContactPairOutput) -> bool:
+    """接触が有効か."""
+    return pair.state.status != ContactStatus.INACTIVE
 
-        existing: dict[tuple[int, int], int] = {}
-        for idx, p in enumerate(self.pairs):
-            key = (min(p.elem_a, p.elem_b), max(p.elem_a, p.elem_b))
-            existing[key] = idx
 
-        candidate_set = set(candidates)
-        for key, idx in existing.items():
-            if key not in candidate_set:
-                self.pairs[idx] = self.pairs[idx]._evolve(
-                    state=self.pairs[idx].state._evolve(status=ContactStatus.INACTIVE)
-                )
+def _n_pairs(manager: _ContactManagerInput) -> int:
+    """ペア数."""
+    return len(manager.pairs)
 
-        for i, j in candidates:
-            key = (min(i, j), max(i, j))
-            if key not in existing:
-                self.add_pair(
-                    elem_a=i,
-                    elem_b=j,
-                    nodes_a=conn[i],
-                    nodes_b=conn[j],
-                    radius_a=float(r_arr[i]),
-                    radius_b=float(r_arr[j]),
-                    core_radius_a=float(cr_arr[i]),
-                    core_radius_b=float(cr_arr[j]),
-                )
 
-        return candidates
+def _n_active(manager: _ContactManagerInput) -> int:
+    """有効な接触ペア数."""
+    return sum(1 for p in manager.pairs if _is_active_pair(p))
 
-    def update_geometry(
-        self,
-        node_coords: np.ndarray,
-        *,
-        allow_deactivation: bool = True,
-        freeze_active_set: bool = False,
-    ) -> None:
-        """全ペアの幾何情報を更新する（Narrowphase）."""
-        coords = np.asarray(node_coords, dtype=float)
-        n_pairs = len(self.pairs)
 
-        if n_pairs == 0:
-            return
+def _get_active_pairs(manager: _ContactManagerInput) -> list[_ContactPairOutput]:
+    """有効な接触ペアのリストを返す."""
+    return [p for p in manager.pairs if _is_active_pair(p)]
 
-        nodes_a0 = np.array([p.nodes_a[0] for p in self.pairs], dtype=int)
-        nodes_a1 = np.array([p.nodes_a[1] for p in self.pairs], dtype=int)
-        nodes_b0 = np.array([p.nodes_b[0] for p in self.pairs], dtype=int)
-        nodes_b1 = np.array([p.nodes_b[1] for p in self.pairs], dtype=int)
 
-        xA0 = coords[nodes_a0]
-        xA1 = coords[nodes_a1]
-        xB0 = coords[nodes_b0]
-        xB1 = coords[nodes_b1]
-
-        s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
-            xA0, xA1, xB0, xB1
-        )
-
-        _use_coating = self.config.coating_stiffness > 0.0
-        if _use_coating:
-            core_a = np.array([p.core_radius_a for p in self.pairs])
-            core_b = np.array([p.core_radius_b for p in self.pairs])
-            radii_a = np.array([p.radius_a for p in self.pairs])
-            radii_b = np.array([p.radius_b for p in self.pairs])
-            gap_core = dist_all - (core_a + core_b)
-            coat_total = (radii_a - core_a) + (radii_b - core_b)
-            coat_comp = np.maximum(0.0, coat_total - gap_core)
-            gap_all = gap_core
-        else:
-            radii_a = np.array([p.radius_a for p in self.pairs])
-            radii_b = np.array([p.radius_b for p in self.pairs])
-            gap_all = dist_all - (radii_a + radii_b)
-
-        prev_t1_all = np.array([p.state.tangent1 for p in self.pairs])
-        prev_n_all = np.array([p.state.normal for p in self.pairs])
-        has_prev = np.sqrt(np.einsum("ij,ij->i", prev_t1_all, prev_t1_all)) > 1e-10
-        has_prev_n = np.sqrt(np.einsum("ij,ij->i", prev_n_all, prev_n_all)) > 1e-10
-
-        n_all, t1_all, t2_all = _build_contact_frame_batch(
-            normal_all,
-            prev_tangent1s=prev_t1_all,
-            prev_normals=prev_n_all,
-            has_prev_mask=has_prev,
-            has_prev_n_mask=has_prev_n,
-        )
-
-        for i, pair in enumerate(self.pairs):
-            geom_kw: dict[str, Any] = {
-                "s": float(s_all[i]),
-                "t": float(t_all[i]),
-                "gap": float(gap_all[i]),
-                "normal": n_all[i],
-                "tangent1": t1_all[i],
-                "tangent2": t2_all[i],
-            }
-            if _use_coating:
-                geom_kw["coating_compression"] = float(coat_comp[i])
-            new_state = pair.state._evolve(**geom_kw)
-
-            if not freeze_active_set:
-                new_state = self._update_active_set_state(
-                    new_state, allow_deactivation=allow_deactivation
-                )
-            self.pairs[i] = pair._evolve(state=new_state)
-
-    def _update_active_set_state(
-        self,
-        state: _ContactStateOutput,
-        *,
-        allow_deactivation: bool = True,
-    ) -> _ContactStateOutput:
-        """Active-set をヒステリシス付きで更新し新 state を返す."""
-        gap = state.gap
-        g_on = self.config.g_on
-        g_off = self.config.g_off
-
-        _coat_active = self.config.coating_stiffness > 0.0 and state.coating_compression > 0.0
-
-        if state.status == ContactStatus.INACTIVE:
-            if gap <= g_on or _coat_active:
-                return state._evolve(status=ContactStatus.ACTIVE)
-        else:
-            if allow_deactivation and gap >= g_off and not _coat_active:
-                return state._evolve(status=ContactStatus.INACTIVE)
-        return state
-
-    def initialize_penalty(self, k_pen: float, k_t_ratio: float | None = None) -> None:
-        """全 ACTIVE ペアのペナルティ剛性を初期化する."""
-        ratio = k_t_ratio if k_t_ratio is not None else self.config.k_t_ratio
-        for i, pair in enumerate(self.pairs):
-            if pair.state.status != ContactStatus.INACTIVE and pair.state.k_pen <= 0.0:
-                self.pairs[i] = pair._evolve(
-                    state=pair.state._evolve(k_pen=k_pen, k_t=ratio * k_pen)
-                )
+def _make_pair(
+    elem_a: int,
+    elem_b: int,
+    nodes_a: np.ndarray,
+    nodes_b: np.ndarray,
+    radius_a: float = 0.0,
+    radius_b: float = 0.0,
+    core_radius_a: float = 0.0,
+    core_radius_b: float = 0.0,
+) -> _ContactPairOutput:
+    """新しい接触ペアを作成する."""
+    return _ContactPairOutput(
+        elem_a=elem_a,
+        elem_b=elem_b,
+        nodes_a=np.asarray(nodes_a, dtype=int),
+        nodes_b=np.asarray(nodes_b, dtype=int),
+        radius_a=radius_a,
+        radius_b=radius_b,
+        core_radius_a=core_radius_a,
+        core_radius_b=core_radius_b,
+    )

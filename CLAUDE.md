@@ -113,6 +113,10 @@
 | C17: `_KNOWN_NON_FROZEN` 例外リスト | 廃止（違反は正規報告） | status-203 |
 | C17: `dataclasses.replace()` 未検知 | プライベートモジュール内で検知 | status-203 |
 | `_ContactStateOutput`/`_ContactPairOutput`/`_ContactManagerInput` non-frozen | frozen=True + `_evolve()` パターン | status-204 |
+| `_ContactManagerInput` メソッド群 | Process 直接実装 + モジュールレベル関数 | status-205 |
+| `_ContactStateOutput._evolve()` / `.copy()` | `_evolve_state()` / `_copy_state()` | status-205 |
+| `_ContactPairOutput._evolve()` / `.is_active()` / `.search_radius` | `_evolve_pair()` / `_is_active_pair()` / `_pair_search_radius()` | status-205 |
+| DetectCandidates/UpdateGeometry/InitializePenalty v1.0.0 | v2.0.0（ロジック直接実装 + manager 出力） | status-205 |
 
 ## 推奨ソルバー構成
 

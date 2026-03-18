@@ -123,6 +123,7 @@ Phase 14完了:    ~2260+358p(新) (2026-03-17) ← status-198（S3 xfail Proces
 Phase 15完了:    ~2260+374p(新) (2026-03-17) ← status-201（C16違反ゼロ）
 C17例外廃止:     ~2260+374p(新) (2026-03-18) ← status-203（C17違反3件正規報告）
 C17違反ゼロ:     ~2260+374p(新) (2026-03-18) ← status-204（frozen dataclass完全移行）
+CM Process分割:  ~2260+374p(新) (2026-03-18) ← status-205（ContactManager メソッド完全除去→Process化）
 ```
 
 ## 備考
