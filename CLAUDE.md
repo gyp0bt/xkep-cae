@@ -110,6 +110,8 @@
 | C16 のみ（プライベートモジュールスキップ） | C17 追加（プライベートモジュール dataclass 衛生） | status-202 |
 | `_ContactConfig` non-frozen | `_ContactConfigInput` frozen=True | status-202 |
 | `BeamForces3D`/`BeamSection`/etc. 命名不統一 | `*Input`/`*Output` 命名規約準拠（82ファイル） | status-202 |
+| C17: `_KNOWN_NON_FROZEN` 例外リスト | 廃止（違反は正規報告） | status-203 |
+| C17: `dataclasses.replace()` 未検知 | プライベートモジュール内で検知 | status-203 |
 
 ## 推奨ソルバー構成
 
@@ -121,7 +123,7 @@
 
 ## 現在の状態
 
-**~2260テスト + 374 新パッケージテスト** — 2026-03-17 | C16 違反 **0件** | C17 違反 **0件**（既知例外3件） | O2/O3 条例違反 5件（警告, status-202）
+**~2260テスト + 374 新パッケージテスト** — 2026-03-18 | C16 違反 **0件** | C17 違反 **3件**（non-frozen dataclass, status-203） | O2 条例違反 2件（警告）
 
 ### ターゲット
 
@@ -129,7 +131,7 @@
 
 ### 次の課題
 
-**脱出ポット計画 Phase 16** — BackendRegistry 完全廃止（O2/O3 条例違反5件解消）+ 被膜モデル物理検証テスト + C17 non-frozen例外3件解消（ContactManager Process分割）（status-202）。
+**脱出ポット計画 Phase 16** — C17 違反3件解消（`_ContactStateOutput`/`_ContactPairOutput`/`_ContactManagerInput` の frozen 化。`replace()` 禁止、Process 出力パターンで構造改革）+ BackendRegistry 完全廃止（O2 条例違反2件解消）+ 被膜モデル物理検証テスト（status-203）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -140,7 +142,7 @@
 ### やるべきこと
 - **Process Architecture 完全移行**: テスト名正規化（_ncp除去）、NCP直接呼出→Process API移行
 - **S3 凍結解除**: 変位制御7本撚線曲げ揺動のPhase2 xfail解消
-- `scripts/validate_process_contracts.py` のエラーをゼロに**維持**する
+- `scripts/validate_process_contracts.py` のエラーを**減らす**（C17 違反3件の構造的解消が最優先）
 - コンテキスト整理（ドキュメント構造の明確化）
 
 ### やってはいけないこと

@@ -781,20 +781,12 @@ def check_c17_private_dataclass_hygiene() -> list[str]:
     1. frozen=True でない dataclass（mutable state の温床）
     2. クラス名が Input / Output で終わらない dataclass
        （データ型の役割が不明瞭）
+    3. dataclasses.replace() の使用（frozen 化の代替にならない）
 
     C16 はプライベートモジュールをスキップするため、
     このチェックが内部実装の品質を補完する。
     """
     import dataclasses
-
-    # 既知の non-frozen 例外（段階的に解消予定）
-    # frozen 化には 50+ 箇所の変異を dataclasses.replace() に移行する
-    # 大規模リファクタが必要。新たな追加は禁止。
-    _KNOWN_NON_FROZEN: set[str] = {
-        "_ContactStateOutput",   # contact/_contact_pair.py — 要 Process 分割
-        "_ContactPairOutput",    # contact/_contact_pair.py — 要 Process 分割
-        "_ContactManagerInput",  # contact/_contact_pair.py — 要 Process 分割
-    }
 
     errors: list[str] = []
     xkep_root = _project_root / "xkep_cae"
@@ -825,9 +817,7 @@ def check_c17_private_dataclass_hygiene() -> list[str]:
                 continue
 
             class_names = [
-                node.name
-                for node in ast.iter_child_nodes(tree)
-                if isinstance(node, ast.ClassDef)
+                node.name for node in ast.iter_child_nodes(tree) if isinstance(node, ast.ClassDef)
             ]
             if not class_names:
                 continue
@@ -851,12 +841,8 @@ def check_c17_private_dataclass_hygiene() -> list[str]:
 
                 params = getattr(cls, "__dataclass_params__", None)
                 if not (params and params.frozen):
-                    if cls_name in _KNOWN_NON_FROZEN:
-                        # 既知の例外: 段階的に解消予定
-                        continue
                     errors.append(
-                        f"C17: {rel} の {cls_name} は"
-                        f" non-frozen dataclass（frozen=True が必須）"
+                        f"C17: {rel} の {cls_name} は non-frozen dataclass（frozen=True が必須）"
                     )
 
                 # クラス名が Input / Result で終わるか検査
@@ -866,6 +852,40 @@ def check_c17_private_dataclass_hygiene() -> list[str]:
                         f" Input/Output で終わらない dataclass 名"
                         f"（データ型の役割を明示する命名が必要）"
                     )
+
+            # dataclasses.replace() の使用を検出
+            _replace_patterns = [
+                r"\bdataclasses\.replace\s*\(",
+                r"\breplace\s*\(",
+            ]
+            # import 文から replace を取得しているか確認
+            _imports_replace = False
+            for node in ast.iter_child_nodes(tree):
+                if isinstance(node, ast.ImportFrom):
+                    if node.module == "dataclasses" and node.names:
+                        for alias in node.names:
+                            if alias.name == "replace":
+                                _imports_replace = True
+            # dataclasses.replace() 直接呼び出し
+            import re
+
+            for line_no, line in enumerate(source.splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("#"):
+                    continue
+                if "dataclasses.replace(" in line:
+                    errors.append(
+                        f"C17: {rel}:{line_no} で dataclasses.replace() を使用"
+                        f"（frozen 化の代替にならない — 構造的な不変設計が必要）"
+                    )
+                elif _imports_replace and re.search(r"\breplace\s*\(", line):
+                    # from dataclasses import replace を使っている場合
+                    # ただし def replace や他の replace は除外
+                    if "def replace" not in line and "str.replace" not in line:
+                        errors.append(
+                            f"C17: {rel}:{line_no} で dataclasses.replace() を使用"
+                            f"（frozen 化の代替にならない — 構造的な不変設計が必要）"
+                        )
 
     return errors
 
