@@ -371,7 +371,7 @@ class ContactFrictionProcess(
             # 接線予測子
             delta_frac = load_frac - state.load_frac_prev
             if _dynamics:
-                dt_sub = getattr(_time_strategy, "_dt_physical", 0.0) * delta_frac
+                dt_sub = (input_data.dt_physical or 0.0) * delta_frac
                 if hasattr(_time_strategy, "predict"):
                     _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
             else:

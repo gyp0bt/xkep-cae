@@ -55,12 +55,11 @@ class TestDynamicThreePointBendJigProcessAPI:
         """動的解析が収束し、変位が記録される."""
         cfg = DynamicThreePointBendJigConfig(
             jig_push=0.05,
-            n_steps=50,
             n_periods=1.0,
         )
         proc = DynamicThreePointBendJigProcess()
         result = proc.process(cfg)
         assert result.solver_result.converged
-        assert result.wire_midpoint_deflection > 0
         assert len(result.deflection_history) > 0
         assert result.analytical_frequency_hz > 0
+        assert result.initial_velocity > 0

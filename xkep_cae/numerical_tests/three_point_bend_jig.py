@@ -710,13 +710,17 @@ class ThreePointBendContactJigProcess(
 
 
 # ====================================================================
-# 動的三点曲げ Process（直接変位制御 + Generalized-α 時間積分）
+# 動的三点曲げ Process（初速度制御 + Generalized-α 時間積分）
 # ====================================================================
 
 
 @dataclass(frozen=True)
 class DynamicThreePointBendJigConfig:
-    """動的三点曲げジグ試験の構成."""
+    """動的三点曲げジグ試験の構成.
+
+    時間増分は dt_initial / dt_min / max_increments で制御。
+    適応時間増分が収束性に応じて自動調整する。
+    """
 
     wire_length: float = 100.0  # mm
     wire_diameter: float = 2.0  # mm
@@ -724,11 +728,14 @@ class DynamicThreePointBendJigConfig:
     E: float = 200e3  # MPa
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
-    jig_push: float = 0.1  # mm（ジグ下方変位量）
-    n_steps: int = 200  # 時間ステップ数
+    jig_push: float = 0.1  # mm（等価静的変位量 → 初速度に変換）
     n_periods: float = 3.0  # 固有周期の何周期分を計算するか
     rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
     lumped_mass: bool = True  # 集中質量行列
+    # 時間増分制御
+    dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/20）
+    dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/32）
+    max_increments: int = 10000  # 最大インクリメント数
 
 
 @dataclass(frozen=True)
@@ -743,6 +750,7 @@ class DynamicThreePointBendJigResult:
     analytical_period: float
     dynamic_amplification: float
     max_deflection: float
+    initial_velocity: float
     config: DynamicThreePointBendJigConfig
     mesh: MeshData
     wire_mid_node: int
@@ -754,7 +762,7 @@ class DynamicThreePointBendJigResult:
 def _beam_fundamental_frequency(
     L: float,
     E: float,
-    I: float,
+    I: float,  # noqa: E741
     rho: float,
     A: float,  # noqa: E741
 ) -> float:
@@ -770,19 +778,26 @@ class DynamicThreePointBendJigProcess(
 ):
     """単線の剛体支え＋押しジグ動的三点曲げ Process.
 
-    荷重制御: ワイヤ中央節点にステップ荷重（一定外力）を適用。
-    Generalized-α 時間積分で動的応答を計算し、解析解と比較。
+    初速度制御: ワイヤ中央節点に初速度 v₀ を与え、自由振動応答を計算。
+    Generalized-α 時間積分で動的応答を計算し、解析解と比較する。
 
-    解析解（突然荷重 P を中央に適用）:
-      - 静的変位: δ_s = PL³/(48EI)
+    初速度の決定:
+      v₀ = ω₁ * δ_s（1次固有角振動数 × 静的等価変位）
+      → 最大変位 ≈ δ_s（自由振動の振幅が静的変位に一致）
+
+    解析解（初速度 v₀ による自由振動）:
+      - 静的等価変位: δ_s = jig_push
       - 1次固有振動数: f₁ = π/(2L²) √(EI/ρA)
-      - 動的増幅: DAF = 2（減衰なし、ステップ荷重）
-      - 応答: δ(t) = δ_s * (1 - cos(ω₁t))
+      - 応答: δ(t) = (v₀/ω₁) * sin(ω₁t)  （モード1のみ）
+      - 最大変位: δ_max = v₀/ω₁ = δ_s
+
+    時間増分制御:
+      dt_initial, dt_min, max_increments で適応時間増分を制御。
 
     パイプライン:
     1. ワイヤメッシュ生成
     2. UL CR 梁アセンブラ + 質量行列構築
-    3. 境界条件設定（支持 + 中央荷重制御）
+    3. 初速度設定 + 境界条件（支持のみ、外力なし）
     4. ContactFrictionProcess（動的モード）で求解
     5. 時刻歴応答 + 解析解比較
     """
@@ -790,7 +805,7 @@ class DynamicThreePointBendJigProcess(
     meta = ProcessMeta(
         name="DynamicThreePointBendJig",
         module="batch",
-        version="1.0.0",
+        version="2.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
     uses = [ContactFrictionProcess]
@@ -831,49 +846,49 @@ class DynamicThreePointBendJigProcess(
         )
         mass_matrix = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
 
-        # 3. 固有振動数 → 時間刻み
+        # 3. 固有振動数 → 時間制御パラメータ
         f1 = _beam_fundamental_frequency(cfg.wire_length, cfg.E, sec["Iy"], cfg.rho, sec["A"])
-        T1 = 1.0 / f1  # 1次固有周期
-        t_total = cfg.n_periods * T1  # 総計算時間
-        # dt_physical は総時間。ContactFrictionProcess 内で
-        # dt_sub = dt_physical * delta_frac（delta_frac = 1/n_steps）
-        # となるため、dt_physical = t_total で dt_sub = t_total/n_steps = dt。
-        dt_physical = t_total
+        T1 = 1.0 / f1
+        omega1 = 2.0 * math.pi * f1
+        t_total = cfg.n_periods * T1
 
-        # 4. 境界条件（荷重制御）
+        # 初速度: v₀ = ω₁ * δ_s → 最大変位 ≈ δ_s
+        v0 = omega1 * cfg.jig_push
+
+        # 時間増分パラメータ
+        dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 20.0
+        dt_min = cfg.dt_min if cfg.dt_min > 0 else dt_initial / 32.0
+
+        # load_frac ベースの時間増分設定
+        dt_initial_frac = dt_initial / t_total
+        dt_min_frac = dt_min / t_total
+
+        # 4. 初速度ベクトル
+        velocity = np.zeros(ndof)
+        velocity[6 * wire_mid_node + 1] = -v0  # 下向き初速度
+
+        # 5. 境界条件（支持のみ、外力なし）
         fixed_dofs = set()
         for d in [0, 1, 2, 3]:
             fixed_dofs.add(d)
         right_node = n_wire_nodes - 1
         fixed_dofs.add(6 * right_node + 1)
         fixed_dofs.add(6 * right_node + 2)
-        fixed_dofs = np.array(sorted(fixed_dofs), dtype=int)
-
-        # ジグ = 中央節点にステップ荷重（t=0 で突然適用、一定保持）
-        # P = k_EB * δ → δ = jig_push の場合の等価荷重
-        k_eb = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
-        P_applied = k_eb * cfg.jig_push
-
-        # ステップ荷重: f_ext_base（定常項）に全荷重、f_ext_total（荷重増分）はゼロ
-        # f_ext = f_ext_base + load_frac * f_ext_total = P (一定)
-        f_ext_base = np.zeros(ndof)
-        f_ext_base[6 * wire_mid_node + 1] = -P_applied  # 下向き荷重
+        fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
 
         boundary = BoundaryData(
-            fixed_dofs=fixed_dofs,
+            fixed_dofs=fixed_dofs_arr,
             f_ext_total=np.zeros(ndof),
-            f_ext_base=f_ext_base,
         )
 
-        # 5. 接触設定（ダミー — 接触なし、適応時間増分で n_steps 分割）
-        step_frac = 1.0 / cfg.n_steps
+        # 6. 接触設定（ダミー、適応時間増分で制御）
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
             adaptive_timestepping=True,
-            dt_grow_factor=1.0,  # 等間隔ステップ（成長なし）
+            dt_grow_factor=1.5,
             dt_shrink_factor=0.5,
-            dt_min_fraction=step_frac * 0.1,
-            dt_max_fraction=step_frac,
+            dt_min_fraction=dt_min_frac,
+            dt_max_fraction=dt_initial_frac,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
@@ -884,7 +899,7 @@ class DynamicThreePointBendJigProcess(
             contact_mode="smooth_penalty",
         )
 
-        # 6. ソルバー実行（動的モード）
+        # 7. ソルバー実行（動的モード、初速度付き）
         solver_input = ContactFrictionInputData(
             mesh=mesh_data,
             boundary=boundary,
@@ -895,13 +910,14 @@ class DynamicThreePointBendJigProcess(
                 ul_assembler=assembler,
             ),
             mass_matrix=mass_matrix,
-            dt_physical=dt_physical,
+            dt_physical=t_total,
             rho_inf=cfg.rho_inf,
+            velocity=velocity,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
 
-        # 7. 結果評価
+        # 8. 結果評価
         u = solver_result.u
         wire_mid_y_dof = 6 * wire_mid_node + 1
         wire_mid_deflection = abs(u[wire_mid_y_dof])
@@ -913,22 +929,15 @@ class DynamicThreePointBendJigProcess(
         defl_arr = np.array([abs(d[wire_mid_y_dof]) for d in disp_hist] if n_hist > 0 else [0.0])
         max_deflection = float(np.max(defl_arr)) if len(defl_arr) > 0 else 0.0
 
-        # 適用荷重
-        reaction_force = P_applied
+        # 反力計算
+        K = _assemble_linear_stiffness(mesh_data, cfg.E, G, sec)
+        f_int = K.dot(u)
+        reaction_force = abs(f_int[wire_mid_y_dof])
 
         # 解析解
-        ana = _analytical_three_point_bend(
-            P=P_applied,
-            L=cfg.wire_length,
-            E=cfg.E,
-            I=sec["Iy"],
-            kappa=sec["kappa"],
-            G=G,
-            A=sec["A"],
-        )
-        static_deflection = ana["delta_timo"]
+        static_deflection = cfg.jig_push  # v₀ = ω₁*δ_s → 振幅 = δ_s
 
-        # 動的増幅率
+        # 動的増幅率（max_deflection / static_deflection）
         dynamic_amplification = max_deflection / static_deflection if static_deflection > 0 else 0.0
 
         return DynamicThreePointBendJigResult(
@@ -940,6 +949,7 @@ class DynamicThreePointBendJigProcess(
             analytical_period=T1,
             dynamic_amplification=dynamic_amplification,
             max_deflection=max_deflection,
+            initial_velocity=v0,
             config=cfg,
             mesh=mesh_data,
             wire_mid_node=wire_mid_node,
