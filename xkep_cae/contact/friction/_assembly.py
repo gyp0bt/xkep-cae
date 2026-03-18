@@ -195,27 +195,31 @@ def _friction_return_mapping_loop(
             continue
 
         # ペナルティ剛性の初期化（未設定時）
-        if pair.state.k_pen <= 0.0:
-            pair.state.k_pen = k_pen
-            pair.state.k_t = k_pen * k_t_ratio
+        cur_state = pair.state
+        if cur_state.k_pen <= 0.0:
+            cur_state = cur_state._evolve(k_pen=k_pen, k_t=k_pen * k_t_ratio)
+            contact_pairs[i] = pair._evolve(state=cur_state)
+            pair = contact_pairs[i]
 
         # 接線変位
         delta_ut = _compute_tangential_displacement(pair, u, u_ref, ndof_per_node)
 
         # Coulomb return mapping（純粋関数）
         q, is_stick, q_trial_norm, dissipation = _return_mapping_core(
-            pair.state.z_t.copy(), delta_ut, pair.state.k_t, pair.state.p_n, mu_eff
+            cur_state.z_t.copy(), delta_ut, cur_state.k_t, cur_state.p_n, mu_eff
         )
 
         # pair.state を更新
-        pair.state.z_t = q.copy()
-        pair.state.stick = is_stick
-        pair.state.q_trial_norm = q_trial_norm
-        pair.state.dissipation = dissipation
-        if is_stick:
-            pair.state.status = ContactStatus.ACTIVE
-        else:
-            pair.state.status = ContactStatus.SLIDING
+        contact_pairs[i] = pair._evolve(
+            state=cur_state._evolve(
+                z_t=q.copy(),
+                stick=is_stick,
+                q_trial_norm=q_trial_norm,
+                dissipation=dissipation,
+                status=ContactStatus.ACTIVE if is_stick else ContactStatus.SLIDING,
+            )
+        )
+        pair = contact_pairs[i]
 
         q_norm = float(np.linalg.norm(q))
         if q_norm < 1e-30:

@@ -30,16 +30,31 @@ class _MockState:
         s: float = 0.5,
         t: float = 0.5,
         status: _ContactStatus = _ContactStatus.ACTIVE,
+        p_n: float = 0.0,
     ):
         self.gap = gap
         self.s = s
         self.t = t
         self.normal = np.array([0.0, 0.0, 1.0])
         self.status = status
-        self.p_n = 0.0
+        self.p_n = p_n
         self.coating_compression = 0.0
         self.tangent1 = np.array([1.0, 0.0, 0.0])
         self.tangent2 = np.array([0.0, 1.0, 0.0])
+
+    def _evolve(self, **kwargs):
+        new = _MockState(
+            gap=kwargs.get("gap", self.gap),
+            s=kwargs.get("s", self.s),
+            t=kwargs.get("t", self.t),
+            status=kwargs.get("status", self.status),
+            p_n=kwargs.get("p_n", self.p_n),
+        )
+        new.normal = kwargs.get("normal", self.normal)
+        new.coating_compression = kwargs.get("coating_compression", self.coating_compression)
+        new.tangent1 = kwargs.get("tangent1", self.tangent1)
+        new.tangent2 = kwargs.get("tangent2", self.tangent2)
+        return new
 
 
 class _MockPair:
@@ -49,12 +64,23 @@ class _MockPair:
         gap: float = -0.01,
         nodes_a: tuple[int, int] = (0, 1),
         nodes_b: tuple[int, int] = (2, 3),
+        state: _MockState | None = None,
     ):
-        self.state = _MockState(gap=gap)
+        self.state = state if state is not None else _MockState(gap=gap)
         self.nodes_a = nodes_a
         self.nodes_b = nodes_b
         self.radius_a = 0.1
         self.radius_b = 0.1
+
+    def _evolve(self, **kwargs):
+        new = _MockPair(
+            nodes_a=kwargs.get("nodes_a", self.nodes_a),
+            nodes_b=kwargs.get("nodes_b", self.nodes_b),
+            state=kwargs.get("state", self.state),
+        )
+        new.radius_a = kwargs.get("radius_a", self.radius_a)
+        new.radius_b = kwargs.get("radius_b", self.radius_b)
+        return new
 
 
 class _MockManager:

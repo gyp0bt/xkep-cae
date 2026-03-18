@@ -43,33 +43,37 @@ class ContactGeometryOutput:
 
 
 def _update_active_set_hysteresis(
-    pair: object,
+    state: object,
     *,
     g_on: float = 0.0,
     g_off: float = 0.0,
     allow_deactivation: bool = True,
     coating_stiffness: float = 0.0,
-) -> None:
-    """Active-set をヒステリシス付きで更新する.
+) -> object:
+    """Active-set をヒステリシス付きで更新し新 state を返す.
 
     Args:
-        pair: ContactPair
+        state: _ContactStateOutput
         g_on: 活性化閾値
         g_off: 非活性化閾値 (g_off > g_on)
         allow_deactivation: False で非活性化を禁止
         coating_stiffness: 被膜剛性 (>0 で被膜モデル有効)
+
+    Returns:
+        更新された _ContactStateOutput
     """
     from xkep_cae.contact._types import ContactStatus
 
-    gap = pair.state.gap
-    coat_active = coating_stiffness > 0.0 and pair.state.coating_compression > 0.0
+    gap = state.gap
+    coat_active = coating_stiffness > 0.0 and state.coating_compression > 0.0
 
-    if pair.state.status == ContactStatus.INACTIVE:
+    if state.status == ContactStatus.INACTIVE:
         if gap <= g_on or coat_active:
-            pair.state.status = ContactStatus.ACTIVE
+            return state._evolve(status=ContactStatus.ACTIVE)
     else:
         if allow_deactivation and gap >= g_off and not coat_active:
-            pair.state.status = ContactStatus.INACTIVE
+            return state._evolve(status=ContactStatus.INACTIVE)
+    return state
 
 
 def _build_constraint_jacobian_ptp(
@@ -275,22 +279,26 @@ def _batch_update_geometry(
             g_off = config.g_off
 
     for i, pair in enumerate(pairs):
-        pair.state.s = float(s_all[i])
-        pair.state.t = float(t_all[i])
-        pair.state.gap = float(gap_all[i])
-        pair.state.normal = n_all[i]
-        pair.state.tangent1 = t1_all[i]
-        pair.state.tangent2 = t2_all[i]
+        geom_kw: dict[str, object] = {
+            "s": float(s_all[i]),
+            "t": float(t_all[i]),
+            "gap": float(gap_all[i]),
+            "normal": n_all[i],
+            "tangent1": t1_all[i],
+            "tangent2": t2_all[i],
+        }
         if _use_coating:
-            pair.state.coating_compression = float(coat_comp[i])
+            geom_kw["coating_compression"] = float(coat_comp[i])
+        new_state = pair.state._evolve(**geom_kw)
 
-        _update_active_set_hysteresis(
-            pair,
+        new_state = _update_active_set_hysteresis(
+            new_state,
             g_on=g_on,
             g_off=g_off,
             allow_deactivation=allow_deact,
             coating_stiffness=coating_stiffness,
         )
+        pairs[i] = pair._evolve(state=new_state)
 
 
 # ── 具象 Process ──────────────────────────────────────────
