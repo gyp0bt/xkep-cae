@@ -12,6 +12,10 @@ from enum import Enum
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.contact._manager_process import (
+    UpdateGeometryInput,
+    UpdateGeometryProcess,
+)
 from xkep_cae.contact.solver._utils import (
     DeformedCoordsInput,
     DeformedCoordsProcess,
@@ -69,7 +73,7 @@ class ContactForceAssemblyProcess(
         version="1.0.0",
         document_path="docs/newton_uzawa.md",
     )
-    uses = [DeformedCoordsProcess]
+    uses = [DeformedCoordsProcess, UpdateGeometryProcess]
 
     def process(self, inp: ContactForceAssemblyInput) -> ContactForceAssemblyOutput:
         u = inp.u
@@ -83,7 +87,10 @@ class ContactForceAssemblyProcess(
             )
         )
         coords_def = _dc_out.coords
-        inp.manager.update_geometry(coords_def, freeze_active_set=True)
+        _ug_out = UpdateGeometryProcess().process(
+            UpdateGeometryInput(manager=inp.manager, node_coords=coords_def, freeze_active_set=True)
+        )
+        inp.manager.pairs[:] = _ug_out.manager.pairs
 
         # 2. 接触力
         f_c, _ = inp.contact_force_strategy.evaluate(u, inp.lam_all, inp.manager, inp.k_pen)
@@ -463,7 +470,7 @@ class UzawaUpdateProcess(
         version="1.0.0",
         document_path="docs/newton_uzawa.md",
     )
-    uses = [DeformedCoordsProcess]
+    uses = [DeformedCoordsProcess, UpdateGeometryProcess]
 
     def process(self, inp: UzawaUpdateInput) -> UzawaUpdateOutput:
         _dc_out = DeformedCoordsProcess().process(
@@ -474,7 +481,10 @@ class UzawaUpdateProcess(
             )
         )
         coords_def = _dc_out.coords
-        inp.manager.update_geometry(coords_def, freeze_active_set=True)
+        _ug_out = UpdateGeometryProcess().process(
+            UpdateGeometryInput(manager=inp.manager, node_coords=coords_def, freeze_active_set=True)
+        )
+        inp.manager.pairs[:] = _ug_out.manager.pairs
 
         lam_prev = inp.lam_all.copy()
         for i, pair in enumerate(inp.manager.pairs):

@@ -707,8 +707,16 @@ class TestUpdateGeometryProcessAPI:
 
         manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_layer=False))
         mesh = _make_two_beam_mesh()
-        # まず候補検出
-        manager.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii)
+        # まず候補検出（Process API 経由）
+        detect_out = DetectCandidatesProcess().process(
+            DetectCandidatesInput(
+                manager=manager,
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=mesh.radii,
+            )
+        )
+        manager = detect_out.manager
         proc = UpdateGeometryProcess()
         out = proc.process(UpdateGeometryInput(manager=manager, node_coords=mesh.node_coords))
         assert isinstance(out, UpdateGeometryOutput)

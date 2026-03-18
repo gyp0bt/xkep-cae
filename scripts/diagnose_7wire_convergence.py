@@ -21,6 +21,10 @@ import numpy as np
 
 sys.path.insert(0, ".")
 
+from xkep_cae.contact._manager_process import (
+    DetectCandidatesInput,
+    DetectCandidatesProcess,
+)
 from xkep_cae.contact.pair import ContactConfig, ContactManager, ContactStatus
 from xkep_cae.contact.solver_ncp import newton_raphson_contact_ncp
 from xkep_cae.elements.beam_timo3d import assemble_cr_beam3d
@@ -127,7 +131,11 @@ def diagnose_mesh_geometry(n_strands=7, n_pitches=0.5):
             use_mortar=False,
         ),
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    det_out = DetectCandidatesProcess().process(DetectCandidatesInput(
+        manager=mgr, node_coords=mesh.node_coords,
+        connectivity=mesh.connectivity, radii=mesh.radii, margin=0.01,
+    ))
+    mgr = det_out.manager
     n_pen = mgr.check_initial_penetration(mesh.node_coords)
 
     print(f"\n  ContactManager 初期貫入ペア数: {n_pen}/{len(mgr.pairs)}")
@@ -578,7 +586,11 @@ def _run_ncp_bending(
             use_geometric_stiffness=True,
         ),
     )
-    mgr.detect_candidates(mesh.node_coords, mesh.connectivity, mesh.radii, margin=0.01)
+    det_out = DetectCandidatesProcess().process(DetectCandidatesInput(
+        manager=mgr, node_coords=mesh.node_coords,
+        connectivity=mesh.connectivity, radii=mesh.radii, margin=0.01,
+    ))
+    mgr = det_out.manager
     mgr.check_initial_penetration(mesh.node_coords)
 
     result = newton_raphson_contact_ncp(
