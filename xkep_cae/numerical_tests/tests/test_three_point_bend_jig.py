@@ -7,8 +7,12 @@ C3 契約: 全 concrete Process に対し @binds_to テストが必須。
 
 from __future__ import annotations
 
+import pytest
+
 from xkep_cae.core.testing import binds_to
 from xkep_cae.numerical_tests.three_point_bend_jig import (
+    ThreePointBendContactJigConfig,
+    ThreePointBendContactJigProcess,
     ThreePointBendJigConfig,
     ThreePointBendJigProcess,
 )
@@ -22,6 +26,20 @@ class TestThreePointBendJigProcessAPI:
         """小変位で ProcessMeta + 入出力契約を満たす."""
         cfg = ThreePointBendJigConfig(jig_push=0.05)
         proc = ThreePointBendJigProcess()
+        result = proc.process(cfg)
+        assert result.solver_result.converged
+        assert result.wire_midpoint_deflection > 0
+
+
+@binds_to(ThreePointBendContactJigProcess)
+class TestThreePointBendContactJigProcessAPI:
+    """ThreePointBendContactJigProcess の基本動作確認."""
+
+    @pytest.mark.xfail(reason="HEX8接触ジグのNR収束問題（status-210 TODO）")
+    def test_process_runs(self):
+        """小変位で ProcessMeta + 入出力契約を満たす."""
+        cfg = ThreePointBendContactJigConfig(jig_push=0.01, n_uzawa_max=10)
+        proc = ThreePointBendContactJigProcess()
         result = proc.process(cfg)
         assert result.solver_result.converged
         assert result.wire_midpoint_deflection > 0
