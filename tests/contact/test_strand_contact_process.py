@@ -405,7 +405,7 @@ class TestSevenStrandRadialProcessAPI:
         print(
             f"\n  7本 Process API (径方向): converged={result.converged}, "
             f"increments={result.n_increments}, "
-            f"newton={result.total_newton_iterations}, "
+            f"newton={result.total_attempts}, "
             f"active={_count_active(contact.manager)}"
         )
         assert result.converged, "7本 Process API 径方向圧縮が収束しなかった"
@@ -462,7 +462,7 @@ class TestSevenStrandBendingProcessAPI:
         print(
             f"\n  7本 Process API (45度曲げ): converged={result.converged}, "
             f"increments={result.n_increments}, "
-            f"newton={result.total_newton_iterations}, "
+            f"newton={result.total_attempts}, "
             f"active={_count_active(contact.manager)}"
         )
         assert result.converged, "7本 Process API 45度曲げが収束しなかった"
@@ -508,7 +508,7 @@ class TestSevenStrandBendingProcessAPI:
         print(
             f"\n  7本 Process API (90度曲げ): converged={result.converged}, "
             f"increments={result.n_increments}, "
-            f"newton={result.total_newton_iterations}, "
+            f"newton={result.total_attempts}, "
             f"active={_count_active(contact.manager)}"
         )
         assert result.converged, "7本 Process API 90度曲げが収束しなかった"
@@ -672,7 +672,7 @@ class TestStrandFrictionProcess:
         print(
             f"\n  7本 Process API (摩擦曲げ): converged={result.converged}, "
             f"increments={result.n_increments}, "
-            f"newton={result.total_newton_iterations}, "
+            f"newton={result.total_attempts}, "
             f"active={n_active}"
         )
         assert result.converged, "7本 CR梁摩擦曲げが収束しなかった"
@@ -730,7 +730,7 @@ class TestLargeStrandProcessAPI:
         print(
             f"\n  19本 Process API (径方向): converged={result.converged}, "
             f"increments={result.n_increments}, "
-            f"newton={result.total_newton_iterations}, "
+            f"newton={result.total_attempts}, "
             f"active={n_active}"
         )
         assert result.converged, "19本 Process API 径方向圧縮が収束しなかった"

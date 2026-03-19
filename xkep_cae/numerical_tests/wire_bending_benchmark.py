@@ -28,7 +28,7 @@ class ContactSolveResult:
     u: np.ndarray
     converged: bool
     n_load_steps: int = 0
-    total_newton_iterations: int = 0
+    total_attempts: int = 0
     total_outer_iterations: int = 0
     n_active_final: int = 0
     load_history: list = field(default_factory=list)
@@ -169,9 +169,9 @@ def _print_benchmark_report(result: BendingOscillationResult) -> str:
     dx, dy, dz = result.tip_displacement_final
     lines.append(f"  先端変位:     dx={dx:.3f} mm, dy={dy:.3f} mm, dz={dz:.3f} mm")
 
-    total_nr = result.phase1_result.total_newton_iterations
+    total_nr = result.phase1_result.total_attempts
     for r in result.phase2_results:
-        total_nr += r.total_newton_iterations
+        total_nr += r.total_attempts
     lines.append(f"  NR反復合計:   {total_nr}")
     lines.append(f"  Phase2ステップ数: {len(result.phase2_results)}")
 

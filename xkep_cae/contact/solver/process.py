@@ -327,13 +327,13 @@ class ContactFrictionProcess(
         _time_strategy.checkpoint()
 
         # --- 適応荷重増分コントローラ ---
-        dt_grow_iter = manager.config.dt_grow_iter_threshold
+        dt_grow_att = manager.config.dt_grow_attempt_threshold
         stepping_config = AdaptiveSteppingInput(
             dt_initial_fraction=0.0,
             dt_grow_factor=manager.config.dt_grow_factor,
             dt_shrink_factor=manager.config.dt_shrink_factor,
-            dt_grow_iter_threshold=dt_grow_iter if dt_grow_iter > 0 else 5,
-            dt_shrink_iter_threshold=manager.config.dt_shrink_iter_threshold,
+            dt_grow_attempt_threshold=dt_grow_att if dt_grow_att > 0 else 5,
+            dt_shrink_attempt_threshold=manager.config.dt_shrink_attempt_threshold,
             dt_contact_change_threshold=manager.config.dt_contact_change_threshold,
             dt_min_fraction=manager.config.dt_min_fraction,
             dt_max_fraction=manager.config.dt_max_fraction,
@@ -365,13 +365,13 @@ class ContactFrictionProcess(
                 break
             load_frac = query_out.next_load_frac
 
-            _state_set(state, "step_display", state.step_display + 1)
+            _state_set(state, "increment_display", state.increment_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
             # 接線予測子
             delta_frac = load_frac - state.load_frac_prev
             if _dynamics:
-                dt_sub = getattr(_time_strategy, "_dt_physical", 0.0) * delta_frac
+                dt_sub = (input_data.dt_physical or 0.0) * delta_frac
                 if hasattr(_time_strategy, "predict"):
                     _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
             else:
@@ -437,7 +437,7 @@ class ContactFrictionProcess(
                     u_ref=state.u_ref,
                     load_frac=load_frac,
                     load_frac_prev=state.load_frac_prev,
-                    step_display=state.step_display,
+                    increment_display=state.increment_display,
                     dt_sub=dt_sub,
                     use_coating=use_coating,
                     dynamic_ref=dynamic_ref,
@@ -461,12 +461,12 @@ class ContactFrictionProcess(
                     u_ref=state.u_ref,
                     load_frac=load_frac,
                     load_frac_prev=state.load_frac_prev,
-                    step_display=state.step_display,
+                    increment_display=state.increment_display,
                     use_coating=use_coating,
                     dynamic_ref=dynamic_ref,
                 )
                 step_result = nr_process_sta.process(step_input)
-            _state_set(state, "total_newton", state.total_newton + step_result.n_newton_iters)
+            _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
             last_diag = step_result.diagnostics
 
             # ==============================================================
@@ -487,12 +487,12 @@ class ContactFrictionProcess(
                         _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
                     if _dynamics:
                         _time_strategy.restore_checkpoint()
-                    _state_set(state, "step_display", state.step_display - 1)
+                    _state_set(state, "increment_display", state.increment_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
                     continue
                 else:
                     print(
-                        f"  WARNING: Step {state.step_display} "
+                        f"  WARNING: Incr {state.increment_display} "
                         f"(frac={load_frac:.4f}) did not converge."
                     )
                     _diag_report = DiagnosticsReportProcess().process(
@@ -504,8 +504,8 @@ class ContactFrictionProcess(
                     return SolverResultData(
                         u=_u_out,
                         converged=False,
-                        n_increments=state.step_display,
-                        total_newton_iterations=state.total_newton,
+                        n_increments=state.increment_display,
+                        total_attempts=state.total_attempts,
                         displacement_history=state.disp_history,
                         contact_force_history=state.contact_force_history,
                         elapsed_seconds=elapsed,
@@ -545,7 +545,7 @@ class ContactFrictionProcess(
                     action=StepAction.SUCCESS,
                     load_frac=load_frac,
                     load_frac_prev=state.load_frac_prev,
-                    n_iters=step_result.n_newton_iters,
+                    n_attempts=step_result.n_attempts,
                     n_active=step_result.n_active,
                     prev_n_active=state.prev_n_active,
                 )
@@ -553,7 +553,9 @@ class ContactFrictionProcess(
             _state_set(state, "prev_n_active", step_result.n_active)
 
             # k_pen continuation
-            k_pen_new = _penalty_strategy.compute_k_pen(state.step_display, state.step_display + 1)
+            k_pen_new = _penalty_strategy.compute_k_pen(
+                state.increment_display, state.increment_display + 1
+            )
             if abs(k_pen_new - k_pen) > 1e-30:
                 k_pen = k_pen_new
                 print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
@@ -588,7 +590,7 @@ class ContactFrictionProcess(
             state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
             try:
                 _cg_out = ContactGraphProcess().process(
-                    ContactGraphInput(manager=manager, step=state.step_display - 1)
+                    ContactGraphInput(manager=manager, step=state.increment_display - 1)
                 )
                 state.graph_snapshots.append(_cg_out.graph)
             except Exception:
@@ -603,8 +605,8 @@ class ContactFrictionProcess(
         return SolverResultData(
             u=_u_out,
             converged=True,
-            n_increments=state.step_display,
-            total_newton_iterations=state.total_newton,
+            n_increments=state.increment_display,
+            total_attempts=state.total_attempts,
             displacement_history=state.disp_history,
             contact_force_history=state.contact_force_history,
             elapsed_seconds=elapsed,

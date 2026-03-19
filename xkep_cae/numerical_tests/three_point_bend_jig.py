@@ -4,8 +4,9 @@
 剛体押しジグ（変位制御）で中央から押し下げる三点曲げ。
 変位–荷重応答を Euler-Bernoulli / Timoshenko 解析解と比較する。
 
-2つの Process を提供:
-  - ThreePointBendJigProcess: 直接変位制御（理想剛体ジグ）
+3つの Process を提供:
+  - ThreePointBendJigProcess: 直接変位制御（理想剛体ジグ、準静的）
+  - DynamicThreePointBendJigProcess: 直接変位制御（動的、質量行列付き）
   - ThreePointBendContactJigProcess: HEX8 連続体要素ジグ + 接触
 
 物理モデル:
@@ -705,4 +706,254 @@ class ThreePointBendContactJigProcess(
             wire_mid_node=wire_mid_node,
             n_wire_nodes=n_wire_nodes,
             n_hex_nodes=n_hex_nodes,
+        )
+
+
+# ====================================================================
+# 動的三点曲げ Process（初速度制御 + Generalized-α 時間積分）
+# ====================================================================
+
+
+@dataclass(frozen=True)
+class DynamicThreePointBendJigConfig:
+    """動的三点曲げジグ試験の構成.
+
+    時間増分は dt_initial / dt_min / max_increments で制御。
+    適応時間増分が収束性に応じて自動調整する。
+    """
+
+    wire_length: float = 100.0  # mm
+    wire_diameter: float = 2.0  # mm
+    n_elems_wire: int = 20
+    E: float = 200e3  # MPa
+    nu: float = 0.3
+    rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
+    jig_push: float = 0.1  # mm（等価静的変位量 → 初速度に変換）
+    n_periods: float = 3.0  # 固有周期の何周期分を計算するか
+    rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
+    lumped_mass: bool = True  # 集中質量行列
+    # 時間増分制御
+    dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/20）
+    dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/32）
+    max_increments: int = 10000  # 最大インクリメント数
+
+
+@dataclass(frozen=True)
+class DynamicThreePointBendJigResult:
+    """動的三点曲げジグ試験の結果."""
+
+    solver_result: SolverResultData
+    wire_midpoint_deflection: float
+    reaction_force: float
+    analytical_deflection_static: float
+    analytical_frequency_hz: float
+    analytical_period: float
+    dynamic_amplification: float
+    max_deflection: float
+    initial_velocity: float
+    config: DynamicThreePointBendJigConfig
+    mesh: MeshData
+    wire_mid_node: int
+    n_wire_nodes: int
+    time_history: np.ndarray
+    deflection_history: np.ndarray
+
+
+def _beam_fundamental_frequency(
+    L: float,
+    E: float,
+    I: float,  # noqa: E741
+    rho: float,
+    A: float,  # noqa: E741
+) -> float:
+    """単純支持梁の1次固有振動数 [Hz].
+
+    f_1 = (π²/2π) * sqrt(EI / (ρAL⁴)) = π/(2L²) * sqrt(EI/(ρA))
+    """
+    return (math.pi / (2.0 * L**2)) * math.sqrt(E * I / (rho * A))
+
+
+class DynamicThreePointBendJigProcess(
+    BatchProcess[DynamicThreePointBendJigConfig, DynamicThreePointBendJigResult],
+):
+    """単線の剛体支え＋押しジグ動的三点曲げ Process.
+
+    初速度制御: ワイヤ中央節点に初速度 v₀ を与え、自由振動応答を計算。
+    Generalized-α 時間積分で動的応答を計算し、解析解と比較する。
+
+    初速度の決定:
+      v₀ = ω₁ * δ_s（1次固有角振動数 × 静的等価変位）
+      → 最大変位 ≈ δ_s（自由振動の振幅が静的変位に一致）
+
+    解析解（初速度 v₀ による自由振動）:
+      - 静的等価変位: δ_s = jig_push
+      - 1次固有振動数: f₁ = π/(2L²) √(EI/ρA)
+      - 応答: δ(t) = (v₀/ω₁) * sin(ω₁t)  （モード1のみ）
+      - 最大変位: δ_max = v₀/ω₁ = δ_s
+
+    時間増分制御:
+      dt_initial, dt_min, max_increments で適応時間増分を制御。
+
+    パイプライン:
+    1. ワイヤメッシュ生成
+    2. UL CR 梁アセンブラ + 質量行列構築
+    3. 初速度設定 + 境界条件（支持のみ、外力なし）
+    4. ContactFrictionProcess（動的モード）で求解
+    5. 時刻歴応答 + 解析解比較
+    """
+
+    meta = ProcessMeta(
+        name="DynamicThreePointBendJig",
+        module="batch",
+        version="2.0.0",
+        document_path="docs/three_point_bend_jig.md",
+    )
+    uses = [ContactFrictionProcess]
+
+    def process(self, input_data: DynamicThreePointBendJigConfig) -> DynamicThreePointBendJigResult:
+        """動的三点曲げジグ試験を実行."""
+        cfg = input_data
+        sec = _circle_section(cfg.wire_diameter, cfg.nu)
+        G = cfg.E / (2.0 * (1.0 + cfg.nu))
+
+        # 1. メッシュ
+        mesh_data, wire_mid_node = _build_wire_mesh(
+            ThreePointBendJigConfig(
+                wire_length=cfg.wire_length,
+                wire_diameter=cfg.wire_diameter,
+                n_elems_wire=cfg.n_elems_wire,
+                E=cfg.E,
+                nu=cfg.nu,
+                jig_push=cfg.jig_push,
+            )
+        )
+        n_nodes = len(mesh_data.node_coords)
+        n_wire_nodes = n_nodes
+        ndof = n_nodes * 6
+
+        # 2. アセンブラ + 質量行列
+        assembler = ULCRBeamAssembler(
+            node_coords=mesh_data.node_coords,
+            connectivity=mesh_data.connectivity,
+            E=cfg.E,
+            G=G,
+            A=sec["A"],
+            Iy=sec["Iy"],
+            Iz=sec["Iz"],
+            J=sec["J"],
+            kappa_y=sec["kappa"],
+            kappa_z=sec["kappa"],
+        )
+        mass_matrix = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
+
+        # 3. 固有振動数 → 時間制御パラメータ
+        f1 = _beam_fundamental_frequency(cfg.wire_length, cfg.E, sec["Iy"], cfg.rho, sec["A"])
+        T1 = 1.0 / f1
+        omega1 = 2.0 * math.pi * f1
+        t_total = cfg.n_periods * T1
+
+        # 初速度: v₀ = ω₁ * δ_s → 最大変位 ≈ δ_s
+        v0 = omega1 * cfg.jig_push
+
+        # 時間増分パラメータ
+        dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 20.0
+        dt_min = cfg.dt_min if cfg.dt_min > 0 else dt_initial / 32.0
+
+        # load_frac ベースの時間増分設定
+        dt_initial_frac = dt_initial / t_total
+        dt_min_frac = dt_min / t_total
+
+        # 4. 初速度ベクトル
+        velocity = np.zeros(ndof)
+        velocity[6 * wire_mid_node + 1] = -v0  # 下向き初速度
+
+        # 5. 境界条件（支持のみ、外力なし）
+        fixed_dofs = set()
+        for d in [0, 1, 2, 3]:
+            fixed_dofs.add(d)
+        right_node = n_wire_nodes - 1
+        fixed_dofs.add(6 * right_node + 1)
+        fixed_dofs.add(6 * right_node + 2)
+        fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
+
+        boundary = BoundaryData(
+            fixed_dofs=fixed_dofs_arr,
+            f_ext_total=np.zeros(ndof),
+        )
+
+        # 6. 接触設定（ダミー、適応時間増分で制御）
+        contact_config = _ContactConfigInput(
+            contact_mode="smooth_penalty",
+            adaptive_timestepping=True,
+            dt_grow_factor=1.5,
+            dt_shrink_factor=0.5,
+            dt_min_fraction=dt_min_frac,
+            dt_max_fraction=dt_initial_frac,
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact_setup = ContactSetupData(
+            manager=manager,
+            k_pen=0.0,
+            use_friction=False,
+            mu=None,
+            contact_mode="smooth_penalty",
+        )
+
+        # 7. ソルバー実行（動的モード、初速度付き）
+        solver_input = ContactFrictionInputData(
+            mesh=mesh_data,
+            boundary=boundary,
+            contact=contact_setup,
+            callbacks=AssembleCallbacks(
+                assemble_tangent=assembler.assemble_tangent,
+                assemble_internal_force=assembler.assemble_internal_force,
+                ul_assembler=assembler,
+            ),
+            mass_matrix=mass_matrix,
+            dt_physical=t_total,
+            rho_inf=cfg.rho_inf,
+            velocity=velocity,
+        )
+        solver = ContactFrictionProcess()
+        solver_result = solver.process(solver_input)
+
+        # 8. 結果評価
+        u = solver_result.u
+        wire_mid_y_dof = 6 * wire_mid_node + 1
+        wire_mid_deflection = abs(u[wire_mid_y_dof])
+
+        # 時刻歴
+        disp_hist = solver_result.displacement_history
+        n_hist = len(disp_hist)
+        time_arr = np.linspace(0, t_total, n_hist) if n_hist > 0 else np.array([0.0])
+        defl_arr = np.array([abs(d[wire_mid_y_dof]) for d in disp_hist] if n_hist > 0 else [0.0])
+        max_deflection = float(np.max(defl_arr)) if len(defl_arr) > 0 else 0.0
+
+        # 反力計算
+        K = _assemble_linear_stiffness(mesh_data, cfg.E, G, sec)
+        f_int = K.dot(u)
+        reaction_force = abs(f_int[wire_mid_y_dof])
+
+        # 解析解
+        static_deflection = cfg.jig_push  # v₀ = ω₁*δ_s → 振幅 = δ_s
+
+        # 動的増幅率（max_deflection / static_deflection）
+        dynamic_amplification = max_deflection / static_deflection if static_deflection > 0 else 0.0
+
+        return DynamicThreePointBendJigResult(
+            solver_result=solver_result,
+            wire_midpoint_deflection=wire_mid_deflection,
+            reaction_force=reaction_force,
+            analytical_deflection_static=static_deflection,
+            analytical_frequency_hz=f1,
+            analytical_period=T1,
+            dynamic_amplification=dynamic_amplification,
+            max_deflection=max_deflection,
+            initial_velocity=v0,
+            config=cfg,
+            mesh=mesh_data,
+            wire_mid_node=wire_mid_node,
+            n_wire_nodes=n_wire_nodes,
+            time_history=time_arr,
+            deflection_history=defl_arr,
         )

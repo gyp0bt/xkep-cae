@@ -18,7 +18,7 @@ def _converged_result() -> SolverResultData:
         u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
         converged=True,
         n_increments=5,
-        total_newton_iterations=20,
+        total_attempts=20,
     )
 
 
@@ -27,7 +27,7 @@ def _diverged_result() -> SolverResultData:
         u=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
         converged=False,
         n_increments=0,
-        total_newton_iterations=200,
+        total_attempts=200,
     )
 
 
@@ -66,7 +66,7 @@ class TestConvergenceVerifyProcess:
         )
         result = proc.process(inp)
         # 20 > 10 なので反復数チェックが FAIL
-        assert result.checks["total_newton_iterations"][2] is False
+        assert result.checks["total_attempts"][2] is False
 
     def test_report_markdown_generated(self):
         proc = ConvergenceVerifyProcess()
@@ -120,7 +120,7 @@ class TestEnergyBalanceVerifyProcess:
             u=np.array([float("nan"), 0.0, 0.0, 0.0, 0.0, 0.0]),
             converged=True,
             n_increments=1,
-            total_newton_iterations=5,
+            total_attempts=5,
         )
         inp = EnergyBalanceVerifyInput(solver_result=bad_result)
         result = proc.process(inp)
@@ -133,7 +133,7 @@ class TestEnergyBalanceVerifyProcess:
             u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
             converged=True,
             n_increments=5,
-            total_newton_iterations=20,
+            total_attempts=20,
             diagnostics=diag,
         )
         inp = EnergyBalanceVerifyInput(solver_result=sr, tolerance=0.1)
@@ -176,7 +176,7 @@ class TestContactVerifyProcess:
             u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
             converged=True,
             n_increments=5,
-            total_newton_iterations=20,
+            total_attempts=20,
             diagnostics=diag,
         )
         inp = ContactVerifyInput(solver_result=sr, max_penetration=1e-3)
@@ -190,7 +190,7 @@ class TestContactVerifyProcess:
             u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
             converged=True,
             n_increments=5,
-            total_newton_iterations=20,
+            total_attempts=20,
             diagnostics=diag,
         )
         inp = ContactVerifyInput(solver_result=sr, max_penetration=1e-3)
@@ -204,7 +204,7 @@ class TestContactVerifyProcess:
             u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0]),
             converged=True,
             n_increments=5,
-            total_newton_iterations=20,
+            total_attempts=20,
             diagnostics=diag,
         )
         inp = ContactVerifyInput(solver_result=sr, max_chattering_ratio=0.3)

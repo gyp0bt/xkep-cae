@@ -369,7 +369,7 @@ class TestAdaptiveSteppingProcessAPI:
                 action=StepAction.SUCCESS,
                 load_frac=1.0,
                 load_frac_prev=0.0,
-                n_iters=3,
+                n_attempts=3,
             )
         )
         assert out.has_more_steps is False
@@ -469,7 +469,7 @@ class TestDiagnosticsReportProcessAPI:
         """基本的な診断レポートが生成される."""
         proc = DiagnosticsReportProcess()
         diag = ConvergenceDiagnosticsOutput(step=5, load_frac=0.8, res_history=[1e-3, 1e-4, 1e-5])
-        out = proc.process(DiagnosticsInput(diagnostics=diag, max_iter=50))
+        out = proc.process(DiagnosticsInput(diagnostics=diag, max_attempts=50))
         assert isinstance(out, DiagnosticsOutput)
         assert "Step: 5" in out.report
         assert "0.800000" in out.report
@@ -589,7 +589,7 @@ class TestConvergenceCheckProcessAPI:
                 tol_force=1e-8,
                 tol_disp=1e-8,
                 dynamic_ref=False,
-                is_first_iter=True,
+                is_first_attempt=True,
                 energy_ref=None,
                 manager=_MockMgr(),
             )

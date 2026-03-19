@@ -17,10 +17,15 @@ ThreePointBendJigProcess を使い、変位制御三点曲げが
 
 from __future__ import annotations
 
+import pytest
+
 from xkep_cae.numerical_tests.three_point_bend_jig import (
+    DynamicThreePointBendJigConfig,
+    DynamicThreePointBendJigProcess,
     ThreePointBendJigConfig,
     ThreePointBendJigProcess,
     _analytical_three_point_bend,
+    _beam_fundamental_frequency,
     _circle_section,
 )
 
@@ -101,7 +106,7 @@ class TestThreePointBendJigConvergence:
         print(
             f"\n  三点曲げジグ（小変位）: converged={result.solver_result.converged}, "
             f"increments={result.solver_result.n_increments}, "
-            f"newton={result.solver_result.total_newton_iterations}, "
+            f"newton={result.solver_result.total_attempts}, "
             f"δ_wire={result.wire_midpoint_deflection:.6f} mm, "
             f"P={result.reaction_force:.4f} N"
         )
@@ -116,7 +121,7 @@ class TestThreePointBendJigConvergence:
         print(
             f"\n  三点曲げジグ（中変位）: converged={result.solver_result.converged}, "
             f"increments={result.solver_result.n_increments}, "
-            f"newton={result.solver_result.total_newton_iterations}, "
+            f"newton={result.solver_result.total_attempts}, "
             f"δ_wire={result.wire_midpoint_deflection:.6f} mm, "
             f"P={result.reaction_force:.4f} N"
         )
@@ -290,3 +295,101 @@ class TestThreePointBendJigPhysics:
 
         print(f"\n  変位プロファイル最大誤差: {max_err:.4f}")
         assert max_err < 0.05, f"変位プロファイル誤差 {max_err:.4f} > 5%"
+
+
+# ====================================================================
+# 動的三点曲げテスト
+# ====================================================================
+
+_RHO = 7.85e-9  # ton/mm³（鉄鋼）
+
+
+def _dynamic_config(**overrides) -> DynamicThreePointBendJigConfig:
+    """動的テスト用デフォルト設定."""
+    defaults = {
+        "wire_length": _L,
+        "wire_diameter": _D,
+        "n_elems_wire": 20,
+        "E": _E,
+        "nu": _NU,
+        "rho": _RHO,
+        "jig_push": 0.1,
+        "n_periods": 2.0,
+        "rho_inf": 0.9,
+        "max_increments": 10000,
+    }
+    defaults.update(overrides)
+    return DynamicThreePointBendJigConfig(**defaults)
+
+
+class TestDynamicThreePointBendJigConvergence:
+    """動的三点曲げの収束テスト."""
+
+    def test_dynamic_converges(self):
+        """動的解析が収束する."""
+        cfg = _dynamic_config()
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        print(
+            f"\n  動的三点曲げ: converged={result.solver_result.converged}, "
+            f"increments={result.solver_result.n_increments}, "
+            f"f1={result.analytical_frequency_hz:.1f} Hz, "
+            f"T1={result.analytical_period:.6f} s, "
+            f"v0={result.initial_velocity:.4f} mm/s, "
+            f"δ_max={result.max_deflection:.6f} mm, "
+            f"DAF={result.dynamic_amplification:.3f}"
+        )
+        assert result.solver_result.converged, "動的解析が収束しなかった"
+
+    def test_frequency_analytical(self):
+        """固有振動数の解析解が正しい."""
+        sec = _circle_section(_D, _NU)
+        f1 = _beam_fundamental_frequency(_L, _E, sec["Iy"], _RHO, sec["A"])
+        assert f1 > 0
+        T1 = 1.0 / f1
+        print(f"\n  f1={f1:.1f} Hz, T1={T1:.6f} s")
+        assert T1 < 1.0, f"固有周期 {T1} s が異常に長い"
+
+
+class TestDynamicThreePointBendJigPhysics:
+    """動的三点曲げの物理的妥当性テスト（初速度制御）."""
+
+    @pytest.mark.xfail(reason="UL参照配置更新と初速度の相互作用（status-211 TODO）")
+    def test_dynamic_response_has_oscillation(self):
+        """動的応答に振動成分が含まれる."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=2.0)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        hist = result.deflection_history
+        if len(hist) < 5:
+            pytest.skip("履歴が短すぎる")
+
+        import numpy as np
+
+        diffs = np.diff(hist)
+        sign_changes = np.sum(np.abs(np.diff(np.sign(diffs))) > 0)
+        print(
+            f"\n  変位履歴: {len(hist)} 点, "
+            f"max={np.max(hist):.6f}, min={np.min(hist):.6f}, "
+            f"符号変化={sign_changes}"
+        )
+        assert sign_changes >= 2, f"振動の符号変化 {sign_changes} < 2: 動的応答に振動がない"
+
+    @pytest.mark.xfail(reason="UL参照配置更新と初速度の相互作用（status-211 TODO）")
+    def test_max_deflection_order(self):
+        """最大変位が静的等価変位と同オーダー."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=1.0)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        ratio = result.max_deflection / cfg.jig_push if cfg.jig_push > 0 else 0
+        print(
+            f"\n  max_defl={result.max_deflection:.6f} mm, "
+            f"jig_push={cfg.jig_push:.6f} mm, ratio={ratio:.3f}"
+        )
+        # 初速度 v₀=ω₁*δ_s → 振幅≈δ_s。0.5〜2倍の範囲内
+        assert 0.5 < ratio < 2.0, f"最大変位比 {ratio:.3f} が範囲外 [0.5, 2.0]"

@@ -188,13 +188,33 @@ class TestSmoothPenaltyContactForceProcess:
         assert K.nnz == 0
 
     def test_tangent_with_penetration(self):
-        """smooth_penalty は AL+Uzawa でゼロ接線を返す（v2.0.0）."""
+        """smooth_penalty は正定値近似接線を返す（v3.0.0）.
+
+        K_contact = k_pen * |dp/dg| * g_shape ⊗ g_shape ≥ 0.
+        貫入時（gap < 0）には非ゼロの正半定値行列を返す。
+        """
         proc = SmoothPenaltyContactForceProcess(ndof=24)
         pair = _make_pair(gap=-0.01)
         manager = _MockManager([pair])
         K = proc.tangent(np.zeros(24), np.zeros(0), manager, k_pen=1e4)
         assert K.shape == (24, 24)
-        assert K.nnz == 0  # AL+Uzawa: ゼロ接線（NR安定性のため）
+        assert K.nnz > 0  # 正定値近似: 貫入時に非ゼロ
+        # 対称性チェック
+        K_dense = K.toarray()
+        np.testing.assert_allclose(K_dense, K_dense.T, atol=1e-12)
+        # 正半定値チェック
+        eigvals = np.linalg.eigvalsh(K_dense)
+        assert np.all(eigvals >= -1e-10)
+
+    def test_tangent_no_penetration_is_small(self):
+        """gap が大きい場合、接線はほぼゼロ."""
+        proc = SmoothPenaltyContactForceProcess(ndof=24, smoothing_delta=100.0)
+        pair = _make_pair(gap=1.0)
+        manager = _MockManager([pair])
+        K = proc.tangent(np.zeros(24), np.zeros(0), manager, k_pen=1e4)
+        assert K.shape == (24, 24)
+        # sigmoid(-delta*g) ≈ 0 for large positive gap
+        assert K.nnz == 0 or np.max(np.abs(K.toarray())) < 1e-10
 
     def test_process_returns_output(self):
         proc = SmoothPenaltyContactForceProcess(ndof=24)

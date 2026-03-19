@@ -177,7 +177,7 @@ class SmoothPenaltyContactForceProcess(
     meta = ProcessMeta(
         name="SmoothPenaltyContactForce",
         module="solve",
-        version="2.0.0",
+        version="3.0.0",
         document_path="docs/contact_force.md",
     )
 
@@ -286,13 +286,60 @@ class SmoothPenaltyContactForceProcess(
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列.
+        """接触接線剛性行列（正定値近似）.
 
-        拡大ラグランジアン + Uzawa 方式では接触剛性は Uzawa 外部ループ
-        が担うため、ゼロ行列を返す（NCP と同様）。
-        softplus の接線 dp/dg < 0（負定値）を直接含めると、
+        softplus の厳密接線 dp/dg = -k_pen * sigmoid(-δg) は負定値で、
         K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
+
+        代わりに厳密接線の絶対値を正定値近似として使用:
+            K_contact = k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
+        これはペナルティ法の接線と等価で、K_total の正定値性を保つ。
+        梁–剛体ジグ接触のように片側のみが応答する場合に特に有効。
+
+        sigmoid が自然にゼロに遷移するため、非接触ペアでは自動的に K_contact ≈ 0。
         """
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
+
+        if hasattr(manager, "pairs"):
+            for pair in manager.pairs:
+                if not hasattr(pair, "state"):
+                    continue
+
+                g_i = pair.state.gap
+                # sigmoid = |dp_n/dg| / k_pen
+                sigmoid_val = abs(self._softplus_derivative(g_i, self._smoothing_delta))
+                if sigmoid_val < 1e-30:
+                    continue
+
+                weight = k_pen * sigmoid_val
+                g_shape = _contact_shape_vector(pair)
+                dofs = _contact_dofs(pair, self._ndof_per_node)
+
+                # ランク1更新: weight * g_shape ⊗ g_shape
+                for ki in range(4):
+                    for di in range(3):
+                        li = ki * 3 + di
+                        gi = dofs[ki * self._ndof_per_node + di]
+                        w_gi = weight * g_shape[li]
+                        if abs(w_gi) < 1e-30:
+                            continue
+                        for kj in range(4):
+                            for dj in range(3):
+                                lj = kj * 3 + dj
+                                gj = dofs[kj * self._ndof_per_node + dj]
+                                val = w_gi * g_shape[lj]
+                                if abs(val) > 1e-30:
+                                    rows.append(gi)
+                                    cols.append(gj)
+                                    vals.append(val)
+
+        if rows:
+            return sp.csr_matrix(
+                (np.array(vals), (np.array(rows), np.array(cols))),
+                shape=(self._ndof, self._ndof),
+            )
         return sp.csr_matrix((self._ndof, self._ndof))
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:

@@ -33,8 +33,8 @@ class SolverStateOutput:
     ul_frac_base: float = 0.0
 
     # --- カウンタ ---
-    step_display: int = 0
-    total_newton: int = 0
+    increment_display: int = 0
+    total_attempts: int = 0
     prev_n_active: int = 0
 
     # --- 履歴 ---

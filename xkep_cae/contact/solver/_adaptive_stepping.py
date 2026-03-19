@@ -22,8 +22,8 @@ class AdaptiveSteppingInput:
     dt_initial_fraction: float = 0.0
     dt_grow_factor: float = 1.5
     dt_shrink_factor: float = 0.5
-    dt_grow_iter_threshold: int = 5
-    dt_shrink_iter_threshold: int = 15
+    dt_grow_attempt_threshold: int = 5
+    dt_shrink_attempt_threshold: int = 15
     dt_contact_change_threshold: float = 0.3
     dt_min_fraction: float = 0.0
     dt_max_fraction: float = 0.0
@@ -55,7 +55,7 @@ class AdaptiveStepInput:
     action: StepAction
     load_frac: float = 0.0
     load_frac_prev: float = 0.0
-    n_iters: int = 0
+    n_attempts: int = 0
     n_active: int = 0
     prev_n_active: int = 0
 
@@ -91,6 +91,9 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         self._consecutive_good: int = 0
 
         base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
+        # dt_max_fraction が設定されている場合、初期ステップもそれに制限
+        if config.dt_max_fraction > 0.0:
+            base_delta = min(base_delta, config.dt_max_fraction)
         self._queue.append(min(base_delta, 1.0))
 
     def process(self, input_data: AdaptiveStepInput) -> AdaptiveStepOutput:
@@ -128,14 +131,14 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         current_delta = load_frac - load_frac_prev
         next_delta = current_delta
 
-        if input_data.n_iters <= cfg.dt_grow_iter_threshold:
+        if input_data.n_attempts <= cfg.dt_grow_attempt_threshold:
             self._consecutive_good += 1
             if self._consecutive_good <= 2:
                 next_delta = current_delta * cfg.dt_grow_factor
             else:
                 _damp = max(0.1, 1.0 / self._consecutive_good)
                 next_delta = current_delta * (1.0 + (cfg.dt_grow_factor - 1.0) * _damp)
-        elif input_data.n_iters >= cfg.dt_shrink_iter_threshold:
+        elif input_data.n_attempts >= cfg.dt_shrink_attempt_threshold:
             next_delta = current_delta * cfg.dt_shrink_factor
             self._consecutive_good = 0
         else:
