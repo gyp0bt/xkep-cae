@@ -34,7 +34,7 @@ from xkep_cae.numerical_tests.frequency import _run_frequency_response
 from xkep_cae.numerical_tests.inp_input import _parse_test_input
 from xkep_cae.numerical_tests.runner import _run_all_tests, _run_test, _run_tests
 
-pytestmark = pytest.mark.slow
+# slow マーカーは実際に計算を伴うテストクラスにのみ付与（status-212）
 
 # ===========================================================================
 # パラメータ定義
@@ -150,6 +150,7 @@ class TestFrictionAssessment:
 # ===========================================================================
 # 静的試験 — 3点曲げ
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.bend3p
 class TestBend3p:
     def _make_config(self, beam_type="timo2d"):
@@ -197,6 +198,7 @@ class TestBend3p:
 # ===========================================================================
 # 静的試験 — 4点曲げ
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.bend4p
 class TestBend4p:
     def _make_config(self, beam_type="timo2d"):
@@ -232,6 +234,7 @@ class TestBend4p:
 # ===========================================================================
 # 静的試験 — 引張
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.tensile
 class TestTensile:
     def _make_config(self, beam_type="timo2d"):
@@ -267,6 +270,7 @@ class TestTensile:
 # ===========================================================================
 # 静的試験 — ねん回（3Dのみ）
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.torsion
 class TestTorsion:
     def _make_config(self):
@@ -304,6 +308,7 @@ class TestTorsion:
 # ===========================================================================
 # 一括/部分実行API
 # ===========================================================================
+@pytest.mark.slow
 class TestRunAPI:
     def _configs(self):
         return [
@@ -344,6 +349,7 @@ class TestRunAPI:
 # ===========================================================================
 # 周波数応答試験
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.freq_response
 class TestFrequencyResponse:
     def _make_config(self, beam_type="timo2d", exc_type="displacement"):
@@ -416,6 +422,7 @@ class TestFrequencyResponse:
 # ===========================================================================
 # CSV出力テスト
 # ===========================================================================
+@pytest.mark.slow
 class TestCSVExport:
     def test_static_csv_string(self):
         cfg = NumericalTestConfig(
@@ -624,6 +631,7 @@ class TestInpInput:
 # ===========================================================================
 # 円形断面テスト
 # ===========================================================================
+@pytest.mark.slow
 class TestCircularSection:
     def test_bend3p_circle(self):
         cfg = NumericalTestConfig(
@@ -712,6 +720,7 @@ class TestValidation:
 # ===========================================================================
 # Cosserat rod 数値試験
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.cosserat
 class TestCosseratNumerical:
     """Cosserat rod の数値試験フレームワーク統合テスト."""
@@ -806,6 +815,7 @@ class TestCosseratNumerical:
 # ===========================================================================
 # 周波数応答 — 固有振動数の解析解との比較
 # ===========================================================================
+@pytest.mark.slow
 @pytest.mark.freq_response
 class TestFrequencyResponseAnalytical:
     """カンチレバー梁の固有振動数を Euler-Bernoulli 解析解と比較."""
@@ -924,6 +934,7 @@ class TestNonUniformMesh:
 # ===========================================================================
 # 動的三点曲げ試験
 # ===========================================================================
+@pytest.mark.slow
 class TestDynamicBend3p:
     """動的3点曲げ試験（非線形動解析フレームワーク統合テスト）."""
 

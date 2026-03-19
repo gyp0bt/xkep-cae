@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-18）
 
-**248 新パッケージテスト**（旧テスト89件一掃済） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**506 テスト**（slow テスト整理済 — status-212） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -63,7 +63,7 @@ S7 (GPU)
 ### 既知の問題
 
 - **NCP摩擦接線剛性符号問題**: `d(f_fric)/du = -k_t*g_t⊗g_t`（負定値）で鞍点系が不安定化。smooth penalty+Uzawaで回避中。Alart-Curnier拡大鞍点系で根本解決予定。（status-147）
-- **slow テスト不収束**: NCP 7本90°曲げ Phase1 が不安定（環境依存）。xfail で安定化済み。
+- ~~**slow テスト不収束**: NCP 7本90°曲げ Phase1 が不安定（環境依存）。xfail で安定化済み。~~ → status-212 で接触収束テスト全削除。
 
 ### 計測済みスケーリングデータ
 
