@@ -74,7 +74,7 @@ class ExportProcess(PostProcess[ExportConfig, ExportResult]):
             summary = {
                 "converged": result.converged,
                 "n_increments": result.n_increments,
-                "total_newton_iterations": result.total_newton_iterations,
+                "total_attempts": result.total_attempts,
                 "max_displacement": float(np.max(np.abs(result.u))),
                 "elapsed_seconds": result.elapsed_seconds,
             }

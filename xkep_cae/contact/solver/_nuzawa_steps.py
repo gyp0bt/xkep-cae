@@ -47,7 +47,7 @@ class ContactForceAssemblyInput:
     u_ref: np.ndarray
     load_frac: float
     load_frac_prev: float
-    step_display: int
+    increment_display: int
     ndof_per_node: int
     use_coating: bool
     assemble_internal_force: object
@@ -97,7 +97,7 @@ class ContactForceAssemblyProcess(
 
         # 3. 摩擦力
         if hasattr(inp.friction_strategy, "set_mu_ramp_counter"):
-            inp.friction_strategy.set_mu_ramp_counter(inp.step_display)
+            inp.friction_strategy.set_mu_ramp_counter(inp.increment_display)
         f_friction, _ = inp.friction_strategy.evaluate(
             u,
             inp.manager.pairs,
@@ -158,7 +158,7 @@ class ConvergenceCheckInput:
     tol_force: float
     tol_disp: float
     dynamic_ref: bool
-    is_first_iter: bool
+    is_first_attempt: bool
     energy_ref: float | None
     manager: object
 
@@ -192,7 +192,7 @@ class ConvergenceCheckProcess(
     def process(self, inp: ConvergenceCheckInput) -> ConvergenceCheckOutput:
         res_u_norm = float(np.linalg.norm(inp.R_u))
         f_ref = inp.f_ext_ref_norm
-        if inp.dynamic_ref and inp.is_first_iter and res_u_norm > 1e-30:
+        if inp.dynamic_ref and inp.is_first_attempt and res_u_norm > 1e-30:
             f_ref = res_u_norm
 
         n_active = sum(1 for p in inp.manager.pairs if hasattr(p, "state") and p.state.p_n > 0.0)

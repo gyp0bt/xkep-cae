@@ -31,7 +31,7 @@ class DiagnosticsInput:
     """診断レポート生成の入力."""
 
     diagnostics: ConvergenceDiagnosticsOutput
-    max_iter: int = 50
+    max_attempts: int = 50
 
 
 @dataclass(frozen=True)
@@ -41,14 +41,14 @@ class DiagnosticsOutput:
     report: str
 
 
-def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_iter: int = 50) -> str:
+def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_attempts: int = 50) -> str:
     """診断レポートの文字列を生成する."""
     lines = [
         "=" * 60,
         "  NCP Solver Convergence Diagnostics",
         "=" * 60,
         f"  Step: {diag.step}, Load fraction: {diag.load_frac:.6f}",
-        f"  Iterations: {len(diag.res_history)} / {max_iter}",
+        f"  Attempts: {len(diag.res_history)} / {max_attempts}",
     ]
 
     if diag.condition_number is not None:
@@ -78,6 +78,6 @@ class DiagnosticsReportProcess(SolverProcess[DiagnosticsInput, DiagnosticsOutput
     def process(self, input_data: DiagnosticsInput) -> DiagnosticsOutput:
         report = _format_diagnostics_report(
             input_data.diagnostics,
-            input_data.max_iter,
+            input_data.max_attempts,
         )
         return DiagnosticsOutput(report=report)

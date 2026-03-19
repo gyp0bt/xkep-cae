@@ -106,7 +106,7 @@ class TestThreePointBendJigConvergence:
         print(
             f"\n  三点曲げジグ（小変位）: converged={result.solver_result.converged}, "
             f"increments={result.solver_result.n_increments}, "
-            f"newton={result.solver_result.total_newton_iterations}, "
+            f"newton={result.solver_result.total_attempts}, "
             f"δ_wire={result.wire_midpoint_deflection:.6f} mm, "
             f"P={result.reaction_force:.4f} N"
         )
@@ -121,7 +121,7 @@ class TestThreePointBendJigConvergence:
         print(
             f"\n  三点曲げジグ（中変位）: converged={result.solver_result.converged}, "
             f"increments={result.solver_result.n_increments}, "
-            f"newton={result.solver_result.total_newton_iterations}, "
+            f"newton={result.solver_result.total_attempts}, "
             f"δ_wire={result.wire_midpoint_deflection:.6f} mm, "
             f"P={result.reaction_force:.4f} N"
         )

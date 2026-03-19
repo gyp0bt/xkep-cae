@@ -17,7 +17,7 @@ def _make_solver_result() -> SolverResultData:
         u=np.array([0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0, 0.0, 0.0, 0.0]),
         converged=True,
         n_increments=5,
-        total_newton_iterations=20,
+        total_attempts=20,
         contact_force_history=[1.0, 2.0, 3.0],
     )
 

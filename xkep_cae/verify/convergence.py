@@ -46,9 +46,9 @@ class ConvergenceVerifyProcess(VerifyProcess[ConvergenceVerifyInput, VerifyResul
             result.converged,
         )
 
-        ok_iters = result.total_newton_iterations <= input_data.max_iterations_threshold
-        checks["total_newton_iterations"] = (
-            float(result.total_newton_iterations),
+        ok_iters = result.total_attempts <= input_data.max_iterations_threshold
+        checks["total_attempts"] = (
+            float(result.total_attempts),
             float(input_data.max_iterations_threshold),
             ok_iters,
         )

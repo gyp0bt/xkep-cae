@@ -206,7 +206,7 @@ class SolverResultData:
     u: np.ndarray
     converged: bool
     n_increments: int
-    total_newton_iterations: int
+    total_attempts: int
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
     elapsed_seconds: float = 0.0

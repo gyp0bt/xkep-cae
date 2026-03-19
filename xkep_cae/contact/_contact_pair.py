@@ -148,8 +148,8 @@ class _ContactConfigInput:
     adaptive_timestepping: bool = False
     dt_grow_factor: float = 1.5
     dt_shrink_factor: float = 0.5
-    dt_grow_iter_threshold: int = 5
-    dt_shrink_iter_threshold: int = 15
+    dt_grow_attempt_threshold: int = 5
+    dt_shrink_attempt_threshold: int = 15
     dt_contact_change_threshold: float = 0.3
     dt_min_fraction: float = 0.0
     dt_max_fraction: float = 0.0

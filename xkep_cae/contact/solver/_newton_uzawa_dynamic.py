@@ -35,7 +35,7 @@ class DynamicStepOutput:
     """1荷重増分の結果（動的）."""
 
     converged: bool
-    n_newton_iters: int
+    n_attempts: int
     n_active: int
     f_c: np.ndarray
     diagnostics: ConvergenceDiagnosticsOutput
@@ -45,7 +45,7 @@ class DynamicStepOutput:
 class NewtonUzawaDynamicInput:
     """Newton-Uzawa ループの設定（動的）."""
 
-    max_iter: int = 50
+    max_attempts: int = 50
     tol_force: float = 1e-8
     tol_disp: float = 1e-8
     use_line_search: bool = True
@@ -75,7 +75,7 @@ class NewtonUzawaDynamicStepInput:
     u_ref: np.ndarray
     load_frac: float
     load_frac_prev: float
-    step_display: int
+    increment_display: int
     dt_sub: float
     use_coating: bool
     dynamic_ref: bool
@@ -124,7 +124,7 @@ class NewtonUzawaDynamicProcess(
         u_ref = input_data.u_ref
         load_frac = input_data.load_frac
         load_frac_prev = input_data.load_frac_prev
-        step_display = input_data.step_display
+        increment_display = input_data.increment_display
         dt_sub = input_data.dt_sub
         ndof = len(f_ext)
 
@@ -144,16 +144,16 @@ class NewtonUzawaDynamicProcess(
         _linesearch_proc = LineSearchUpdateProcess()
         _uzawa_proc = UzawaUpdateProcess()
 
-        diag = ConvergenceDiagnosticsOutput(step=step_display, load_frac=load_frac)
-        total_newton = 0
+        diag = ConvergenceDiagnosticsOutput(step=increment_display, load_frac=load_frac)
+        total_attempts = 0
         f_c = np.zeros(ndof)
         energy_ref = None
         step_converged = False
         n_active = 0
 
         for _uzawa_iter in range(n_uzawa_max):
-            for it in range(cfg.max_iter):
-                total_newton += 1
+            for att in range(cfg.max_attempts):
+                total_attempts += 1
 
                 # ── ステップ 2〜5: 接触力アセンブリ + 残差 ──
                 force_out = _force_proc.process(
@@ -172,7 +172,7 @@ class NewtonUzawaDynamicProcess(
                         u_ref=u_ref,
                         load_frac=load_frac,
                         load_frac_prev=load_frac_prev,
-                        step_display=step_display,
+                        increment_display=increment_display,
                         ndof_per_node=cfg.ndof_per_node,
                         use_coating=input_data.use_coating,
                         assemble_internal_force=input_data.assemble_internal_force,
@@ -199,7 +199,7 @@ class NewtonUzawaDynamicProcess(
                         tol_force=cfg.tol_force,
                         tol_disp=cfg.tol_disp,
                         dynamic_ref=input_data.dynamic_ref,
-                        is_first_iter=(it == 0),
+                        is_first_attempt=(att == 0),
                         energy_ref=energy_ref,
                         manager=manager,
                     )
@@ -215,17 +215,17 @@ class NewtonUzawaDynamicProcess(
                     step_converged = True
                     if cfg.show_progress:
                         print(
-                            f"  Incr {step_display} (frac={load_frac:.4f}), "
-                            f"uzawa {_uzawa_iter}, iter {it}, "
+                            f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                            f"uzawa {_uzawa_iter}, attempt {att}, "
                             f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e} "
                             f"(converged, {n_active} active)"
                         )
                     break
 
-                if cfg.show_progress and it % 5 == 0:
+                if cfg.show_progress and att % 5 == 0:
                     print(
-                        f"  Incr {step_display} (frac={load_frac:.4f}), "
-                        f"uzawa {_uzawa_iter}, iter {it}, "
+                        f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                        f"uzawa {_uzawa_iter}, attempt {att}, "
                         f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e}, "
                         f"active={n_active}"
                     )
@@ -265,7 +265,7 @@ class NewtonUzawaDynamicProcess(
                 )
                 if not solve_out.success:
                     if cfg.show_progress:
-                        print(f"  WARNING: Linear solve failed at iter {it}")
+                        print(f"  WARNING: Linear solve failed at attempt {att}")
                     break
 
                 du = solve_out.du
@@ -298,7 +298,7 @@ class NewtonUzawaDynamicProcess(
                         tol_force=cfg.tol_force,
                         tol_disp=cfg.tol_disp,
                         dynamic_ref=input_data.dynamic_ref,
-                        is_first_iter=False,
+                        is_first_attempt=False,
                         energy_ref=energy_ref,
                         manager=manager,
                     )
@@ -317,15 +317,15 @@ class NewtonUzawaDynamicProcess(
                         ctype = conv_out2.convergence_type
                         if ctype == ConvergenceType.DISPLACEMENT:
                             print(
-                                f"  Incr {step_display} (frac={load_frac:.4f}), "
-                                f"uzawa {_uzawa_iter}, iter {it}, "
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"uzawa {_uzawa_iter}, attempt {att}, "
                                 f"||du||/||u|| = {du_norm_val / max(float(np.linalg.norm(u)), 1e-30):.3e} "
                                 f"(disp converged, {n_active} active)"
                             )
                         else:
                             print(
-                                f"  Incr {step_display} (frac={load_frac:.4f}), "
-                                f"uzawa {_uzawa_iter}, iter {it}, "
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"uzawa {_uzawa_iter}, attempt {att}, "
                                 f"energy = {conv_out2.energy:.3e} (energy converged)"
                             )
                     break
@@ -357,7 +357,7 @@ class NewtonUzawaDynamicProcess(
 
         return DynamicStepOutput(
             converged=step_converged,
-            n_newton_iters=total_newton,
+            n_attempts=total_attempts,
             n_active=n_active,
             f_c=f_c,
             diagnostics=diag,
