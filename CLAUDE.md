@@ -72,7 +72,7 @@
 
 ### 次の課題
 
-**S3 凍結解除** — 変位制御7本撚線曲げ揺動の Phase2 xfail 解消。
+**UL+GeneralizedAlpha結合修正** — state.u増分/累積管理の明確化。梁揺動が単調減衰する問題（status-213）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-18）
 
-**506 テスト**（slow テスト整理済 — status-212） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**506 テスト**（梁揺動解析追加 — status-213） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -59,6 +59,7 @@ S7 (GPU)
 - [ ] 37本Layer1+2圧縮の段階的活性化による収束改善確認
 - [x] ~~NCPソルバー版S3ベンチマーク（AL法との計算時間比較）~~ — AL完全削除済み（status-167）
 - [ ] Cosserat Rodの解析的接線剛性実装
+- [ ] **UL+GeneralizedAlpha結合修正**: state.u増分/累積管理の明確化（status-213で発覚、振動不再現）
 
 ### 既知の問題
 
