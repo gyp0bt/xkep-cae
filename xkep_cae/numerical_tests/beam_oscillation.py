@@ -7,12 +7,13 @@
   - ワイヤ: x軸方向直線梁（Timoshenko CR 3D）
   - 支持: 左端=ピン（xyz+rx固定）、右端=ローラー（yz固定）
   - 加振: 中央節点に初速度 v₀（y方向下向き）
+  - 材料: 銅（E=100GPa, ν=0.3, ρ=8.96e-9 ton/mm³）
 
 検証項目:
   - 動的ソルバー（GeneralizedAlpha）の収束
   - 非線形域（大変形）での物理的妥当性
   - 数値粘性（高周波減衰率）の評価
-  - 3D応力コンター可視化
+  - 3Dひずみコンター可視化
 
 解析解（小振幅線形の場合）:
   f₁ = π/(2L²) √(EI/ρA)
@@ -39,6 +40,7 @@ from xkep_cae.core import (
     ContactFrictionInputData,
     ContactSetupData,
     MeshData,
+    PostProcess,
     ProcessMeta,
     SolverResultData,
 )
@@ -66,9 +68,9 @@ class BeamOscillationConfig:
     wire_length: float = 100.0  # mm
     wire_diameter: float = 2.0  # mm
     n_elems_wire: int = 100  # メッシュサイズ ≈ 半径（1mm）
-    E: float = 200e3  # MPa
+    E: float = 100e3  # MPa (銅)
     nu: float = 0.3
-    rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
+    rho: float = 8.96e-9  # ton/mm³ (銅)
     amplitude: float = 5.0  # mm（初速度等価振幅、非線形域）
     n_periods: float = 3.0  # 固有周期の何周期分を計算するか
     rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
@@ -101,73 +103,91 @@ class BeamOscillationResult:
     # 数値粘性評価
     energy_history: np.ndarray  # 各ステップの運動+ポテンシャルエネルギー
     energy_decay_ratio: float  # 最終エネルギー / 初期エネルギー
-    # 応力情報（要素ごと最大曲げ応力）
-    element_stress_history: list[np.ndarray] = field(default_factory=list)
+    # ひずみ情報（要素ごと最大曲げひずみ）
+    element_strain_history: list[np.ndarray] = field(default_factory=list)
 
 
 # ====================================================================
-# 応力計算ユーティリティ
+# ひずみ計算 Process
 # ====================================================================
 
 
-def compute_element_bending_stress(
-    node_coords: np.ndarray,
-    connectivity: np.ndarray,
-    u: np.ndarray,
-    E: float,
-    wire_radius: float,
-) -> np.ndarray:
-    """変位場から要素ごとの最大曲げ応力を計算.
+@dataclass(frozen=True)
+class ElementBendingStrainInput:
+    """要素曲げひずみ計算の入力."""
 
-    曲率 κ を中心差分で近似し、σ_max = E * κ * R。
+    node_coords: np.ndarray  # 初期節点座標 (n_nodes, 3)
+    connectivity: np.ndarray  # 要素接続 (n_elems, 2)
+    u: np.ndarray  # 変位ベクトル (ndof,)
+    wire_radius: float  # ワイヤ半径
+
+
+@dataclass(frozen=True)
+class ElementBendingStrainOutput:
+    """要素曲げひずみ計算の出力."""
+
+    element_strain: np.ndarray  # 各要素の最大曲げひずみ (n_elems,)
+
+
+class ElementBendingStrainProcess(
+    PostProcess[ElementBendingStrainInput, ElementBendingStrainOutput],
+):
+    """変位場から要素ごとの最大曲げひずみを計算する Process.
+
+    曲率 κ を中心差分で近似し、ε_max = κ * R。
     両端要素は片側差分で近似。
-
-    Args:
-        node_coords: 初期節点座標 (n_nodes, 3)
-        connectivity: 要素接続 (n_elems, 2)
-        u: 変位ベクトル (ndof,)
-        E: ヤング率
-        wire_radius: ワイヤ半径
-
-    Returns:
-        element_stress: 各要素の最大曲げ応力 (n_elems,)
     """
-    n_nodes = len(node_coords)
-    n_elems = len(connectivity)
 
-    # 変形後の y 変位
-    uy = np.array([u[6 * i + 1] for i in range(n_nodes)])
-    # x 座標
-    x = node_coords[:, 0]
+    meta = ProcessMeta(
+        name="ElementBendingStrain",
+        module="post",
+        version="1.0.0",
+        document_path="docs/beam_oscillation.md",
+    )
 
-    # 節点ごとの曲率（中心差分）
-    kappa_node = np.zeros(n_nodes)
-    for i in range(1, n_nodes - 1):
-        dx_m = x[i] - x[i - 1]
-        dx_p = x[i + 1] - x[i]
-        if dx_m > 0 and dx_p > 0:
-            kappa_node[i] = 2.0 * (
-                uy[i + 1] / (dx_p * (dx_m + dx_p))
-                - uy[i] / (dx_m * dx_p)
-                + uy[i - 1] / (dx_m * (dx_m + dx_p))
-            )
-    # 端部: 片側差分
-    if n_nodes >= 3:
-        dx = x[1] - x[0]
-        if dx > 0:
-            kappa_node[0] = kappa_node[1]
-        dx = x[-1] - x[-2]
-        if dx > 0:
-            kappa_node[-1] = kappa_node[-2]
+    def process(self, input_data: ElementBendingStrainInput) -> ElementBendingStrainOutput:
+        """要素ごとの最大曲げひずみを計算."""
+        node_coords = input_data.node_coords
+        connectivity = input_data.connectivity
+        u = input_data.u
+        wire_radius = input_data.wire_radius
 
-    # 要素ごと: 両端節点の曲率平均
-    element_stress = np.zeros(n_elems)
-    for e in range(n_elems):
-        n0, n1 = connectivity[e]
-        kappa_avg = 0.5 * (abs(kappa_node[n0]) + abs(kappa_node[n1]))
-        element_stress[e] = E * kappa_avg * wire_radius
+        n_nodes = len(node_coords)
+        n_elems = len(connectivity)
 
-    return element_stress
+        # 変形後の y 変位
+        uy = np.array([u[6 * i + 1] for i in range(n_nodes)])
+        # x 座標
+        x = node_coords[:, 0]
+
+        # 節点ごとの曲率（中心差分）
+        kappa_node = np.zeros(n_nodes)
+        for i in range(1, n_nodes - 1):
+            dx_m = x[i] - x[i - 1]
+            dx_p = x[i + 1] - x[i]
+            if dx_m > 0 and dx_p > 0:
+                kappa_node[i] = 2.0 * (
+                    uy[i + 1] / (dx_p * (dx_m + dx_p))
+                    - uy[i] / (dx_m * dx_p)
+                    + uy[i - 1] / (dx_m * (dx_m + dx_p))
+                )
+        # 端部: 片側差分
+        if n_nodes >= 3:
+            dx = x[1] - x[0]
+            if dx > 0:
+                kappa_node[0] = kappa_node[1]
+            dx = x[-1] - x[-2]
+            if dx > 0:
+                kappa_node[-1] = kappa_node[-2]
+
+        # 要素ごと: 両端節点の曲率平均 → ε = κ * R
+        element_strain = np.zeros(n_elems)
+        for e in range(n_elems):
+            n0, n1 = connectivity[e]
+            kappa_avg = 0.5 * (abs(kappa_node[n0]) + abs(kappa_node[n1]))
+            element_strain[e] = kappa_avg * wire_radius
+
+        return ElementBendingStrainOutput(element_strain=element_strain)
 
 
 # ====================================================================
@@ -219,7 +239,7 @@ class BeamOscillationProcess(
         version="1.0.0",
         document_path="docs/beam_oscillation.md",
     )
-    uses = [ContactFrictionProcess]
+    uses = [ContactFrictionProcess, ElementBendingStrainProcess]
 
     def process(self, input_data: BeamOscillationConfig) -> BeamOscillationResult:
         """梁揺動解析を実行."""
@@ -370,17 +390,19 @@ class BeamOscillationProcess(
         E_final = energy_history[-1] if len(energy_history) > 0 else 0.0
         energy_decay_ratio = E_final / E_init if E_init > 1e-30 else 0.0
 
-        # 要素応力時刻歴（最大曲げ応力）
-        element_stress_history = []
+        # 要素ひずみ時刻歴（最大曲げひずみ）
+        strain_proc = ElementBendingStrainProcess()
+        element_strain_history = []
         for u_snap in disp_hist:
-            stress = compute_element_bending_stress(
-                mesh_data.node_coords,
-                mesh_data.connectivity,
-                u_snap,
-                cfg.E,
-                wire_radius,
+            strain_out = strain_proc.process(
+                ElementBendingStrainInput(
+                    node_coords=mesh_data.node_coords,
+                    connectivity=mesh_data.connectivity,
+                    u=u_snap,
+                    wire_radius=wire_radius,
+                )
             )
-            element_stress_history.append(stress)
+            element_strain_history.append(strain_out.element_strain)
 
         return BeamOscillationResult(
             solver_result=solver_result,
@@ -397,5 +419,5 @@ class BeamOscillationProcess(
             amplitude_ratio=amplitude_ratio,
             energy_history=energy_history,
             energy_decay_ratio=energy_decay_ratio,
-            element_stress_history=element_stress_history,
+            element_strain_history=element_strain_history,
         )
