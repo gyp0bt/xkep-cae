@@ -260,7 +260,10 @@ class NewtonUzawaDynamicProcess(
                 _prev_res_ratio = _cur_ratio
 
                 _diverge_detected = False
-                if _consecutive_increase >= cfg.divergence_window:
+                # 残差フロア近傍（1% 以内）では発散判定を抑制
+                # softplus 平滑化の ghost force で残差フロアが生じるため
+                _near_floor = _cur_ratio < 0.01
+                if _consecutive_increase >= cfg.divergence_window and not _near_floor:
                     _diverge_detected = True
                     _reason = f"残差 {cfg.divergence_window} 回連続増加"
                 # 残差爆発検知: 初期残差の100倍超 かつ 10反復以上

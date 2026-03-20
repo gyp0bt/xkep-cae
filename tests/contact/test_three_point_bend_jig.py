@@ -532,7 +532,6 @@ def _dynamic_contact_config(**overrides) -> DynamicThreePointBendContactJigConfi
         "mu": 0.15,
         "initial_gap": 0.05,  # ジグをワイヤ上方0.05mmに配置→振動ピーク付近で接触
         "max_increments": 10000,
-        "n_uzawa_max": 1,  # 純粋ペナルティ法
     }
     defaults.update(overrides)
     return DynamicThreePointBendContactJigConfig(**defaults)

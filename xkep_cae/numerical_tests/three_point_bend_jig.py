@@ -1106,18 +1106,20 @@ class DynamicThreePointBendContactJigConfig:
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     smoothing_delta: float = 50.0  # softplus の平滑化パラメータ（幅 1/δ ≈ 0.02mm）
-    n_uzawa_max: int = 3  # Uzawa 反復（拡大ラグランジアン法、status-219）
+    n_uzawa_max: int = (
+        1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
+    )
     mu: float = 0.15  # Coulomb 摩擦係数
     # 時間増分制御
-    dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/20）
-    dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/32）
+    dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/40）
+    dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/64）
     max_increments: int = 10000  # 最大インクリメント数
     # NR ソルバーパラメータ
     tol_disp: float = 1e-8  # 変位収束許容値
     tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
-    max_nr_attempts: int = 200  # NR 最大反復数
-    du_norm_cap: float = 0.0  # 減衰ニュートン（0=制限なし）
-    exact_tangent: bool = False  # 厳密接線（c0*M 正則化で K_eff 正定値時に有効）
+    max_nr_attempts: int = 30  # NR 最大反復数（exact_tangent=True で2次収束 ~10 iter）
+    du_norm_cap: float = 0.1  # 減衰ニュートン（||du|| ≤ 0.1×||u|| で接触遷移時の発散防止）
+    exact_tangent: bool = True  # 厳密接線（小 k_pen で K_eff 正定値維持、2次収束）
 
 
 @dataclass(frozen=True)
@@ -1293,7 +1295,7 @@ class DynamicThreePointBendContactJigProcess(
         t_total = cfg.n_periods * T1
 
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 40.0
-        dt_min = cfg.dt_min if cfg.dt_min > 0 else dt_initial / 32.0
+        dt_min = cfg.dt_min if cfg.dt_min > 0 else dt_initial / 64.0
         dt_initial_frac = dt_initial / t_total
         dt_min_frac = dt_min / t_total
 
@@ -1344,7 +1346,7 @@ class DynamicThreePointBendContactJigProcess(
                     rho=cfg.rho,
                     A=sec["A"],
                     L_elem=cfg.wire_length / cfg.n_elems_wire,
-                    scale=0.5,  # c0*M の 50%（exact_tangent 正定値条件を保持）
+                    scale=0.2,  # c0*M の 20%（dt cutback 1回で K_eff 正定値: 4*0.2*2.0=1.6 < 4*(1-α_m)=2.32）
                 )
             )
             k_pen = _dpe_out.k_pen
