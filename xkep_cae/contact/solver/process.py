@@ -24,9 +24,6 @@ from xkep_cae.contact._manager_process import (
     UpdateGeometryProcess,
 )
 from xkep_cae.contact.solver._adaptive_stepping import (
-    AdaptiveStepInput,
-    AdaptiveSteppingInput,
-    AdaptiveSteppingProcess,
     StepAction,
 )
 from xkep_cae.contact.solver._contact_graph import (
@@ -66,6 +63,8 @@ from xkep_cae.contact.solver._solver_state import (
     _state_set,
 )
 from xkep_cae.contact.solver._unified_time_controller import (
+    TimeStepQueryInput,
+    UnifiedTimeStepInput,
     UnifiedTimeStepProcess,
 )
 from xkep_cae.contact.solver._utils import DeformedCoordsInput, DeformedCoordsProcess
@@ -98,7 +97,6 @@ class ContactFrictionProcess(
     uses = [
         NewtonUzawaStaticProcess,
         NewtonUzawaDynamicProcess,
-        AdaptiveSteppingProcess,
         UnifiedTimeStepProcess,
         InitialPenetrationProcess,
         ContactGraphProcess,
@@ -337,19 +335,30 @@ class ContactFrictionProcess(
             ul_assembler.checkpoint()
         _time_strategy.checkpoint()
 
-        # --- 適応荷重増分コントローラ ---
+        # --- 適応荷重増分コントローラ（UnifiedTimeStepProcess 統一） ---
+        # 動的: t_total = dt_physical, 準静的: t_total = 1.0（擬似時間）
+        _t_total = input_data.dt_physical if _dynamics and input_data.dt_physical else 1.0
         dt_grow_att = manager.config.dt_grow_attempt_threshold
-        stepping_config = AdaptiveSteppingInput(
-            dt_initial_fraction=0.0,
-            dt_grow_factor=manager.config.dt_grow_factor,
-            dt_shrink_factor=manager.config.dt_shrink_factor,
-            dt_grow_attempt_threshold=dt_grow_att if dt_grow_att > 0 else 5,
-            dt_shrink_attempt_threshold=manager.config.dt_shrink_attempt_threshold,
-            dt_contact_change_threshold=manager.config.dt_contact_change_threshold,
-            dt_min_fraction=manager.config.dt_min_fraction,
-            dt_max_fraction=manager.config.dt_max_fraction,
+        _dt_min_frac = manager.config.dt_min_fraction
+        _dt_max_frac = manager.config.dt_max_fraction
+        # dt_initial=t_total → fraction=1.0（全ステップを試み、dt_max で制限される）
+        # これは元の AdaptiveSteppingInput(dt_initial_fraction=0.0) と同じ挙動
+        _dt_initial = _t_total
+        _dt_min = _dt_min_frac * _t_total if _dt_min_frac > 0 else _t_total / 32.0
+        _dt_max = _dt_max_frac * _t_total if _dt_max_frac > 0 else _t_total
+        stepping = UnifiedTimeStepProcess(
+            UnifiedTimeStepInput(
+                t_total=_t_total,
+                dt_initial=_dt_initial,
+                dt_min=_dt_min,
+                dt_max=_dt_max,
+                dt_grow_factor=manager.config.dt_grow_factor,
+                dt_shrink_factor=manager.config.dt_shrink_factor,
+                dt_grow_attempt_threshold=dt_grow_att if dt_grow_att > 0 else 5,
+                dt_shrink_attempt_threshold=manager.config.dt_shrink_attempt_threshold,
+                dt_contact_change_threshold=manager.config.dt_contact_change_threshold,
+            )
         )
-        stepping = AdaptiveSteppingProcess(stepping_config)
 
         # --- Newton-Uzawa プロセス（Static/Dynamic 完全分離） ---
         if _dynamics:
@@ -370,26 +379,25 @@ class ContactFrictionProcess(
         # ================================================================
         while True:
             query_out = stepping.process(
-                AdaptiveStepInput(
+                TimeStepQueryInput(
                     action=StepAction.QUERY,
                     load_frac_prev=state.load_frac_prev,
                 )
             )
             if not query_out.has_more_steps:
                 break
-            load_frac = query_out.next_load_frac
+            load_frac = query_out.load_frac
 
             _state_set(state, "increment_display", state.increment_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
             # 接線予測子
-            delta_frac = load_frac - state.load_frac_prev
+            dt_sub = query_out.dt_sub
             if _dynamics:
-                dt_sub = (input_data.dt_physical or 0.0) * delta_frac
                 if hasattr(_time_strategy, "predict"):
                     _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
             else:
-                dt_sub = 0.0
+                delta_frac = load_frac - state.load_frac_prev
                 if (
                     state.delta_frac_prev > 1e-30
                     and delta_frac > 1e-30
@@ -489,7 +497,7 @@ class ContactFrictionProcess(
             if not step_result.converged:
                 _step_diverged = getattr(step_result, "diverged", False)
                 fail_out = stepping.process(
-                    AdaptiveStepInput(
+                    TimeStepQueryInput(
                         action=StepAction.FAILURE,
                         load_frac=load_frac,
                         load_frac_prev=state.load_frac_prev,
@@ -593,7 +601,7 @@ class ContactFrictionProcess(
 
             # 適応時間増分: 次ステップ幅決定
             stepping.process(
-                AdaptiveStepInput(
+                TimeStepQueryInput(
                     action=StepAction.SUCCESS,
                     load_frac=load_frac,
                     load_frac_prev=state.load_frac_prev,
