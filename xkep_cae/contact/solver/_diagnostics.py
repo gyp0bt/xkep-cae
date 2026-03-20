@@ -12,6 +12,18 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
+class PairDiagnosticsEntry:
+    """1接触ペアの診断スナップショット."""
+
+    pair_id: int
+    elem_a: int
+    elem_b: int
+    gap: float
+    p_n: float
+    status: str  # "active" / "inactive" / "slipping"
+
+
+@dataclass(frozen=True)
 class ConvergenceDiagnosticsOutput:
     """収束失敗時の標準化診断情報（純粋データ）."""
 
@@ -29,6 +41,8 @@ class ConvergenceDiagnosticsOutput:
     strain_energy: float = 0.0
     total_energy: float = 0.0
     energy_ratio: float = 1.0  # E_current / E_initial
+    # ペア別接触診断（NR反復ごとのスナップショット）
+    pair_snapshots: list[list[PairDiagnosticsEntry]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -71,6 +85,21 @@ def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_attempts:
         lines.append(f"  Strain energy:   {diag.strain_energy:.6e}")
         lines.append(f"  Total energy:    {diag.total_energy:.6e}")
         lines.append(f"  Energy ratio:    {diag.energy_ratio:.4f}")
+
+    # ペア別接触診断（最終反復のスナップショット）
+    if diag.pair_snapshots:
+        last_snap = diag.pair_snapshots[-1]
+        active_pairs = [p for p in last_snap if p.status != "inactive"]
+        if active_pairs:
+            lines.append(f"  Contact pairs (active={len(active_pairs)}):")
+            for p in active_pairs[:10]:  # 最大10ペアまで表示
+                lines.append(
+                    f"    pair {p.pair_id}: "
+                    f"elem({p.elem_a},{p.elem_b}) "
+                    f"gap={p.gap:.4e} p_n={p.p_n:.4e} [{p.status}]"
+                )
+            if len(active_pairs) > 10:
+                lines.append(f"    ... and {len(active_pairs) - 10} more")
 
     lines.append("=" * 60)
     return "\n".join(lines)
