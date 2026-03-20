@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-20）
 
-**506 テスト**（ひずみコンター化+C16修正 — status-214） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**518 テスト**（S11/LE11/SK1コンター — status-214） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
