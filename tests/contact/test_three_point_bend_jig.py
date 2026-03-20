@@ -432,6 +432,43 @@ class TestDynamicThreePointBendJigPhysics:
             f"解析解 {analytical_amplitude:.6f} mm vs 実測 {result.max_deflection:.6f} mm"
         )
 
+    def test_dynamic_reaction_force_matches_analytical(self):
+        """動的ピーク反力が k_EB × jig_push と一致する（許容誤差10%）.
+
+        自由振動の最大変位時における弾性復元力:
+          F_peak = k_EB × max_deflection ≈ k_EB × jig_push
+
+        解析解: v₀ = ω₁ × δ_s なので振幅 ≈ δ_s = jig_push。
+        よってピーク反力 ≈ k_EB × jig_push。
+        """
+        cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+
+        # 解析剛性
+        sec = _circle_section(cfg.wire_diameter, cfg.nu)
+        k_eb = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
+
+        # ピーク反力の解析解一致
+        F_peak = k_eb * result.max_deflection
+        F_peak_analytical = k_eb * cfg.jig_push
+        rel_err_peak = abs(F_peak - F_peak_analytical) / F_peak_analytical
+
+        print(
+            f"\n  動的反力検証:"
+            f"\n    k_EB={k_eb:.4f} N/mm"
+            f"\n    ピーク反力: F_peak={F_peak:.6f} N, "
+            f"F_analytical={F_peak_analytical:.6f} N, 誤差={rel_err_peak * 100:.2f}%"
+            f"\n    max_deflection={result.max_deflection:.6f} mm, "
+            f"jig_push={cfg.jig_push:.6f} mm"
+        )
+        assert rel_err_peak < 0.10, (
+            f"ピーク反力の相対誤差 {rel_err_peak * 100:.2f}% > 10%: "
+            f"k*max_defl={F_peak:.6f} N vs k*jig_push={F_peak_analytical:.6f} N"
+        )
+
     def test_rho_inf_numerical_dissipation(self):
         """rho_inf パラメータが動的応答に影響する（パラメータ感度検証）.
 
