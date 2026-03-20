@@ -852,8 +852,17 @@ class DynamicThreePointBendJigProcess(
         omega1 = 2.0 * math.pi * f1
         t_total = cfg.n_periods * T1
 
-        # 初速度: v₀ = ω₁ * δ_s → 最大変位 ≈ δ_s
-        v0 = omega1 * cfg.jig_push
+        # 初速度: モーダル質量補正付き
+        # 梁の集中質量では節点質量 m_mid ≠ モーダル質量 M₁
+        wire_mid_y_dof = 6 * wire_mid_node + 1
+        phi1 = np.zeros(ndof)
+        for i in range(n_nodes):
+            x_i = mesh_data.node_coords[i, 0]
+            phi1[6 * i + 1] = math.sin(math.pi * x_i / cfg.wire_length)
+        M_modal = float(phi1 @ mass_matrix @ phi1)
+        m_mid = float(mass_matrix[wire_mid_y_dof, wire_mid_y_dof])
+        modal_ratio = M_modal / m_mid if m_mid > 1e-30 else 1.0
+        v0 = omega1 * cfg.jig_push * modal_ratio
 
         # 時間増分パラメータ
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 20.0

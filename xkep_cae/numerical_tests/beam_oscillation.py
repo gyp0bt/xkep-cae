@@ -292,8 +292,20 @@ class BeamOscillationProcess(
         omega1 = 2.0 * math.pi * f1
         t_total = cfg.n_periods * T1
 
-        # 初速度: v₀ = ω₁ * δ_s → 小振幅での最大変位 ≈ amplitude
-        v0 = omega1 * cfg.amplitude
+        # 初速度: モーダル質量補正付き
+        # 単一DOF系では v₀ = ω₁ * δ だが、梁の集中質量では
+        # 節点質量 m_mid ≠ モーダル質量 M₁ のため補正が必要:
+        #   v₀ = ω₁ * δ * M₁ / m_mid
+        # M₁ = φ₁ᵀ M φ₁, m_mid = M[mid_y_dof, mid_y_dof]
+        wire_mid_y_dof = 6 * wire_mid_node + 1
+        phi1 = np.zeros(ndof)
+        for i in range(n_nodes):
+            x_i = mesh_data.node_coords[i, 0]
+            phi1[6 * i + 1] = math.sin(math.pi * x_i / cfg.wire_length)
+        M_modal = float(phi1 @ mass_matrix @ phi1)
+        m_mid = float(mass_matrix[wire_mid_y_dof, wire_mid_y_dof])
+        modal_ratio = M_modal / m_mid if m_mid > 1e-30 else 1.0
+        v0 = omega1 * cfg.amplitude * modal_ratio
 
         # 時間増分パラメータ（小さめ）
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 100.0
@@ -394,9 +406,20 @@ class BeamOscillationProcess(
                     E_kinetic = 0.0
                 energy_history[i] = abs(E_strain) + abs(E_kinetic)
 
-        # エネルギー減衰率
-        E_init = energy_history[0] if len(energy_history) > 0 else 1.0
-        E_final = energy_history[-1] if len(energy_history) > 0 else 0.0
+        # エネルギー減衰率（ピーク変位点で比較）
+        # 初期の集中初速度 → 分布モーダルエネルギーの遷移と、
+        # 最終ステップの運動エネルギー近似誤差を回避するため、
+        # 変位ピーク（KE≈0）でのひずみエネルギーを比較する。
+        d_diff = np.diff(defl_arr)
+        peak_indices = np.where(np.diff(np.sign(d_diff)) != 0)[0] + 1
+        if len(peak_indices) >= 2:
+            E_init = energy_history[peak_indices[0]]
+            E_final = energy_history[peak_indices[-1]]
+        elif len(energy_history) > 0:
+            E_init = energy_history[0]
+            E_final = energy_history[-1]
+        else:
+            E_init, E_final = 1.0, 0.0
         energy_decay_ratio = E_final / E_init if E_init > 1e-30 else 0.0
 
         # コンターフィールド時刻歴（SK1, LE11, S11）

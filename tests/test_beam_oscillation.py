@@ -190,7 +190,6 @@ class TestBeamOscillationPhysics:
         ratio = small_result.amplitude_ratio
         assert 0.8 < ratio < 1.3, f"振幅比 {ratio:.3f} が解析解から乖離"
 
-    @pytest.mark.xfail(reason="UL+GeneralizedAlpha結合で振動が単調減衰する問題 — status-211 TODO")
     def test_small_oscillation_detected(self, small_result):
         """小振幅で振動が検出される（方向反転あり）."""
         defl = small_result.deflection_history
@@ -263,7 +262,6 @@ class TestBeamOscillationPhysics:
             f"変位発散: max={large_result.max_deflection:.3f} > L/2={L / 2:.1f}"
         )
 
-    @pytest.mark.xfail(reason="UL定式化でのエネルギー計算がひずみエネルギーを過大評価 — TODO")
     def test_numerical_dissipation_rate(self, large_result):
         """数値粘性の減衰率が妥当な範囲.
 
