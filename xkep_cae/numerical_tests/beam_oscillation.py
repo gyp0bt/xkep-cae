@@ -103,7 +103,10 @@ class BeamOscillationResult:
     # 数値粘性評価
     energy_history: np.ndarray  # 各ステップの運動+ポテンシャルエネルギー
     energy_decay_ratio: float  # 最終エネルギー / 初期エネルギー
-    # ひずみ情報（要素ごと最大曲げひずみ）
+    # コンターフィールド履歴（S11, LE11, SK1 等）
+    # key = フィールド名, value = list[np.ndarray] (各スナップショットの要素値)
+    contour_fields: dict[str, list[np.ndarray]] = field(default_factory=dict)
+    # 後方互換（element_strain_history → contour_fields["LE11"]）
     element_strain_history: list[np.ndarray] = field(default_factory=list)
 
 
@@ -126,7 +129,8 @@ class ElementBendingStrainInput:
 class ElementBendingStrainOutput:
     """要素曲げひずみ計算の出力."""
 
-    element_strain: np.ndarray  # 各要素の最大曲げひずみ (n_elems,)
+    element_strain: np.ndarray  # 各要素の最大曲げひずみ ε = κR (n_elems,)
+    element_curvature: np.ndarray  # 各要素の曲率 κ [1/mm] (n_elems,)
 
 
 class ElementBendingStrainProcess(
@@ -181,13 +185,18 @@ class ElementBendingStrainProcess(
                 kappa_node[-1] = kappa_node[-2]
 
         # 要素ごと: 両端節点の曲率平均 → ε = κ * R
+        element_curvature = np.zeros(n_elems)
         element_strain = np.zeros(n_elems)
         for e in range(n_elems):
             n0, n1 = connectivity[e]
             kappa_avg = 0.5 * (abs(kappa_node[n0]) + abs(kappa_node[n1]))
+            element_curvature[e] = kappa_avg
             element_strain[e] = kappa_avg * wire_radius
 
-        return ElementBendingStrainOutput(element_strain=element_strain)
+        return ElementBendingStrainOutput(
+            element_strain=element_strain,
+            element_curvature=element_curvature,
+        )
 
 
 # ====================================================================
@@ -390,11 +399,13 @@ class BeamOscillationProcess(
         E_final = energy_history[-1] if len(energy_history) > 0 else 0.0
         energy_decay_ratio = E_final / E_init if E_init > 1e-30 else 0.0
 
-        # 要素ひずみ時刻歴（最大曲げひずみ）
+        # コンターフィールド時刻歴（SK1, LE11, S11）
         strain_proc = ElementBendingStrainProcess()
-        element_strain_history = []
+        sk1_history: list[np.ndarray] = []
+        le11_history: list[np.ndarray] = []
+        s11_history: list[np.ndarray] = []
         for u_snap in disp_hist:
-            strain_out = strain_proc.process(
+            out = strain_proc.process(
                 ElementBendingStrainInput(
                     node_coords=mesh_data.node_coords,
                     connectivity=mesh_data.connectivity,
@@ -402,7 +413,15 @@ class BeamOscillationProcess(
                     wire_radius=wire_radius,
                 )
             )
-            element_strain_history.append(strain_out.element_strain)
+            sk1_history.append(out.element_curvature)
+            le11_history.append(out.element_strain)
+            s11_history.append(out.element_strain * cfg.E)
+
+        contour_fields = {
+            "SK1": sk1_history,
+            "LE11": le11_history,
+            "S11": s11_history,
+        }
 
         return BeamOscillationResult(
             solver_result=solver_result,
@@ -419,5 +438,6 @@ class BeamOscillationProcess(
             amplitude_ratio=amplitude_ratio,
             energy_history=energy_history,
             energy_decay_ratio=energy_decay_ratio,
-            element_strain_history=element_strain_history,
+            contour_fields=contour_fields,
+            element_strain_history=le11_history,
         )
