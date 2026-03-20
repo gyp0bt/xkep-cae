@@ -431,3 +431,43 @@ class TestDynamicThreePointBendJigPhysics:
             f"振幅の相対誤差 {rel_error * 100:.2f}% > 10%: "
             f"解析解 {analytical_amplitude:.6f} mm vs 実測 {result.max_deflection:.6f} mm"
         )
+
+    def test_rho_inf_numerical_dissipation(self):
+        """rho_inf パラメータが動的応答に影響する（パラメータ感度検証）.
+
+        Generalized-α法は高周波モードを選択的に減衰する。
+        rho_inf = {1.0, 0.5, 0.0} で動的解析を実行し:
+        1. 全ケースが収束する（ロバスト性）
+        2. rho_inf によって最終変位が変化する（パラメータ感度）
+        3. エネルギー診断が記録される（診断性）
+
+        注: SE = 0.5*u^T*f_int は非線形 CR 梁では近似値のため、
+        エネルギー減衰の厳密な単調性は保証されない。
+        """
+        import numpy as np
+
+        rho_inf_values = [1.0, 0.5, 0.0]
+        final_displacements = []
+        proc = DynamicThreePointBendJigProcess()
+
+        for rho_inf in rho_inf_values:
+            cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, rho_inf=rho_inf)
+            result = proc.process(cfg)
+            assert result.solver_result.converged, f"rho_inf={rho_inf} で収束しなかった"
+            # エネルギー診断が記録されている
+            assert result.solver_result.energy_history is not None, (
+                f"rho_inf={rho_inf} でエネルギー履歴が記録されていない"
+            )
+            final_displacements.append(result.wire_midpoint_deflection)
+
+        print("\n  rho_inf パラメータ感度:")
+        for rho_inf, d in zip(rho_inf_values, final_displacements, strict=True):
+            print(f"    rho_inf={rho_inf:.1f}: 最終変位={d:.6f} mm")
+
+        # 異なる rho_inf で異なる最終変位 → パラメータが効いている
+        d_arr = np.array(final_displacements)
+        spread = (np.max(d_arr) - np.min(d_arr)) / np.mean(d_arr) if np.mean(d_arr) > 1e-30 else 0.0
+        print(f"    変位ばらつき={spread * 100:.1f}%")
+        assert spread > 0.01, (
+            f"rho_inf によるばらつき {spread * 100:.1f}% < 1%: パラメータが動的応答に影響していない"
+        )
