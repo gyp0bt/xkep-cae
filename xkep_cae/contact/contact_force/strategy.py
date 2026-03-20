@@ -189,12 +189,14 @@ class SmoothPenaltyContactForceProcess(
         smoothing_delta: float = 0.0,
         n_uzawa_max: int = 5,
         tol_uzawa: float = 1e-3,
+        exact_tangent: bool = False,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
         self._smoothing_delta = smoothing_delta
         self._n_uzawa_max = n_uzawa_max
         self._tol_uzawa = tol_uzawa
+        self._exact_tangent = exact_tangent
 
     @property
     def n_uzawa_max(self) -> int:
@@ -286,17 +288,20 @@ class SmoothPenaltyContactForceProcess(
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列（正定値近似）.
+        """接触接線剛性行列.
 
-        softplus の厳密接線 dp/dg = -k_pen * sigmoid(-δg) は負定値で、
-        K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
+        exact_tangent=False（デフォルト）:
+            softplus の厳密接線 dp/dg = -k_pen * sigmoid(-δg) は負定値で、
+            K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
+            代わりに厳密接線の絶対値を正定値近似として使用:
+                K_contact = +k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
+            準静的解析向け。
 
-        代わりに厳密接線の絶対値を正定値近似として使用:
-            K_contact = k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
-        これはペナルティ法の接線と等価で、K_total の正定値性を保つ。
-        梁–剛体ジグ接触のように片側のみが応答する場合に特に有効。
-
-        sigmoid が自然にゼロに遷移するため、非接触ペアでは自動的に K_contact ≈ 0。
+        exact_tangent=True（動的解析用）:
+            厳密接線（負定値）をそのまま使用:
+                K_contact = -k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
+            動的ソルバーでは c0*M の正則化で K_eff が正定値を保つため、
+            厳密接線が使用可能。2次収束が得られる。
         """
         rows: list[int] = []
         cols: list[int] = []
@@ -308,12 +313,16 @@ class SmoothPenaltyContactForceProcess(
                     continue
 
                 g_i = pair.state.gap
-                # sigmoid = |dp_n/dg| / k_pen
-                sigmoid_val = abs(self._softplus_derivative(g_i, self._smoothing_delta))
-                if sigmoid_val < 1e-30:
+                deriv = self._softplus_derivative(g_i, self._smoothing_delta)
+                if abs(deriv) < 1e-30:
                     continue
 
-                weight = k_pen * sigmoid_val
+                if self._exact_tangent:
+                    # 厳密接線: dp/dg * g_shape ⊗ g_shape（負定値）
+                    weight = k_pen * deriv
+                else:
+                    # 正定値近似: |dp/dg| * g_shape ⊗ g_shape
+                    weight = k_pen * abs(deriv)
                 g_shape = _contact_shape_vector(pair)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
 
@@ -364,6 +373,7 @@ def _create_contact_force_strategy(
     smoothing_delta: float = 0.0,
     n_uzawa_max: int = 5,
     tol_uzawa: float = 1e-3,
+    exact_tangent: bool = False,
 ) -> NCPContactForceProcess | SmoothPenaltyContactForceProcess:
     """接触力 Strategy ファクトリ.
 
@@ -375,6 +385,7 @@ def _create_contact_force_strategy(
         smoothing_delta: smooth penalty の δ パラメータ
         n_uzawa_max: Uzawa 最大反復回数
         tol_uzawa: Uzawa 収束許容値
+        exact_tangent: 厳密接線使用（動的解析で c0*M 正則化がある場合に有効）
     """
     if contact_mode == "smooth_penalty":
         return SmoothPenaltyContactForceProcess(
@@ -383,6 +394,7 @@ def _create_contact_force_strategy(
             smoothing_delta=smoothing_delta,
             n_uzawa_max=n_uzawa_max,
             tol_uzawa=tol_uzawa,
+            exact_tangent=exact_tangent,
         )
 
     return NCPContactForceProcess(

@@ -175,6 +175,7 @@ class ContactFrictionProcess(
             smoothing_delta=manager.config.smoothing_delta,
             n_uzawa_max=manager.config.n_uzawa_max,
             tol_uzawa=manager.config.tol_uzawa,
+            exact_tangent=False,  # 正定値近似（k_pen適正化後に再評価）
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -362,10 +363,22 @@ class ContactFrictionProcess(
 
         # --- Newton-Uzawa プロセス（Static/Dynamic 完全分離） ---
         if _dynamics:
-            nr_config_dyn = NewtonUzawaDynamicInput(show_progress=True)
+            nr_config_dyn = NewtonUzawaDynamicInput(
+                show_progress=True,
+                max_attempts=input_data.max_nr_attempts,
+                tol_force=input_data.tol_force,
+                tol_disp=input_data.tol_disp,
+                divergence_window=input_data.divergence_window,
+                du_norm_cap=input_data.du_norm_cap,
+            )
             nr_process_dyn = NewtonUzawaDynamicProcess()
         else:
-            nr_config_sta = NewtonUzawaStaticInput(show_progress=True)
+            nr_config_sta = NewtonUzawaStaticInput(
+                show_progress=True,
+                max_attempts=input_data.max_nr_attempts,
+                tol_force=input_data.tol_force,
+                tol_disp=input_data.tol_disp,
+            )
             nr_process_sta = NewtonUzawaStaticProcess()
 
         # --- 最終診断 ---

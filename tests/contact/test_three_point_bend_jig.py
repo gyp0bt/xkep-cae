@@ -20,6 +20,8 @@ from __future__ import annotations
 import pytest
 
 from xkep_cae.numerical_tests.three_point_bend_jig import (
+    DynamicThreePointBendContactJigConfig,
+    DynamicThreePointBendContactJigProcess,
     DynamicThreePointBendJigConfig,
     DynamicThreePointBendJigProcess,
     ThreePointBendJigConfig,
@@ -507,4 +509,139 @@ class TestDynamicThreePointBendJigPhysics:
         print(f"    変位ばらつき={spread * 100:.1f}%")
         assert spread > 0.01, (
             f"rho_inf によるばらつき {spread * 100:.1f}% < 1%: パラメータが動的応答に影響していない"
+        )
+
+
+# ====================================================================
+# 動的接触ジグ三点曲げテスト（HEX8 + smooth_penalty + 摩擦）
+# ====================================================================
+
+
+def _dynamic_contact_config(**overrides) -> DynamicThreePointBendContactJigConfig:
+    """動的接触ジグテスト用デフォルト設定."""
+    defaults = {
+        "wire_length": _L,
+        "wire_diameter": _D,
+        "n_elems_wire": 20,
+        "E": _E,
+        "nu": _NU,
+        "rho": _RHO,
+        "jig_push": 0.1,
+        "n_periods": 2.0,
+        "rho_inf": 0.9,
+        "mu": 0.15,
+        "initial_gap": 0.05,  # ジグをワイヤ上方0.05mmに配置→振動ピーク付近で接触
+        "max_increments": 10000,
+        "n_uzawa_max": 1,  # 純粋ペナルティ法
+    }
+    defaults.update(overrides)
+    return DynamicThreePointBendContactJigConfig(**defaults)
+
+
+class TestDynamicContactJigConvergence:
+    """動的接触ジグ三点曲げの収束テスト."""
+
+    def test_dynamic_contact_converges(self):
+        """剛体エッジジグ + smooth_penalty + 摩擦 + 動的解析が収束する.
+
+        半周期分のみ計算し、接触遷移を含む区間で収束することを検証。
+        """
+        cfg = _dynamic_contact_config(n_periods=0.5)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        print(
+            f"\n  動的接触ジグ: converged={result.solver_result.converged}, "
+            f"increments={result.solver_result.n_increments}, "
+            f"f1={result.analytical_frequency_hz:.1f} Hz, "
+            f"T1={result.analytical_period:.6f} s, "
+            f"δ_max={result.max_deflection:.6f} mm, "
+            f"DAF={result.dynamic_amplification:.3f}, "
+            f"fc_norm={result.contact_force_norm:.6f}"
+        )
+        assert result.solver_result.converged, "動的接触ジグ解析が収束しなかった"
+
+    def test_dynamic_contact_frictionless_converges(self):
+        """摩擦なし（mu=0）で動的接触ジグが収束する（接触問題の分離検証）."""
+        cfg = _dynamic_contact_config(n_periods=0.5, mu=0.0)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        print(
+            f"\n  摩擦なし動的接触ジグ: converged={result.solver_result.converged}, "
+            f"increments={result.solver_result.n_increments}, "
+            f"δ_max={result.max_deflection:.6f} mm"
+        )
+        assert result.solver_result.converged, "摩擦なしで収束しなかった"
+
+
+class TestDynamicContactJigPhysics:
+    """動的接触ジグ三点曲げの物理的妥当性テスト."""
+
+    def test_dynamic_contact_has_oscillation(self):
+        """動的応答に振動成分が含まれる."""
+        cfg = _dynamic_contact_config(n_periods=2.0)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        hist = result.deflection_history
+        if len(hist) < 5:
+            pytest.skip("履歴が短すぎる")
+
+        import numpy as np
+
+        diffs = np.diff(hist)
+        sign_changes = np.sum(np.abs(np.diff(np.sign(diffs))) > 0)
+        print(
+            f"\n  変位履歴: {len(hist)} 点, "
+            f"max={np.max(hist):.6f}, min={np.min(hist):.6f}, "
+            f"符号変化={sign_changes}"
+        )
+        assert sign_changes >= 2, f"振動の符号変化 {sign_changes} < 2: 動的応答に振動がない"
+
+    def test_max_deflection_order(self):
+        """最大変位が初期変位と同オーダー."""
+        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=1.0)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        ratio = result.max_deflection / cfg.jig_push if cfg.jig_push > 0 else 0
+        print(
+            f"\n  max_defl={result.max_deflection:.6f} mm, "
+            f"jig_push={cfg.jig_push:.6f} mm, ratio={ratio:.3f}"
+        )
+        # 接触拘束で振幅が変わるため、0.3〜3.0 の広い範囲
+        assert 0.3 < ratio < 3.0, f"最大変位比 {ratio:.3f} が範囲外 [0.3, 3.0]"
+
+    def test_frequency_within_range(self):
+        """FFT計測周波数が解析的自由振動周波数と同オーダー.
+
+        接触拘束により振動数が変化するため、厳密一致ではなく
+        0.5〜2.0 倍の範囲内であることを確認。
+        """
+        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=3.0, n_elems_wire=40)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        f_analytical = result.analytical_frequency_hz
+        f_measured = result.measured_frequency_hz
+        if f_measured <= 0:
+            pytest.skip("FFTで周波数を検出できなかった")
+
+        ratio = f_measured / f_analytical
+        print(f"\n  振動数: 解析解={f_analytical:.1f} Hz, 実測={f_measured:.1f} Hz, 比={ratio:.3f}")
+        assert 0.5 < ratio < 2.0, f"周波数比 {ratio:.3f} が範囲外 [0.5, 2.0]"
+
+    def test_energy_history_recorded(self):
+        """動的解析でエネルギー履歴が記録される."""
+        cfg = _dynamic_contact_config(n_periods=1.0)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        assert result.solver_result.energy_history is not None, (
+            "動的接触解析でエネルギー履歴が記録されていない"
         )

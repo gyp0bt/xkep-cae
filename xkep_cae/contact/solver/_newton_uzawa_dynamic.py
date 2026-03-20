@@ -236,13 +236,21 @@ class NewtonUzawaDynamicProcess(
                     _consecutive_increase = 0
                 _prev_res_ratio = _cur_ratio
 
+                _diverge_detected = False
                 if _consecutive_increase >= cfg.divergence_window:
+                    _diverge_detected = True
+                    _reason = f"残差 {cfg.divergence_window} 回連続増加"
+                # 残差爆発検知: 初期残差の100倍超 かつ 10反復以上
+                elif att >= 10 and _cur_ratio > 100.0:
+                    _diverge_detected = True
+                    _reason = f"残差爆発 (||R||/||f|| = {_cur_ratio:.1e} > 100)"
+                if _diverge_detected:
                     _diverged = True
                     if cfg.show_progress:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
                             f"uzawa {_uzawa_iter}: 発散検知 "
-                            f"(残差 {cfg.divergence_window} 回連続増加) → early abort"
+                            f"({_reason}) → early abort"
                         )
                     break
 
@@ -374,8 +382,12 @@ class NewtonUzawaDynamicProcess(
                 if uzawa_out.converged:
                     break  # Uzawa converged
 
-                step_converged = False
-                energy_ref = None
+                # 最終 Uzawa 反復では NR 収束結果を保持する。
+                # リセットすると NR が収束していても step_converged=False で
+                # カットバックが発生してしまう。
+                if _uzawa_iter < n_uzawa_max - 1:
+                    step_converged = False
+                    energy_ref = None
             else:
                 break
 

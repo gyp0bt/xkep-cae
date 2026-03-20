@@ -105,6 +105,7 @@ def default_strategies(
     coating_stiffness: float = 0.0,
     n_uzawa_max: int = 5,
     tol_uzawa: float = 1e-3,
+    exact_tangent: bool = False,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
@@ -153,6 +154,7 @@ def default_strategies(
             smoothing_delta=smoothing_delta,
             n_uzawa_max=n_uzawa_max,
             tol_uzawa=tol_uzawa,
+            exact_tangent=exact_tangent,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,
@@ -192,6 +194,12 @@ class ContactFrictionInputData:
     damping_matrix: sp.spmatrix | None = None
     velocity: np.ndarray | None = None
     acceleration: np.ndarray | None = None
+    # NR ソルバーパラメータ（Optional、smooth_penalty の線形収束対応）
+    max_nr_attempts: int = 50
+    tol_force: float = 1e-8
+    tol_disp: float = 1e-8
+    divergence_window: int = 5
+    du_norm_cap: float = 0.0  # NR ステップ上限（||du|| < cap * ||u||、0=制限なし）
 
     @property
     def is_dynamic(self) -> bool:
