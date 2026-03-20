@@ -39,6 +39,7 @@ class StaticStepOutput:
     n_active: int
     f_c: np.ndarray
     diagnostics: ConvergenceDiagnosticsOutput
+    diverged: bool = False  # 発散早期検知フラグ（静的は常にFalse）
 
 
 @dataclass(frozen=True)

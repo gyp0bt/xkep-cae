@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-20）
 
-**468+14s テスト**（UL+動的振動修正 — status-215） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**496 テスト**（動的ソルバー強化 — status-216） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
