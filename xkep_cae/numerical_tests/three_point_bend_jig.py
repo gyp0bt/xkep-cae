@@ -1117,6 +1117,7 @@ class DynamicThreePointBendContactJigConfig:
     tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
     max_nr_attempts: int = 200  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートン（0=制限なし）
+    exact_tangent: bool = False  # 厳密接線（c0*M 正則化で K_eff 正定値時に有効）
 
 
 @dataclass(frozen=True)
@@ -1352,6 +1353,7 @@ class DynamicThreePointBendContactJigProcess(
             contact_mode="smooth_penalty",
             smoothing_delta=cfg.smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
+            exact_tangent=cfg.exact_tangent,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],

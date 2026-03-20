@@ -171,6 +171,7 @@ class _ContactConfigInput:
     smoothing_delta: float = 0.0
     n_uzawa_max: int = 5
     tol_uzawa: float = 1e-6
+    exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
 
 
 @dataclass(frozen=True)

@@ -175,7 +175,7 @@ class ContactFrictionProcess(
             smoothing_delta=manager.config.smoothing_delta,
             n_uzawa_max=manager.config.n_uzawa_max,
             tol_uzawa=manager.config.tol_uzawa,
-            exact_tangent=False,  # 正定値近似（k_pen適正化後に再評価）
+            exact_tangent=manager.config.exact_tangent,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
