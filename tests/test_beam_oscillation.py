@@ -28,6 +28,7 @@ from xkep_cae.numerical_tests.beam_oscillation import (
     ElementBendingStrainProcess,
 )
 from xkep_cae.output.stress_contour import (
+    ContourFieldInput,
     StressContour3DConfig,
     StressContour3DProcess,
 )
@@ -189,7 +190,6 @@ class TestBeamOscillationPhysics:
         ratio = small_result.amplitude_ratio
         assert 0.8 < ratio < 1.3, f"振幅比 {ratio:.3f} が解析解から乖離"
 
-    @pytest.mark.xfail(reason="UL+GeneralizedAlpha結合で振動が単調減衰する問題 — status-211 TODO")
     def test_small_oscillation_detected(self, small_result):
         """小振幅で振動が検出される（方向反転あり）."""
         defl = small_result.deflection_history
@@ -214,6 +214,17 @@ class TestBeamOscillationPhysics:
         """大振幅で非線形効果が現れる（振幅比 ≠ 1.0）."""
         # 大変形では幾何学的非線形により周期・振幅が変化
         assert large_result.max_deflection > 0.1, "変形がほぼゼロ"
+
+    def test_contour_fields_exist(self, large_result):
+        """contour_fields に S11/LE11/SK1 が含まれる."""
+        assert "S11" in large_result.contour_fields
+        assert "LE11" in large_result.contour_fields
+        assert "SK1" in large_result.contour_fields
+        # S11 = E * LE11
+        if len(large_result.contour_fields["S11"]) > 0:
+            s11 = large_result.contour_fields["S11"][0]
+            le11 = large_result.contour_fields["LE11"][0]
+            np.testing.assert_allclose(s11, le11 * _E, rtol=1e-10)
 
     def test_large_strain_distribution(self, large_result):
         """大振幅でひずみ分布が物理的に妥当.
@@ -251,7 +262,6 @@ class TestBeamOscillationPhysics:
             f"変位発散: max={large_result.max_deflection:.3f} > L/2={L / 2:.1f}"
         )
 
-    @pytest.mark.xfail(reason="UL定式化でのエネルギー計算がひずみエネルギーを過大評価 — TODO")
     def test_numerical_dissipation_rate(self, large_result):
         """数値粘性の減衰率が妥当な範囲.
 
@@ -287,11 +297,16 @@ class TestStrainContour3DRendering:
         osc_result = BeamOscillationProcess().process(cfg)
         assert osc_result.solver_result.converged
 
+        # contour_fields からフィールド入力を構築
+        contour_fields = [
+            ContourFieldInput(name=name, snapshots=snaps)
+            for name, snaps in osc_result.contour_fields.items()
+        ]
         render_cfg = StressContour3DConfig(
             mesh=osc_result.mesh,
             node_coords_initial=osc_result.mesh.node_coords,
             displacement_snapshots=osc_result.solver_result.displacement_history,
-            element_strain_snapshots=osc_result.element_strain_history,
+            contour_fields=contour_fields,
             time_values=osc_result.time_history,
             wire_radius=cfg.wire_diameter / 2.0,
             output_dir=str(tmp_path),
@@ -299,7 +314,11 @@ class TestStrainContour3DRendering:
             n_render_frames=3,
         )
         render_result = StressContour3DProcess().process(render_cfg)
-        assert len(render_result.image_paths) > 0, "画像が出力されない"
+        # 3フィールド × 3フレーム + 時刻歴 = 10枚以上
+        assert len(render_result.image_paths) >= 3, "画像が出力されない"
+        assert "S11" in render_result.field_max_values
+        assert "LE11" in render_result.field_max_values
+        assert "SK1" in render_result.field_max_values
 
         # PNG ファイルの存在確認
         from pathlib import Path

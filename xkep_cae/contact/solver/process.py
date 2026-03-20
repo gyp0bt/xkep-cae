@@ -532,7 +532,10 @@ class ContactFrictionProcess(
                 _time_strategy.correct(state.u, np.zeros_like(state.u), dt_sub)
 
             # Updated Lagrangian: 参照配置更新
-            if _ul:
+            # 動的解析では UL 更新をスキップ — CR 梁の corotational 分解が
+            # 大変形を処理するため、参照配置リセットは不要。
+            # リセットすると state.u=0 で復元力が消失し振動が再現されない。
+            if _ul and not _dynamics:
                 ul_assembler.update_reference(state.u)
                 _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
                 _state_set(state, "ul_frac_base", load_frac)

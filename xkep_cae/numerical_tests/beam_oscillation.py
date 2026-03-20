@@ -103,7 +103,10 @@ class BeamOscillationResult:
     # 数値粘性評価
     energy_history: np.ndarray  # 各ステップの運動+ポテンシャルエネルギー
     energy_decay_ratio: float  # 最終エネルギー / 初期エネルギー
-    # ひずみ情報（要素ごと最大曲げひずみ）
+    # コンターフィールド履歴（S11, LE11, SK1 等）
+    # key = フィールド名, value = list[np.ndarray] (各スナップショットの要素値)
+    contour_fields: dict[str, list[np.ndarray]] = field(default_factory=dict)
+    # 後方互換（element_strain_history → contour_fields["LE11"]）
     element_strain_history: list[np.ndarray] = field(default_factory=list)
 
 
@@ -126,7 +129,8 @@ class ElementBendingStrainInput:
 class ElementBendingStrainOutput:
     """要素曲げひずみ計算の出力."""
 
-    element_strain: np.ndarray  # 各要素の最大曲げひずみ (n_elems,)
+    element_strain: np.ndarray  # 各要素の最大曲げひずみ ε = κR (n_elems,)
+    element_curvature: np.ndarray  # 各要素の曲率 κ [1/mm] (n_elems,)
 
 
 class ElementBendingStrainProcess(
@@ -181,13 +185,18 @@ class ElementBendingStrainProcess(
                 kappa_node[-1] = kappa_node[-2]
 
         # 要素ごと: 両端節点の曲率平均 → ε = κ * R
+        element_curvature = np.zeros(n_elems)
         element_strain = np.zeros(n_elems)
         for e in range(n_elems):
             n0, n1 = connectivity[e]
             kappa_avg = 0.5 * (abs(kappa_node[n0]) + abs(kappa_node[n1]))
+            element_curvature[e] = kappa_avg
             element_strain[e] = kappa_avg * wire_radius
 
-        return ElementBendingStrainOutput(element_strain=element_strain)
+        return ElementBendingStrainOutput(
+            element_strain=element_strain,
+            element_curvature=element_curvature,
+        )
 
 
 # ====================================================================
@@ -283,8 +292,20 @@ class BeamOscillationProcess(
         omega1 = 2.0 * math.pi * f1
         t_total = cfg.n_periods * T1
 
-        # 初速度: v₀ = ω₁ * δ_s → 小振幅での最大変位 ≈ amplitude
-        v0 = omega1 * cfg.amplitude
+        # 初速度: モーダル質量補正付き
+        # 単一DOF系では v₀ = ω₁ * δ だが、梁の集中質量では
+        # 節点質量 m_mid ≠ モーダル質量 M₁ のため補正が必要:
+        #   v₀ = ω₁ * δ * M₁ / m_mid
+        # M₁ = φ₁ᵀ M φ₁, m_mid = M[mid_y_dof, mid_y_dof]
+        wire_mid_y_dof = 6 * wire_mid_node + 1
+        phi1 = np.zeros(ndof)
+        for i in range(n_nodes):
+            x_i = mesh_data.node_coords[i, 0]
+            phi1[6 * i + 1] = math.sin(math.pi * x_i / cfg.wire_length)
+        M_modal = float(phi1 @ mass_matrix @ phi1)
+        m_mid = float(mass_matrix[wire_mid_y_dof, wire_mid_y_dof])
+        modal_ratio = M_modal / m_mid if m_mid > 1e-30 else 1.0
+        v0 = omega1 * cfg.amplitude * modal_ratio
 
         # 時間増分パラメータ（小さめ）
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 100.0
@@ -385,16 +406,29 @@ class BeamOscillationProcess(
                     E_kinetic = 0.0
                 energy_history[i] = abs(E_strain) + abs(E_kinetic)
 
-        # エネルギー減衰率
-        E_init = energy_history[0] if len(energy_history) > 0 else 1.0
-        E_final = energy_history[-1] if len(energy_history) > 0 else 0.0
+        # エネルギー減衰率（ピーク変位点で比較）
+        # 初期の集中初速度 → 分布モーダルエネルギーの遷移と、
+        # 最終ステップの運動エネルギー近似誤差を回避するため、
+        # 変位ピーク（KE≈0）でのひずみエネルギーを比較する。
+        d_diff = np.diff(defl_arr)
+        peak_indices = np.where(np.diff(np.sign(d_diff)) != 0)[0] + 1
+        if len(peak_indices) >= 2:
+            E_init = energy_history[peak_indices[0]]
+            E_final = energy_history[peak_indices[-1]]
+        elif len(energy_history) > 0:
+            E_init = energy_history[0]
+            E_final = energy_history[-1]
+        else:
+            E_init, E_final = 1.0, 0.0
         energy_decay_ratio = E_final / E_init if E_init > 1e-30 else 0.0
 
-        # 要素ひずみ時刻歴（最大曲げひずみ）
+        # コンターフィールド時刻歴（SK1, LE11, S11）
         strain_proc = ElementBendingStrainProcess()
-        element_strain_history = []
+        sk1_history: list[np.ndarray] = []
+        le11_history: list[np.ndarray] = []
+        s11_history: list[np.ndarray] = []
         for u_snap in disp_hist:
-            strain_out = strain_proc.process(
+            out = strain_proc.process(
                 ElementBendingStrainInput(
                     node_coords=mesh_data.node_coords,
                     connectivity=mesh_data.connectivity,
@@ -402,7 +436,15 @@ class BeamOscillationProcess(
                     wire_radius=wire_radius,
                 )
             )
-            element_strain_history.append(strain_out.element_strain)
+            sk1_history.append(out.element_curvature)
+            le11_history.append(out.element_strain)
+            s11_history.append(out.element_strain * cfg.E)
+
+        contour_fields = {
+            "SK1": sk1_history,
+            "LE11": le11_history,
+            "S11": s11_history,
+        }
 
         return BeamOscillationResult(
             solver_result=solver_result,
@@ -419,5 +461,6 @@ class BeamOscillationProcess(
             amplitude_ratio=amplitude_ratio,
             energy_history=energy_history,
             energy_decay_ratio=energy_decay_ratio,
-            element_strain_history=element_strain_history,
+            contour_fields=contour_fields,
+            element_strain_history=le11_history,
         )

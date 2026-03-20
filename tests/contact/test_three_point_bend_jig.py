@@ -355,7 +355,6 @@ class TestDynamicThreePointBendJigConvergence:
 class TestDynamicThreePointBendJigPhysics:
     """動的三点曲げの物理的妥当性テスト（初速度制御）."""
 
-    @pytest.mark.xfail(reason="UL参照配置更新と初速度の相互作用（status-211 TODO）")
     def test_dynamic_response_has_oscillation(self):
         """動的応答に振動成分が含まれる."""
         cfg = _dynamic_config(jig_push=0.1, n_periods=2.0)
@@ -378,7 +377,6 @@ class TestDynamicThreePointBendJigPhysics:
         )
         assert sign_changes >= 2, f"振動の符号変化 {sign_changes} < 2: 動的応答に振動がない"
 
-    @pytest.mark.xfail(reason="UL参照配置更新と初速度の相互作用（status-211 TODO）")
     def test_max_deflection_order(self):
         """最大変位が静的等価変位と同オーダー."""
         cfg = _dynamic_config(jig_push=0.1, n_periods=1.0)
