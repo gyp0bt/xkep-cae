@@ -6,10 +6,10 @@ BeamOscillationProcess を使い、単純支持梁の自由振動（動的ソル
 テスト構成:
 - TestBeamOscillationConvergence: ソルバー収束テスト（プログラムテスト）
 - TestBeamOscillationPhysics: 物理的妥当性テスト
-  - 振動周期、振幅、数値粘性、応力分布
+  - 振動周期、振幅、数値粘性、ひずみ分布
 
 物理パラメータ（mm-ton-MPa 単位系）:
-- ワイヤ: L=100mm, d=2mm, E=200GPa, ν=0.3, ρ=7.85e-9 ton/mm³
+- ワイヤ: L=100mm, d=2mm, E=100GPa, ν=0.3, ρ=8.96e-9 ton/mm³ (銅)
 - メッシュサイズ ≈ 半径（1mm）→ n_elems=100
 - 振幅: 5mm（非線形域）
 
@@ -24,7 +24,8 @@ import pytest
 from xkep_cae.numerical_tests.beam_oscillation import (
     BeamOscillationConfig,
     BeamOscillationProcess,
-    compute_element_bending_stress,
+    ElementBendingStrainInput,
+    ElementBendingStrainProcess,
 )
 from xkep_cae.output.stress_contour import (
     StressContour3DConfig,
@@ -32,14 +33,14 @@ from xkep_cae.output.stress_contour import (
 )
 
 # ====================================================================
-# 共通パラメータ
+# 共通パラメータ（銅）
 # ====================================================================
 
-_E = 200e3  # MPa
+_E = 100e3  # MPa (銅)
 _NU = 0.3
 _D = 2.0  # mm
 _L = 100.0  # mm
-_RHO = 7.85e-9  # ton/mm³
+_RHO = 8.96e-9  # ton/mm³ (銅)
 
 
 def _default_config(**overrides) -> BeamOscillationConfig:
@@ -61,7 +62,7 @@ def _default_config(**overrides) -> BeamOscillationConfig:
 
 
 # ====================================================================
-# プログラムテスト（API・収束）
+# プログラमテスト（API・収束）
 # ====================================================================
 
 
@@ -75,19 +76,27 @@ class TestBeamOscillationAPI:
         assert cfg.n_elems_wire == 100
         assert cfg.amplitude == 5.0
 
-    def test_stress_computation_zero_displacement(self):
-        """変位ゼロで応力もゼロ."""
+    def test_strain_computation_zero_displacement(self):
+        """変位ゼロでひずみもゼロ."""
         n_nodes = 11
         coords = np.column_stack(
             [np.linspace(0, 10, n_nodes), np.zeros(n_nodes), np.zeros(n_nodes)]
         )
         conn = np.column_stack([np.arange(10), np.arange(1, 11)])
         u = np.zeros(n_nodes * 6)
-        stress = compute_element_bending_stress(coords, conn, u, _E, 1.0)
-        assert np.allclose(stress, 0.0)
+        proc = ElementBendingStrainProcess()
+        result = proc.process(
+            ElementBendingStrainInput(
+                node_coords=coords,
+                connectivity=conn,
+                u=u,
+                wire_radius=1.0,
+            )
+        )
+        assert np.allclose(result.element_strain, 0.0)
 
-    def test_stress_computation_linear_deflection(self):
-        """二次放物線変位で一定曲率 → 一定応力."""
+    def test_strain_computation_parabolic_deflection(self):
+        """二次放物線変位で一定曲率 → 一定ひずみ."""
         n_nodes = 21
         L = 20.0
         x = np.linspace(0, L, n_nodes)
@@ -101,11 +110,19 @@ class TestBeamOscillationAPI:
             u[6 * i + 1] = -a * x[i] * (L - x[i])
 
         R = 1.0
-        stress = compute_element_bending_stress(coords, conn, u, _E, R)
-        expected_stress = _E * 2.0 * a * R
+        proc = ElementBendingStrainProcess()
+        result = proc.process(
+            ElementBendingStrainInput(
+                node_coords=coords,
+                connectivity=conn,
+                u=u,
+                wire_radius=R,
+            )
+        )
+        expected_strain = 2.0 * a * R  # κ * R = 2a * R
         # 端部以外は一定
-        interior = stress[2:-2]
-        assert np.allclose(interior, expected_stress, rtol=0.05)
+        interior = result.element_strain[2:-2]
+        assert np.allclose(interior, expected_strain, rtol=0.05)
 
 
 @pytest.mark.slow
@@ -198,31 +215,31 @@ class TestBeamOscillationPhysics:
         # 大変形では幾何学的非線形により周期・振幅が変化
         assert large_result.max_deflection > 0.1, "変形がほぼゼロ"
 
-    def test_large_stress_distribution(self, large_result):
-        """大振幅で応力分布が物理的に妥当.
+    def test_large_strain_distribution(self, large_result):
+        """大振幅でひずみ分布が物理的に妥当.
 
         中央部で最大、端部でゼロに近い。
         """
-        if len(large_result.element_stress_history) == 0:
-            pytest.skip("応力履歴なし")
+        if len(large_result.element_strain_history) == 0:
+            pytest.skip("ひずみ履歴なし")
 
         # 最大変形時のスナップショット
         defl = large_result.deflection_history
         max_idx = int(np.argmax(np.abs(defl)))
-        stress = large_result.element_stress_history[max_idx]
+        strain = large_result.element_strain_history[max_idx]
 
-        n_elems = len(stress)
+        n_elems = len(strain)
         if n_elems < 10:
             pytest.skip("要素数不足")
 
-        # 中央部（40-60%）の応力が端部（0-10%, 90-100%）より大きい
+        # 中央部（40-60%）のひずみが端部（0-10%, 90-100%）より大きい
         center_range = slice(int(n_elems * 0.4), int(n_elems * 0.6))
         edge_range_l = slice(0, int(n_elems * 0.1))
         edge_range_r = slice(int(n_elems * 0.9), n_elems)
 
-        center_mean = np.mean(stress[center_range])
-        edge_mean = 0.5 * (np.mean(stress[edge_range_l]) + np.mean(stress[edge_range_r]))
-        assert center_mean > edge_mean, f"中央応力 {center_mean:.1f} ≤ 端部応力 {edge_mean:.1f}"
+        center_mean = np.mean(strain[center_range])
+        edge_mean = 0.5 * (np.mean(strain[edge_range_l]) + np.mean(strain[edge_range_r]))
+        assert center_mean > edge_mean, f"中央ひずみ {center_mean:.2e} ≤ 端部ひずみ {edge_mean:.2e}"
 
     def test_large_deflection_bounded(self, large_result):
         """大振幅でも変位が発散しない.
@@ -251,13 +268,13 @@ class TestBeamOscillationPhysics:
 
 
 # ====================================================================
-# 可視化テスト（3D応力コンター）
+# 可視化テスト（3Dひずみコンター）
 # ====================================================================
 
 
 @pytest.mark.slow
-class TestStressContour3DRendering:
-    """3D応力コンターレンダリングのテスト."""
+class TestStrainContour3DRendering:
+    """3Dひずみコンターレンダリングのテスト."""
 
     def test_render_produces_images(self, tmp_path):
         """レンダリングが PNG ファイルを出力する."""
@@ -274,7 +291,7 @@ class TestStressContour3DRendering:
             mesh=osc_result.mesh,
             node_coords_initial=osc_result.mesh.node_coords,
             displacement_snapshots=osc_result.solver_result.displacement_history,
-            element_stress_snapshots=osc_result.element_stress_history,
+            element_strain_snapshots=osc_result.element_strain_history,
             time_values=osc_result.time_history,
             wire_radius=cfg.wire_diameter / 2.0,
             output_dir=str(tmp_path),

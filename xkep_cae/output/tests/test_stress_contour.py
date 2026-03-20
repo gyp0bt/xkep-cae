@@ -38,13 +38,13 @@ class TestStressContour3DProcessAPI:
         )
 
         u = np.zeros(n_nodes * 6)
-        stress = np.ones(10) * 100.0
+        strain = np.ones(10) * 0.001  # ひずみ値
 
         cfg = StressContour3DConfig(
             mesh=mesh,
             node_coords_initial=coords,
             displacement_snapshots=[u],
-            element_stress_snapshots=[stress],
+            element_strain_snapshots=[strain],
             time_values=np.array([0.0]),
             wire_radius=0.5,
             output_dir=str(tmp_path),
