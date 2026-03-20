@@ -30,7 +30,7 @@ class StressContour3DConfig:
     element_stress_snapshots: list[np.ndarray]  # 各スナップショットの要素応力
     time_values: np.ndarray  # 各スナップショットの時刻
     wire_radius: float = 1.0  # mm
-    output_dir: str = "docs/verification"
+    output_dir: str = "tmp/oscillation"
     prefix: str = "beam_oscillation"
     tube_segments: int = 12  # チューブ断面の分割数
     n_render_frames: int = 6  # レンダリングするフレーム数
