@@ -336,8 +336,10 @@ class NewtonUzawaStaticProcess(
                 if uzawa_out.converged:
                     break  # Uzawa converged
 
-                step_converged = False
-                energy_ref = None
+                # 最終 Uzawa 反復では NR 収束結果を保持する。
+                if _uzawa_iter < n_uzawa_max - 1:
+                    step_converged = False
+                    energy_ref = None
             else:
                 break
 

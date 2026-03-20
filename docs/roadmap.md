@@ -63,6 +63,7 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
+- [ ] **動的三点曲げ接触収束**: k_pen が動的解析に対して6桁小さい問題を特定（status-218）。c0*M ベースの k_pen 推定 + 接触遷移 dt 制御を実装中。exact_tangent/smoothing_delta/Uzawa の総合チューニングが次セッション課題。
 
 ### 既知の問題
 

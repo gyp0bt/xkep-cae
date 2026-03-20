@@ -147,12 +147,14 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         else:
             self._consecutive_good = 0
 
-        if input_data.prev_n_active > 0:
-            change_rate = abs(input_data.n_active - input_data.prev_n_active) / max(
-                input_data.prev_n_active, 1
-            )
+        # 接触状態変化チェック（0→N の新規接触発生も含む）
+        _contact_changed = abs(input_data.n_active - input_data.prev_n_active)
+        if _contact_changed > 0:
+            _base = max(input_data.prev_n_active, input_data.n_active, 1)
+            change_rate = _contact_changed / _base
             if change_rate > cfg.dt_contact_change_threshold:
                 next_delta = min(next_delta, current_delta * cfg.dt_shrink_factor)
+                self._consecutive_good = 0
 
         next_delta = max(next_delta, cfg.dt_min_fraction)
         next_delta = min(next_delta, cfg.dt_max_fraction)
