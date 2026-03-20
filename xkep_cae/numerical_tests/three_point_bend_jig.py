@@ -1106,7 +1106,7 @@ class DynamicThreePointBendContactJigConfig:
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     smoothing_delta: float = 50.0  # softplus の平滑化パラメータ（幅 1/δ ≈ 0.02mm）
-    n_uzawa_max: int = 1  # Uzawa 反復（1=純粋ペナルティ法）
+    n_uzawa_max: int = 3  # Uzawa 反復（拡大ラグランジアン法、status-219）
     mu: float = 0.15  # Coulomb 摩擦係数
     # 時間増分制御
     dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/20）
@@ -1114,7 +1114,7 @@ class DynamicThreePointBendContactJigConfig:
     max_increments: int = 10000  # 最大インクリメント数
     # NR ソルバーパラメータ
     tol_disp: float = 1e-8  # 変位収束許容値
-    tol_force: float = 1e-8  # 力収束許容値
+    tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
     max_nr_attempts: int = 200  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートン（0=制限なし）
 
