@@ -890,17 +890,13 @@ class DynamicThreePointBendJigProcess(
         omega1 = 2.0 * math.pi * f1
         t_total = cfg.n_periods * T1
 
-        # 初速度: モーダル質量補正付き
-        # 梁の集中質量では節点質量 m_mid ≠ モーダル質量 M₁
+        # 初期変位: 1次モード形状に比例
+        # u(x,0) = -jig_push × sin(πx/L), v(x,0) = 0
+        # 初速度方式は ω_analytical ≠ ω_FEM の差や高次モード励振で
+        # 振幅精度が劣化するため、初期変位方式を採用。
+        # 振幅 = jig_push が周波数に依存せず厳密に成立する。
         wire_mid_y_dof = 6 * wire_mid_node + 1
-        phi1 = np.zeros(ndof)
-        for i in range(n_nodes):
-            x_i = mesh_data.node_coords[i, 0]
-            phi1[6 * i + 1] = math.sin(math.pi * x_i / cfg.wire_length)
-        M_modal = float(phi1 @ mass_matrix @ phi1)
-        m_mid = float(mass_matrix[wire_mid_y_dof, wire_mid_y_dof])
-        modal_ratio = M_modal / m_mid if m_mid > 1e-30 else 1.0
-        v0 = omega1 * cfg.jig_push * modal_ratio
+        v0 = omega1 * cfg.jig_push  # 記録用（解析解の等価初速度）
 
         # 時間増分パラメータ
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 20.0
@@ -910,9 +906,12 @@ class DynamicThreePointBendJigProcess(
         dt_initial_frac = dt_initial / t_total
         dt_min_frac = dt_min / t_total
 
-        # 4. 初速度ベクトル
+        # 4. 初期変位ベクトル（1次モード形状分布、速度ゼロ）
+        u0 = np.zeros(ndof)
+        for i in range(n_nodes):
+            x_i = mesh_data.node_coords[i, 0]
+            u0[6 * i + 1] = -cfg.jig_push * math.sin(math.pi * x_i / cfg.wire_length)
         velocity = np.zeros(ndof)
-        velocity[6 * wire_mid_node + 1] = -v0  # 下向き初速度
 
         # 5. 境界条件（支持のみ、外力なし）
         fixed_dofs = set()
@@ -946,7 +945,7 @@ class DynamicThreePointBendJigProcess(
             contact_mode="smooth_penalty",
         )
 
-        # 7. ソルバー実行（動的モード、初速度付き）
+        # 7. ソルバー実行（動的モード、初期変位 + 速度ゼロ）
         solver_input = ContactFrictionInputData(
             mesh=mesh_data,
             boundary=boundary,
@@ -956,6 +955,7 @@ class DynamicThreePointBendJigProcess(
                 assemble_internal_force=assembler.assemble_internal_force,
                 ul_assembler=assembler,
             ),
+            u0=u0,
             mass_matrix=mass_matrix,
             dt_physical=t_total,
             rho_inf=cfg.rho_inf,
