@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-20）
 
-**496 テスト**（動的ソルバー強化 — status-216） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**499 テスト**（動的ソルバー解析解一致 — status-217） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -60,6 +60,9 @@ S7 (GPU)
 - [x] ~~NCPソルバー版S3ベンチマーク（AL法との計算時間比較）~~ — AL完全削除済み（status-167）
 - [ ] Cosserat Rodの解析的接線剛性実装
 - [x] ~~**UL+GeneralizedAlpha結合修正**: state.u増分/累積管理の明確化~~ — status-215 で修正完了（動的時UL更新スキップ + モーダル質量補正）
+- [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
+- [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
+- [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
 
 ### 既知の問題
 
