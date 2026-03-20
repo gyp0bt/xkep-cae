@@ -188,8 +188,12 @@ class UnifiedTimeStepProcess(
             load_frac_prev = self._last_load_frac_prev
         dt_sub = (load_frac - load_frac_prev) * self._t_total
 
+        # QUERY: dt_sub 計算用の prev を記録
+        # SUCCESS: 次の QUERY で正しい prev を使うために更新
         if query.action == StepAction.QUERY and out.has_more_steps:
             self._last_load_frac_prev = load_frac_prev
+        elif query.action == StepAction.SUCCESS:
+            self._last_load_frac_prev = query.load_frac
 
         return TimeStepResultOutput(
             load_frac=load_frac,

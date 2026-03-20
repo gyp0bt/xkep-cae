@@ -209,6 +209,7 @@ class SolverResultData:
     total_attempts: int
     displacement_history: list[np.ndarray] = field(default_factory=list)
     contact_force_history: list[float] = field(default_factory=list)
+    load_history: list[float] = field(default_factory=list)
     elapsed_seconds: float = 0.0
     diagnostics: object | None = None
     # エネルギー診断履歴（動的解析時に記録）

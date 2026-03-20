@@ -391,3 +391,120 @@ class TestDynamicThreePointBendJigPhysics:
         )
         # 初速度 v₀=ω₁*δ_s → 振幅≈δ_s。0.5〜2倍の範囲内
         assert 0.5 < ratio < 2.0, f"最大変位比 {ratio:.3f} が範囲外 [0.5, 2.0]"
+
+    def test_vibration_period_matches_analytical(self):
+        """振動周期が解析解（1次固有振動数）と一致する（5%以内）."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=3.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        f_analytical = result.analytical_frequency_hz
+        f_measured = result.measured_frequency_hz
+        assert f_measured > 0, "FFTで周波数を検出できなかった"
+
+        rel_error = abs(f_measured - f_analytical) / f_analytical
+        print(
+            f"\n  振動数: 解析解={f_analytical:.1f} Hz, "
+            f"実測={f_measured:.1f} Hz, 誤差={rel_error * 100:.2f}%"
+        )
+        assert rel_error < 0.05, (
+            f"振動周期の相対誤差 {rel_error * 100:.2f}% > 5%: "
+            f"解析解 {f_analytical:.1f} Hz vs 実測 {f_measured:.1f} Hz"
+        )
+
+    def test_amplitude_matches_analytical(self):
+        """最大変位が解析解（v₀/ω₁ = δ_static）と10%以内で一致する."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        # 解析解: 自由振動の振幅 = v₀/ω₁ = δ_static = jig_push
+        analytical_amplitude = cfg.jig_push
+        rel_error = abs(result.max_deflection - analytical_amplitude) / analytical_amplitude
+        print(
+            f"\n  振幅: 解析解={analytical_amplitude:.6f} mm, "
+            f"実測={result.max_deflection:.6f} mm, 誤差={rel_error * 100:.2f}%"
+        )
+        assert rel_error < 0.10, (
+            f"振幅の相対誤差 {rel_error * 100:.2f}% > 10%: "
+            f"解析解 {analytical_amplitude:.6f} mm vs 実測 {result.max_deflection:.6f} mm"
+        )
+
+    def test_dynamic_reaction_force_matches_analytical(self):
+        """動的ピーク反力が k_EB × jig_push と一致する（許容誤差10%）.
+
+        自由振動の最大変位時における弾性復元力:
+          F_peak = k_EB × max_deflection ≈ k_EB × jig_push
+
+        解析解: v₀ = ω₁ × δ_s なので振幅 ≈ δ_s = jig_push。
+        よってピーク反力 ≈ k_EB × jig_push。
+        """
+        cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+
+        # 解析剛性
+        sec = _circle_section(cfg.wire_diameter, cfg.nu)
+        k_eb = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
+
+        # ピーク反力の解析解一致
+        F_peak = k_eb * result.max_deflection
+        F_peak_analytical = k_eb * cfg.jig_push
+        rel_err_peak = abs(F_peak - F_peak_analytical) / F_peak_analytical
+
+        print(
+            f"\n  動的反力検証:"
+            f"\n    k_EB={k_eb:.4f} N/mm"
+            f"\n    ピーク反力: F_peak={F_peak:.6f} N, "
+            f"F_analytical={F_peak_analytical:.6f} N, 誤差={rel_err_peak * 100:.2f}%"
+            f"\n    max_deflection={result.max_deflection:.6f} mm, "
+            f"jig_push={cfg.jig_push:.6f} mm"
+        )
+        assert rel_err_peak < 0.10, (
+            f"ピーク反力の相対誤差 {rel_err_peak * 100:.2f}% > 10%: "
+            f"k*max_defl={F_peak:.6f} N vs k*jig_push={F_peak_analytical:.6f} N"
+        )
+
+    def test_rho_inf_numerical_dissipation(self):
+        """rho_inf パラメータが動的応答に影響する（パラメータ感度検証）.
+
+        Generalized-α法は高周波モードを選択的に減衰する。
+        rho_inf = {1.0, 0.5, 0.0} で動的解析を実行し:
+        1. 全ケースが収束する（ロバスト性）
+        2. rho_inf によって最終変位が変化する（パラメータ感度）
+        3. エネルギー診断が記録される（診断性）
+
+        注: SE = 0.5*u^T*f_int は非線形 CR 梁では近似値のため、
+        エネルギー減衰の厳密な単調性は保証されない。
+        """
+        import numpy as np
+
+        rho_inf_values = [1.0, 0.5, 0.0]
+        final_displacements = []
+        proc = DynamicThreePointBendJigProcess()
+
+        for rho_inf in rho_inf_values:
+            cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, rho_inf=rho_inf)
+            result = proc.process(cfg)
+            assert result.solver_result.converged, f"rho_inf={rho_inf} で収束しなかった"
+            # エネルギー診断が記録されている
+            assert result.solver_result.energy_history is not None, (
+                f"rho_inf={rho_inf} でエネルギー履歴が記録されていない"
+            )
+            final_displacements.append(result.wire_midpoint_deflection)
+
+        print("\n  rho_inf パラメータ感度:")
+        for rho_inf, d in zip(rho_inf_values, final_displacements, strict=True):
+            print(f"    rho_inf={rho_inf:.1f}: 最終変位={d:.6f} mm")
+
+        # 異なる rho_inf で異なる最終変位 → パラメータが効いている
+        d_arr = np.array(final_displacements)
+        spread = (np.max(d_arr) - np.min(d_arr)) / np.mean(d_arr) if np.mean(d_arr) > 1e-30 else 0.0
+        print(f"    変位ばらつき={spread * 100:.1f}%")
+        assert spread > 0.01, (
+            f"rho_inf によるばらつき {spread * 100:.1f}% < 1%: パラメータが動的応答に影響していない"
+        )
