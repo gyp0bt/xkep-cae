@@ -185,6 +185,84 @@ class ContinuationPenalty(SolverProcess[PenaltyInput, PenaltyOutput]):
         return PenaltyOutput(k_pen=self.compute_k_pen(input_data.step, input_data.total_steps))
 
 
+@dataclass(frozen=True)
+class DynamicPenaltyEstimateInput:
+    """動的ペナルティ剛性推定の入力.
+
+    Generalized-α 法の有効質量剛性 c0*M_ii をベースに、
+    動的解析に適切な k_pen を推定する。
+    """
+
+    rho_inf: float  # Generalized-α のスペクトル半径
+    dt: float  # 時間刻み [s]
+    rho: float  # 材料密度 [ton/mm³]
+    A: float  # 断面積 [mm²]
+    L_elem: float  # 代表要素長 [mm]
+    scale: float = 0.5  # c0*M_ii に対するスケール（デフォルト50%）
+
+
+@dataclass(frozen=True)
+class DynamicPenaltyEstimateOutput:
+    """動的ペナルティ剛性推定の出力."""
+
+    k_pen: float
+    c0: float  # 有効質量係数 1/(beta*dt²)
+    m_ii: float  # 代表集中質量
+    c0_m_ii: float  # c0*m_ii（動的有効剛性スケール）
+
+
+class DynamicPenaltyEstimateProcess(
+    SolverProcess[DynamicPenaltyEstimateInput, DynamicPenaltyEstimateOutput],
+):
+    """動的解析の有効質量剛性 c0*M_ii ベースでペナルティ剛性を推定.
+
+    推定式:
+        alpha_m = (2*rho_inf - 1) / (rho_inf + 1)
+        alpha_f = rho_inf / (rho_inf + 1)
+        beta = 0.25 * (1 - alpha_m + alpha_f)²
+        c0 = 1 / (beta * dt²)
+        m_ii = rho * A * L_elem / 2    （集中質量の代表値）
+        k_pen = scale * c0 * m_ii
+
+    scale=0.5 の根拠:
+        exact_tangent=True 時に K_eff が正定値を保つ条件:
+        k_pen < (1-alpha_m) * c0 * M_ii
+        scale=0.5 なら十分なマージンで正定値維持。
+
+    status-218 で特定: 静的梁剛性ベースの k_pen は動的有効剛性に対して6桁小さく、
+    接触力が慣性力に負けてワイヤがジグを貫通する。
+    """
+
+    meta = ProcessMeta(
+        name="DynamicPenaltyEstimate",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/penalty.md",
+    )
+
+    def process(self, input_data: DynamicPenaltyEstimateInput) -> DynamicPenaltyEstimateOutput:
+        rho_inf = input_data.rho_inf
+        dt = input_data.dt
+
+        # Chung & Hulbert (1993) パラメータ
+        alpha_m = (2.0 * rho_inf - 1.0) / (rho_inf + 1.0)
+        alpha_f = rho_inf / (rho_inf + 1.0)
+        beta = 0.25 * (1.0 - alpha_m + alpha_f) ** 2
+
+        c0 = 1.0 / (beta * dt**2)
+        m_ii = input_data.rho * input_data.A * input_data.L_elem / 2.0
+
+        c0_m_ii = c0 * m_ii
+        k_pen = input_data.scale * c0_m_ii
+
+        return DynamicPenaltyEstimateOutput(
+            k_pen=k_pen,
+            c0=c0,
+            m_ii=m_ii,
+            c0_m_ii=c0_m_ii,
+        )
+
+
 def _create_penalty_strategy(
     *,
     k_pen: float = 1.0,

@@ -1329,16 +1329,24 @@ class DynamicThreePointBendContactJigProcess(
         #    静的梁剛性ベース（48EI/L³）は動的の慣性項に対して桁違いに小さい。
         k_pen = cfg.k_pen
         if k_pen <= 0.0:
-            # 動的 k_pen: Generalized-α の c0 × 集中質量の代表値
-            # c0 = 1/(beta*dt²), m_ii = rho*A*L_elem/2（並進DOF）
-            # Chung & Hulbert (1993) パラメータ
-            _alpha_m = (2.0 * cfg.rho_inf - 1.0) / (cfg.rho_inf + 1.0)
-            _alpha_f = cfg.rho_inf / (cfg.rho_inf + 1.0)
-            _beta_ga = 0.25 * (1.0 - _alpha_m + _alpha_f) ** 2
-            _c0 = 1.0 / (_beta_ga * dt_initial**2)
-            L_elem = cfg.wire_length / cfg.n_elems_wire
-            m_ii = cfg.rho * sec["A"] * L_elem / 2.0  # 集中質量の代表値
-            k_pen = 0.1 * _c0 * m_ii  # c0*M の 10%
+            # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
+            from xkep_cae.contact.penalty.strategy import (
+                DynamicPenaltyEstimateInput,
+                DynamicPenaltyEstimateProcess,
+            )
+
+            _dpe = DynamicPenaltyEstimateProcess()
+            _dpe_out = _dpe.process(
+                DynamicPenaltyEstimateInput(
+                    rho_inf=cfg.rho_inf,
+                    dt=dt_initial,
+                    rho=cfg.rho,
+                    A=sec["A"],
+                    L_elem=cfg.wire_length / cfg.n_elems_wire,
+                    scale=0.5,  # c0*M の 50%（exact_tangent 正定値条件を保持）
+                )
+            )
+            k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
