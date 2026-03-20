@@ -58,13 +58,13 @@
 
 ### 4. 検証画像
 
-出力先: `/tmp/oscillation/`（一覧: [list.md](/tmp/oscillation/list.md)）
+出力先: `tmp/oscillation/`（一覧: [list.md](../../tmp/oscillation/list.md)）
 
 | ファイル | 内容 |
 |---------|------|
-| `/tmp/oscillation/beam_osc_stress3d_000.png` 〜 `_007.png` | 時系列3D応力コンター（8フレーム） |
-| `/tmp/oscillation/beam_osc_time_history.png` | 変位・応力時刻歴 |
-| `/tmp/oscillation/list.md` | 画像一覧+解析条件+考察 |
+| `tmp/oscillation/beam_osc_stress3d_000.png` 〜 `_007.png` | 時系列3D応力コンター（8フレーム） |
+| `tmp/oscillation/beam_osc_time_history.png` | 変位・応力時刻歴 |
+| `tmp/oscillation/list.md` | 画像一覧+解析条件+考察 |
 
 ## 解析結果サマリ
 
