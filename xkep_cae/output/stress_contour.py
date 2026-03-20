@@ -239,16 +239,24 @@ def _render_tube_3d(
             poly.set_edgecolor("none")
             ax.add_collection3d(poly)
 
-    # 軸スケーリング
+    # 軸スケーリング（1:1:1 アスペクト比）
     all_x = coords[:, 0]
     all_y = coords[:, 1]
     margin = radius * 3
-    ax.set_xlim(all_x.min() - margin, all_x.max() + margin)
-    ax.set_ylim(
-        min(all_y.min() - margin, -margin),
-        max(all_y.max() + margin, margin),
-    )
-    ax.set_zlim(-margin, margin)
+
+    x_min, x_max = all_x.min() - margin, all_x.max() + margin
+    y_min = min(all_y.min() - margin, -margin)
+    y_max = max(all_y.max() + margin, margin)
+    z_min, z_max = -margin, margin
+
+    rx = x_max - x_min
+    ry = y_max - y_min
+    rz = z_max - z_min
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_zlim(z_min, z_max)
+    ax.set_box_aspect([rx, ry, rz])
 
 
 def _render_time_history(
