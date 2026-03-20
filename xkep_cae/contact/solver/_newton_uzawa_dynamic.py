@@ -39,6 +39,7 @@ class DynamicStepOutput:
     n_active: int
     f_c: np.ndarray
     diagnostics: ConvergenceDiagnosticsOutput
+    diverged: bool = False  # 発散早期検知フラグ
 
 
 @dataclass(frozen=True)
@@ -53,6 +54,8 @@ class NewtonUzawaDynamicInput:
     du_norm_cap: float = 0.0
     show_progress: bool = True
     ndof_per_node: int = 6
+    # 発散早期検知: 残差が連続N回増加したら early abort
+    divergence_window: int = 5
 
 
 @dataclass(frozen=True)
@@ -150,6 +153,9 @@ class NewtonUzawaDynamicProcess(
         energy_ref = None
         step_converged = False
         n_active = 0
+        _diverged = False
+        _consecutive_increase = 0
+        _prev_res_ratio = float("inf")
 
         for _uzawa_iter in range(n_uzawa_max):
             for att in range(cfg.max_attempts):
@@ -219,6 +225,24 @@ class NewtonUzawaDynamicProcess(
                             f"uzawa {_uzawa_iter}, attempt {att}, "
                             f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e} "
                             f"(converged, {n_active} active)"
+                        )
+                    break
+
+                # ── 発散早期検知 ──
+                _cur_ratio = conv_out.res_u_norm / conv_out.f_ref
+                if att > 0 and _cur_ratio > _prev_res_ratio * 1.01:
+                    _consecutive_increase += 1
+                else:
+                    _consecutive_increase = 0
+                _prev_res_ratio = _cur_ratio
+
+                if _consecutive_increase >= cfg.divergence_window:
+                    _diverged = True
+                    if cfg.show_progress:
+                        print(
+                            f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                            f"uzawa {_uzawa_iter}: 発散検知 "
+                            f"(残差 {cfg.divergence_window} 回連続増加) → early abort"
                         )
                     break
 
@@ -361,4 +385,5 @@ class NewtonUzawaDynamicProcess(
             n_active=n_active,
             f_c=f_c,
             diagnostics=diag,
+            diverged=_diverged,
         )

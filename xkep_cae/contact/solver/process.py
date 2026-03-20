@@ -37,6 +37,12 @@ from xkep_cae.contact.solver._diagnostics import (
     DiagnosticsInput,
     DiagnosticsReportProcess,
 )
+from xkep_cae.contact.solver._energy_diagnostics import (
+    EnergyHistory,
+    EnergyHistoryEntry,
+    StepEnergyDiagnosticsProcess,
+    StepEnergyInput,
+)
 from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationInput,
     InitialPenetrationProcess,
@@ -58,6 +64,9 @@ from xkep_cae.contact.solver._solver_state import (
     _restore_checkpoint,
     _save_checkpoint,
     _state_set,
+)
+from xkep_cae.contact.solver._unified_time_controller import (
+    UnifiedTimeStepProcess,
 )
 from xkep_cae.contact.solver._utils import DeformedCoordsInput, DeformedCoordsProcess
 from xkep_cae.core import (
@@ -90,9 +99,11 @@ class ContactFrictionProcess(
         NewtonUzawaStaticProcess,
         NewtonUzawaDynamicProcess,
         AdaptiveSteppingProcess,
+        UnifiedTimeStepProcess,
         InitialPenetrationProcess,
         ContactGraphProcess,
         DiagnosticsReportProcess,
+        StepEnergyDiagnosticsProcess,
         DeformedCoordsProcess,
         DetectCandidatesProcess,
         UpdateGeometryProcess,
@@ -350,6 +361,9 @@ class ContactFrictionProcess(
 
         # --- 最終診断 ---
         last_diag = None
+        _energy_history = EnergyHistory() if _dynamics else None
+        _energy_proc = StepEnergyDiagnosticsProcess() if _dynamics else None
+        _n_cutbacks = 0
 
         # ================================================================
         # 荷重ステップループ
@@ -473,13 +487,16 @@ class ContactFrictionProcess(
             # 不収束処理
             # ==============================================================
             if not step_result.converged:
+                _step_diverged = getattr(step_result, "diverged", False)
                 fail_out = stepping.process(
                     AdaptiveStepInput(
                         action=StepAction.FAILURE,
                         load_frac=load_frac,
                         load_frac_prev=state.load_frac_prev,
+                        diverged=_step_diverged,
                     )
                 )
+                _n_cutbacks = fail_out.n_cutbacks
                 if fail_out.can_retry:
                     _restore_checkpoint(state)
                     if _ul:
@@ -510,11 +527,42 @@ class ContactFrictionProcess(
                         contact_force_history=state.contact_force_history,
                         elapsed_seconds=elapsed,
                         diagnostics=last_diag,
+                        energy_history=_energy_history,
+                        n_cutbacks=_n_cutbacks,
                     )
 
             # ==============================================================
             # ステップ完了
             # ==============================================================
+
+            # エネルギー診断（動的）
+            if _dynamics and _energy_proc is not None and _energy_history is not None:
+                _f_int = input_data.callbacks.assemble_internal_force(state.u)
+                _e_out = _energy_proc.process(
+                    StepEnergyInput(
+                        u=state.u,
+                        velocity=_time_strategy.vel,
+                        mass_matrix=_time_strategy.M,
+                        f_int=_f_int,
+                        f_ext=f_ext,
+                        f_c=step_result.f_c,
+                        dt=dt_sub,
+                        step=state.increment_display,
+                    )
+                )
+                _t_physical = load_frac * (input_data.dt_physical or 0.0)
+                _energy_history.append(
+                    EnergyHistoryEntry(
+                        step=state.increment_display,
+                        time=_t_physical,
+                        kinetic_energy=_e_out.kinetic_energy,
+                        strain_energy=_e_out.strain_energy,
+                        external_work=_e_out.external_work,
+                        contact_work=_e_out.contact_work,
+                        total_energy=_e_out.total_energy,
+                        energy_ratio=_e_out.energy_ratio,
+                    )
+                )
 
             # 被膜圧縮量保存
             if use_coating:
@@ -605,6 +653,10 @@ class ContactFrictionProcess(
         _u_out = _build_u_output(state, ul_assembler)
         elapsed = time.perf_counter() - t0
 
+        # エネルギー診断サマリ出力
+        if _energy_history is not None and len(_energy_history.entries) > 0:
+            print(_energy_history.summary())
+
         return SolverResultData(
             u=_u_out,
             converged=True,
@@ -614,4 +666,6 @@ class ContactFrictionProcess(
             contact_force_history=state.contact_force_history,
             elapsed_seconds=elapsed,
             diagnostics=last_diag,
+            energy_history=_energy_history,
+            n_cutbacks=_n_cutbacks,
         )

@@ -24,6 +24,11 @@ class ConvergenceDiagnosticsOutput:
     du_norm_history: list[float] = field(default_factory=list)
     max_du_dof_history: list[int] = field(default_factory=list)
     condition_number: float | None = None
+    # エネルギー診断（動的解析用）
+    kinetic_energy: float = 0.0
+    strain_energy: float = 0.0
+    total_energy: float = 0.0
+    energy_ratio: float = 1.0  # E_current / E_initial
 
 
 @dataclass(frozen=True)
@@ -60,6 +65,12 @@ def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_attempts:
 
     if diag.n_active_history:
         lines.append(f"  Active pairs: {diag.n_active_history[-1]}")
+
+    if diag.total_energy > 0.0 or diag.kinetic_energy > 0.0:
+        lines.append(f"  Kinetic energy:  {diag.kinetic_energy:.6e}")
+        lines.append(f"  Strain energy:   {diag.strain_energy:.6e}")
+        lines.append(f"  Total energy:    {diag.total_energy:.6e}")
+        lines.append(f"  Energy ratio:    {diag.energy_ratio:.4f}")
 
     lines.append("=" * 60)
     return "\n".join(lines)

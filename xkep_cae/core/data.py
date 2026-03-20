@@ -211,6 +211,9 @@ class SolverResultData:
     contact_force_history: list[float] = field(default_factory=list)
     elapsed_seconds: float = 0.0
     diagnostics: object | None = None
+    # エネルギー診断履歴（動的解析時に記録）
+    energy_history: object | None = None  # EnergyHistory
+    n_cutbacks: int = 0  # カットバック総数
 
 
 @dataclass(frozen=True)

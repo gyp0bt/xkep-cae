@@ -58,6 +58,7 @@ class AdaptiveStepInput:
     n_attempts: int = 0
     n_active: int = 0
     prev_n_active: int = 0
+    diverged: bool = False  # 発散検知フラグ（早期カットバック用）
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class AdaptiveStepOutput:
     next_load_frac: float = 0.0
     has_more_steps: bool = True
     can_retry: bool = False
+    n_cutbacks: int = 0  # 累積カットバック回数
 
 
 class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutput]):
@@ -89,6 +91,7 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         self._config = config
         self._queue: deque[float] = deque()
         self._consecutive_good: int = 0
+        self._n_cutbacks: int = 0
 
         base_delta = config.dt_initial_fraction if config.dt_initial_fraction > 0.0 else 1.0
         # dt_max_fraction が設定されている場合、初期ステップもそれに制限
@@ -167,10 +170,21 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         """ステップ失敗時: カットバック判定."""
         delta = input_data.load_frac - input_data.load_frac_prev
         if delta <= self._config.dt_min_fraction + 1e-15:
-            return AdaptiveStepOutput(has_more_steps=False, can_retry=False)
+            return AdaptiveStepOutput(
+                has_more_steps=False,
+                can_retry=False,
+                n_cutbacks=self._n_cutbacks,
+            )
 
         self._consecutive_good = 0
-        mid_frac = input_data.load_frac_prev + delta * self._config.dt_shrink_factor
+        self._n_cutbacks += 1
+
+        # 発散検知時はより積極的に縮小（shrink_factor の2乗）
+        shrink = self._config.dt_shrink_factor
+        if input_data.diverged:
+            shrink = shrink * shrink
+
+        mid_frac = input_data.load_frac_prev + delta * shrink
         self._queue.appendleft(input_data.load_frac)
         self._queue.appendleft(mid_frac)
 
@@ -178,4 +192,5 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
             next_load_frac=mid_frac,
             has_more_steps=True,
             can_retry=True,
+            n_cutbacks=self._n_cutbacks,
         )
