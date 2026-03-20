@@ -391,3 +391,43 @@ class TestDynamicThreePointBendJigPhysics:
         )
         # 初速度 v₀=ω₁*δ_s → 振幅≈δ_s。0.5〜2倍の範囲内
         assert 0.5 < ratio < 2.0, f"最大変位比 {ratio:.3f} が範囲外 [0.5, 2.0]"
+
+    def test_vibration_period_matches_analytical(self):
+        """振動周期が解析解（1次固有振動数）と一致する（5%以内）."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=3.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        f_analytical = result.analytical_frequency_hz
+        f_measured = result.measured_frequency_hz
+        assert f_measured > 0, "FFTで周波数を検出できなかった"
+
+        rel_error = abs(f_measured - f_analytical) / f_analytical
+        print(
+            f"\n  振動数: 解析解={f_analytical:.1f} Hz, "
+            f"実測={f_measured:.1f} Hz, 誤差={rel_error * 100:.2f}%"
+        )
+        assert rel_error < 0.05, (
+            f"振動周期の相対誤差 {rel_error * 100:.2f}% > 5%: "
+            f"解析解 {f_analytical:.1f} Hz vs 実測 {f_measured:.1f} Hz"
+        )
+
+    def test_amplitude_matches_analytical(self):
+        """最大変位が解析解（v₀/ω₁ = δ_static）と10%以内で一致する."""
+        cfg = _dynamic_config(jig_push=0.1, n_periods=2.0, n_elems_wire=40)
+        proc = DynamicThreePointBendJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        # 解析解: 自由振動の振幅 = v₀/ω₁ = δ_static = jig_push
+        analytical_amplitude = cfg.jig_push
+        rel_error = abs(result.max_deflection - analytical_amplitude) / analytical_amplitude
+        print(
+            f"\n  振幅: 解析解={analytical_amplitude:.6f} mm, "
+            f"実測={result.max_deflection:.6f} mm, 誤差={rel_error * 100:.2f}%"
+        )
+        assert rel_error < 0.10, (
+            f"振幅の相対誤差 {rel_error * 100:.2f}% > 10%: "
+            f"解析解 {analytical_amplitude:.6f} mm vs 実測 {result.max_deflection:.6f} mm"
+        )

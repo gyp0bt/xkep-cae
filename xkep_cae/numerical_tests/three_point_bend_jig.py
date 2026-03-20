@@ -751,12 +751,50 @@ class DynamicThreePointBendJigResult:
     dynamic_amplification: float
     max_deflection: float
     initial_velocity: float
+    measured_frequency_hz: float
     config: DynamicThreePointBendJigConfig
     mesh: MeshData
     wire_mid_node: int
     n_wire_nodes: int
     time_history: np.ndarray
     deflection_history: np.ndarray
+    signed_deflection_history: np.ndarray
+
+
+def _measure_frequency_fft(
+    time_arr: np.ndarray,
+    signal: np.ndarray,
+) -> float:
+    """時刻歴信号からFFTで支配的周波数を計測 [Hz].
+
+    不均一時間刻みの場合は均一リサンプリングしてからFFTを適用。
+    信号点数が不足する場合は 0.0 を返す。
+    """
+    n = len(signal)
+    if n < 8:
+        return 0.0
+    t_span = time_arr[-1] - time_arr[0]
+    if t_span <= 0:
+        return 0.0
+
+    # 均一リサンプリング
+    n_resample = max(n, 256)
+    t_uniform = np.linspace(time_arr[0], time_arr[-1], n_resample)
+    sig_uniform = np.interp(t_uniform, time_arr, signal)
+
+    # DC成分除去
+    sig_uniform = sig_uniform - np.mean(sig_uniform)
+
+    # FFT
+    dt_uniform = t_span / (n_resample - 1)
+    freqs = np.fft.rfftfreq(n_resample, d=dt_uniform)
+    power = np.abs(np.fft.rfft(sig_uniform)) ** 2
+
+    # DC(f=0)を除外して最大パワーの周波数を取得
+    if len(freqs) > 1:
+        idx = np.argmax(power[1:]) + 1
+        return float(freqs[idx])
+    return 0.0
 
 
 def _beam_fundamental_frequency(
@@ -931,12 +969,23 @@ class DynamicThreePointBendJigProcess(
         wire_mid_y_dof = 6 * wire_mid_node + 1
         wire_mid_deflection = abs(u[wire_mid_y_dof])
 
-        # 時刻歴
+        # 時刻歴（load_history × dt_physical で正確な時刻を再構築）
         disp_hist = solver_result.displacement_history
+        load_hist = solver_result.load_history
         n_hist = len(disp_hist)
-        time_arr = np.linspace(0, t_total, n_hist) if n_hist > 0 else np.array([0.0])
-        defl_arr = np.array([abs(d[wire_mid_y_dof]) for d in disp_hist] if n_hist > 0 else [0.0])
+        if n_hist > 0 and len(load_hist) == n_hist:
+            time_arr = np.array(load_hist) * t_total
+        elif n_hist > 0:
+            time_arr = np.linspace(0, t_total, n_hist)
+        else:
+            time_arr = np.array([0.0])
+        # 符号付き変位（下向き=負）を保持
+        signed_defl_arr = np.array([d[wire_mid_y_dof] for d in disp_hist] if n_hist > 0 else [0.0])
+        defl_arr = np.abs(signed_defl_arr)
         max_deflection = float(np.max(defl_arr)) if len(defl_arr) > 0 else 0.0
+
+        # FFTで実測周波数を計算
+        measured_frequency_hz = _measure_frequency_fft(time_arr, signed_defl_arr)
 
         # 反力計算
         K = _assemble_linear_stiffness(mesh_data, cfg.E, G, sec)
@@ -959,10 +1008,12 @@ class DynamicThreePointBendJigProcess(
             dynamic_amplification=dynamic_amplification,
             max_deflection=max_deflection,
             initial_velocity=v0,
+            measured_frequency_hz=measured_frequency_hz,
             config=cfg,
             mesh=mesh_data,
             wire_mid_node=wire_mid_node,
             n_wire_nodes=n_wire_nodes,
             time_history=time_arr,
             deflection_history=defl_arr,
+            signed_deflection_history=signed_defl_arr,
         )
