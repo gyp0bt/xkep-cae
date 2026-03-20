@@ -175,7 +175,7 @@ class ContactFrictionProcess(
             smoothing_delta=manager.config.smoothing_delta,
             n_uzawa_max=manager.config.n_uzawa_max,
             tol_uzawa=manager.config.tol_uzawa,
-            exact_tangent=False,  # 正定値近似（k_pen適正化後に再評価）
+            exact_tangent=manager.config.exact_tangent,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -212,7 +212,14 @@ class ContactFrictionProcess(
             fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
 
         # --- k_pen 決定 ---
-        k_pen = _penalty_strategy.compute_k_pen(0, 1)
+        # contact_setup.k_pen が明示指定されている場合はそれを使用。
+        # 動的解析では DynamicPenaltyEstimateProcess で c0*M_ii ベースの
+        # k_pen を計算するため、ここで AutoBeamEIPenalty に上書きされないようにする。
+        _setup_kpen = input_data.contact.k_pen
+        if _setup_kpen is not None and _setup_kpen > 0.0:
+            k_pen = _setup_kpen
+        else:
+            k_pen = _penalty_strategy.compute_k_pen(0, 1)
 
         # --- 摩擦設定 ---
         mu = input_data.contact.mu if input_data.contact.mu is not None else manager.config.mu
@@ -625,13 +632,14 @@ class ContactFrictionProcess(
             )
             _state_set(state, "prev_n_active", step_result.n_active)
 
-            # k_pen continuation
-            k_pen_new = _penalty_strategy.compute_k_pen(
-                state.increment_display, state.increment_display + 1
-            )
-            if abs(k_pen_new - k_pen) > 1e-30:
-                k_pen = k_pen_new
-                print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
+            # k_pen continuation（明示指定されていない場合のみ）
+            if not (_setup_kpen is not None and _setup_kpen > 0.0):
+                k_pen_new = _penalty_strategy.compute_k_pen(
+                    state.increment_display, state.increment_display + 1
+                )
+                if abs(k_pen_new - k_pen) > 1e-30:
+                    k_pen = k_pen_new
+                    print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
 
             # 状態更新
             _state_set(state, "delta_frac_prev", load_frac - state.load_frac_prev)

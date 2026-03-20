@@ -17,6 +17,9 @@ from xkep_cae.contact.penalty.strategy import (
     AutoEALPenalty,
     ConstantPenalty,
     ContinuationPenalty,
+    DynamicPenaltyEstimateInput,
+    DynamicPenaltyEstimateOutput,
+    DynamicPenaltyEstimateProcess,
     PenaltyInput,
     PenaltyOutput,
 )
@@ -27,6 +30,9 @@ __all__ = [
     "AutoEALPenalty",
     "ConstantPenalty",
     "ContinuationPenalty",
+    "DynamicPenaltyEstimateInput",
+    "DynamicPenaltyEstimateOutput",
+    "DynamicPenaltyEstimateProcess",
     "PenaltyInput",
     "PenaltyOutput",
     # Law Normal

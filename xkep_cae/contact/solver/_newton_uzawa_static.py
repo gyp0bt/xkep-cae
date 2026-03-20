@@ -11,7 +11,10 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from xkep_cae.contact.solver._diagnostics import ConvergenceDiagnosticsOutput
+from xkep_cae.contact.solver._diagnostics import (
+    ConvergenceDiagnosticsOutput,
+    PairDiagnosticsEntry,
+)
 from xkep_cae.contact.solver._nuzawa_steps import (
     ContactForceAssemblyInput,
     ContactForceAssemblyProcess,
@@ -201,6 +204,26 @@ class NewtonUzawaStaticProcess(
                 diag.ncp_history.append(0.0)
                 diag.ncp_t_history.append(0.0)
                 diag.n_active_history.append(n_active)
+
+                # ペア別診断スナップショット
+                _pair_snap: list[PairDiagnosticsEntry] = []
+                if hasattr(manager, "pairs"):
+                    for _pi, _pair in enumerate(manager.pairs):
+                        if hasattr(_pair, "state"):
+                            _st = _pair.state
+                            _pair_snap.append(
+                                PairDiagnosticsEntry(
+                                    pair_id=_pi,
+                                    elem_a=int(_pair.elem_a),
+                                    elem_b=int(_pair.elem_b),
+                                    gap=float(_st.gap),
+                                    p_n=float(_st.p_n),
+                                    status=str(_st.status.name).lower()
+                                    if hasattr(_st.status, "name")
+                                    else str(_st.status),
+                                )
+                            )
+                diag.pair_snapshots.append(_pair_snap)
 
                 if conv_out.converged:
                     step_converged = True

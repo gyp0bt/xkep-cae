@@ -96,8 +96,9 @@ class TestAnalyticalSolution:
 # ====================================================================
 
 
+@pytest.mark.static_solver_ok
 class TestThreePointBendJigConvergence:
-    """三点曲げジグ試験のソルバー収束テスト."""
+    """三点曲げジグ試験のソルバー収束テスト（準静的・意図的）."""
 
     def test_small_push_converges(self):
         """小変位（0.1mm）で収束する."""
@@ -135,8 +136,9 @@ class TestThreePointBendJigConvergence:
 # ====================================================================
 
 
+@pytest.mark.static_solver_ok
 class TestThreePointBendJigPhysics:
-    """三点曲げジグ試験の物理的妥当性テスト."""
+    """三点曲げジグ試験の物理的妥当性テスト（準静的・意図的）."""
 
     def test_deflection_matches_analytical(self):
         """ワイヤ中央変位が処方値に一致."""
@@ -527,26 +529,22 @@ def _dynamic_contact_config(**overrides) -> DynamicThreePointBendContactJigConfi
         "nu": _NU,
         "rho": _RHO,
         "jig_push": 0.1,
-        "n_periods": 2.0,
+        "n_periods": 10.0,  # 準静的押し下げ（10周期かけて押す）
         "rho_inf": 0.9,
         "mu": 0.15,
-        "initial_gap": 0.05,  # ジグをワイヤ上方0.05mmに配置→振動ピーク付近で接触
+        "initial_gap": 0.0,
         "max_increments": 10000,
-        "n_uzawa_max": 1,  # 純粋ペナルティ法
     }
     defaults.update(overrides)
     return DynamicThreePointBendContactJigConfig(**defaults)
 
 
 class TestDynamicContactJigConvergence:
-    """動的接触ジグ三点曲げの収束テスト."""
+    """動的接触ジグ三点曲げの収束テスト（変位制御押し下げ）."""
 
     def test_dynamic_contact_converges(self):
-        """剛体エッジジグ + smooth_penalty + 摩擦 + 動的解析が収束する.
-
-        半周期分のみ計算し、接触遷移を含む区間で収束することを検証。
-        """
-        cfg = _dynamic_contact_config(n_periods=0.5)
+        """剛体エッジジグ + smooth_penalty + 摩擦 + 動的押し下げが収束する."""
+        cfg = _dynamic_contact_config(n_periods=2.0)
         proc = DynamicThreePointBendContactJigProcess()
         result = proc.process(cfg)
 
@@ -555,89 +553,86 @@ class TestDynamicContactJigConvergence:
             f"increments={result.solver_result.n_increments}, "
             f"f1={result.analytical_frequency_hz:.1f} Hz, "
             f"T1={result.analytical_period:.6f} s, "
-            f"δ_max={result.max_deflection:.6f} mm, "
-            f"DAF={result.dynamic_amplification:.3f}, "
+            f"δ_wire={result.wire_midpoint_deflection:.6f} mm, "
             f"fc_norm={result.contact_force_norm:.6f}"
         )
         assert result.solver_result.converged, "動的接触ジグ解析が収束しなかった"
 
     def test_dynamic_contact_frictionless_converges(self):
         """摩擦なし（mu=0）で動的接触ジグが収束する（接触問題の分離検証）."""
-        cfg = _dynamic_contact_config(n_periods=0.5, mu=0.0)
+        cfg = _dynamic_contact_config(n_periods=2.0, mu=0.0)
         proc = DynamicThreePointBendContactJigProcess()
         result = proc.process(cfg)
 
         print(
             f"\n  摩擦なし動的接触ジグ: converged={result.solver_result.converged}, "
             f"increments={result.solver_result.n_increments}, "
-            f"δ_max={result.max_deflection:.6f} mm"
+            f"δ_wire={result.wire_midpoint_deflection:.6f} mm"
         )
         assert result.solver_result.converged, "摩擦なしで収束しなかった"
 
 
 class TestDynamicContactJigPhysics:
-    """動的接触ジグ三点曲げの物理的妥当性テスト."""
+    """動的接触ジグ三点曲げの物理的妥当性テスト（変位制御押し下げ）."""
 
-    def test_dynamic_contact_has_oscillation(self):
-        """動的応答に振動成分が含まれる."""
-        cfg = _dynamic_contact_config(n_periods=2.0)
+    def test_wire_deflection_matches_push(self):
+        """準静的押し下げでワイヤ中央変位が jig_push に近い.
+
+        n_periods=10（準静的）で押し下げ、最終的なワイヤ中央変位が
+        jig_push と同オーダーであることを確認。
+        接触コンプライアンスと動的効果で厳密一致はしないため、
+        50% の許容誤差。
+        """
+        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=10.0)
         proc = DynamicThreePointBendContactJigProcess()
         result = proc.process(cfg)
 
         assert result.solver_result.converged
-        hist = result.deflection_history
-        if len(hist) < 5:
-            pytest.skip("履歴が短すぎる")
-
-        import numpy as np
-
-        diffs = np.diff(hist)
-        sign_changes = np.sum(np.abs(np.diff(np.sign(diffs))) > 0)
+        ratio = result.wire_midpoint_deflection / cfg.jig_push if cfg.jig_push > 0 else 0
         print(
-            f"\n  変位履歴: {len(hist)} 点, "
-            f"max={np.max(hist):.6f}, min={np.min(hist):.6f}, "
-            f"符号変化={sign_changes}"
-        )
-        assert sign_changes >= 2, f"振動の符号変化 {sign_changes} < 2: 動的応答に振動がない"
-
-    def test_max_deflection_order(self):
-        """最大変位が初期変位と同オーダー."""
-        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=1.0)
-        proc = DynamicThreePointBendContactJigProcess()
-        result = proc.process(cfg)
-
-        assert result.solver_result.converged
-        ratio = result.max_deflection / cfg.jig_push if cfg.jig_push > 0 else 0
-        print(
-            f"\n  max_defl={result.max_deflection:.6f} mm, "
+            f"\n  ワイヤ変位={result.wire_midpoint_deflection:.6f} mm, "
             f"jig_push={cfg.jig_push:.6f} mm, ratio={ratio:.3f}"
         )
-        # 接触拘束で振幅が変わるため、0.3〜3.0 の広い範囲
-        assert 0.3 < ratio < 3.0, f"最大変位比 {ratio:.3f} が範囲外 [0.3, 3.0]"
+        assert 0.5 < ratio < 1.5, f"ワイヤ変位比 {ratio:.3f} が範囲外 [0.5, 1.5]"
 
-    def test_frequency_within_range(self):
-        """FFT計測周波数が解析的自由振動周波数と同オーダー.
-
-        接触拘束により振動数が変化するため、厳密一致ではなく
-        0.5〜2.0 倍の範囲内であることを確認。
-        """
-        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=3.0, n_elems_wire=40)
+    def test_contact_force_order(self):
+        """準静的押し下げで接触力が k_EB × jig_push と同オーダー."""
+        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=10.0)
         proc = DynamicThreePointBendContactJigProcess()
         result = proc.process(cfg)
 
         assert result.solver_result.converged
-        f_analytical = result.analytical_frequency_hz
-        f_measured = result.measured_frequency_hz
-        if f_measured <= 0:
-            pytest.skip("FFTで周波数を検出できなかった")
 
-        ratio = f_measured / f_analytical
-        print(f"\n  振動数: 解析解={f_analytical:.1f} Hz, 実測={f_measured:.1f} Hz, 比={ratio:.3f}")
-        assert 0.5 < ratio < 2.0, f"周波数比 {ratio:.3f} が範囲外 [0.5, 2.0]"
+        sec = _circle_section(cfg.wire_diameter, cfg.nu)
+        k_eb = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
+        P_expected = k_eb * cfg.jig_push
+        fc = result.contact_force_norm
+
+        print(
+            f"\n  接触力検証: k_EB={k_eb:.4f} N/mm, "
+            f"P_expected={P_expected:.4f} N, fc_norm={fc:.4f} N"
+        )
+        # 接触コンプライアンス + 動的効果で大きめの許容誤差
+        if P_expected > 0:
+            ratio = fc / P_expected
+            assert 0.1 < ratio < 10.0, f"接触力比 {ratio:.3f} が範囲外 [0.1, 10.0]"
+
+    def test_wire_deflects_downward(self):
+        """ワイヤが下方に撓む（ジグ押し下げ方向）."""
+        cfg = _dynamic_contact_config(jig_push=0.1, n_periods=5.0)
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+
+        assert result.solver_result.converged
+        # 最終状態で中央節点が下方に撓んでいる
+        mid_dof = 6 * result.wire_mid_node + 1
+        mid_y = result.solver_result.u[mid_dof]
+        print(f"\n  中央 y = {mid_y:.6f} mm")
+        assert mid_y < 0, f"中央 y = {mid_y:.6f}（正=異常、ジグ押し下げで下方に撓むべき）"
 
     def test_energy_history_recorded(self):
         """動的解析でエネルギー履歴が記録される."""
-        cfg = _dynamic_contact_config(n_periods=1.0)
+        cfg = _dynamic_contact_config(n_periods=2.0)
         proc = DynamicThreePointBendContactJigProcess()
         result = proc.process(cfg)
 
