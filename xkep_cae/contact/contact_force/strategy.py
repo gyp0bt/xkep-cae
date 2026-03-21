@@ -208,7 +208,7 @@ class SmoothPenaltyContactForceProcess(
         ndof_per_node: int = 6,
         *,
         smoothing_delta: float = 0.0,
-        n_uzawa_max: int = 5,
+        n_uzawa_max: int = 1,
         tol_uzawa: float = 1e-3,
         exact_tangent: bool = False,
     ) -> None:
@@ -403,7 +403,7 @@ def _create_contact_force_strategy(
     ndof_per_node: int = 6,
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
-    n_uzawa_max: int = 5,
+    n_uzawa_max: int = 1,
     tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> NCPContactForceProcess | SmoothPenaltyContactForceProcess:

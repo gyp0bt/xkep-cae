@@ -441,8 +441,8 @@ class ThreePointBendContactJigConfig:
     jig_height: float = 2.0  # mm（y方向）
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 200.0  # softplus の平滑化パラメータ
-    n_uzawa_max: int = 20  # Uzawa 最大反復回数
+    smoothing_delta: float = 0.0  # 0=自動推定（status-223: ε=α×r_min）
+    n_uzawa_max: int = 1  # 純ペナルティ（Huber+Uzawa非整合: status-222）
 
 
 @dataclass(frozen=True)
@@ -1106,7 +1106,7 @@ class DynamicThreePointBendContactJigConfig:
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 5000.0  # Huber 型の遷移幅パラメータ（ε = 1/δ = 0.0002mm）
+    smoothing_delta: float = 0.0  # 0=自動推定（status-223: ε=α×r_min, wire r=1.0mm → δ=5000）
     n_uzawa_max: int = 1  # 純粋ペナルティ（Huber遷移帯でUzawa外ループ不安定: status-222）
     mu: float = 0.15  # Coulomb 摩擦係数
     # 時間増分制御

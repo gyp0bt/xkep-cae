@@ -103,7 +103,7 @@ def default_strategies(
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
     coating_stiffness: float = 0.0,
-    n_uzawa_max: int = 5,
+    n_uzawa_max: int = 1,
     tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> SolverStrategies:

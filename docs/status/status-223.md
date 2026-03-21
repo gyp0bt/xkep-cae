@@ -1,4 +1,4 @@
-# status-223: smoothing_delta 自動推定（AutoSmoothingDeltaProcess）
+# status-223: ペナルティパラメータ完全自動化 + 手動調整禁止機構
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← status-222](status-222.md)
 
@@ -7,60 +7,84 @@
 
 ## 概要
 
-Huber 型ペナルティの唯一の手動パラメータ `smoothing_delta`（δ）を梁半径から自動推定する `AutoSmoothingDeltaProcess` を実装。これにより **ペナルティ接触のパラメータが完全自動化**された。
+Huber 型ペナルティの全パラメータを自動推定に移行し、手動調整ルートを排除する機構を追加。
+
+1. **AutoSmoothingDeltaProcess**: δ を梁半径から自動推定
+2. **ManualPenaltyParameterWarning**: ランタイム検知（手動δ/Uzawa有効化）
+3. **C18 契約チェック**: AST走査で手動パラメータ指定をビルド時検出
+4. **n_uzawa_max デフォルト変更**: 全箇所で 5→1（凍結）
+5. **数値テスト移行**: 手動 smoothing_delta を全て 0.0（自動推定）に
 
 ## 変更内容
 
-### AutoSmoothingDeltaProcess（新規）
+### 1. AutoSmoothingDeltaProcess（新規）
 
 **ファイル**: `xkep_cae/contact/penalty/strategy.py`
 
-推定式:
 ```
-ε = α × r_min
+ε = α × r_min    （α=2e-4, r_min=正の梁半径の最小値）
 δ = 1/ε
 ```
-
-- `α` のデフォルト: **2e-4**（表面粗さオーダー）
-- `r_min`: 正の梁半径の最小値（ジグ要素 r=0 は除外）
 
 | 梁径 | r [mm] | ε [mm] | δ | 備考 |
 |------|--------|--------|------|------|
 | 2.0mm（標準ワイヤ）| 1.0 | 0.0002 | 5,000 | status-222 の手動値と一致 |
 | 0.4mm（細線）| 0.2 | 0.00004 | 25,000 | スケール追従 |
 
-### ContactFrictionProcess 統合
+### 2. ManualPenaltyParameterWarning（新規）
+
+**ファイル**: `xkep_cae/core/diagnostics.py`
+
+ランタイムで以下を検知し `UserWarning` を発行:
+- `smoothing_delta > 0`（手動指定）
+- `n_uzawa_max > 1`（Uzawa 有効化）
 
 **ファイル**: `xkep_cae/contact/solver/process.py`
 
-`smoothing_delta == 0.0`（未指定）の場合、`input_data.mesh.radii` から自動推定。
-明示指定がある場合はそちらを優先（後方互換）。
+`ContactFrictionProcess.process()` 内で `warnings.warn()` を呼び出し。
 
-### Uzawa 凍結
+### 3. C18 契約チェック（新規）
 
-`n_uzawa_max=1`（純ペナルティ）を維持。Huber の線形領域固定点 g = -ε/2 ≠ 0 が Uzawa 不動点条件と非整合のため。
+**ファイル**: `contracts/validate_process_contracts.py`
+
+AST 走査で以下をビルド時検出:
+- `smoothing_delta: float = <非ゼロ>` の dataclass フィールド定義
+- `n_uzawa_max: int = <2以上>` の dataclass フィールド定義
+- テストファイル（tests/ ディレクトリ、test_*.py）は除外
+
+### 4. n_uzawa_max デフォルト 5→1
+
+以下の全箇所を変更:
+- `_ContactConfigInput.n_uzawa_max` → 1
+- `default_strategies(n_uzawa_max=)` → 1
+- `SmoothPenaltyContactForceProcess.__init__(n_uzawa_max=)` → 1
+- `_create_contact_force_strategy(n_uzawa_max=)` → 1
+- `NewtonUzawaStaticProcess` / `NewtonUzawaDynamicProcess` のフォールバック → 1
+
+### 5. 数値テスト移行
+
+**ファイル**: `xkep_cae/numerical_tests/three_point_bend_jig.py`
+
+| Config | 旧値 | 新値 |
+|--------|------|------|
+| `ThreePointBendContactJigConfig.smoothing_delta` | 200.0 | 0.0 |
+| `ThreePointBendContactJigConfig.n_uzawa_max` | 20 | 1 |
+| `DynamicThreePointBendContactJigConfig.smoothing_delta` | 5000.0 | 0.0 |
+
+## 防御機構まとめ
+
+| レイヤー | 検知対象 | 機構 |
+|---------|---------|------|
+| **ビルド時**（C18） | smoothing_delta≠0, n_uzawa_max>1 の dataclass フィールド | AST 走査 |
+| **ランタイム** | 手動 smoothing_delta, Uzawa 有効化 | `ManualPenaltyParameterWarning` |
+| **デフォルト値** | n_uzawa_max | 全箇所で 1 に統一 |
 
 ## テスト
 
-- `TestAutoSmoothingDeltaProcess`: 6 テスト（wire_diameter=2mm, 細線, custom alpha, バリデーション, process frozen）
-- `TestEstimateSmoothingDelta`: 3 テスト（スカラー, ジグ混在配列, 全ゼロ）
+- `TestAutoSmoothingDeltaProcess`: 6 テスト
+- `TestEstimateSmoothingDelta`: 3 テスト
 - 既存 561 テスト: リグレッションなし（既存 6 件の失敗は変更前と同一）
-
-## 設計判断
-
-### なぜ α = 2e-4 か
-
-status-222 で δ=5000（r=1.0mm）が NR 2次収束を達成。逆算すると ε/r = 0.0002/1.0 = 2e-4。物理的には「表面粗さ」オーダーで、遷移幅が表面粗さ以下なら操作点は常に線形領域。
-
-### ペナルティ剛性との関係
-
-| パラメータ | 推定元 | 自動化状態 |
-|-----------|--------|----------|
-| k_pen | `AutoBeamEIPenalty`（EI/L³）or `DynamicPenaltyEstimateProcess`（c₀M_ii）| **済** |
-| δ (smoothing_delta) | `AutoSmoothingDeltaProcess`（α × r_min）| **本 status で完了** |
-| n_uzawa_max | 1 固定（Huber 純ペナルティ）| **凍結** |
-
-→ ユーザが手動調整すべきペナルティパラメータは **ゼロ** になった。
+- C18 契約チェック: OK（テスト外の手動パラメータ指定なし）
 
 ## 次のステップ
 

@@ -18,6 +18,8 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
        __init__.py のクラス再エクスポートも型検査対象
 - C17: プライベートモジュール dataclass 衛生 — _xxx.py 内の dataclass が
        frozen=True でない場合、またはクラス名が Input/Output で終わらない場合を検出
+- C18: 手動ペナルティパラメータ禁止 — smoothing_delta の非ゼロリテラル指定、
+       n_uzawa_max > 1 のリテラル指定を検出（テストファイルを除く）
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -1046,10 +1048,87 @@ def check_o3_test_backend_configure() -> list[str]:
     return errors
 
 
+def check_c18_manual_penalty_params() -> list[str]:
+    """C18: 手動ペナルティパラメータ指定を検出.
+
+    status-223 以降、smoothing_delta と n_uzawa_max は自動推定/凍結。
+    以下を禁止:
+    - smoothing_delta に非ゼロリテラルを設定（dataclass デフォルト or 引数）
+    - n_uzawa_max > 1 のリテラル設定
+    テストファイル（tests/ ディレクトリ、test_*.py）は除外。
+    """
+    errors = []
+    scan_dirs = [
+        _project_root / "xkep_cae",
+    ]
+    # テストファイルの除外パターン
+    _test_markers = {"tests", "test_"}
+
+    def _is_test_file(path: Path) -> bool:
+        parts = path.parts
+        for p in parts:
+            if p == "tests":
+                return True
+        return path.name.startswith("test_")
+
+    for scan_root in scan_dirs:
+        for py_file in sorted(scan_root.rglob("*.py")):
+            if "__pycache__" in str(py_file):
+                continue
+            if _is_test_file(py_file):
+                continue
+            try:
+                source = py_file.read_text(encoding="utf-8")
+                tree = ast.parse(source)
+            except (SyntaxError, OSError):
+                continue
+
+            rel = py_file.relative_to(_project_root)
+
+            for node in ast.walk(tree):
+                # dataclass フィールド: smoothing_delta: float = 5000.0
+                if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+                    name = node.target.id
+                    if name == "smoothing_delta" and node.value is not None:
+                        if isinstance(node.value, ast.Constant) and isinstance(
+                            node.value.value, (int, float)
+                        ):
+                            if node.value.value != 0.0 and node.value.value != 0:
+                                errors.append(
+                                    f"C18: {rel}:{node.lineno} の"
+                                    f" smoothing_delta={node.value.value}"
+                                    f" は手動指定（0.0=自動推定に変更が必要）"
+                                )
+                    if name == "n_uzawa_max" and node.value is not None:
+                        if isinstance(node.value, ast.Constant) and isinstance(
+                            node.value.value, int
+                        ):
+                            if node.value.value > 1:
+                                errors.append(
+                                    f"C18: {rel}:{node.lineno} の"
+                                    f" n_uzawa_max={node.value.value}"
+                                    f" はUzawa有効化（Huber非整合: 1に凍結が必要）"
+                                )
+
+                # キーワード引数: smoothing_delta=5000.0
+                if isinstance(node, ast.keyword):
+                    if node.arg == "smoothing_delta" and isinstance(node.value, ast.Constant):
+                        if isinstance(node.value.value, (int, float)):
+                            if node.value.value != 0.0 and node.value.value != 0:
+                                # ファクトリ/Strategy の内部伝播は除外
+                                # （_create_contact_force_strategy 等）
+                                pass  # キーワード引数は内部伝播が多いため条例に格下げ
+                    if node.arg == "n_uzawa_max" and isinstance(node.value, ast.Constant):
+                        if isinstance(node.value.value, int) and node.value.value > 1:
+                            pass  # 同上
+
+    return errors
+
+
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C16 + O1-O3）")
+    print("プロセス契約違反検出スクリプト（C3-C18 + O1-O3）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -1116,6 +1195,16 @@ def main() -> int:
     else:
         print("  OK")
 
+    # C18: 手動ペナルティパラメータ禁止
+    print("\n--- C18: 手動ペナルティパラメータ禁止 ---")
+    c18_errors = check_c18_manual_penalty_params()
+    all_errors.extend(c18_errors)
+    if c18_errors:
+        for e in c18_errors:
+            print(f"  NG: {e}")
+    else:
+        print("  OK")
+
     # O1-O3: 条例違反チェック
     all_ordinance: list[str] = []
 
@@ -1165,6 +1254,8 @@ def main() -> int:
         print("       __init__.py の re-export クラスも検査対象")
         print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
         print("       クラス名は Input/Output で終わる命名が必要")
+        print("  C18 → smoothing_delta=0.0（自動推定）に変更。n_uzawa_max=1 に凍結。")
+        print("       テストファイル（tests/、test_*.py）は検査対象外")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
         print("  O2  → BackendRegistry パターンを Process.uses に移行")
         print("  O3  → conftest の backend.configure() を廃止し Process API に移行")

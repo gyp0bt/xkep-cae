@@ -311,6 +311,17 @@ class NonDefaultStrategyWarning(UserWarning):
     pass
 
 
+class ManualPenaltyParameterWarning(UserWarning):
+    """手動ペナルティパラメータ使用時の警告.
+
+    smoothing_delta や k_pen を手動設定した場合、または
+    Uzawa を有効化（n_uzawa_max > 1）した場合に発行。
+    status-223 以降、全ペナルティパラメータは自動推定が推奨。
+    """
+
+    pass
+
+
 # --- deprecated プロセス実行エラー ---
 
 

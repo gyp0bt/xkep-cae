@@ -169,7 +169,7 @@ class _ContactConfigInput:
     contact_compliance: float = 0.0
     contact_mode: str = "ncp"
     smoothing_delta: float = 0.0
-    n_uzawa_max: int = 5
+    n_uzawa_max: int = 1  # Huber+Uzawa非整合のため凍結（status-222）
     tol_uzawa: float = 1e-6
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
 

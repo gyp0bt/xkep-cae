@@ -158,12 +158,32 @@ class ContactFrictionProcess(
 
         # --- smoothing_delta 自動推定 ---
         _sd = manager.config.smoothing_delta
+        _sd_manual = _sd > 0.0
         if _sd <= 0.0:
             from xkep_cae.contact.penalty.strategy import _estimate_smoothing_delta
 
             _sd = _estimate_smoothing_delta(input_data.mesh.radii)
             if _sd > 0.0:
                 print(f"  smoothing_delta 自動推定: δ={_sd:.1f} (ε={1.0 / _sd:.6f}mm)")
+
+        # --- 非推奨構成検知（status-223: ペナルティパラメータ完全自動化） ---
+        from xkep_cae.core.diagnostics import ManualPenaltyParameterWarning
+
+        if _sd_manual:
+            warnings.warn(
+                f"smoothing_delta={manager.config.smoothing_delta:.1f} が手動指定されています。"
+                " status-223 以降は smoothing_delta=0.0（自動推定）を推奨。",
+                ManualPenaltyParameterWarning,
+                stacklevel=2,
+            )
+        if manager.config.n_uzawa_max > 1:
+            warnings.warn(
+                f"n_uzawa_max={manager.config.n_uzawa_max} が指定されています。"
+                " Huber型ペナルティとUzawaは非整合（固定点 g=-ε/2≠0）のため"
+                " n_uzawa_max=1（純ペナルティ）を推奨。（status-222）",
+                ManualPenaltyParameterWarning,
+                stacklevel=2,
+            )
 
         strategies = _default_strategies(
             ndof=ndof,
