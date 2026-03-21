@@ -122,6 +122,9 @@ class ContactForceAssemblyProcess(
                 f_c = f_c + f_coat_fric
 
         # 5. 力残差
+        # f_c のアセンブリは g_shape 規約で「ワイヤ→上向き」が正。
+        # 物理的には接触力はワイヤを下に押す外力なので符号反転。
+        f_c = -f_c
         f_int = inp.assemble_internal_force(u)
         R_u = f_int + f_c - inp.f_ext
         R_u[inp.fixed_dofs] = 0.0
