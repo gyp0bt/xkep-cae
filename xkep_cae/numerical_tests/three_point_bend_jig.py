@@ -524,6 +524,54 @@ def _build_hex8_jig_mesh(
     return jig_coords, jig_hex_conn, jig_edge_conn, jig_top_nodes, jig_rot_dofs
 
 
+def _build_arc_jig_mesh(
+    cx: float,
+    wire_radius: float,
+    jig_radius: float,
+    n_segments: int,
+    initial_gap: float,
+    n_wire_nodes: int,
+) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """円弧ジグメッシュを生成する.
+
+    円柱ジグ（半径 jig_radius）の下半分を n_segments セグメントで離散化。
+    ジグ中心は (cx, wire_radius + jig_radius + initial_gap, 0)。
+    ジグ表面ノードは xz 平面内の円弧上に配置（z=0 平面）。
+
+    Returns:
+        jig_coords: (n_nodes, 3) ジグ節点座標
+        jig_edge_conn: (n_segments, 2) エッジ接続（全体節点番号）
+        jig_rot_dofs: 回転DOFリスト（固定対象）
+    """
+    n_nodes = n_segments + 1
+    # ジグ中心: ワイヤ表面 + ジグ半径 + gap
+    cy = wire_radius + jig_radius + initial_gap
+
+    # 円弧角度: ジグ底部の ±60° をカバー（接触範囲）
+    theta_range = math.pi / 3.0  # 60°
+    angles = np.linspace(-theta_range, theta_range, n_nodes)
+
+    jig_coords = np.zeros((n_nodes, 3))
+    for i, theta in enumerate(angles):
+        # 円弧上の点（下向き: -π/2 が最下点）
+        jig_coords[i, 0] = cx + jig_radius * math.sin(theta)
+        jig_coords[i, 1] = cy - jig_radius * math.cos(theta)
+        jig_coords[i, 2] = 0.0
+
+    # エッジ接続（全体節点番号）
+    off = n_wire_nodes
+    jig_edge_conn = np.array([[off + i, off + i + 1] for i in range(n_segments)])
+
+    # 回転DOF（固定）
+    jig_rot_dofs = []
+    for i in range(n_nodes):
+        gn = off + i
+        for d_idx in [3, 4, 5]:
+            jig_rot_dofs.append(6 * gn + d_idx)
+
+    return jig_coords, jig_edge_conn, jig_rot_dofs
+
+
 class ThreePointBendContactJigProcess(
     BatchProcess[ThreePointBendContactJigConfig, ThreePointBendContactJigResult],
 ):
@@ -831,21 +879,23 @@ class DynamicThreePointBendContactJigConfig:
         ワイヤを曲げる。準静的（n_periods >> 1）では解析解と一致する。
     """
 
-    wire_length: float = 100.0  # mm
-    wire_diameter: float = 2.0  # mm
+    wire_length: float = 100.0  # mm（支点間距離）
+    wire_diameter: float = 17.0  # mm（φ17）
     n_elems_wire: int = 20
     E: float = 200e3  # MPa（ワイヤ）
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
-    jig_push: float = 0.1  # mm（ジグ押し込み量、gap 閉鎖後のワイヤ曲げ量）
+    jig_push: float = 30.0  # mm（押し込み深さ）
     n_periods: float = 3.0  # 押し下げ時間 = n_periods × T1（大きいほど準静的）
     rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
     lumped_mass: bool = True  # 集中質量行列
     # ジグ形状
-    jig_E_factor: float = 1000.0  # ジグ/ワイヤ剛性比
-    jig_width: float = 1.0  # mm（x方向）
-    jig_depth: float = 4.0  # mm（z方向、ワイヤ径の2倍）
-    jig_height: float = 2.0  # mm（y方向）
+    jig_radius: float = 10.0  # mm（円柱ジグ半径 R）
+    jig_n_segments: int = 8  # ジグ円弧の分割数
+    jig_E_factor: float = 1000.0  # ジグ/ワイヤ剛性比（未使用、剛体エッジ）
+    jig_width: float = 20.0  # mm（x方向、未使用: jig_radius で決定）
+    jig_depth: float = 34.0  # mm（z方向）
+    jig_height: float = 10.0  # mm（y方向、未使用: jig_radius で決定）
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
@@ -956,26 +1006,17 @@ class DynamicThreePointBendContactJigProcess(
         n_wire_nodes = len(wire_mesh.node_coords)
         n_wire_elems = len(wire_mesh.connectivity)
 
-        # 2. HEX8 ジグメッシュ
-        jig_cfg = ThreePointBendContactJigConfig(
-            wire_length=cfg.wire_length,
-            wire_diameter=cfg.wire_diameter,
-            n_elems_wire=cfg.n_elems_wire,
-            E=cfg.E,
-            nu=cfg.nu,
-            jig_push=cfg.jig_push,
-            jig_E_factor=cfg.jig_E_factor,
-            jig_width=cfg.jig_width,
-            jig_depth=cfg.jig_depth,
-            jig_height=cfg.jig_height,
+        # 2. 円弧ジグメッシュ（R=jig_radius の円柱ジグ）
+        cx = cfg.wire_length / 2.0
+        jig_coords, jig_edge_conn, jig_rot_dofs = _build_arc_jig_mesh(
+            cx=cx,
+            wire_radius=wire_radius,
+            jig_radius=cfg.jig_radius,
+            n_segments=cfg.jig_n_segments,
             initial_gap=cfg.initial_gap,
-            k_pen=cfg.k_pen,
-            n_uzawa_max=cfg.n_uzawa_max,
+            n_wire_nodes=n_wire_nodes,
         )
-        jig_coords, _jig_hex_conn, jig_edge_conn, _jig_top_nodes, jig_rot_dofs = (
-            _build_hex8_jig_mesh(jig_cfg, n_wire_nodes, wire_radius)
-        )
-        n_hex_nodes = 8
+        n_hex_nodes = len(jig_coords)  # 円弧ノード数
 
         # 3. 統合メッシュ
         all_nodes = np.vstack([wire_mesh.node_coords, jig_coords])

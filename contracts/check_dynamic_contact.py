@@ -1,7 +1,7 @@
 """動的接触三点曲げの序盤収束チェック.
 
 自動推定δで序盤の収束速度を確認する。
-被膜あり/なしの切替: coating_stiffness > 0 で有効化。
+被膜あり/なしの切替: --coat フラグで有効化。
 
 Usage:
     python contracts/check_dynamic_contact.py          # 被膜なし
@@ -11,7 +11,7 @@ Usage:
 import sys
 import warnings
 
-from xkep_cae.numerical_tests.three_point_bend_jig import (  # noqa: E402
+from xkep_cae.numerical_tests.three_point_bend_jig import (
     DynamicThreePointBendContactJigConfig,
     DynamicThreePointBendContactJigProcess,
 )
@@ -31,15 +31,16 @@ if use_coating:
     }
 
 cfg = DynamicThreePointBendContactJigConfig(
-    jig_push=0.05,
-    n_periods=2.0,
-    n_elems_wire=20,
     max_increments=max_incr,
     **coat_kwargs,
 )
 
 label = "被膜あり" if use_coating else "被膜なし"
-print(f"[{label}] delta=auto, k_pen=auto, max_incr={max_incr}", flush=True)
+print(
+    f"[{label}] L={cfg.wire_length} d={cfg.wire_diameter} push={cfg.jig_push} "
+    f"delta=auto k_pen=auto max_incr={max_incr}",
+    flush=True,
+)
 if use_coating:
     print(
         f"  coating: k={cfg.coating_stiffness}, c={cfg.coating_damping}, mu={cfg.coating_mu}",
