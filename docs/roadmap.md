@@ -63,7 +63,7 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: 符号規約統一済み（status-221）、n_periods=2 収束パス。**残課題**: (1) softplus NR 線形収束の根本解決（sigmoid 接線が浅い接触で50%過小評価）、(2) n_periods≧5 の準静的テスト収束、(3) Uzawa 接線改良（λ寄与を接線に含める方式）
+- [ ] **動的三点曲げ接触収束**: status-222 で Uzawa 試行→softplus 非互換性確認。純粋ペナルティ + max_nr_attempts=100 で n_periods=1 収束。**残課題**: (1) 非平滑ペナルティ max(0,-g) での Uzawa 実装（softplus は gap≠0 で外ループ非収束）、(2) n_periods≧5 の準静的テスト収束
 
 ### 既知の問題
 

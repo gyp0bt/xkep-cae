@@ -307,9 +307,6 @@ class SmoothPenaltyContactForceProcess(
             ∂f_c/∂u = -(dp_n/dg) * g_shape ⊗ g_shape
                      = k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
         常に正定値。K_total = K_struct + K_contact は正定値を保つ。
-
-        exact_tangent=True: 厳密接線を使用（2次収束、推奨）
-        exact_tangent=False: 同一結果（互換性のため残存）
         """
         rows: list[int] = []
         cols: list[int] = []
