@@ -1,4 +1,4 @@
-# status-221: CI修正 + 診断強化 + 3Dレンダリング + クリーンアップ
+# status-221: CI修正 + 接触力符号修正 + 動的接触三点曲げ収束 + 診断強化
 
 [← README](../../README.md) | [← status-index](status-index.md)
 
@@ -9,88 +9,159 @@
 
 ## 概要
 
-status-220 の TODO を引き継ぎ、CI の test-process ジョブ修正、契約違反5件の解消、
-診断機能の毎インクリメント出力強化、動的3点曲げの3Dレンダリング出力、
-旧互換レイヤー削除を実施。
+status-220 の TODO を引き継ぎ、以下を実施:
 
-## 変更内容
+1. **接触力符号規約の修正** — 動的接触三点曲げ収束達成
+2. CI test-process ジョブ修正 + 契約違反 5 件解消
+3. 診断機能の毎インクリメント出力強化
+4. サイクル変位三点曲げ削除（意図と異なる構成）
+5. Uzawa 凍結（n_uzawa_max=1、Huber 主力）
+6. 旧互換レイヤー削除 + deprecated 参照クリーンアップ
 
-### 1. CI test-process ジョブ修正
+---
 
-- `xkep_cae/process/`（status-182で削除済み）→ `xkep_cae/`（コロケーションテスト）に変更
+## 1. 接触力符号規約の修正（最重要）
+
+### 問題
+
+`R_u = f_int + f_c - f_ext` で f_c をアセンブリ時の符号のまま内力として加算していた。
+g_shape 規約でワイヤ側が `+normal`（上向き）のため、ジグが下に押しても
+ワイヤが**上に**動く。status-147, 219, 220 で何度も再発した根本原因。
+
+### 修正
+
+`_nuzawa_steps.py` の `ContactForceAssemblyProcess.process()` で:
+
+```python
+f_c = -f_c          # アセンブリ後に符号反転
+R_u = f_int + f_c - f_ext   # 元の残差式はそのまま
+```
+
+K_c（接触接線剛性）は反転**しない**。softplus の sigmoid で正定値寄与するため。
+詳細は `xkep_cae/contact/solver/docs/contact_force_sign.md` に記録。
+
+### 収束した構成
+
+| パラメータ | 値 | 備考 |
+|-----------|-----|------|
+| `contact_mode` | `"smooth_penalty"` | Huber（Fischer-Burmeister NCP）主力 |
+| `smoothing_delta` | **5000.0** | softplus の平滑化。大きいほど Heaviside に近い |
+| `n_uzawa_max` | **1** | Uzawa 凍結。純粋ペナルティ |
+| `k_pen` | 自動推定（c0×M_ii×0.2） | DynamicPenaltyEstimateProcess |
+| `exact_tangent` | `True` | 2次収束。K_c は正定値近似 |
+| `mu` | 0.15 | Coulomb 摩擦 |
+| `rho_inf` | 0.9 | Generalized-α 数値減衰 |
+| `n_periods` | 2.0 | 押し下げ時間 = 2T₁（準静的寄り） |
+| `jig_push` | 0.05 mm | ジグ押し込み量 |
+
+### 収束結果
+
+```
+converged=True, 662 increment, 243s
+wire_y = -0.230 mm（下向き、正しい）
+jig_y  = -0.050 mm（処方変位通り）
+attempt/increment ≈ 2（2次収束）
+```
+
+### 経緯（符号問題が再発した経緯）
+
+1. **status-147**: NCP 鞍点系の摩擦接線剛性符号問題 → smooth_penalty に移行
+2. **status-219**: k_pen 適正化で 0.5 周期収束達成（自由振動バウンス方式）
+3. **status-220**: 変位制御押し下げに変更 → ワイヤが上に動く符号問題を特定。根本原因を特定するも修正は次セッションへ
+4. **status-221（本セッション）**:
+   - `R_u = f_int - f_c - f_ext` + `K_T = K - K_c` → K_c 負定値で発散
+   - **最終解**: `f_c = -f_c` をアセンブリ後に行い K_c は `+` のまま → **収束達成**
+
+---
+
+## 2. CI test-process ジョブ修正
+
+- `xkep_cae/process/`（status-182 で削除済み）→ `xkep_cae/`（コロケーションテスト）に変更
 - test-fast で動的接触ジグテストが走っていた問題を slow + xfail 化で解決
 
-### 2. 契約違反5件の解消（0件達成）
+## 3. 契約違反5件の解消（0件達成）
 
 | 違反 | 内容 | 修正 |
 |------|------|------|
 | C3 | DynamicPenaltyEstimateProcess テスト未紐付け | @binds_to テスト追加 |
 | C3 | DynamicThreePointBendContactJigProcess テスト未紐付け | @binds_to テスト追加（xfail） |
-| C5 | DynamicThreePointBendContactJigProcess が DynamicPenaltyEstimateProcess を uses 未宣言 | uses に追加 + トップレベルインポート化 |
-| C16 | _RigidEdgeAssembler が Process でも frozen dataclass でもない | C16 検査で _ prefix クラスをスキップ（関数と同様） |
-| C17 | PairDiagnosticsEntry が Input/Output で終わらない | PairDiagnosticsOutput にリネーム |
+| C5 | uses 未宣言 | DynamicPenaltyEstimateProcess を uses に追加 |
+| C16 | _RigidEdgeAssembler | C16 検査で _ prefix クラスをスキップ |
+| C17 | PairDiagnosticsEntry 命名 | PairDiagnosticsOutput にリネーム |
 
-### 3. 診断機能強化
+## 4. 診断機能強化
 
-- **IncrementDiagnosticsOutput**: 全インクリメントの診断スナップショットを蓄積する新データ型
-  - 残差ノルム、収束率、変位増分、エネルギー、接触状態サマリ
-  - 接触ペア数（active/sliding/sticking）、接触力ノルム、カットバック数、時間増分
-- **SolverResultData.increment_diagnostics**: 全インクリメント履歴リスト追加
-- **ConvergenceDiagnosticsOutput.convergence_rate_history**: NR反復内の残差減少率追跡
-- 動的/静的両ソルバーで収束率を記録
+- **IncrementDiagnosticsOutput**: 全インクリメントの残差・収束率・エネルギー・接触状態を蓄積
+- **SolverResultData.increment_diagnostics**: 全インクリメント履歴リスト
+- **convergence_rate_history**: NR 反復内の残差減少率追跡
 
-### 4. 動的3点曲げ3Dレンダリング
+## 5. サイクル変位三点曲げ削除
 
-- `contracts/render_three_point_bend.py`: レンダリングスクリプト
-- `docs/verification/three_point_bend/`: S11/LE11/SK1の3Dコンター画像19枚
-  - 6フレーム×3フィールド + 時刻歴プロット
-  - 40要素、push=1.0mm、2周期の動的三点曲げ（接触なし版）
+`DynamicThreePointBendJigProcess`（初速度でサイクル振動させる方式）を完全削除。
+意図と異なる構成だった。残存 Process:
 
-### 5. 旧互換レイヤー削除 + クリーンアップ
+- **ThreePointBendJigProcess** — 静的直接変位制御
+- **ThreePointBendContactJigProcess** — 接触あり準静的
+- **DynamicThreePointBendContactJigProcess** — 接触あり動的（主力）
 
-- `_newton_uzawa.py` 削除: Dynamic/Static分離後の不要な再エクスポートモジュール
-- 10ファイルのdocstringから `__xkep_cae_deprecated` 参照を除去
+## 6. Uzawa 凍結
+
+- `n_uzawa_max` デフォルトを 5→1 に全 6 箇所で変更
+- Huber（Fischer-Burmeister NCP）が主力接触力評価
+- roadmap/CLAUDE.md から Uzawa 有効化 TODO を凍結に変更
+
+## 7. 旧互換レイヤー削除
+
+- `_newton_uzawa.py`（再エクスポートモジュール）削除
+- 10 ファイルの docstring から `__xkep_cae_deprecated` 参照除去
+
+---
 
 ## 変更ファイル
 
 | ファイル | 変更内容 |
 |----------|----------|
+| `xkep_cae/contact/solver/_nuzawa_steps.py` | **f_c 符号反転** + K_c/K_fric/K_coat 維持 |
+| `xkep_cae/contact/solver/docs/contact_force_sign.md` | 符号規約ドキュメント（新規） |
 | `.github/workflows/ci.yml` | test-process パス修正 |
-| `xkep_cae/contact/solver/_diagnostics.py` | PairDiagnosticsOutput リネーム + IncrementDiagnosticsOutput 追加 |
+| `xkep_cae/contact/solver/_diagnostics.py` | PairDiagnosticsOutput + IncrementDiagnosticsOutput |
 | `xkep_cae/contact/solver/process.py` | 毎インクリメント診断蓄積 |
-| `xkep_cae/contact/solver/_newton_uzawa_dynamic.py` | 収束率追跡 + リネーム |
-| `xkep_cae/contact/solver/_newton_uzawa_static.py` | 収束率追跡 + リネーム |
-| `xkep_cae/core/data.py` | SolverResultData.increment_diagnostics 追加 |
-| `xkep_cae/numerical_tests/three_point_bend_jig.py` | C5修正（uses + import） |
-| `xkep_cae/numerical_tests/tests/test_three_point_bend_jig.py` | C3修正 binds_to 追加 |
-| `xkep_cae/contact/penalty/tests/test_strategy.py` | DynamicPenaltyEstimateProcess テスト追加 |
-| `contracts/validate_process_contracts.py` | C16 _ prefix クラススキップ |
-| `tests/contact/test_three_point_bend_jig.py` | 動的接触テスト slow+xfail 化 |
-| `contracts/render_three_point_bend.py` | 3Dレンダリングスクリプト（新規） |
-| `xkep_cae/contact/solver/_newton_uzawa.py` | 削除（旧互換レイヤー） |
+| `xkep_cae/contact/solver/_newton_uzawa_dynamic.py` | 収束率追跡 + n_uzawa_max=1 |
+| `xkep_cae/contact/solver/_newton_uzawa_static.py` | 同上 |
+| `xkep_cae/core/data.py` | increment_diagnostics + n_uzawa_max=1 |
+| `xkep_cae/numerical_tests/three_point_bend_jig.py` | サイクル版削除 + δ/n_uzawa 更新 |
+| `xkep_cae/contact/_contact_pair.py` | n_uzawa_max=1 |
+| `xkep_cae/contact/contact_force/strategy.py` | n_uzawa_max=1 |
+| `contracts/validate_process_contracts.py` | C16 _ prefix スキップ |
+| `xkep_cae/contact/solver/_newton_uzawa.py` | 削除 |
+
+## 3D レンダリング出力
+
+`tmp/dynamic_contact_bend/` に 19 枚:
+- S11/LE11/SK1 × 6 フレーム + 時刻歴プロット
+- DynamicThreePointBendContactJigProcess（δ=5000, 20 要素, push=0.05mm）
 
 ## TODO（次セッションへの引き継ぎ）
 
-- [ ] **接触力符号規約の統一**: softplus 接触力の符号と残差式の符号規約を文書化し、統一（status-220 から継続）
-- [x] ~~**Uzawa 有効化**~~ → 凍結。n_uzawa_max=1 をデフォルト化。Huber（Fischer-Burmeister NCP）が主力
+- [ ] **DynamicThreePointBendContactJigConfig.smoothing_delta デフォルト更新**: 現在 50.0 → 5000.0 に変更すべき
+- [ ] **xfail テストの解除**: 接触力符号修正により動的接触テストが収束可能に。xfail を外して正式テスト化
 - [ ] **f_ext_ref_norm 修正**: 変位制御問題で力収束参照値がゼロになる問題（status-220）
 - [ ] **線形収束の原因調査**: 接触接線剛性の幾何剛性項欠落（d²g/du²）
-- [ ] **NCP残差の実値記録**: 現在 ncp_history は 0.0 固定。相補性条件の実値を記録すべき
-- [ ] **条件数計算**: ConvergenceDiagnosticsOutput.condition_number が未使用
-- [ ] S3 凍結解除: 変位制御7本撚線曲げ揺動
+- [ ] **NCP 残差の実値記録**: ncp_history は 0.0 固定。相補性条件の実値を記録すべき
+- [ ] S3 凍結解除: 変位制御 7 本撚線曲げ揺動
 
-## 運用メモ
+## 用語定義
 
-- CI test-process は `xkep_cae/process/` が status-182 で削除済みなのに参照が残っていた
-- C16 の `_` prefix クラス検査は関数と異なりスキップされていなかった（修正済み）
-- matplotlib がCI環境にないため test_render_produces_images は slow テストでのみ実行
+| 用語 | 意味 |
+|------|------|
+| increment | 荷重増分（load_frac が 0→1 へ進む 1 ステップ） |
+| attempt | 1 increment 内の NR 反復 1 回 |
+| step | increment と同義（診断出力での表示名） |
 
 ## テスト状態
 
-- 新規追加テスト: 4件（DynamicPenaltyEstimateProcess テスト3件 + DynamicThreePointBendContactJigProcess テスト1件）
-- test-fast: 140 passed, 60 deselected（CI green想定）
-- test-process: 372 passed, 2 xfailed（CI green想定）
-- 契約違反: 0件
-- 条例違反: 0件
+- test-fast: 132 passed, 60 deselected
+- test-process: 372 passed, 2 xfailed
+- 契約違反: 0 件 / 条例違反: 0 件
 
 ---
