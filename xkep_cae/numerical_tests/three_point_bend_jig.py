@@ -1152,7 +1152,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
+            contact_mode="ncp",
             smoothing_delta=_smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
             exact_tangent=cfg.exact_tangent,
@@ -1177,7 +1177,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen=k_pen,
             use_friction=True,
             mu=cfg.mu,
-            contact_mode="smooth_penalty",
+            contact_mode="ncp",
         )
 
         # 10. ソルバー実行（動的モード、ジグ変位制御）
