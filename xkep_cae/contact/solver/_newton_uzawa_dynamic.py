@@ -139,7 +139,7 @@ class NewtonUzawaDynamicProcess(
         _friction_strategy = strategies.friction
         _coating_strategy = strategies.coating
 
-        n_uzawa_max = getattr(_contact_force_strategy, "n_uzawa_max", 5)
+        n_uzawa_max = getattr(_contact_force_strategy, "n_uzawa_max", 1)
         tol_uzawa = getattr(_contact_force_strategy, "tol_uzawa", 1e-6)
 
         # サブプロセスインスタンス

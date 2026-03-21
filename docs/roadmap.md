@@ -63,11 +63,11 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。**残課題**: (1) 接触力符号規約統一（softplus f_c の符号と残差式 R_u=f_int+f_c-f_ext の整合）、(2) Uzawa 有効化（n_uzawa_max>=3）、(3) 変位制御時の f_ext_ref_norm=0 対策、(4) 線形収束の原因調査（接触接線剛性の幾何剛性項欠落?）
+- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。**残課題**: (1) 接触力符号規約統一（softplus f_c の符号と残差式 R_u=f_int+f_c-f_ext の整合）、(2) 変位制御時の f_ext_ref_norm=0 対策、(3) 線形収束の原因調査（接触接線剛性の幾何剛性項欠落?）。~~Uzawa 有効化~~ → 凍結（status-221）
 
 ### 既知の問題
 
-- **NCP摩擦接線剛性符号問題**: `d(f_fric)/du = -k_t*g_t⊗g_t`（負定値）で鞍点系が不安定化。smooth penalty+Uzawaで回避中。Alart-Curnier拡大鞍点系で根本解決予定。（status-147）
+- **NCP摩擦接線剛性符号問題**: `d(f_fric)/du = -k_t*g_t⊗g_t`（負定値）で鞍点系が不安定化。smooth penalty（Uzawa凍結、n_uzawa_max=1）で回避中。（status-147, status-221）
 - ~~**slow テスト不収束**: NCP 7本90°曲げ Phase1 が不安定（環境依存）。xfail で安定化済み。~~ → status-212 で接触収束テスト全削除。
 
 ### 計測済みスケーリングデータ

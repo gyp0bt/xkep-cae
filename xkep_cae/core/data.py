@@ -103,14 +103,14 @@ def default_strategies(
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
     coating_stiffness: float = 0.0,
-    n_uzawa_max: int = 5,
+    n_uzawa_max: int = 1,  # Uzawa凍結（status-221）
     tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
-    NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
-    5軸 Strategy 全生成（status-159: Phase 5 完了）。
+    NCP + smooth_penalty + QuasiStatic + AutoBeamEI
+    5軸 Strategy 全生成。Uzawa凍結（n_uzawa_max=1）。
     """
     from xkep_cae.contact.coating.strategy import _create_coating_strategy
     from xkep_cae.contact.contact_force.strategy import (

@@ -187,7 +187,7 @@ class SmoothPenaltyContactForceProcess(
         ndof_per_node: int = 6,
         *,
         smoothing_delta: float = 0.0,
-        n_uzawa_max: int = 5,
+        n_uzawa_max: int = 1,  # Uzawa凍結（status-221）。1=純粋ペナルティ
         tol_uzawa: float = 1e-3,
         exact_tangent: bool = False,
     ) -> None:
@@ -371,7 +371,7 @@ def _create_contact_force_strategy(
     ndof_per_node: int = 6,
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
-    n_uzawa_max: int = 5,
+    n_uzawa_max: int = 1,  # Uzawa凍結（status-221）
     tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> NCPContactForceProcess | SmoothPenaltyContactForceProcess:
@@ -383,7 +383,7 @@ def _create_contact_force_strategy(
         ndof_per_node: 1節点あたりの DOF 数
         contact_compliance: δ正則化パラメータ
         smoothing_delta: smooth penalty の δ パラメータ
-        n_uzawa_max: Uzawa 最大反復回数
+        n_uzawa_max: Uzawa 最大反復回数（凍結: デフォルト1=純粋ペナルティ）
         tol_uzawa: Uzawa 収束許容値
         exact_tangent: 厳密接線使用（動的解析で c0*M 正則化がある場合に有効）
     """

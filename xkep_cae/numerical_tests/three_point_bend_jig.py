@@ -443,7 +443,7 @@ class ThreePointBendContactJigConfig:
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     smoothing_delta: float = 200.0  # softplus の平滑化パラメータ
-    n_uzawa_max: int = 20  # Uzawa 最大反復回数
+    n_uzawa_max: int = 1  # Uzawa凍結（status-221）。1=純粋ペナルティ
 
 
 @dataclass(frozen=True)
