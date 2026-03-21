@@ -918,6 +918,7 @@ class DynamicThreePointBendContactJigConfig:
     max_nr_attempts: int = 30  # NR 最大反復数（exact_tangent=True で2次収束 ~10 iter）
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
     exact_tangent: bool = True  # 厳密接線（小 k_pen で K_eff 正定値維持、2次収束）
+    contact_mode: str = "ncp"  # "ncp" | "smooth_penalty"
 
 
 @dataclass(frozen=True)
@@ -1129,7 +1130,7 @@ class DynamicThreePointBendContactJigProcess(
         )
 
         # 9. 接触パラメータ自動推定
-        # smoothing_delta 自動推定: δ = α / r_min（status-221）
+        # smoothing_delta 自動推定: δ = 5000 / r_min（status-221）
         _smoothing_delta = 5000.0 / wire_radius
 
         # k_pen: 動的解析では c0*M スケールに合わせる（status-218）
@@ -1152,7 +1153,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
-            contact_mode="ncp",
+            contact_mode=cfg.contact_mode,
             smoothing_delta=_smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
             exact_tangent=cfg.exact_tangent,
@@ -1163,10 +1164,12 @@ class DynamicThreePointBendContactJigProcess(
             elem_layer_map=elem_layer_map,
             adjust_initial_penetration=False,
             adaptive_timestepping=True,
-            dt_grow_factor=1.2,
+            dt_grow_factor=2.0,
             dt_shrink_factor=0.5,
             dt_min_fraction=dt_min_frac,
-            dt_max_fraction=dt_initial_frac,
+            dt_max_fraction=min(dt_initial_frac * 16.0, 0.05),
+            dt_grow_attempt_threshold=20,
+            dt_shrink_attempt_threshold=25,
             coating_stiffness=cfg.coating_stiffness,
             coating_damping=cfg.coating_damping,
             coating_mu=cfg.coating_mu,
@@ -1177,7 +1180,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen=k_pen,
             use_friction=True,
             mu=cfg.mu,
-            contact_mode="ncp",
+            contact_mode=cfg.contact_mode,
         )
 
         # 10. ソルバー実行（動的モード、ジグ変位制御）
