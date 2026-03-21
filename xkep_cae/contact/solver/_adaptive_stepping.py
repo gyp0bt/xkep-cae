@@ -1,7 +1,6 @@
 """適応荷重増分制御（プライベート）.
 
-AdaptiveSteppingProcess を新パッケージに移植。
-__xkep_cae_deprecated/process/strategies/adaptive_stepping.py からのコピー。
+AdaptiveSteppingProcess 実装。
 """
 
 from __future__ import annotations

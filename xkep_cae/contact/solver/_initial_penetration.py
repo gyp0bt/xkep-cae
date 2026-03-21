@@ -1,7 +1,6 @@
 """初期貫入検出・座標調整 Process.
 
-__xkep_cae_deprecated/contact/initial_penetration.py からの移植。
-geometry 関数も同梱し、deprecated 依存を完全除去。
+geometry 関数も同梱。
 ContactPair は duck typing（.nodes_a, .nodes_b, .radius_a, .radius_b,
 .core_radius_a, .core_radius_b 属性を持つ任意のオブジェクト）。
 """

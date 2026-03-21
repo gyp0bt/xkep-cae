@@ -37,7 +37,6 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationOutput,
     InitialPenetrationProcess,
 )
-from xkep_cae.contact.solver._newton_uzawa import NewtonUzawaProcess
 from xkep_cae.contact.solver._newton_uzawa_dynamic import NewtonUzawaDynamicProcess
 from xkep_cae.contact.solver._newton_uzawa_static import NewtonUzawaStaticProcess
 from xkep_cae.contact.solver._nuzawa_steps import (
@@ -314,8 +313,8 @@ class TestNewtonUzawaStaticProcessAPI:
         assert NewtonUzawaStaticProcess.meta.module == "solve"
 
     def test_dynamic_is_primary_process(self):
-        """Dynamic が正統 NewtonUzawaProcess."""
-        assert NewtonUzawaProcess is NewtonUzawaDynamicProcess
+        """Dynamic が正統 NewtonUzawaDynamicProcess."""
+        assert NewtonUzawaDynamicProcess.meta.name == "NewtonUzawaDynamic"
 
 
 @binds_to(NewtonUzawaDynamicProcess)

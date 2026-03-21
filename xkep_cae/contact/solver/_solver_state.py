@@ -1,8 +1,6 @@
 """ソルバー可変状態の集約（プライベート）.
 
-SolverStateOutput を新パッケージに移植。
-__xkep_cae_deprecated/process/strategies/solver_state.py からの移植。
-deprecated 依存を除去し、duck typing で簡素化。
+SolverStateOutput を duck typing で簡素化。
 """
 
 from __future__ import annotations

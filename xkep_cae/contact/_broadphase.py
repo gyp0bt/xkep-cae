@@ -1,6 +1,5 @@
 """Broadphase 接触候補探索（AABB 空間ハッシュ）.
 
-__xkep_cae_deprecated/contact/broadphase.py から移植。
 プライベートモジュール（C16 準拠）。
 """
 

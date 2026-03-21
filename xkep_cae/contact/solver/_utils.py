@@ -1,7 +1,6 @@
 """ソルバー共通ユーティリティ（プライベート）.
 
-deformed_coords / ncp_line_search を新パッケージに移植。
-__xkep_cae_deprecated/contact/utils.py からのコピー。
+deformed_coords / ncp_line_search ユーティリティ。
 """
 
 from __future__ import annotations

@@ -1,7 +1,6 @@
 """収束診断情報 Process.
 
-ConvergenceDiagnosticsOutput を新パッケージに移植。
-__xkep_cae_deprecated/contact/diagnostics.py からのコピー。
+ConvergenceDiagnosticsOutput を新パッケージに移植済み（status-207 で旧コード完全削除）。
 """
 
 from __future__ import annotations
