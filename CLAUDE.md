@@ -64,7 +64,7 @@
 
 ## 現在の状態
 
-**185 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
+**188 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -72,7 +72,7 @@
 
 ### 次の課題
 
-**Huber型C¹ペナルティ導入** — status-222 で softplus → Huber型ペナルティに移行。δ=5000（ε=0.0002mm）で操作点を線形領域に配置し、NR 2次収束達成（2 iter/increment）。コンパクトサポートでゴーストフォース消滅。次は n_periods≧5 準静的テスト + S3凍結解除。
+**ペナルティパラメータ完全自動化** — status-223 で AutoSmoothingDeltaProcess 実装。ε = α×r_min（α=2e-4）で smoothing_delta を自動推定。k_pen も既存の AutoBeamEIPenalty / DynamicPenaltyEstimateProcess で自動推定済み。Uzawa は Huber 非整合のため凍結（n_uzawa_max=1）。次は n_periods≧5 準静的テスト + S3凍結解除。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

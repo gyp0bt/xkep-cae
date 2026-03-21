@@ -5,17 +5,22 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from xkep_cae.contact.penalty import (
     AutoBeamEIPenalty,
     AutoEALPenalty,
+    AutoSmoothingDeltaProcess,
     ConstantPenalty,
     ContinuationPenalty,
     PenaltyInput,
     PenaltyOutput,
 )
-from xkep_cae.contact.penalty.strategy import _create_penalty_strategy
+from xkep_cae.contact.penalty.strategy import (
+    _create_penalty_strategy,
+    _estimate_smoothing_delta,
+)
 from xkep_cae.core.strategies import PenaltyStrategy
 from xkep_cae.core.testing import binds_to
 
@@ -173,3 +178,64 @@ class TestCreatePenaltyStrategy:
         """beam パラメータが不完全な場合は ConstantPenalty にフォールバック."""
         s = _create_penalty_strategy(beam_E=200e9, beam_I=0.0, beam_L=0.01)
         assert isinstance(s, ConstantPenalty)
+
+
+# ── AutoSmoothingDeltaProcess ────────────────────────────
+
+
+@binds_to(AutoSmoothingDeltaProcess)
+class TestAutoSmoothingDeltaProcess:
+    """AutoSmoothingDeltaProcess の単体テスト."""
+
+    def test_wire_diameter_2mm(self) -> None:
+        """wire_diameter=2.0mm (r=1.0mm) → δ=5000, ε=0.0002mm."""
+        p = AutoSmoothingDeltaProcess(r_min=1.0)
+        assert p.delta == pytest.approx(5000.0)
+        assert p.epsilon == pytest.approx(0.0002)
+
+    def test_fine_wire(self) -> None:
+        """r=0.2mm → δ=25000, ε=0.00004mm."""
+        p = AutoSmoothingDeltaProcess(r_min=0.2)
+        assert p.delta == pytest.approx(25000.0)
+        assert p.epsilon == pytest.approx(0.00004)
+
+    def test_custom_alpha(self) -> None:
+        p = AutoSmoothingDeltaProcess(r_min=1.0, alpha=1e-3)
+        assert p.delta == pytest.approx(1000.0)
+        assert p.epsilon == pytest.approx(0.001)
+
+    def test_invalid_r_min(self) -> None:
+        with pytest.raises(ValueError, match="r_min"):
+            AutoSmoothingDeltaProcess(r_min=0.0)
+
+    def test_invalid_alpha(self) -> None:
+        with pytest.raises(ValueError, match="alpha"):
+            AutoSmoothingDeltaProcess(r_min=1.0, alpha=0.0)
+
+    def test_process_returns_frozen(self) -> None:
+        p = AutoSmoothingDeltaProcess(r_min=1.0)
+        out = p.process(PenaltyInput(step=0, total_steps=1))
+        assert isinstance(out, PenaltyOutput)
+        assert out.k_pen == pytest.approx(5000.0)
+        with pytest.raises(AttributeError):
+            out.k_pen = 999.0  # type: ignore[misc]
+
+
+class TestEstimateSmoothingDelta:
+    """_estimate_smoothing_delta ユーティリティのテスト."""
+
+    def test_scalar_radius(self) -> None:
+        delta = _estimate_smoothing_delta(1.0)
+        assert delta == pytest.approx(5000.0)
+
+    def test_array_with_zeros(self) -> None:
+        """ジグ要素（r=0）が混在しても正の半径のみで推定."""
+        radii = np.array([0.0, 0.0, 1.0, 1.0, 0.5])
+        delta = _estimate_smoothing_delta(radii)
+        # r_min = 0.5 → ε = 2e-4 × 0.5 = 1e-4 → δ = 10000
+        assert delta == pytest.approx(10000.0)
+
+    def test_all_zero_returns_zero(self) -> None:
+        """全要素が r=0 の場合は δ=0（smoothing なし）."""
+        delta = _estimate_smoothing_delta(np.array([0.0, 0.0]))
+        assert delta == 0.0

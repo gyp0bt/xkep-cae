@@ -263,6 +263,86 @@ class DynamicPenaltyEstimateProcess(
         )
 
 
+class AutoSmoothingDeltaProcess(SolverProcess[PenaltyInput, PenaltyOutput]):
+    """梁半径ベースの smoothing_delta 自動推定.
+
+    推定式:
+        ε = α × r_min
+        δ = 1/ε
+
+    α のデフォルト 2e-4 は「表面粗さオーダー」:
+    - r=1.0mm (wire_diameter=2.0mm) → ε=0.0002mm, δ=5000
+    - r=0.2mm (細線) → ε=0.00004mm, δ=25000
+    物理的に遷移幅が表面粗さ以下なら、操作点は常に線形領域に入り
+    NR 2次収束が保証される（status-223）。
+    """
+
+    meta = ProcessMeta(
+        name="AutoSmoothingDelta",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/penalty.md",
+    )
+
+    _DEFAULT_ALPHA = 2e-4
+
+    def __init__(
+        self,
+        r_min: float,
+        *,
+        alpha: float = _DEFAULT_ALPHA,
+    ) -> None:
+        if r_min <= 0.0:
+            raise ValueError(f"r_min は正の値が必要: {r_min}")
+        if alpha <= 0.0:
+            raise ValueError(f"alpha は正の値が必要: {alpha}")
+        self._r_min = r_min
+        self._alpha = alpha
+        self._epsilon = alpha * r_min
+        self._delta = 1.0 / self._epsilon
+
+    @property
+    def delta(self) -> float:
+        """推定された smoothing_delta."""
+        return self._delta
+
+    @property
+    def epsilon(self) -> float:
+        """推定された遷移幅 ε [mm]."""
+        return self._epsilon
+
+    def process(self, input_data: PenaltyInput) -> PenaltyOutput:
+        return PenaltyOutput(k_pen=self._delta)
+
+
+def _estimate_smoothing_delta(
+    radii: object,
+    *,
+    alpha: float = AutoSmoothingDeltaProcess._DEFAULT_ALPHA,
+) -> float:
+    """梁半径配列から smoothing_delta を推定するユーティリティ.
+
+    Args:
+        radii: スカラー or ndarray の梁半径
+        alpha: ε/r 比率（デフォルト 2e-4）
+
+    Returns:
+        smoothing_delta: δ = 1/(α × r_min)。
+        半径が 0 以下の要素（ジグ等）は除外する。
+        有効な半径がない場合は 0.0 を返す（フォールバック: smoothing なし）。
+    """
+    import numpy as np
+
+    r_arr = np.atleast_1d(np.asarray(radii, dtype=float)).ravel()
+    # 正の半径のみ（ジグ要素は r=0）
+    positive = r_arr[r_arr > 0.0]
+    if len(positive) == 0:
+        return 0.0
+    r_min = float(np.min(positive))
+    proc = AutoSmoothingDeltaProcess(r_min=r_min, alpha=alpha)
+    return proc.delta
+
+
 def _create_penalty_strategy(
     *,
     k_pen: float = 1.0,

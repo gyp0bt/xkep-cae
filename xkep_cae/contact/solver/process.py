@@ -156,6 +156,15 @@ class ContactFrictionProcess(
             )
             _beam_L = float(np.mean(_lens))
 
+        # --- smoothing_delta 自動推定 ---
+        _sd = manager.config.smoothing_delta
+        if _sd <= 0.0:
+            from xkep_cae.contact.penalty.strategy import _estimate_smoothing_delta
+
+            _sd = _estimate_smoothing_delta(input_data.mesh.radii)
+            if _sd > 0.0:
+                print(f"  smoothing_delta 自動推定: δ={_sd:.1f} (ε={1.0 / _sd:.6f}mm)")
+
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -172,7 +181,7 @@ class ContactFrictionProcess(
             mu=input_data.contact.mu or 0.15,
             contact_mode="smooth_penalty",
             line_contact=True,
-            smoothing_delta=manager.config.smoothing_delta,
+            smoothing_delta=_sd,
             n_uzawa_max=manager.config.n_uzawa_max,
             tol_uzawa=manager.config.tol_uzawa,
             exact_tangent=manager.config.exact_tangent,
