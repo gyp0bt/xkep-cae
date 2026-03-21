@@ -31,6 +31,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact.penalty.strategy import DynamicPenaltyEstimateProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -1184,7 +1185,7 @@ class DynamicThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess]
+    uses = [ContactFrictionProcess, DynamicPenaltyEstimateProcess]
 
     def process(
         self, input_data: DynamicThreePointBendContactJigConfig
@@ -1347,10 +1348,7 @@ class DynamicThreePointBendContactJigProcess(
         k_pen = cfg.k_pen
         if k_pen <= 0.0:
             # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
-            from xkep_cae.contact.penalty.strategy import (
-                DynamicPenaltyEstimateInput,
-                DynamicPenaltyEstimateProcess,
-            )
+            from xkep_cae.contact.penalty.strategy import DynamicPenaltyEstimateInput
 
             _dpe = DynamicPenaltyEstimateProcess()
             _dpe_out = _dpe.process(

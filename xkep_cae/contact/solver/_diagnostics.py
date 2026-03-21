@@ -12,7 +12,7 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class PairDiagnosticsEntry:
+class PairDiagnosticsOutput:
     """1接触ペアの診断スナップショット."""
 
     pair_id: int
@@ -42,7 +42,7 @@ class ConvergenceDiagnosticsOutput:
     total_energy: float = 0.0
     energy_ratio: float = 1.0  # E_current / E_initial
     # ペア別接触診断（NR反復ごとのスナップショット）
-    pair_snapshots: list[list[PairDiagnosticsEntry]] = field(default_factory=list)
+    pair_snapshots: list[list[PairDiagnosticsOutput]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -727,6 +727,10 @@ def check_c16_sterilization() -> list[str]:
 
         # ── クラス検査 ──
         for cls_name in class_names:
+            # private クラスは許可（内部ヘルパー）
+            if cls_name.startswith("_"):
+                continue
+
             cls = getattr(mod, cls_name, None)
             if cls is None:
                 continue

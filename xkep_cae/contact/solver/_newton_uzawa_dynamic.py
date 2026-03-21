@@ -13,7 +13,7 @@ import numpy as np
 
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
-    PairDiagnosticsEntry,
+    PairDiagnosticsOutput,
 )
 from xkep_cae.contact.solver._nuzawa_steps import (
     ContactForceAssemblyInput,
@@ -221,13 +221,13 @@ class NewtonUzawaDynamicProcess(
                 diag.n_active_history.append(n_active)
 
                 # ペア別診断スナップショット
-                _pair_snap: list[PairDiagnosticsEntry] = []
+                _pair_snap: list[PairDiagnosticsOutput] = []
                 if hasattr(manager, "pairs"):
                     for _pi, _pair in enumerate(manager.pairs):
                         if hasattr(_pair, "state"):
                             _st = _pair.state
                             _pair_snap.append(
-                                PairDiagnosticsEntry(
+                                PairDiagnosticsOutput(
                                     pair_id=_pi,
                                     elem_a=int(_pair.elem_a),
                                     elem_b=int(_pair.elem_b),

@@ -11,6 +11,8 @@ import pytest
 
 from xkep_cae.core.testing import binds_to
 from xkep_cae.numerical_tests.three_point_bend_jig import (
+    DynamicThreePointBendContactJigConfig,
+    DynamicThreePointBendContactJigProcess,
     DynamicThreePointBendJigConfig,
     DynamicThreePointBendJigProcess,
     ThreePointBendContactJigConfig,
@@ -63,3 +65,20 @@ class TestDynamicThreePointBendJigProcessAPI:
         assert len(result.deflection_history) > 0
         assert result.analytical_frequency_hz > 0
         assert result.initial_velocity > 0
+
+
+@binds_to(DynamicThreePointBendContactJigProcess)
+class TestDynamicThreePointBendContactJigProcessAPI:
+    """DynamicThreePointBendContactJigProcess の基本動作確認."""
+
+    @pytest.mark.xfail(reason="接触力符号規約問題で収束しない（status-220 TODO）")
+    def test_process_runs(self):
+        """動的接触ジグが収束し、変位が記録される."""
+        cfg = DynamicThreePointBendContactJigConfig(
+            jig_push=0.05,
+            n_periods=2.0,
+        )
+        proc = DynamicThreePointBendContactJigProcess()
+        result = proc.process(cfg)
+        assert result.solver_result.converged
+        assert result.wire_midpoint_deflection > 0
