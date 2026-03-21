@@ -441,7 +441,7 @@ class ThreePointBendContactJigConfig:
     jig_height: float = 2.0  # mm（y方向）
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 200.0  # softplus の平滑化パラメータ
+    # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
     n_uzawa_max: int = 1  # Uzawa凍結（status-221）。1=純粋ペナルティ
 
 
@@ -677,9 +677,12 @@ class ThreePointBendContactJigProcess(
             k_beam_global = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
             k_pen = 0.5 * k_beam_global
 
+        # smoothing_delta 自動推定: δ = α / r_min（status-221）
+        _smoothing_delta = 5000.0 / wire_radius
+
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
+            smoothing_delta=_smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
@@ -846,7 +849,7 @@ class DynamicThreePointBendContactJigConfig:
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 50.0  # softplus の平滑化パラメータ（幅 1/δ ≈ 0.02mm）
+    # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
     n_uzawa_max: int = (
         1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
     )
@@ -1081,9 +1084,11 @@ class DynamicThreePointBendContactJigProcess(
             f_ext_total=np.zeros(ndof),
         )
 
-        # 9. 接触設定（smooth_penalty + 摩擦あり）
-        #    動的解析では k_pen を c0*M スケールに合わせる必要がある。
-        #    静的梁剛性ベース（48EI/L³）は動的の慣性項に対して桁違いに小さい。
+        # 9. 接触パラメータ自動推定
+        # smoothing_delta 自動推定: δ = α / r_min（status-221）
+        _smoothing_delta = 5000.0 / wire_radius
+
+        # k_pen: 動的解析では c0*M スケールに合わせる（status-218）
         k_pen = cfg.k_pen
         if k_pen <= 0.0:
             # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
@@ -1104,7 +1109,7 @@ class DynamicThreePointBendContactJigProcess(
 
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
+            smoothing_delta=_smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
             exact_tangent=cfg.exact_tangent,
             beam_E=cfg.E,
