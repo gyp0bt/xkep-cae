@@ -337,7 +337,6 @@ class BeamOscillationProcess(
 
         # 6. 接触設定（ダミー — 接触なし）
         contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
             adaptive_timestepping=True,
             dt_grow_factor=1.5,
             dt_shrink_factor=0.5,
@@ -348,9 +347,7 @@ class BeamOscillationProcess(
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=0.0,
-            use_friction=False,
             mu=None,
-            contact_mode="smooth_penalty",
         )
 
         # 7. ソルバー実行（動的モード、初速度付き）

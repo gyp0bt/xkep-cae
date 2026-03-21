@@ -342,16 +342,12 @@ class ThreePointBendJigProcess(BatchProcess[ThreePointBendJigConfig, ThreePointB
         )
 
         # 4. 接触設定（ダミー — 接触なし）
-        contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
-        )
+        contact_config = _ContactConfigInput()
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=0.0,
-            use_friction=False,
             mu=None,
-            contact_mode="smooth_penalty",
         )
 
         # 5. ソルバー実行
@@ -442,7 +438,7 @@ class ThreePointBendContactJigConfig:
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
-    n_uzawa_max: int = 1  # Uzawa凍結（status-221）。1=純粋ペナルティ
+    # n_uzawa_max は status-222 で削除。
 
 
 @dataclass(frozen=True)
@@ -729,9 +725,7 @@ class ThreePointBendContactJigProcess(
         _smoothing_delta = 5000.0 / wire_radius
 
         contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
             smoothing_delta=_smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -746,9 +740,7 @@ class ThreePointBendContactJigProcess(
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=k_pen,
-            use_friction=False,
             mu=None,
-            contact_mode="smooth_penalty",
         )
 
         # 7. ソルバー実行
@@ -900,9 +892,6 @@ class DynamicThreePointBendContactJigConfig:
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
-    n_uzawa_max: int = (
-        1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
-    )
     mu: float = 0.15  # Coulomb 摩擦係数
     # 被膜パラメータ（0=被膜なし）
     coating_stiffness: float = 0.0  # 被膜剛性 [N/mm]
@@ -914,11 +903,9 @@ class DynamicThreePointBendContactJigConfig:
     max_increments: int = 10000  # 最大インクリメント数
     # NR ソルバーパラメータ
     tol_disp: float = 1e-8  # 変位収束許容値
-    tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
-    max_nr_attempts: int = 30  # NR 最大反復数（exact_tangent=True で2次収束 ~10 iter）
+    tol_force: float = 1e-6  # 力収束許容値
+    max_nr_attempts: int = 30  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
-    exact_tangent: bool = True  # 厳密接線（小 k_pen で K_eff 正定値維持、2次収束）
-    contact_mode: str = "ncp"  # "ncp" | "smooth_penalty"
 
 
 @dataclass(frozen=True)
@@ -1153,10 +1140,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
-            contact_mode=cfg.contact_mode,
             smoothing_delta=_smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
-            exact_tangent=cfg.exact_tangent,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -1178,9 +1162,7 @@ class DynamicThreePointBendContactJigProcess(
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=k_pen,
-            use_friction=True,
             mu=cfg.mu,
-            contact_mode=cfg.contact_mode,
         )
 
         # 10. ソルバー実行（動的モード、ジグ変位制御）

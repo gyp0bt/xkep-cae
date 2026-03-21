@@ -45,9 +45,7 @@ class TestContactSetupProcess:
     def test_config_defaults(self):
         mesh = _make_simple_mesh()
         config = ContactSetupConfig(mesh=mesh)
-        assert config.use_friction is True
         assert config.mu == 0.15
-        assert config.contact_mode == "smooth_penalty"
 
     def test_config_frozen(self):
         mesh = _make_simple_mesh()

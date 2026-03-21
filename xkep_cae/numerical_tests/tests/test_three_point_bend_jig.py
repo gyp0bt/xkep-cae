@@ -24,6 +24,7 @@ from xkep_cae.numerical_tests.three_point_bend_jig import (
 class TestThreePointBendJigProcessAPI:
     """ThreePointBendJigProcess の基本動作確認."""
 
+    @pytest.mark.skip(reason="status-222: 準静的接触ソルバー削除。動的版のみ対応。")
     def test_process_runs(self):
         """小変位で ProcessMeta + 入出力契約を満たす."""
         cfg = ThreePointBendJigConfig(jig_push=0.05)

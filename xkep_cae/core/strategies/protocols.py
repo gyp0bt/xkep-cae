@@ -25,7 +25,6 @@ class ContactForceStrategy(Protocol):
     def evaluate(
         self,
         u: np.ndarray,
-        lambdas: np.ndarray,
         manager: object,
         k_pen: float,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -39,7 +38,6 @@ class ContactForceStrategy(Protocol):
     def tangent(
         self,
         u: np.ndarray,
-        lambdas: np.ndarray,
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:

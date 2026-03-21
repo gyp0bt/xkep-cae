@@ -43,9 +43,7 @@ class ContactSetupData:
 
     manager: object  # ContactManager（循環参照回避のため object）
     k_pen: float
-    use_friction: bool
     mu: float | None = None
-    contact_mode: str = "smooth_penalty"  # 基軸構成
 
 
 @dataclass(frozen=True)
@@ -64,12 +62,10 @@ class SolverStrategies:
     各フィールドは対応するStrategy Processインスタンス。
     設計仕様: process-architecture.md §2.4
 
-    フィールド型は object（循環参照回避）。実体は:
-    - contact_force: NCPContactForceProcess | SmoothPenaltyContactForceProcess
-    - friction: NoFrictionProcess | CoulombReturnMappingProcess | SmoothPenaltyFrictionProcess
-    - time_integration: QuasiStaticProcess | GeneralizedAlphaProcess
-    - contact_geometry: PointToPointProcess | LineToLineGaussProcess | MortarSegmentProcess
-    - penalty: AutoBeamEIProcess | AutoEALProcess | ManualPenaltyProcess | ContinuationPenaltyProcess
+    status-222 で一本化:
+    - contact_force: HuberContactForceProcess
+    - friction: CoulombReturnMappingProcess
+    - time_integration: GeneralizedAlphaProcess（動的のみ）
     """
 
     penalty: object
@@ -94,23 +90,19 @@ def default_strategies(
     beam_E: float = 0.0,
     beam_I: float = 0.0,
     beam_L: float = 0.0,
-    use_friction: bool = True,
     mu: float = 0.15,
-    contact_mode: str = "smooth_penalty",
     line_contact: bool = False,
     use_mortar: bool = False,
     n_gauss: int = 2,
-    contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
     coating_stiffness: float = 0.0,
-    n_uzawa_max: int = 1,  # Uzawa凍結（status-221）
-    tol_uzawa: float = 1e-3,
-    exact_tangent: bool = False,
 ) -> SolverStrategies:
-    """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
+    """基軸構成のSolverStrategiesを生成.
 
-    NCP + smooth_penalty + QuasiStatic + AutoBeamEI
-    5軸 Strategy 全生成。Uzawa凍結（n_uzawa_max=1）。
+    status-222 で一本化:
+    - Huber ペナルティ接触力
+    - Coulomb 摩擦（必須）
+    - 動的のみ（GeneralizedAlpha）
     """
     from xkep_cae.contact.coating.strategy import _create_coating_strategy
     from xkep_cae.contact.contact_force.strategy import (
@@ -133,8 +125,6 @@ def default_strategies(
             beam_L=beam_L,
         ),
         friction=_create_friction_strategy(
-            use_friction=use_friction,
-            contact_mode=contact_mode,
             ndof=ndof,
             ndof_per_node=ndof_per_node,
         ),
@@ -147,14 +137,9 @@ def default_strategies(
             acceleration=acceleration,
         ),
         contact_force=_create_contact_force_strategy(
-            contact_mode=contact_mode,
             ndof=ndof,
             ndof_per_node=ndof_per_node,
-            contact_compliance=contact_compliance,
             smoothing_delta=smoothing_delta,
-            n_uzawa_max=n_uzawa_max,
-            tol_uzawa=tol_uzawa,
-            exact_tangent=exact_tangent,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,

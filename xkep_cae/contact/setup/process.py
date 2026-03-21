@@ -18,9 +18,7 @@ class ContactSetupConfig:
 
     mesh: MeshData
     k_pen: float = 0.0
-    use_friction: bool = True
     mu: float = 0.15
-    contact_mode: str = "smooth_penalty"
     broadphase_margin: float = 0.0
     broadphase_cell_size: float | None = None
     exclude_same_layer: bool = True
@@ -47,7 +45,6 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:
         """接触設定の実行."""
         config = _ContactConfigInput(
-            use_friction=input_data.use_friction,
             mu=input_data.mu,
             exclude_same_layer=input_data.exclude_same_layer,
             line_contact=input_data.line_contact,
@@ -73,7 +70,5 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
         return ContactSetupData(
             manager=manager,
             k_pen=input_data.k_pen,
-            use_friction=input_data.use_friction,
             mu=input_data.mu,
-            contact_mode=input_data.contact_mode,
         )

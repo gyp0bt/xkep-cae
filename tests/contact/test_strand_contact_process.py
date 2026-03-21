@@ -90,9 +90,7 @@ class TestContactSetupProcessAPI:
             ContactSetupConfig(
                 mesh=mesh_result.mesh,
                 k_pen=1e6,
-                use_friction=False,
                 mu=0.0,
-                contact_mode="smooth_penalty",
                 exclude_same_layer=True,
             )
         )

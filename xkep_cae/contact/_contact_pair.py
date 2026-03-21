@@ -95,7 +95,6 @@ class _ContactConfigInput:
     g_off: float = 1e-6
     n_outer_max: int = 5
     tol_geometry: float = 1e-6
-    use_friction: bool = False
     mu_ramp_steps: int = 0
     use_line_search: bool = False
     line_search_max_steps: int = 5
@@ -167,10 +166,7 @@ class _ContactConfigInput:
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
-    contact_mode: str = "ncp"
     smoothing_delta: float = 0.0
-    n_uzawa_max: int = 1  # Uzawa凍結（status-221）。1=純粋ペナルティ
-    tol_uzawa: float = 1e-6
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
 
 

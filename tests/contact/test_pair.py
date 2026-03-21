@@ -152,14 +152,11 @@ class TestContactConfig:
         assert cfg.g_on == 0.0
         assert cfg.g_off == pytest.approx(1e-6)
         assert cfg.n_outer_max == 5
-        assert cfg.use_friction is False
-
     def test_custom_values(self):
         """カスタム設定."""
-        cfg = _ContactConfigInput(k_pen_scale=2.0, mu=0.5, use_friction=True)
+        cfg = _ContactConfigInput(k_pen_scale=2.0, mu=0.5)
         assert cfg.k_pen_scale == 2.0
         assert cfg.mu == 0.5
-        assert cfg.use_friction is True
 
 
 # ---------------------------------------------------------------------------
@@ -306,10 +303,9 @@ class TestContactManager:
 
     def test_custom_config(self):
         """カスタム設定のマネージャ."""
-        cfg = _ContactConfigInput(mu=0.5, use_friction=True)
+        cfg = _ContactConfigInput(mu=0.5)
         mgr = _ContactManagerInput(config=cfg)
         assert mgr.config.mu == 0.5
-        assert mgr.config.use_friction is True
 
 
 # ---------------------------------------------------------------------------

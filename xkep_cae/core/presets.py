@@ -50,10 +50,7 @@ def _smooth_penalty_factory(**kwargs: object) -> SolverStrategies:
     """smooth_penalty 構成の SolverStrategies を生成."""
     from xkep_cae.core.data import default_strategies
 
-    defaults = {
-        "use_friction": True,
-        "contact_mode": "smooth_penalty",
-    }
+    defaults: dict[str, object] = {}
     defaults.update(kwargs)
     return default_strategies(**defaults)
 
@@ -62,10 +59,7 @@ def _ncp_frictionless_factory(**kwargs: object) -> SolverStrategies:
     """NCP frictionless 構成の SolverStrategies を生成."""
     from xkep_cae.core.data import default_strategies
 
-    defaults = {
-        "use_friction": False,
-        "contact_mode": "ncp",
-    }
+    defaults: dict[str, object] = {}
     defaults.update(kwargs)
     return default_strategies(**defaults)
 
@@ -77,10 +71,6 @@ PRESET_SMOOTH_PENALTY = SolverPreset(
     factory=_smooth_penalty_factory,
     verified_by="status-147",
     description="7本撚線曲げ揺動収束実績あり。基軸構成。",
-    default_overrides=(
-        ("use_friction", True),
-        ("contact_mode", "smooth_penalty"),
-    ),
 )
 
 PRESET_NCP_FRICTIONLESS = SolverPreset(
@@ -88,10 +78,6 @@ PRESET_NCP_FRICTIONLESS = SolverPreset(
     factory=_ncp_frictionless_factory,
     verified_by="status-112",
     description="NCP法線 + 摩擦なし。基本テスト用。",
-    default_overrides=(
-        ("use_friction", False),
-        ("contact_mode", "ncp"),
-    ),
 )
 
 PRESETS: dict[str, SolverPreset] = {

@@ -1,7 +1,9 @@
-"""NewtonUzawa ループ内サブプロセス群.
+"""Newton ループ内サブプロセス群.
 
-Static/Dynamic 両方の NewtonUzawa から呼び出される共通サブプロセス。
+動的 Newton ソルバーから呼び出される共通サブプロセス。
 各ステップを独立した SolverProcess として実装。
+
+status-222 で Uzawa ループ・準静的ソルバーを削除。
 """
 
 from __future__ import annotations
@@ -34,7 +36,6 @@ class ContactForceAssemblyInput:
     """接触力アセンブリの入力."""
 
     u: np.ndarray
-    lam_all: np.ndarray
     f_ext: np.ndarray
     fixed_dofs: np.ndarray
     manager: object
@@ -93,7 +94,7 @@ class ContactForceAssemblyProcess(
         inp.manager.pairs[:] = _ug_out.manager.pairs
 
         # 2. 接触力
-        f_c, _ = inp.contact_force_strategy.evaluate(u, inp.lam_all, inp.manager, inp.k_pen)
+        f_c, _ = inp.contact_force_strategy.evaluate(u, inp.manager, inp.k_pen)
 
         # 3. 摩擦力
         if hasattr(inp.friction_strategy, "set_mu_ramp_counter"):
@@ -102,9 +103,7 @@ class ContactForceAssemblyProcess(
             u,
             inp.manager.pairs,
             inp.mu,
-            lambdas=inp.lam_all,
             u_ref=inp.u_ref,
-            node_coords_ref=inp.node_coords_ref,
         )
         f_c = f_c + f_friction
 
@@ -254,7 +253,6 @@ class TangentAssemblyInput:
     """接線剛性アセンブリの入力."""
 
     u: np.ndarray
-    lam_all: np.ndarray
     manager: object
     contact_force_strategy: object
     friction_strategy: object
@@ -291,7 +289,7 @@ class TangentAssemblyProcess(
     def process(self, inp: TangentAssemblyInput) -> TangentAssemblyOutput:
         K_T = inp.assemble_tangent(inp.u)
 
-        K_c = inp.contact_force_strategy.tangent(inp.u, inp.lam_all, inp.manager, inp.k_pen)
+        K_c = inp.contact_force_strategy.tangent(inp.u, inp.manager, inp.k_pen)
         K_T = K_T + K_c
 
         # 被膜剛性
@@ -436,65 +434,5 @@ class LineSearchUpdateProcess(
         return LineSearchUpdateOutput(du_scaled=du_scaled, scale_factor=scale_factor)
 
 
-# ================================================================
-# 6. UzawaUpdateProcess（Uzawa 乗数更新）
-# ================================================================
 
-
-@dataclass(frozen=True)
-class UzawaUpdateInput:
-    """Uzawa 乗数更新の入力."""
-
-    lam_all: np.ndarray
-    manager: object
-    k_pen: float
-    node_coords_ref: np.ndarray
-    u: np.ndarray
-    ndof_per_node: int
-    tol_uzawa: float
-
-
-@dataclass(frozen=True)
-class UzawaUpdateOutput:
-    """Uzawa 乗数更新の出力."""
-
-    converged: bool
-    lam_change_ratio: float
-
-
-class UzawaUpdateProcess(
-    SolverProcess[UzawaUpdateInput, UzawaUpdateOutput],
-):
-    """Uzawa 乗数更新 + 収束判定."""
-
-    meta = ProcessMeta(
-        name="UzawaUpdate",
-        module="solve",
-        version="1.0.0",
-        document_path="docs/newton_uzawa.md",
-    )
-    uses = [DeformedCoordsProcess, UpdateGeometryProcess]
-
-    def process(self, inp: UzawaUpdateInput) -> UzawaUpdateOutput:
-        _dc_out = DeformedCoordsProcess().process(
-            DeformedCoordsInput(
-                node_coords_ref=inp.node_coords_ref,
-                u=inp.u,
-                ndof_per_node=inp.ndof_per_node,
-            )
-        )
-        coords_def = _dc_out.coords
-        _ug_out = UpdateGeometryProcess().process(
-            UpdateGeometryInput(manager=inp.manager, node_coords=coords_def, freeze_active_set=True)
-        )
-        inp.manager.pairs[:] = _ug_out.manager.pairs
-
-        lam_prev = inp.lam_all.copy()
-        for i, pair in enumerate(inp.manager.pairs):
-            if i < len(inp.lam_all):
-                inp.lam_all[i] = max(0.0, inp.lam_all[i] + inp.k_pen * (-pair.state.gap))
-        lam_change = float(np.linalg.norm(inp.lam_all - lam_prev))
-        lam_ref = max(float(np.linalg.norm(inp.lam_all)), 1.0)
-        ratio = lam_change / lam_ref
-
-        return UzawaUpdateOutput(converged=ratio < inp.tol_uzawa, lam_change_ratio=ratio)
+# UzawaUpdateProcess は status-222 で削除。復元手順は status-222.md 参照。

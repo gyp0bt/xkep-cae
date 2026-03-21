@@ -91,7 +91,7 @@ class TestAnalyticalSolution:
 # ====================================================================
 
 
-@pytest.mark.static_solver_ok
+@pytest.mark.skip(reason="status-222: 準静的接触ソルバー削除。動的版は test_dynamic_3pb.py 参照。")
 class TestThreePointBendJigConvergence:
     """三点曲げジグ試験のソルバー収束テスト（準静的・意図的）."""
 
@@ -131,7 +131,7 @@ class TestThreePointBendJigConvergence:
 # ====================================================================
 
 
-@pytest.mark.static_solver_ok
+@pytest.mark.skip(reason="status-222: 準静的接触ソルバー削除。")
 class TestThreePointBendJigPhysics:
     """三点曲げジグ試験の物理的妥当性テスト（準静的・意図的）."""
 
