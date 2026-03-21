@@ -13,8 +13,6 @@ from xkep_cae.core.testing import binds_to
 from xkep_cae.numerical_tests.three_point_bend_jig import (
     DynamicThreePointBendContactJigConfig,
     DynamicThreePointBendContactJigProcess,
-    DynamicThreePointBendJigConfig,
-    DynamicThreePointBendJigProcess,
     ThreePointBendContactJigConfig,
     ThreePointBendContactJigProcess,
     ThreePointBendJigConfig,
@@ -47,24 +45,6 @@ class TestThreePointBendContactJigProcessAPI:
         result = proc.process(cfg)
         assert result.solver_result.converged
         assert result.wire_midpoint_deflection > 0
-
-
-@binds_to(DynamicThreePointBendJigProcess)
-class TestDynamicThreePointBendJigProcessAPI:
-    """DynamicThreePointBendJigProcess の基本動作確認."""
-
-    def test_process_runs(self):
-        """動的解析が収束し、変位が記録される."""
-        cfg = DynamicThreePointBendJigConfig(
-            jig_push=0.05,
-            n_periods=1.0,
-        )
-        proc = DynamicThreePointBendJigProcess()
-        result = proc.process(cfg)
-        assert result.solver_result.converged
-        assert len(result.deflection_history) > 0
-        assert result.analytical_frequency_hz > 0
-        assert result.initial_velocity > 0
 
 
 @binds_to(DynamicThreePointBendContactJigProcess)
