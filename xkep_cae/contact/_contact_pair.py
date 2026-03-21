@@ -168,10 +168,9 @@ class _ContactConfigInput:
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
     contact_mode: str = "ncp"
-    smoothing_delta: float = 0.0
-    n_uzawa_max: int = 5
-    tol_uzawa: float = 1e-6
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
+    # smoothing_delta / n_uzawa_max / tol_uzawa は status-223 で手動ルート削除。
+    # 全て自動推定（AutoSmoothingDeltaProcess）or 凍結（n_uzawa_max=1）。
 
 
 @dataclass(frozen=True)

@@ -89,7 +89,14 @@ def _assemble_friction_force(
     ndof_total: int,
     ndof_per_node: int = 6,
 ) -> np.ndarray:
-    """局所摩擦力 → グローバル力ベクトルに組み立て."""
+    """局所摩擦力 → グローバル力ベクトルに組み立て.
+
+    エネルギー勾配規約（status-221）:
+        摩擦ペナルティ Ψ = k_t/2 * |z_t|² の勾配:
+            ∂Ψ/∂u = -q * g_t（z_t = -g_t · Δu のため）
+        q は接線方向局所力（return mapping 出力）。
+        g_t は接線方向形状ベクトル。
+    """
     f_friction = np.zeros(ndof_total)
 
     for pair_idx, q in friction_forces_local.items():
@@ -101,7 +108,8 @@ def _assemble_friction_force(
             g_t = _contact_tangent_shape_vector(pair, axis)
             for k in range(4):
                 for d in range(3):
-                    f_friction[dofs[k * ndof_per_node + d]] += q[axis] * g_t[k * 3 + d]
+                    # エネルギー勾配規約: f = -q * g_t
+                    f_friction[dofs[k * ndof_per_node + d]] -= q[axis] * g_t[k * 3 + d]
 
     return f_friction
 

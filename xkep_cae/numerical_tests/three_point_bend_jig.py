@@ -348,7 +348,6 @@ class ThreePointBendJigProcess(BatchProcess[ThreePointBendJigConfig, ThreePointB
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
-            k_pen=0.0,
             use_friction=False,
             mu=None,
             contact_mode="smooth_penalty",
@@ -440,9 +439,8 @@ class ThreePointBendContactJigConfig:
     jig_depth: float = 4.0  # mm（z方向、ワイヤ径の2倍）
     jig_height: float = 2.0  # mm（y方向）
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
-    k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 200.0  # softplus の平滑化パラメータ
-    n_uzawa_max: int = 20  # Uzawa 最大反復回数
+    # k_pen / smoothing_delta / n_uzawa_max — 手動ルート削除（status-223）
+    # 全て自動推定 or 凍結。ContactFrictionProcess 内部で決定。
 
 
 @dataclass(frozen=True)
@@ -668,19 +666,9 @@ class ThreePointBendContactJigProcess(
             f_ext_total=np.zeros(ndof),
         )
 
-        # 6. 接触設定
-        #    k_pen 推定: 梁グローバル剛性ベース
-        #    auto（12EI/L_elem³ベース）は梁–梁接触向け設計。
-        #    梁–剛体ジグ接触では接触点の有効剛性 = 48EI/L³ が支配的。
-        k_pen = cfg.k_pen
-        if k_pen <= 0.0:
-            k_beam_global = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
-            k_pen = 0.5 * k_beam_global
-
+        # 6. 接触設定（k_pen / smoothing_delta / n_uzawa_max は自動推定: status-223）
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -694,7 +682,6 @@ class ThreePointBendContactJigProcess(
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
-            k_pen=k_pen,
             use_friction=False,
             mu=None,
             contact_mode="smooth_penalty",
@@ -989,7 +976,6 @@ class DynamicThreePointBendJigProcess(
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
-            k_pen=0.0,
             use_friction=False,
             mu=None,
             contact_mode="smooth_penalty",
@@ -1104,12 +1090,7 @@ class DynamicThreePointBendContactJigConfig:
     jig_depth: float = 4.0  # mm（z方向、ワイヤ径の2倍）
     jig_height: float = 2.0  # mm（y方向）
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
-    # 接触パラメータ
-    k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 50.0  # softplus の平滑化パラメータ（幅 1/δ ≈ 0.02mm）
-    n_uzawa_max: int = (
-        1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
-    )
+    # k_pen / smoothing_delta / n_uzawa_max — 手動ルート削除（status-223）
     mu: float = 0.15  # Coulomb 摩擦係数
     # 時間増分制御
     dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/40）
@@ -1117,10 +1098,10 @@ class DynamicThreePointBendContactJigConfig:
     max_increments: int = 10000  # 最大インクリメント数
     # NR ソルバーパラメータ
     tol_disp: float = 1e-8  # 変位収束許容値
-    tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
-    max_nr_attempts: int = 30  # NR 最大反復数（exact_tangent=True で2次収束 ~10 iter）
+    tol_force: float = 1e-6  # 力収束許容値（Huber型: ゴーストフォースなし）
+    max_nr_attempts: int = 30  # NR 最大反復数（Huber型: 2次収束で10-15iter十分）
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
-    exact_tangent: bool = True  # 厳密接線（小 k_pen で K_eff 正定値維持、2次収束）
+    exact_tangent: bool = True  # 厳密接線（Huber型: full stiffness で2次収束）
 
 
 @dataclass(frozen=True)
@@ -1222,9 +1203,6 @@ class DynamicThreePointBendContactJigProcess(
             jig_depth=cfg.jig_depth,
             jig_height=cfg.jig_height,
             initial_gap=cfg.initial_gap,
-            k_pen=cfg.k_pen,
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
         )
         jig_coords, _jig_hex_conn, jig_edge_conn, _jig_top_nodes, jig_rot_dofs = (
             _build_hex8_jig_mesh(jig_cfg, n_wire_nodes, wire_radius)
@@ -1342,33 +1320,9 @@ class DynamicThreePointBendContactJigProcess(
         )
 
         # 9. 接触設定（smooth_penalty + 摩擦あり）
-        #    動的解析では k_pen を c0*M スケールに合わせる必要がある。
-        #    静的梁剛性ベース（48EI/L³）は動的の慣性項に対して桁違いに小さい。
-        k_pen = cfg.k_pen
-        if k_pen <= 0.0:
-            # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
-            from xkep_cae.contact.penalty.strategy import (
-                DynamicPenaltyEstimateInput,
-                DynamicPenaltyEstimateProcess,
-            )
-
-            _dpe = DynamicPenaltyEstimateProcess()
-            _dpe_out = _dpe.process(
-                DynamicPenaltyEstimateInput(
-                    rho_inf=cfg.rho_inf,
-                    dt=dt_initial,
-                    rho=cfg.rho,
-                    A=sec["A"],
-                    L_elem=cfg.wire_length / cfg.n_elems_wire,
-                    scale=0.2,  # c0*M の 20%（dt cutback 1回で K_eff 正定値: 4*0.2*2.0=1.6 < 4*(1-α_m)=2.32）
-                )
-            )
-            k_pen = _dpe_out.k_pen
-
+        #    k_pen / smoothing_delta / n_uzawa_max は自動推定: status-223
         contact_config = _ContactConfigInput(
             contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
             exact_tangent=cfg.exact_tangent,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
@@ -1385,7 +1339,6 @@ class DynamicThreePointBendContactJigProcess(
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
-            k_pen=k_pen,
             use_friction=True,
             mu=cfg.mu,
             contact_mode="smooth_penalty",

@@ -89,7 +89,6 @@ class TestContactSetupProcessAPI:
         setup_result = setup_proc.process(
             ContactSetupConfig(
                 mesh=mesh_result.mesh,
-                k_pen=1e6,
                 use_friction=False,
                 mu=0.0,
                 contact_mode="smooth_penalty",
@@ -98,7 +97,6 @@ class TestContactSetupProcessAPI:
         )
 
         assert setup_result.manager is not None
-        assert setup_result.k_pen == 1e6
         manager = setup_result.manager
         assert len(manager.pairs) > 0
 

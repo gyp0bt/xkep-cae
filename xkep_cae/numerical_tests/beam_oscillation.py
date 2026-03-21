@@ -347,7 +347,6 @@ class BeamOscillationProcess(
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
-            k_pen=0.0,
             use_friction=False,
             mu=None,
             contact_mode="smooth_penalty",

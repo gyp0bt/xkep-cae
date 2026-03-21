@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-20）
+## 現在地（2026-03-21）
 
-**499 テスト**（動的ソルバー解析解一致 — status-217） | Phase 16 完了 — C16/C17/C3/C5 全違反ゼロ | [最新status](status/status-index.md)
+**188 テスト**（smoothing_delta 自動推定 — status-223） | ペナルティパラメータ完全自動化 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -63,7 +63,9 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。**残課題**: (1) 接触力符号規約統一（softplus f_c の符号と残差式 R_u=f_int+f_c-f_ext の整合）、(2) Uzawa 有効化（n_uzawa_max>=3）、(3) 変位制御時の f_ext_ref_norm=0 対策、(4) 線形収束の原因調査（接触接線剛性の幾何剛性項欠落?）
+- [x] ~~**動的三点曲げ接触収束**: softplus → Huber型C¹ペナルティ（δ=5000）~~ — status-222 で NR 2次収束達成（2 iter/increment）。コンパクトサポートでゴーストフォース消滅、tol_force=1e-6 で収束。
+- [ ] **n_periods≧5 準静的テスト**: Huber型で長時間シミュレーション収束を確認
+- [x] ~~**δ 自動推定**: 梁寸法から適切な ε = 1/δ を自動設定~~ — status-223 で AutoSmoothingDeltaProcess 実装。ε = α×r_min（α=2e-4）。ペナルティパラメータ完全自動化。
 
 ### 既知の問題
 

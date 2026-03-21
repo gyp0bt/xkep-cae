@@ -18,12 +18,12 @@
 
 ## 現在の状態
 
-**499 テスト** — 2026-03-20時点 | 動的ソルバー解析解一致（振動周期+振幅+rho_inf評価） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**188 テスト** — 2026-03-21時点 | smoothing_delta 自動推定、ペナルティパラメータ完全自動化 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
 | FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 非線形 + 動的解析 |
-| 接触 | NCP + Line contact + smooth penalty Coulomb摩擦 |
+| 接触 | NCP + Line contact + Huber型C¹ペナルティ + Coulomb摩擦 |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース |
 | アーキテクチャ | Process Architecture + Strategy Protocol |
 

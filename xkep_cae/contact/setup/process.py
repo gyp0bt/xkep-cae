@@ -14,10 +14,12 @@ from xkep_cae.core import ContactSetupData, MeshData, PreProcess, ProcessMeta
 
 @dataclass(frozen=True)
 class ContactSetupConfig:
-    """接触設定の入力パラメータ."""
+    """接触設定の入力パラメータ.
+
+    k_pen は status-223 で手動ルート削除（自動推定のみ）。
+    """
 
     mesh: MeshData
-    k_pen: float = 0.0
     use_friction: bool = True
     mu: float = 0.15
     contact_mode: str = "smooth_penalty"
@@ -72,7 +74,6 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
 
         return ContactSetupData(
             manager=manager,
-            k_pen=input_data.k_pen,
             use_friction=input_data.use_friction,
             mu=input_data.mu,
             contact_mode=input_data.contact_mode,

@@ -40,7 +40,7 @@ class TestThreePointBendContactJigProcessAPI:
     @pytest.mark.xfail(reason="HEX8接触ジグのNR収束問題（status-210 TODO）")
     def test_process_runs(self):
         """小変位で ProcessMeta + 入出力契約を満たす."""
-        cfg = ThreePointBendContactJigConfig(jig_push=0.01, n_uzawa_max=10)
+        cfg = ThreePointBendContactJigConfig(jig_push=0.01)
         proc = ThreePointBendContactJigProcess()
         result = proc.process(cfg)
         assert result.solver_result.converged
