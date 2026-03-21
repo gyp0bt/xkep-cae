@@ -854,6 +854,10 @@ class DynamicThreePointBendContactJigConfig:
         1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
     )
     mu: float = 0.15  # Coulomb 摩擦係数
+    # 被膜パラメータ（0=被膜なし）
+    coating_stiffness: float = 0.0  # 被膜剛性 [N/mm]
+    coating_damping: float = 0.0  # 被膜減衰 [N·s/mm]
+    coating_mu: float = 0.0  # 被膜摩擦係数
     # 時間増分制御
     dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/40）
     dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/64）
@@ -1122,6 +1126,9 @@ class DynamicThreePointBendContactJigProcess(
             dt_shrink_factor=0.5,
             dt_min_fraction=dt_min_frac,
             dt_max_fraction=dt_initial_frac,
+            coating_stiffness=cfg.coating_stiffness,
+            coating_damping=cfg.coating_damping,
+            coating_mu=cfg.coating_mu,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
