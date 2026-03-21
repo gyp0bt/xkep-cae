@@ -46,8 +46,17 @@ class ContactForceOutput:
 def _contact_shape_vector(pair: object) -> np.ndarray:
     """接触形状ベクトル g_shape (12,) を構築する.
 
-    法線方向の形状関数:
-        g_shape = [(1-s)*n, s*n, -(1-t)*n, -t*n]  (4×3 = 12)
+    ギャップ関数の勾配（法線方向の形状関数）:
+        g_shape = ∂g/∂x = [(1-s)*n, s*n, -(1-t)*n, -t*n]  (4×3 = 12)
+
+    ここで n はセグメント B → A 方向の単位法線。
+    g > 0 で非接触（ギャップ開）、g < 0 で貫入。
+
+    符号規約（status-221 で統一）:
+        接触力ベクトル f_c は「ペナルティエネルギー勾配」として定義:
+            f_c = ∂Φ/∂u = -p_n * g_shape
+        残差式: R_u = f_int + f_c - f_ext
+        これにより f_c は内力的に加算され、NR 補正が正しい方向に作用する。
 
     Args:
         pair: ContactPair（state.s, state.t, state.normal を持つ）
@@ -134,7 +143,9 @@ class NCPContactForceProcess(
                     for d in range(3):
                         local_idx = k * 3 + d
                         global_idx = dofs[k * self._ndof_per_node + d]
-                        f_c[global_idx] += p_n * g_shape[local_idx]
+                        # エネルギー勾配規約: f_c = -p_n * g_shape
+                        # （ペナルティポテンシャル Φ の勾配 ∂Φ/∂u）
+                        f_c[global_idx] -= p_n * g_shape[local_idx]
 
         ncp_residual = np.array(residuals) if residuals else np.zeros(0)
         return f_c, ncp_residual
@@ -276,7 +287,9 @@ class SmoothPenaltyContactForceProcess(
                     for d in range(3):
                         local_idx = k * 3 + d
                         global_idx = dofs[k * self._ndof_per_node + d]
-                        f_c[global_idx] += p_n * g_shape[local_idx]
+                        # エネルギー勾配規約: f_c = -p_n * g_shape
+                        # （ペナルティポテンシャル Φ の勾配 ∂Φ/∂u）
+                        f_c[global_idx] -= p_n * g_shape[local_idx]
 
         ncp_residual = np.array(residuals) if residuals else np.zeros(0)
         return f_c, ncp_residual
@@ -288,20 +301,15 @@ class SmoothPenaltyContactForceProcess(
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列.
+        """接触接線剛性行列（エネルギー勾配規約、正定値）.
 
-        exact_tangent=False（デフォルト）:
-            softplus の厳密接線 dp/dg = -k_pen * sigmoid(-δg) は負定値で、
-            K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
-            代わりに厳密接線の絶対値を正定値近似として使用:
-                K_contact = +k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
-            準静的解析向け。
+        f_c = -p_n * g_shape（エネルギー勾配規約）の接線:
+            ∂f_c/∂u = -(dp_n/dg) * g_shape ⊗ g_shape
+                     = k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
+        常に正定値。K_total = K_struct + K_contact は正定値を保つ。
 
-        exact_tangent=True（動的解析用）:
-            厳密接線（負定値）をそのまま使用:
-                K_contact = -k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
-            動的ソルバーでは c0*M の正則化で K_eff が正定値を保つため、
-            厳密接線が使用可能。2次収束が得られる。
+        exact_tangent=True: 厳密接線を使用（2次収束、推奨）
+        exact_tangent=False: 同一結果（互換性のため残存）
         """
         rows: list[int] = []
         cols: list[int] = []
@@ -317,12 +325,10 @@ class SmoothPenaltyContactForceProcess(
                 if abs(deriv) < 1e-30:
                     continue
 
-                if self._exact_tangent:
-                    # 厳密接線: dp/dg * g_shape ⊗ g_shape（負定値）
-                    weight = k_pen * deriv
-                else:
-                    # 正定値近似: |dp/dg| * g_shape ⊗ g_shape
-                    weight = k_pen * abs(deriv)
+                # エネルギー勾配規約: ∂f_c/∂u = -(dp_n/dg) * g_shape ⊗ g_shape
+                # deriv = _softplus_derivative(g, delta) < 0 なので
+                # weight = -k_pen * deriv = k_pen * |deriv| > 0（常に正定値）
+                weight = -k_pen * deriv
                 g_shape = _contact_shape_vector(pair)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
 
