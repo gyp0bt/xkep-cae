@@ -90,10 +90,12 @@ class NCPContactForceProcess(
         ndof_per_node: int = 6,
         *,
         contact_compliance: float = 0.0,
+        exact_tangent: bool = False,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
         self._contact_compliance = contact_compliance
+        self._exact_tangent = exact_tangent
 
     def evaluate(
         self,
@@ -148,8 +150,65 @@ class NCPContactForceProcess(
     ) -> sp.csr_matrix:
         """接触接線剛性行列.
 
-        NCP では鞍点系で法線剛性を扱うため、ゼロ行列を返す。
+        active contact: p_n = λ + k_pen * (-g) なので dp_n/dg = -k_pen.
+        接線剛性 = dp_n/dg * g_shape ⊗ g_shape.
+
+        exact_tangent=False（デフォルト）:
+            正定値近似: K = +k_pen * g_shape ⊗ g_shape
+        exact_tangent=True（動的解析用）:
+            厳密接線: K = -k_pen * g_shape ⊗ g_shape
+            動的ソルバーの c0*M 正則化で K_eff が正定値を保つ。
         """
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
+
+        if hasattr(manager, "pairs"):
+            for i, pair in enumerate(manager.pairs):
+                if not hasattr(pair, "state"):
+                    continue
+                if pair.state.status == ContactStatus.INACTIVE:
+                    continue
+
+                lam_i = lambdas[i] if i < len(lambdas) else 0.0
+                g_i = pair.state.gap
+                if self._contact_compliance > 0.0:
+                    g_i += self._contact_compliance * lam_i
+                p_n = max(0.0, lam_i + k_pen * (-g_i))
+
+                if p_n <= 0.0:
+                    continue
+
+                if self._exact_tangent:
+                    weight = -k_pen
+                else:
+                    weight = k_pen
+
+                g_shape = _contact_shape_vector(pair)
+                dofs = _contact_dofs(pair, self._ndof_per_node)
+
+                for ki in range(4):
+                    for di in range(3):
+                        li = ki * 3 + di
+                        gi = dofs[ki * self._ndof_per_node + di]
+                        w_gi = weight * g_shape[li]
+                        if abs(w_gi) < 1e-30:
+                            continue
+                        for kj in range(4):
+                            for dj in range(3):
+                                lj = kj * 3 + dj
+                                gj = dofs[kj * self._ndof_per_node + dj]
+                                val = w_gi * g_shape[lj]
+                                if abs(val) > 1e-30:
+                                    rows.append(gi)
+                                    cols.append(gj)
+                                    vals.append(val)
+
+        if rows:
+            return sp.csr_matrix(
+                (np.array(vals), (np.array(rows), np.array(cols))),
+                shape=(self._ndof, self._ndof),
+            )
         return sp.csr_matrix((self._ndof, self._ndof))
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:
@@ -401,4 +460,5 @@ def _create_contact_force_strategy(
         ndof=ndof,
         ndof_per_node=ndof_per_node,
         contact_compliance=contact_compliance,
+        exact_tangent=exact_tangent,
     )
