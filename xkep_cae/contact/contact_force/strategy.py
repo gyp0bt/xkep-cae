@@ -71,16 +71,23 @@ def _contact_shape_vector(pair: object) -> np.ndarray:
 class NCPContactForceProcess(
     SolverProcess[ContactForceInput, ContactForceOutput],
 ):
-    """Alart-Curnier NCP + 鞍点系による接触力評価.
+    """Huber NCP 接触力評価（Fischer-Burmeister C1 近似）.
 
-    法線接触力: p_n = max(0, λ + k_pen * (-(g + δ*λ)))
+    max(0, x) を Huber 関数で C1 連続化:
+        huber(x, δ) =
+            0              if x < -δ
+            (x+δ)²/(4δ)   if -δ ≤ x ≤ δ
+            x              if x > δ
+
+    法線接触力: p_n = huber(λ + k_pen * (-g), δ_huber)
+    δ_huber = k_pen / smoothing_delta で自動計算。
     NCP残差: C_i = k_pen * g_i (active) | λ_i (inactive)
     """
 
     meta = ProcessMeta(
         name="NCPContactForce",
         module="solve",
-        version="1.0.0",
+        version="2.0.0",
         document_path="docs/contact_force.md",
     )
 
@@ -91,11 +98,35 @@ class NCPContactForceProcess(
         *,
         contact_compliance: float = 0.0,
         exact_tangent: bool = False,
+        smoothing_delta: float = 0.0,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
         self._contact_compliance = contact_compliance
         self._exact_tangent = exact_tangent
+        self._smoothing_delta = smoothing_delta
+
+    @staticmethod
+    def _huber(x: float, delta: float) -> float:
+        """Huber 関数: max(0,x) の C1 近似."""
+        if delta <= 0.0:
+            return max(0.0, x)
+        if x < -delta:
+            return 0.0
+        if x > delta:
+            return x
+        return (x + delta) ** 2 / (4.0 * delta)
+
+    @staticmethod
+    def _huber_deriv(x: float, delta: float) -> float:
+        """Huber 導関数: C0 連続."""
+        if delta <= 0.0:
+            return 1.0 if x > 0.0 else 0.0
+        if x < -delta:
+            return 0.0
+        if x > delta:
+            return 1.0
+        return (x + delta) / (2.0 * delta)
 
     def evaluate(
         self,
@@ -107,6 +138,9 @@ class NCPContactForceProcess(
         """接触力とNCP残差を評価."""
         f_c = np.zeros(self._ndof)
         residuals: list[float] = []
+        # Huber 遷移幅: δ_huber = k_pen / smoothing_delta
+        # smoothing_delta=5000/r_min → δ_huber = k_pen*r_min/5000
+        delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
 
         if hasattr(manager, "pairs"):
             for i, pair in enumerate(manager.pairs):
@@ -119,7 +153,8 @@ class NCPContactForceProcess(
                 g_i = pair.state.gap
                 if self._contact_compliance > 0.0:
                     g_i += self._contact_compliance * lam_i
-                p_n = max(0.0, lam_i + k_pen * (-g_i))
+                x_ncp = lam_i + k_pen * (-g_i)
+                p_n = self._huber(x_ncp, delta_h)
 
                 is_active = p_n > 0.0
                 if is_active:
@@ -127,7 +162,7 @@ class NCPContactForceProcess(
                 else:
                     residuals.append(lam_i)
 
-                if p_n <= 0.0:
+                if p_n <= 1e-30:
                     continue
 
                 g_shape = _contact_shape_vector(pair)
@@ -148,20 +183,22 @@ class NCPContactForceProcess(
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列.
+        """接触接線剛性行列（Huber C1 連続）.
 
-        active contact: p_n = λ + k_pen * (-g) なので dp_n/dg = -k_pen.
-        接線剛性 = dp_n/dg * g_shape ⊗ g_shape.
+        残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
+        したがって dR/du の接触寄与は:
+            K_c = -d(f_c_raw)/du = -dp_n/dg * g_shape ⊗ g_shape
 
-        exact_tangent=False（デフォルト）:
-            正定値近似: K = +k_pen * g_shape ⊗ g_shape
-        exact_tangent=True（動的解析用）:
-            厳密接線: K = -k_pen * g_shape ⊗ g_shape
-            動的ソルバーの c0*M 正則化で K_eff が正定値を保つ。
+        p_n = huber(λ + k_pen*(-g), δ_h)
+        dp_n/dg = huber'(x) * (-k_pen)  （h' > 0, -k_pen < 0 → 負）
+        よって K_c = huber'(x) * k_pen * g_shape ⊗ g_shape  （正定値）
+
+        注: exact_tangent フラグは将来の幾何剛性項追加用に温存。
         """
         rows: list[int] = []
         cols: list[int] = []
         vals: list[float] = []
+        delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
 
         if hasattr(manager, "pairs"):
             for i, pair in enumerate(manager.pairs):
@@ -174,15 +211,15 @@ class NCPContactForceProcess(
                 g_i = pair.state.gap
                 if self._contact_compliance > 0.0:
                     g_i += self._contact_compliance * lam_i
-                p_n = max(0.0, lam_i + k_pen * (-g_i))
+                x_ncp = lam_i + k_pen * (-g_i)
+                h_deriv = self._huber_deriv(x_ncp, delta_h)
 
-                if p_n <= 0.0:
+                if h_deriv < 1e-30:
                     continue
 
-                if self._exact_tangent:
-                    weight = -k_pen
-                else:
-                    weight = k_pen
+                # K_c = -dp_n/dg * g_shape ⊗ g_shape = h'(x) * k_pen * g_shape ⊗ g_shape
+                # f_c = -f_c_raw なので符号反転が必要（正定値）
+                weight = h_deriv * k_pen
 
                 g_shape = _contact_shape_vector(pair)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
@@ -349,18 +386,15 @@ class SmoothPenaltyContactForceProcess(
     ) -> sp.csr_matrix:
         """接触接線剛性行列.
 
-        exact_tangent=False（デフォルト）:
-            softplus の厳密接線 dp/dg = -k_pen * sigmoid(-δg) は負定値で、
-            K_total = K_struct + K_contact が不定値になり NR 不収束を引き起こす。
-            代わりに厳密接線の絶対値を正定値近似として使用:
-                K_contact = +k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
-            準静的解析向け。
+        残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
+        したがって dR/du の接触寄与は:
+            K_c = -d(f_c_raw)/du = -dp_n/dg * g_shape ⊗ g_shape
 
-        exact_tangent=True（動的解析用）:
-            厳密接線（負定値）をそのまま使用:
-                K_contact = -k_pen * sigmoid(-δg) * g_shape ⊗ g_shape
-            動的ソルバーでは c0*M の正則化で K_eff が正定値を保つため、
-            厳密接線が使用可能。2次収束が得られる。
+        dp_n/dg = k_pen * softplus'(g) = -k_pen * sigmoid(-δg)  （負）
+        よって K_c = k_pen * sigmoid(-δg) * g_shape ⊗ g_shape  （正定値）
+
+        注: exact_tangent フラグは将来の幾何剛性項追加用に温存。
+        現在は material tangent のみで、符号は常に正定値。
         """
         rows: list[int] = []
         cols: list[int] = []
@@ -376,12 +410,9 @@ class SmoothPenaltyContactForceProcess(
                 if abs(deriv) < 1e-30:
                     continue
 
-                if self._exact_tangent:
-                    # 厳密接線: dp/dg * g_shape ⊗ g_shape（負定値）
-                    weight = k_pen * deriv
-                else:
-                    # 正定値近似: |dp/dg| * g_shape ⊗ g_shape
-                    weight = k_pen * abs(deriv)
+                # K_c = -dp_n/dg * g_shape ⊗ g_shape = k_pen * |deriv| * g_shape ⊗ g_shape
+                # f_c = -f_c_raw なので符号反転が必要（正定値）
+                weight = k_pen * abs(deriv)
                 g_shape = _contact_shape_vector(pair)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
 
@@ -461,4 +492,5 @@ def _create_contact_force_strategy(
         ndof_per_node=ndof_per_node,
         contact_compliance=contact_compliance,
         exact_tangent=exact_tangent,
+        smoothing_delta=smoothing_delta,
     )
