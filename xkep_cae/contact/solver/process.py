@@ -390,6 +390,7 @@ class ContactFrictionProcess(
 
         # --- 最終診断 ---
         last_diag = None
+        _diagnostics_history: list = []
         _energy_history = EnergyHistory() if _dynamics else None
         _energy_proc = StepEnergyDiagnosticsProcess() if _dynamics else None
         _n_cutbacks = 0
@@ -510,6 +511,7 @@ class ContactFrictionProcess(
                 step_result = nr_process_sta.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
             last_diag = step_result.diagnostics
+            _diagnostics_history.append(last_diag)
 
             # ==============================================================
             # 不収束処理
@@ -556,6 +558,7 @@ class ContactFrictionProcess(
                         load_history=list(state.load_history),
                         elapsed_seconds=elapsed,
                         diagnostics=last_diag,
+                        diagnostics_history=_diagnostics_history,
                         energy_history=_energy_history,
                         n_cutbacks=_n_cutbacks,
                     )
@@ -697,6 +700,7 @@ class ContactFrictionProcess(
             load_history=list(state.load_history),
             elapsed_seconds=elapsed,
             diagnostics=last_diag,
+            diagnostics_history=_diagnostics_history,
             energy_history=_energy_history,
             n_cutbacks=_n_cutbacks,
         )

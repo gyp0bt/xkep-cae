@@ -128,10 +128,10 @@ def main() -> None:
                 print("\n  エネルギー診断 (最終ステップ):")
                 print(f"    KE={ke_list[-1]:.6e}, SE={se_list[-1]:.6e}")
 
-    # 収束率の定量評価
+    # 収束率の定量評価（最終ステップ）
     if diag is not None and diag.res_history:
         rh = diag.res_history
-        print("\n  収束率定量分析:")
+        print("\n  収束率定量分析（最終ステップ）:")
         for i in range(1, len(rh)):
             if rh[i - 1] > 1e-30:
                 ratio = rh[i] / rh[i - 1]
@@ -139,6 +139,39 @@ def main() -> None:
                 print(
                     f"    iter {i}: {rh[i]:.2e} / {rh[i - 1]:.2e} = {ratio:.4f} (log10={log_ratio:.2f})"
                 )
+
+    # ── Per-increment 診断（全ステップの NR 残差減衰率）──
+    if sr.diagnostics_history:
+        print(f"\n{'=' * 70}")
+        print("  Per-increment NR 収束診断")
+        print("=" * 70)
+        contact_increments = 0
+        total_nr = 0
+        rate_sum = 0.0
+        rate_count = 0
+        for d in sr.diagnostics_history:
+            rh = d.res_history
+            n_active = d.n_active_history[-1] if d.n_active_history else 0
+            if n_active == 0 and len(rh) <= 2:
+                continue
+            contact_increments += 1
+            total_nr += len(rh)
+            rate = _convergence_rate_label(rh)
+            # 最後の減衰率
+            last_ratio = ""
+            if len(rh) >= 2 and rh[-2] > 1e-30:
+                lr = rh[-1] / rh[-2]
+                last_ratio = f"  last_rate={lr:.4f}"
+                rate_sum += lr
+                rate_count += 1
+            print(
+                f"  step {d.step:3d} frac={d.load_frac:.4f} "
+                f"NR={len(rh):2d} active={n_active} "
+                f"res={rh[-1]:.2e} [{rate}]{last_ratio}"
+            )
+        if rate_count > 0:
+            print(f"\n  平均最終減衰率: {rate_sum / rate_count:.4f}")
+        print(f"  接触あり増分: {contact_increments}, 総NR反復: {total_nr}")
 
     print(f"\n{'=' * 70}")
     status = "OK" if sr.converged else "FAILED"

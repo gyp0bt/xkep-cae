@@ -220,6 +220,8 @@ class SolverResultData:
     load_history: list[float] = field(default_factory=list)
     elapsed_seconds: float = 0.0
     diagnostics: object | None = None
+    # 全 increment の NR 収束診断履歴
+    diagnostics_history: list = field(default_factory=list)
     # エネルギー診断履歴（動的解析時に記録）
     energy_history: object | None = None  # EnergyHistory
     n_cutbacks: int = 0  # カットバック総数

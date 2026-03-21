@@ -18,12 +18,12 @@
 
 ## 現在の状態
 
-**495 テスト** — 2026-03-21時点 | softplus+Uzawa非互換性確認、純粋ペナルティ維持 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**185 テスト** — 2026-03-21時点 | Huber型C¹ペナルティ導入、NR 2次収束達成 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
 | FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 非線形 + 動的解析 |
-| 接触 | NCP + Line contact + smooth penalty Coulomb摩擦 |
+| 接触 | NCP + Line contact + Huber型C¹ペナルティ + Coulomb摩擦 |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース |
 | アーキテクチャ | Process Architecture + Strategy Protocol |
 

@@ -64,7 +64,7 @@
 
 ## 現在の状態
 
-**495 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
+**185 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -72,7 +72,7 @@
 
 ### 次の課題
 
-**softplus+Uzawa非互換性確認** — status-222 で Uzawa 拡大ラグランジアンを試行し softplus との根本的非互換性を確認（sigmoid(0)=0.5 による NR rate 0.97 + softplus>0 で gap≠0 → Uzawa 外ループ非収束）。純粋ペナルティ維持、max_nr_attempts=100 で force 収束達成。次は非平滑ペナルティ検討 + S3凍結解除。
+**Huber型C¹ペナルティ導入** — status-222 で softplus → Huber型ペナルティに移行。δ=5000（ε=0.0002mm）で操作点を線形領域に配置し、NR 2次収束達成（2 iter/increment）。コンパクトサポートでゴーストフォース消滅。次は n_periods≧5 準静的テスト + S3凍結解除。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
