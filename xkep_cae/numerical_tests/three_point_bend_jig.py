@@ -966,7 +966,6 @@ class DynamicThreePointBendContactJigProcess(
             jig_height=cfg.jig_height,
             initial_gap=cfg.initial_gap,
             k_pen=cfg.k_pen,
-            smoothing_delta=cfg.smoothing_delta,
             n_uzawa_max=cfg.n_uzawa_max,
         )
         jig_coords, _jig_hex_conn, jig_edge_conn, _jig_top_nodes, jig_rot_dofs = (
