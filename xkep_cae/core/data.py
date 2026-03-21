@@ -223,6 +223,8 @@ class SolverResultData:
     # エネルギー診断履歴（動的解析時に記録）
     energy_history: object | None = None  # EnergyHistory
     n_cutbacks: int = 0  # カットバック総数
+    # 全インクリメント診断（IncrementDiagnosticsOutput のリスト）
+    increment_diagnostics: list = field(default_factory=list)
 
 
 @dataclass(frozen=True)

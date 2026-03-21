@@ -33,6 +33,7 @@ from xkep_cae.contact.solver._contact_graph import (
 from xkep_cae.contact.solver._diagnostics import (
     DiagnosticsInput,
     DiagnosticsReportProcess,
+    IncrementDiagnosticsOutput,
 )
 from xkep_cae.contact.solver._energy_diagnostics import (
     EnergyHistory,
@@ -393,6 +394,7 @@ class ContactFrictionProcess(
         _energy_history = EnergyHistory() if _dynamics else None
         _energy_proc = StepEnergyDiagnosticsProcess() if _dynamics else None
         _n_cutbacks = 0
+        _increment_diag_list: list[IncrementDiagnosticsOutput] = []
 
         # ================================================================
         # 荷重ステップループ
@@ -558,6 +560,7 @@ class ContactFrictionProcess(
                         diagnostics=last_diag,
                         energy_history=_energy_history,
                         n_cutbacks=_n_cutbacks,
+                        increment_diagnostics=_increment_diag_list,
                     )
 
             # ==============================================================
@@ -664,11 +667,59 @@ class ContactFrictionProcess(
             if _dynamics:
                 _time_strategy.checkpoint()
 
+            # インクリメント診断生成
+            _fc_norm = float(np.linalg.norm(step_result.f_c))
+            _diag = last_diag
+            _final_res = _diag.res_history[-1] if _diag and _diag.res_history else 0.0
+            _conv_rate = 1.0
+            if _diag and len(_diag.res_history) >= 2:
+                _r_prev = _diag.res_history[-2]
+                _r_curr = _diag.res_history[-1]
+                _conv_rate = _r_curr / _r_prev if _r_prev > 1e-30 else 1.0
+            _n_active_final = step_result.n_active
+            _n_sliding = 0
+            _n_sticking = 0
+            if _diag and _diag.pair_snapshots:
+                _last_snap = _diag.pair_snapshots[-1]
+                _n_sliding = sum(1 for p in _last_snap if p.status == "sliding")
+                _n_sticking = sum(1 for p in _last_snap if p.status not in ("inactive", "sliding"))
+            _ke = 0.0
+            _se = 0.0
+            _te = 0.0
+            _er = 1.0
+            if _energy_history is not None and len(_energy_history.entries) > 0:
+                _last_e = _energy_history.entries[-1]
+                _ke = _last_e.kinetic_energy
+                _se = _last_e.strain_energy
+                _te = _last_e.total_energy
+                _er = _last_e.energy_ratio
+            _incr_diag = IncrementDiagnosticsOutput(
+                step=state.increment_display,
+                load_frac=load_frac,
+                converged=True,
+                n_attempts=step_result.n_attempts,
+                n_active=_n_active_final,
+                final_residual=_final_res,
+                convergence_rate=_conv_rate,
+                du_norm=_diag.du_norm_history[-1] if _diag and _diag.du_norm_history else 0.0,
+                kinetic_energy=_ke,
+                strain_energy=_se,
+                total_energy=_te,
+                energy_ratio=_er,
+                n_active_pairs=_n_active_final,
+                n_sliding_pairs=_n_sliding,
+                n_sticking_pairs=_n_sticking,
+                contact_force_norm=_fc_norm,
+                cutback_count=_n_cutbacks,
+                dt=dt_sub if _dynamics else 0.0,
+            )
+            _increment_diag_list.append(_incr_diag)
+
             # 履歴記録
             state.load_history.append(load_frac)
             _u_hist = ul_assembler.u_total_accum + state.u if _ul else state.u.copy()
             state.disp_history.append(_u_hist.copy() if _ul else _u_hist)
-            state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
+            state.contact_force_history.append(_fc_norm)
             try:
                 _cg_out = ContactGraphProcess().process(
                     ContactGraphInput(manager=manager, step=state.increment_display - 1)
@@ -699,4 +750,5 @@ class ContactFrictionProcess(
             diagnostics=last_diag,
             energy_history=_energy_history,
             n_cutbacks=_n_cutbacks,
+            increment_diagnostics=_increment_diag_list,
         )

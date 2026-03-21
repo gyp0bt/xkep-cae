@@ -200,10 +200,19 @@ class NewtonUzawaStaticProcess(
                 )
                 n_active = conv_out.n_active
 
-                diag.res_history.append(conv_out.res_u_norm / conv_out.f_ref)
+                _res_ratio = conv_out.res_u_norm / conv_out.f_ref
+                diag.res_history.append(_res_ratio)
                 diag.ncp_history.append(0.0)
                 diag.ncp_t_history.append(0.0)
                 diag.n_active_history.append(n_active)
+                # 収束率（連続2反復の残差比）
+                if len(diag.res_history) >= 2:
+                    _prev = diag.res_history[-2]
+                    diag.convergence_rate_history.append(
+                        _res_ratio / _prev if _prev > 1e-30 else 1.0
+                    )
+                else:
+                    diag.convergence_rate_history.append(1.0)
 
                 # ペア別診断スナップショット
                 _pair_snap: list[PairDiagnosticsOutput] = []
