@@ -69,7 +69,6 @@ class StrandBatchConfig:
     """
 
     mesh_config: StrandMeshConfig | None = None
-    k_pen: float = 0.0
     use_friction: bool = True
     mu: float = 0.15
     contact_mode: str = "smooth_penalty"
@@ -175,7 +174,6 @@ class StrandBendingBatchProcess(
         contact_proc = ContactSetupProcess()
         contact_config = ContactSetupConfig(
             mesh=mesh_result.mesh,
-            k_pen=input_data.k_pen,
             use_friction=input_data.use_friction,
             mu=input_data.mu,
             contact_mode=input_data.contact_mode,

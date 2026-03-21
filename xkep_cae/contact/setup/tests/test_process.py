@@ -53,7 +53,7 @@ class TestContactSetupProcess:
         mesh = _make_simple_mesh()
         config = ContactSetupConfig(mesh=mesh)
         try:
-            config.k_pen = 999.0  # type: ignore[misc]
+            config.mu = 999.0  # type: ignore[misc]
             raise AssertionError("frozen dataclass should not allow mutation")
         except AttributeError:
             pass
@@ -67,10 +67,9 @@ class TestContactSetupProcess:
 
     def test_process_preserves_parameters(self):
         mesh = _make_simple_mesh()
-        config = ContactSetupConfig(mesh=mesh, k_pen=100.0, mu=0.3)
+        config = ContactSetupConfig(mesh=mesh, mu=0.3)
         proc = ContactSetupProcess()
         result = proc.process(config)
-        assert result.k_pen == 100.0
         assert result.mu == 0.3
 
     def test_process_manager_created(self):

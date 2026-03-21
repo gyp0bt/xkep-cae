@@ -208,8 +208,6 @@ class SmoothPenaltyContactForceProcess(
         ndof_per_node: int = 6,
         *,
         smoothing_delta: float = 0.0,
-        n_uzawa_max: int = 1,
-        tol_uzawa: float = 1e-3,
         exact_tangent: bool = False,
     ) -> None:
         self._ndof = ndof
@@ -217,8 +215,9 @@ class SmoothPenaltyContactForceProcess(
         self._smoothing_delta = smoothing_delta
         # ε = 1/δ: 接触遷移幅（δ=0 の場合 ε=0 → max(0,-g) にフォールバック）
         self._epsilon = 1.0 / smoothing_delta if smoothing_delta > 0.0 else 0.0
-        self._n_uzawa_max = n_uzawa_max
-        self._tol_uzawa = tol_uzawa
+        # n_uzawa_max=1 凍結（Huber+Uzawa非整合: status-222）
+        self._n_uzawa_max = 1
+        self._tol_uzawa = 1e-3
         self._exact_tangent = exact_tangent
 
     @property
@@ -403,8 +402,6 @@ def _create_contact_force_strategy(
     ndof_per_node: int = 6,
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
-    n_uzawa_max: int = 1,
-    tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> NCPContactForceProcess | SmoothPenaltyContactForceProcess:
     """接触力 Strategy ファクトリ.
@@ -414,18 +411,16 @@ def _create_contact_force_strategy(
         ndof: 全体 DOF 数
         ndof_per_node: 1節点あたりの DOF 数
         contact_compliance: δ正則化パラメータ
-        smoothing_delta: Huber 型ペナルティの δ パラメータ（ε = 1/δ が遷移幅）
-        n_uzawa_max: Uzawa 最大反復回数
-        tol_uzawa: Uzawa 収束許容値
+        smoothing_delta: Huber 型ペナルティの δ パラメータ（自動推定値）
         exact_tangent: 厳密接線使用（動的解析で c0*M 正則化がある場合に有効）
+
+    n_uzawa_max=1, tol_uzawa=1e-3 は凍結（Huber+Uzawa非整合: status-222）。
     """
     if contact_mode == "smooth_penalty":
         return SmoothPenaltyContactForceProcess(
             ndof=ndof,
             ndof_per_node=ndof_per_node,
             smoothing_delta=smoothing_delta,
-            n_uzawa_max=n_uzawa_max,
-            tol_uzawa=tol_uzawa,
             exact_tangent=exact_tangent,
         )
 

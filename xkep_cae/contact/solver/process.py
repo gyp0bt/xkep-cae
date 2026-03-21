@@ -156,34 +156,12 @@ class ContactFrictionProcess(
             )
             _beam_L = float(np.mean(_lens))
 
-        # --- smoothing_delta 自動推定 ---
-        _sd = manager.config.smoothing_delta
-        _sd_manual = _sd > 0.0
-        if _sd <= 0.0:
-            from xkep_cae.contact.penalty.strategy import _estimate_smoothing_delta
+        # --- smoothing_delta 自動推定（手動ルート削除: status-223） ---
+        from xkep_cae.contact.penalty.strategy import _estimate_smoothing_delta
 
-            _sd = _estimate_smoothing_delta(input_data.mesh.radii)
-            if _sd > 0.0:
-                print(f"  smoothing_delta 自動推定: δ={_sd:.1f} (ε={1.0 / _sd:.6f}mm)")
-
-        # --- 非推奨構成検知（status-223: ペナルティパラメータ完全自動化） ---
-        from xkep_cae.core.diagnostics import ManualPenaltyParameterWarning
-
-        if _sd_manual:
-            warnings.warn(
-                f"smoothing_delta={manager.config.smoothing_delta:.1f} が手動指定されています。"
-                " status-223 以降は smoothing_delta=0.0（自動推定）を推奨。",
-                ManualPenaltyParameterWarning,
-                stacklevel=2,
-            )
-        if manager.config.n_uzawa_max > 1:
-            warnings.warn(
-                f"n_uzawa_max={manager.config.n_uzawa_max} が指定されています。"
-                " Huber型ペナルティとUzawaは非整合（固定点 g=-ε/2≠0）のため"
-                " n_uzawa_max=1（純ペナルティ）を推奨。（status-222）",
-                ManualPenaltyParameterWarning,
-                stacklevel=2,
-            )
+        _sd = _estimate_smoothing_delta(input_data.mesh.radii)
+        if _sd > 0.0:
+            print(f"  smoothing_delta 自動推定: δ={_sd:.1f} (ε={1.0 / _sd:.6f}mm)")
 
         strategies = _default_strategies(
             ndof=ndof,
@@ -193,7 +171,6 @@ class ContactFrictionProcess(
             rho_inf=input_data.rho_inf,
             velocity=input_data.velocity,
             acceleration=input_data.acceleration,
-            k_pen=input_data.contact.k_pen,
             beam_E=manager.config.beam_E,
             beam_I=manager.config.beam_I,
             beam_L=_beam_L,
@@ -202,8 +179,6 @@ class ContactFrictionProcess(
             contact_mode="smooth_penalty",
             line_contact=True,
             smoothing_delta=_sd,
-            n_uzawa_max=manager.config.n_uzawa_max,
-            tol_uzawa=manager.config.tol_uzawa,
             exact_tangent=manager.config.exact_tangent,
         )
         _time_strategy = strategies.time_integration
@@ -240,15 +215,8 @@ class ContactFrictionProcess(
         if has_prescribed:
             fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
 
-        # --- k_pen 決定 ---
-        # contact_setup.k_pen が明示指定されている場合はそれを使用。
-        # 動的解析では DynamicPenaltyEstimateProcess で c0*M_ii ベースの
-        # k_pen を計算するため、ここで AutoBeamEIPenalty に上書きされないようにする。
-        _setup_kpen = input_data.contact.k_pen
-        if _setup_kpen is not None and _setup_kpen > 0.0:
-            k_pen = _setup_kpen
-        else:
-            k_pen = _penalty_strategy.compute_k_pen(0, 1)
+        # --- k_pen 決定（自動推定のみ: status-223） ---
+        k_pen = _penalty_strategy.compute_k_pen(0, 1)
 
         # --- 摩擦設定 ---
         mu = input_data.contact.mu if input_data.contact.mu is not None else manager.config.mu
@@ -664,14 +632,13 @@ class ContactFrictionProcess(
             )
             _state_set(state, "prev_n_active", step_result.n_active)
 
-            # k_pen continuation（明示指定されていない場合のみ）
-            if not (_setup_kpen is not None and _setup_kpen > 0.0):
-                k_pen_new = _penalty_strategy.compute_k_pen(
-                    state.increment_display, state.increment_display + 1
-                )
-                if abs(k_pen_new - k_pen) > 1e-30:
-                    k_pen = k_pen_new
-                    print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
+            # k_pen continuation（自動推定: status-223）
+            k_pen_new = _penalty_strategy.compute_k_pen(
+                state.increment_display, state.increment_display + 1
+            )
+            if abs(k_pen_new - k_pen) > 1e-30:
+                k_pen = k_pen_new
+                print(f"  k_pen continuation: k_pen → {k_pen:.2e}")
 
             # 状態更新
             _state_set(state, "delta_frac_prev", load_frac - state.load_frac_prev)

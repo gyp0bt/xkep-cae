@@ -66,8 +66,7 @@ def main() -> None:
     print("\n  構成:")
     print(f"    n_elems={cfg.n_elems_wire}, jig_push={cfg.jig_push} mm")
     print(f"    n_periods={cfg.n_periods}, T1={T1:.6f} s, t_total={t_total:.6f} s")
-    print(f"    k_pen={cfg.k_pen} (0=auto), smoothing_delta={cfg.smoothing_delta}")
-    print(f"    n_uzawa_max={cfg.n_uzawa_max}, mu={cfg.mu}")
+    print(f"    mu={cfg.mu} (k_pen/smoothing_delta/n_uzawa_max は自動推定: status-223)")
     print(f"    k_EB={k_eb:.4f} N/mm")
     print(f"    max_increments={cfg.max_increments}")
 

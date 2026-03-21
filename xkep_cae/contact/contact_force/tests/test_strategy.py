@@ -168,17 +168,21 @@ class TestSmoothPenaltyContactForceProcess:
         f, r = proc.evaluate(np.zeros(24), np.array([0.0]), manager, k_pen=1e4)
         assert np.any(f != 0.0)
 
-    def test_softplus_delta_zero(self):
-        assert SmoothPenaltyContactForceProcess._softplus(-0.01, 0.0) == pytest.approx(0.01)
-        assert SmoothPenaltyContactForceProcess._softplus(0.01, 0.0) == pytest.approx(0.0)
+    def test_huber_epsilon_zero(self):
+        """ε=0 でmax(0,-g) にフォールバック."""
+        assert SmoothPenaltyContactForceProcess._huber_penalty(-0.01, 0.0) == pytest.approx(0.01)
+        assert SmoothPenaltyContactForceProcess._huber_penalty(0.01, 0.0) == pytest.approx(0.0)
 
-    def test_softplus_large_penetration(self):
-        result = SmoothPenaltyContactForceProcess._softplus(-1.0, 10.0)
-        assert result == pytest.approx(1.0, abs=0.01)
+    def test_huber_large_penetration(self):
+        """大貫入で線形ペナルティ: p = -g - ε/2."""
+        eps = 0.1
+        result = SmoothPenaltyContactForceProcess._huber_penalty(-1.0, eps)
+        assert result == pytest.approx(1.0 - eps / 2.0, abs=0.01)
 
-    def test_softplus_derivative_delta_zero(self):
-        assert SmoothPenaltyContactForceProcess._softplus_derivative(-0.01, 0.0) == -1.0
-        assert SmoothPenaltyContactForceProcess._softplus_derivative(0.01, 0.0) == 0.0
+    def test_huber_derivative_epsilon_zero(self):
+        """ε=0 で dp/dg = -1 (g<0), 0 (g≥0)."""
+        assert SmoothPenaltyContactForceProcess._huber_penalty_derivative(-0.01, 0.0) == -1.0
+        assert SmoothPenaltyContactForceProcess._huber_penalty_derivative(0.01, 0.0) == 0.0
 
     def test_tangent_no_pairs(self):
         proc = SmoothPenaltyContactForceProcess(ndof=24)

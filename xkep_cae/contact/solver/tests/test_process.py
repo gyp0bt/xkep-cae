@@ -126,7 +126,6 @@ def _make_contact_setup(mesh: MeshData) -> ContactSetupData:
     setup = ContactSetupProcess()
     setup_config = ContactSetupConfig(
         mesh=mesh,
-        k_pen=1e4,
         use_friction=True,
         mu=0.15,
         exclude_same_layer=True,
@@ -161,7 +160,7 @@ class TestContactFrictionProcessAPI:
     def test_custom_strategies(self):
         from xkep_cae.core.data import default_strategies
 
-        strats = default_strategies(k_pen=999.0)
+        strats = default_strategies(beam_E=200e3, beam_I=1.0, beam_L=10.0)
         proc = ContactFrictionProcess(strategies=strats)
         assert proc.strategies is strats
 

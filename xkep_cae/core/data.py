@@ -39,10 +39,13 @@ class BoundaryData:
 
 @dataclass(frozen=True)
 class ContactSetupData:
-    """接触設定結果."""
+    """接触設定結果.
+
+    k_pen は status-223 で手動ルート削除。
+    AutoBeamEIPenalty / DynamicPenaltyEstimateProcess で自動推定。
+    """
 
     manager: object  # ContactManager（循環参照回避のため object）
-    k_pen: float
     use_friction: bool
     mu: float | None = None
     contact_mode: str = "smooth_penalty"  # 基軸構成
@@ -90,7 +93,6 @@ def default_strategies(
     rho_inf: float = 0.9,
     velocity: object = None,
     acceleration: object = None,
-    k_pen: float = 1.0,
     beam_E: float = 0.0,
     beam_I: float = 0.0,
     beam_L: float = 0.0,
@@ -103,14 +105,13 @@ def default_strategies(
     contact_compliance: float = 0.0,
     smoothing_delta: float = 0.0,
     coating_stiffness: float = 0.0,
-    n_uzawa_max: int = 1,
-    tol_uzawa: float = 1e-3,
     exact_tangent: bool = False,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成（process-architecture.md §2.4）.
 
-    NCP + Uzawa + smooth_penalty + QuasiStatic + AutoBeamEI
-    5軸 Strategy 全生成（status-159: Phase 5 完了）。
+    Huber型C¹ペナルティ + 純ペナルティ（n_uzawa_max=1 凍結）。
+    k_pen は AutoBeamEIPenalty で自動推定。
+    smoothing_delta は AutoSmoothingDeltaProcess で自動推定（status-223）。
     """
     from xkep_cae.contact.coating.strategy import _create_coating_strategy
     from xkep_cae.contact.contact_force.strategy import (
@@ -127,7 +128,6 @@ def default_strategies(
 
     return SolverStrategies(
         penalty=_create_penalty_strategy(
-            k_pen=k_pen,
             beam_E=beam_E,
             beam_I=beam_I,
             beam_L=beam_L,
@@ -152,8 +152,6 @@ def default_strategies(
             ndof_per_node=ndof_per_node,
             contact_compliance=contact_compliance,
             smoothing_delta=smoothing_delta,
-            n_uzawa_max=n_uzawa_max,
-            tol_uzawa=tol_uzawa,
             exact_tangent=exact_tangent,
         ),
         contact_geometry=_create_contact_geometry_strategy(

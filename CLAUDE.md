@@ -64,7 +64,7 @@
 
 ## 現在の状態
 
-**188 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
+**553 テスト** — 2026-03-21 | 契約違反 **4件**（C3: 既存未紐付け2件） | 条例違反 **0件**
 
 ### ターゲット
 
@@ -72,7 +72,7 @@
 
 ### 次の課題
 
-**ペナルティパラメータ完全自動化** — status-223 で AutoSmoothingDeltaProcess 実装。ε = α×r_min（α=2e-4）で smoothing_delta を自動推定。k_pen も既存の AutoBeamEIPenalty / DynamicPenaltyEstimateProcess で自動推定済み。Uzawa は Huber 非整合のため凍結（n_uzawa_max=1）。次は n_periods≧5 準静的テスト + S3凍結解除。
+**ペナルティパラメータ完全自動化（完了）** — status-223/224 で手動ペナルティパラメータ（k_pen, smoothing_delta, n_uzawa_max）をユーザー公開 Config から物理削除。全て自動推定（AutoSmoothingDeltaProcess / AutoBeamEIPenalty / DynamicPenaltyEstimateProcess）。Uzawa は Huber 非整合のため n_uzawa_max=1 ハードコード。次は n_periods≧5 準静的テスト + S3凍結解除。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

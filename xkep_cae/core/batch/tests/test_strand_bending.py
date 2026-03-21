@@ -147,7 +147,6 @@ class TestStrandBendingBatchProcess:
 
         config = StrandBatchConfig(
             mesh_config=mesh_config,
-            k_pen=1e4,
             boundary=boundary,
             callbacks=callbacks,
             run_solver=True,
@@ -185,7 +184,6 @@ class TestStrandBendingBatchProcess:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = StrandBatchConfig(
                 mesh_config=mesh_config,
-                k_pen=1e4,
                 boundary=boundary,
                 callbacks=callbacks,
                 run_solver=True,
@@ -222,7 +220,6 @@ class TestStrandBendingBatchProcess:
 
         config = StrandBatchConfig(
             mesh_config=mesh_config,
-            k_pen=1e4,
             boundary=boundary,
             callbacks=callbacks,
             run_solver=True,
@@ -267,7 +264,6 @@ class TestStrandBendingBatchProcess:
         with tempfile.TemporaryDirectory() as tmpdir:
             config = StrandBatchConfig(
                 mesh_config=mesh_config,
-                k_pen=1e4,
                 boundary=boundary,
                 callbacks=callbacks,
                 run_solver=True,
