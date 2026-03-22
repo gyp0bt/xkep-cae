@@ -1120,7 +1120,7 @@ class DynamicThreePointBendContactJigProcess(
         # smoothing_delta 自動推定: δ = 5000 / r_min（status-221）
         _smoothing_delta = 5000.0 / wire_radius
 
-        # k_pen: max(動的スケール, 梁剛性スケール) で推定
+        # k_pen: 動的解析では c0*M スケールに合わせる（status-218）
         k_pen = cfg.k_pen
         if k_pen <= 0.0:
             # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
@@ -1137,10 +1137,7 @@ class DynamicThreePointBendContactJigProcess(
                     scale=0.2,  # c0*M の 20%（dt cutback 1回で K_eff 正定値: 4*0.2*2.0=1.6 < 4*(1-α_m)=2.32）
                 )
             )
-            k_pen_dynamic = _dpe_out.k_pen
-            # 梁グローバル曲げ剛性ベース: E が高い場合の動的推定不足を補完
-            k_pen_beam = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
-            k_pen = max(k_pen_dynamic, k_pen_beam)
+            k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
             smoothing_delta=_smoothing_delta,
