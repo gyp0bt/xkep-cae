@@ -1,0 +1,13 @@
+tag: run02_E100_dynamic_kpen_statusfilt
+converged: false
+n_increments: 240
+elapsed_seconds: 1281.0
+deflection_mm: 24.3109
+contact_force_N: 527.0
+effective_stiffness: 21.68
+stiffness_error_eb: 0.1017
+final_frac: 0.8903
+push_reached_mm: 26.71
+analytical_stiffness_eb: 19.68
+analytical_force_at_push: 525.3
+termination_reason: "dt_min 到達 (adaptive stepping can_retry=False)"

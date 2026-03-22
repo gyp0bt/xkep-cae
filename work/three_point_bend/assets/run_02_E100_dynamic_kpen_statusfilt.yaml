@@ -1,0 +1,46 @@
+# Run 02: E=100 MPa, 動的 k_pen 推定, status フィルタあり
+# ログ: logs/02_E100_dynamic_kpen_statusfilt_v2.log
+# 結果: frac=0.8903, push=26.71mm, 接触力=527N, 時間=1281s
+
+geometry:
+  wire_length: 100.0       # mm
+  wire_diameter: 17.0      # mm
+  n_elems_wire: 20
+
+material:
+  E: 100.0                 # MPa
+  nu: 0.3
+  rho: 7.85e-9             # ton/mm³
+
+loading:
+  jig_push: 30.0           # mm
+  n_periods: 30.0
+  initial_gap: 0.0         # mm
+
+jig:
+  jig_radius: 10.0         # mm
+  jig_n_segments: 8
+  jig_depth: 34.0          # mm
+
+contact:
+  k_pen: 0.0               # 自動（動的推定 → 18.3 N/mm）
+  mu: 0.15
+  status_filter: true
+
+time_integration:
+  rho_inf: 0.9
+  lumped_mass: true
+  dt_initial: 0.0          # 自動
+  dt_min: 0.0              # 自動
+  max_increments: 500
+
+solver:
+  tol_disp: 1.0e-8
+  tol_force: 1.0e-6
+  max_nr_attempts: 30
+  du_norm_cap: 0.0
+
+coating:
+  coating_stiffness: 0.0
+  coating_damping: 0.0
+  coating_mu: 0.0

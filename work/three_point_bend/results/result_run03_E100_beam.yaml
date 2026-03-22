@@ -1,0 +1,11 @@
+tag: run03_E100_beam_kpen_statusfilt
+converged: false
+n_increments: 240
+elapsed_seconds: 983.7
+deflection_mm: 24.2379
+contact_force_N: 526.0
+effective_stiffness: 21.72
+final_frac: 0.8837
+push_reached_mm: 26.51
+analytical_stiffness_eb: 19.68
+termination_reason: "dt_min 到達 (adaptive stepping can_retry=False)"
