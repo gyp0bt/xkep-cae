@@ -15,7 +15,11 @@ from xkep_cae.contact.penalty import (
     PenaltyInput,
     PenaltyOutput,
 )
-from xkep_cae.contact.penalty.strategy import _create_penalty_strategy
+from xkep_cae.contact.penalty.strategy import (
+    DynamicPenaltyEstimateInput,
+    DynamicPenaltyEstimateProcess,
+    _create_penalty_strategy,
+)
 from xkep_cae.core.strategies import PenaltyStrategy
 from xkep_cae.core.testing import binds_to
 
@@ -173,3 +177,57 @@ class TestCreatePenaltyStrategy:
         """beam パラメータが不完全な場合は ConstantPenalty にフォールバック."""
         s = _create_penalty_strategy(beam_E=200e9, beam_I=0.0, beam_L=0.01)
         assert isinstance(s, ConstantPenalty)
+
+
+# ── DynamicPenaltyEstimateProcess ──────────────────────────
+
+
+@binds_to(DynamicPenaltyEstimateProcess)
+class TestDynamicPenaltyEstimateProcess:
+    """DynamicPenaltyEstimateProcess の単体テスト."""
+
+    def test_basic_estimate(self) -> None:
+        """基本的な k_pen 推定が正値を返す."""
+        proc = DynamicPenaltyEstimateProcess()
+        out = proc.process(
+            DynamicPenaltyEstimateInput(
+                rho_inf=0.9,
+                dt=1e-4,
+                rho=7.85e-9,
+                A=3.14,
+                L_elem=5.0,
+            )
+        )
+        assert out.k_pen > 0.0
+        assert out.c0 > 0.0
+        assert out.m_ii > 0.0
+        assert out.c0_m_ii > 0.0
+
+    def test_scale_affects_k_pen(self) -> None:
+        """scale パラメータが k_pen にリニアに影響する."""
+        proc = DynamicPenaltyEstimateProcess()
+        base_args = {
+            "rho_inf": 0.9,
+            "dt": 1e-4,
+            "rho": 7.85e-9,
+            "A": 3.14,
+            "L_elem": 5.0,
+        }
+        out1 = proc.process(DynamicPenaltyEstimateInput(**base_args, scale=0.5))
+        out2 = proc.process(DynamicPenaltyEstimateInput(**base_args, scale=1.0))
+        assert out2.k_pen == pytest.approx(2.0 * out1.k_pen)
+
+    def test_frozen_output(self) -> None:
+        """出力が frozen dataclass."""
+        proc = DynamicPenaltyEstimateProcess()
+        out = proc.process(
+            DynamicPenaltyEstimateInput(
+                rho_inf=0.9,
+                dt=1e-4,
+                rho=7.85e-9,
+                A=3.14,
+                L_elem=5.0,
+            )
+        )
+        with pytest.raises(AttributeError):
+            out.k_pen = 0.0  # type: ignore[misc]

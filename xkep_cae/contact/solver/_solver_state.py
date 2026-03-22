@@ -1,8 +1,7 @@
 """ソルバー可変状態の集約（プライベート）.
 
-SolverStateOutput を新パッケージに移植。
-__xkep_cae_deprecated/process/strategies/solver_state.py からの移植。
-deprecated 依存を除去し、duck typing で簡素化。
+SolverStateOutput を duck typing で簡素化。
+status-222 で lam_all / _ensure_lam_size を削除。
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ class SolverStateOutput:
 
     # --- 主要変数 ---
     u: np.ndarray
-    lam_all: np.ndarray
     u_ref: np.ndarray
 
     # --- 参照配置（UL時に更新） ---
@@ -49,7 +47,6 @@ class SolverStateOutput:
 
     # --- チェックポイント ---
     _u_ckpt: np.ndarray | None = None
-    _lam_ckpt: np.ndarray | None = None
     _u_ref_ckpt: np.ndarray | None = None
     _ul_frac_base_ckpt: float = 0.0
 
@@ -62,7 +59,6 @@ def _state_set(state: SolverStateOutput, name: str, value: object) -> None:
 def _save_checkpoint(state: SolverStateOutput) -> None:
     """現在の状態をチェックポイントに保存."""
     _setattr(state, "_u_ckpt", state.u.copy())
-    _setattr(state, "_lam_ckpt", state.lam_all.copy())
     _setattr(state, "_u_ref_ckpt", state.u_ref.copy())
     _setattr(state, "_ul_frac_base_ckpt", state.ul_frac_base)
 
@@ -72,19 +68,9 @@ def _restore_checkpoint(state: SolverStateOutput) -> None:
     if state._u_ckpt is None:
         raise RuntimeError("チェックポイントが保存されていません")
     _setattr(state, "u", state._u_ckpt.copy())
-    _setattr(state, "lam_all", state._lam_ckpt.copy())
     _setattr(state, "u_ref", state._u_ref_ckpt.copy())
     _setattr(state, "ul_frac_base", state._ul_frac_base_ckpt)
     _setattr(state, "delta_frac_prev", 0.0)
-
-
-def _ensure_lam_size(state: SolverStateOutput, n_pairs: int) -> None:
-    """ペア数拡張に対応して lam_all を拡張."""
-    if len(state.lam_all) < n_pairs:
-        old_n = len(state.lam_all)
-        lam_new = np.zeros(n_pairs)
-        lam_new[:old_n] = state.lam_all
-        _setattr(state, "lam_all", lam_new)
 
 
 def _build_u_output(state: SolverStateOutput, ul_assembler: object | None) -> np.ndarray:
@@ -100,7 +86,6 @@ class SolverStateInitInput:
 
     ndof: int
     node_coords: np.ndarray
-    n_pairs: int = 0
 
 
 @dataclass(frozen=True)
@@ -113,22 +98,18 @@ class SolverStateInitOutput:
 class SolverStateInitProcess(
     SolverProcess[SolverStateInitInput, SolverStateInitOutput],
 ):
-    """SolverStateOutput の初期化 Process.
-
-    自由度数・節点座標・ペア数からゼロ初期状態を生成する。
-    """
+    """SolverStateOutput の初期化 Process."""
 
     meta = ProcessMeta(
         name="SolverStateInit",
         module="solve",
-        version="1.0.0",
+        version="2.0.0",
         document_path="docs/contact_friction.md",
     )
 
     def process(self, input_data: SolverStateInitInput) -> SolverStateInitOutput:
         state = SolverStateOutput(
             u=np.zeros(input_data.ndof),
-            lam_all=np.zeros(max(input_data.n_pairs, 1)),
             u_ref=np.zeros(input_data.ndof),
             node_coords_ref=input_data.node_coords.copy(),
         )

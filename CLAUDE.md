@@ -56,15 +56,16 @@
 
 ## 推奨ソルバー構成
 
-- `newton_raphson_contact_ncp`（solver_ncp.py）
+- Fischer-Burmeister NCP（Huber）が主力接触力評価
 - UL+NCP統合: `ul_assembler` + `adaptive_timestepping=True`
 - 解析的接線剛性: `analytical_tangent=True`（デフォルト）
-- Line-to-line Gauss積分 + 同層除外 + Fischer-Burmeister NCP
+- Line-to-line Gauss積分 + 同層除外
 - **摩擦あり**: `contact_mode="smooth_penalty"`（必須。NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
+- **Uzawa凍結**: `n_uzawa_max=1`（純粋ペナルティ。拡大ラグランジアンは status-221 で凍結）
 
 ## 現在の状態
 
-**499 テスト** — 2026-03-20 | 契約違反 **0件** | 条例違反 **0件**
+**499 テスト** — 2026-03-21 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 

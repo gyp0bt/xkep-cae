@@ -1,6 +1,5 @@
 """接触幾何バッチ計算の純粋関数.
 
-__xkep_cae_deprecated/contact/geometry.py から移植。
 numpy のみに依存する純粋関数。
 """
 

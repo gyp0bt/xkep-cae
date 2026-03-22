@@ -1,7 +1,6 @@
 """収束診断情報 Process.
 
-ConvergenceDiagnosticsOutput を新パッケージに移植。
-__xkep_cae_deprecated/contact/diagnostics.py からのコピー。
+ConvergenceDiagnosticsOutput を新パッケージに移植済み（status-207 で旧コード完全削除）。
 """
 
 from __future__ import annotations
@@ -12,7 +11,7 @@ from xkep_cae.core import ProcessMeta, SolverProcess
 
 
 @dataclass(frozen=True)
-class PairDiagnosticsEntry:
+class PairDiagnosticsOutput:
     """1接触ペアの診断スナップショット."""
 
     pair_id: int
@@ -42,7 +41,47 @@ class ConvergenceDiagnosticsOutput:
     total_energy: float = 0.0
     energy_ratio: float = 1.0  # E_current / E_initial
     # ペア別接触診断（NR反復ごとのスナップショット）
-    pair_snapshots: list[list[PairDiagnosticsEntry]] = field(default_factory=list)
+    pair_snapshots: list[list[PairDiagnosticsOutput]] = field(default_factory=list)
+    # 収束率診断（連続2反復の残差比 r_{i}/r_{i-1}）
+    convergence_rate_history: list[float] = field(default_factory=list)
+    # 最終的な収束/非収束
+    converged: bool = False
+    n_attempts: int = 0
+
+
+@dataclass(frozen=True)
+class IncrementDiagnosticsOutput:
+    """1インクリメントの完全な診断スナップショット.
+
+    毎インクリメントで生成し、全履歴を SolverResultData に蓄積。
+    """
+
+    step: int
+    load_frac: float
+    converged: bool
+    n_attempts: int
+    n_active: int
+    # 残差ノルム（最終NR反復）
+    final_residual: float = 0.0
+    # 収束率（最終2反復の残差比、2次収束なら << 1）
+    convergence_rate: float = 1.0
+    # 変位増分ノルム
+    du_norm: float = 0.0
+    # エネルギー情報
+    kinetic_energy: float = 0.0
+    strain_energy: float = 0.0
+    total_energy: float = 0.0
+    energy_ratio: float = 1.0
+    # 接触状態サマリ
+    n_active_pairs: int = 0
+    n_sliding_pairs: int = 0
+    n_sticking_pairs: int = 0
+    # 接触力ノルム
+    contact_force_norm: float = 0.0
+    # カットバック回数（このインクリメントで発生した場合）
+    cutback_count: int = 0
+    # 時間増分（動的解析用）
+    dt: float = 0.0
 
 
 @dataclass(frozen=True)

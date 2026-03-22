@@ -1,7 +1,6 @@
 """撚線（twisted wire）メッシュ生成.
 
-__xkep_cae_deprecated/mesh/twisted_wire.py から StrandMeshProcess が使う
-最小限の関数を移植。
+StrandMeshProcess が使う最小限の関数。
 
 [← README](../../README.md)
 """

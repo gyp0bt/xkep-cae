@@ -1,6 +1,5 @@
 """摩擦力アセンブリ — ヘルパー関数群.
 
-__xkep_cae_deprecated/contact/assembly.py の摩擦関連部分を移植。
 プライベートモジュール（C16 準拠）。
 
 主要関数:

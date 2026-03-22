@@ -1,18 +1,16 @@
 """ContactForce Strategy サブパッケージ.
 
-接触力の評価方法（NCP / SmoothPenalty）。
+Huber ペナルティ接触力（status-222 で一本化）。
 """
 
 from xkep_cae.contact.contact_force.strategy import (
     ContactForceInput,
     ContactForceOutput,
-    NCPContactForceProcess,
-    SmoothPenaltyContactForceProcess,
+    HuberContactForceProcess,
 )
 
 __all__ = [
-    "NCPContactForceProcess",
-    "SmoothPenaltyContactForceProcess",
+    "HuberContactForceProcess",
     "ContactForceInput",
     "ContactForceOutput",
 ]

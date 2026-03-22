@@ -1,6 +1,6 @@
 """Friction Strategy サブパッケージ.
 
-Coulomb 摩擦の return mapping と摩擦力評価。
+Coulomb 摩擦の return mapping と摩擦力評価（status-222 で一本化）。
 """
 
 from xkep_cae.contact.friction.law_friction import (
@@ -17,15 +17,11 @@ from xkep_cae.contact.friction.strategy import (
     CoulombReturnMappingProcess,
     FrictionInput,
     FrictionOutput,
-    NoFrictionProcess,
-    SmoothPenaltyFrictionProcess,
 )
 
 __all__ = [
     # Strategy
-    "NoFrictionProcess",
     "CoulombReturnMappingProcess",
-    "SmoothPenaltyFrictionProcess",
     "FrictionInput",
     "FrictionOutput",
     # Law Friction

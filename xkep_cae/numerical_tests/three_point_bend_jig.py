@@ -4,9 +4,8 @@
 剛体押しジグ（変位制御）で中央から押し下げる三点曲げ。
 変位–荷重応答を Euler-Bernoulli / Timoshenko 解析解と比較する。
 
-4つの Process を提供:
+3つの Process を提供:
   - ThreePointBendJigProcess: 直接変位制御（理想剛体ジグ、準静的）
-  - DynamicThreePointBendJigProcess: 直接変位制御（動的、質量行列付き）
   - ThreePointBendContactJigProcess: 剛体エッジジグ + 接触（準静的）
   - DynamicThreePointBendContactJigProcess: 剛体エッジジグ + 接触 + 摩擦 + 動的
 
@@ -31,6 +30,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact.penalty.strategy import DynamicPenaltyEstimateProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -342,16 +342,12 @@ class ThreePointBendJigProcess(BatchProcess[ThreePointBendJigConfig, ThreePointB
         )
 
         # 4. 接触設定（ダミー — 接触なし）
-        contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
-        )
+        contact_config = _ContactConfigInput()
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=0.0,
-            use_friction=False,
             mu=None,
-            contact_mode="smooth_penalty",
         )
 
         # 5. ソルバー実行
@@ -441,8 +437,8 @@ class ThreePointBendContactJigConfig:
     jig_height: float = 2.0  # mm（y方向）
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 200.0  # softplus の平滑化パラメータ
-    n_uzawa_max: int = 20  # Uzawa 最大反復回数
+    # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
+    # n_uzawa_max は status-222 で削除。
 
 
 @dataclass(frozen=True)
@@ -522,6 +518,54 @@ def _build_hex8_jig_mesh(
             jig_rot_dofs.append(6 * gn + d_idx)
 
     return jig_coords, jig_hex_conn, jig_edge_conn, jig_top_nodes, jig_rot_dofs
+
+
+def _build_arc_jig_mesh(
+    cx: float,
+    wire_radius: float,
+    jig_radius: float,
+    n_segments: int,
+    initial_gap: float,
+    n_wire_nodes: int,
+) -> tuple[np.ndarray, np.ndarray, list[int]]:
+    """円弧ジグメッシュを生成する.
+
+    円柱ジグ（半径 jig_radius）の下半分を n_segments セグメントで離散化。
+    ジグ中心は (cx, wire_radius + jig_radius + initial_gap, 0)。
+    ジグ表面ノードは xz 平面内の円弧上に配置（z=0 平面）。
+
+    Returns:
+        jig_coords: (n_nodes, 3) ジグ節点座標
+        jig_edge_conn: (n_segments, 2) エッジ接続（全体節点番号）
+        jig_rot_dofs: 回転DOFリスト（固定対象）
+    """
+    n_nodes = n_segments + 1
+    # ジグ中心: ワイヤ表面 + ジグ半径 + gap
+    cy = wire_radius + jig_radius + initial_gap
+
+    # 円弧角度: ジグ底部の ±60° をカバー（接触範囲）
+    theta_range = math.pi / 3.0  # 60°
+    angles = np.linspace(-theta_range, theta_range, n_nodes)
+
+    jig_coords = np.zeros((n_nodes, 3))
+    for i, theta in enumerate(angles):
+        # 円弧上の点（下向き: -π/2 が最下点）
+        jig_coords[i, 0] = cx + jig_radius * math.sin(theta)
+        jig_coords[i, 1] = cy - jig_radius * math.cos(theta)
+        jig_coords[i, 2] = 0.0
+
+    # エッジ接続（全体節点番号）
+    off = n_wire_nodes
+    jig_edge_conn = np.array([[off + i, off + i + 1] for i in range(n_segments)])
+
+    # 回転DOF（固定）
+    jig_rot_dofs = []
+    for i in range(n_nodes):
+        gn = off + i
+        for d_idx in [3, 4, 5]:
+            jig_rot_dofs.append(6 * gn + d_idx)
+
+    return jig_coords, jig_edge_conn, jig_rot_dofs
 
 
 class ThreePointBendContactJigProcess(
@@ -677,10 +721,11 @@ class ThreePointBendContactJigProcess(
             k_beam_global = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
             k_pen = 0.5 * k_beam_global
 
+        # smoothing_delta 自動推定: δ = α / r_min（status-221）
+        _smoothing_delta = 5000.0 / wire_radius
+
         contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
+            smoothing_delta=_smoothing_delta,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -695,9 +740,7 @@ class ThreePointBendContactJigProcess(
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=k_pen,
-            use_friction=False,
             mu=None,
-            contact_mode="smooth_penalty",
         )
 
         # 7. ソルバー実行
@@ -759,58 +802,6 @@ class ThreePointBendContactJigProcess(
         )
 
 
-# ====================================================================
-# 動的三点曲げ Process（初速度制御 + Generalized-α 時間積分）
-# ====================================================================
-
-
-@dataclass(frozen=True)
-class DynamicThreePointBendJigConfig:
-    """動的三点曲げジグ試験の構成.
-
-    時間増分は dt_initial / dt_min / max_increments で制御。
-    適応時間増分が収束性に応じて自動調整する。
-    """
-
-    wire_length: float = 100.0  # mm
-    wire_diameter: float = 2.0  # mm
-    n_elems_wire: int = 20
-    E: float = 200e3  # MPa
-    nu: float = 0.3
-    rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
-    jig_push: float = 0.1  # mm（等価静的変位量 → 初速度に変換）
-    n_periods: float = 3.0  # 固有周期の何周期分を計算するか
-    rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
-    lumped_mass: bool = True  # 集中質量行列
-    # 時間増分制御
-    dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/20）
-    dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/32）
-    max_increments: int = 10000  # 最大インクリメント数
-
-
-@dataclass(frozen=True)
-class DynamicThreePointBendJigResult:
-    """動的三点曲げジグ試験の結果."""
-
-    solver_result: SolverResultData
-    wire_midpoint_deflection: float
-    reaction_force: float
-    analytical_deflection_static: float
-    analytical_frequency_hz: float
-    analytical_period: float
-    dynamic_amplification: float
-    max_deflection: float
-    initial_velocity: float
-    measured_frequency_hz: float
-    config: DynamicThreePointBendJigConfig
-    mesh: MeshData
-    wire_mid_node: int
-    n_wire_nodes: int
-    time_history: np.ndarray
-    deflection_history: np.ndarray
-    signed_deflection_history: np.ndarray
-
-
 def _measure_frequency_fft(
     time_arr: np.ndarray,
     signal: np.ndarray,
@@ -861,216 +852,8 @@ def _beam_fundamental_frequency(
     return (math.pi / (2.0 * L**2)) * math.sqrt(E * I / (rho * A))
 
 
-class DynamicThreePointBendJigProcess(
-    BatchProcess[DynamicThreePointBendJigConfig, DynamicThreePointBendJigResult],
-):
-    """単線の剛体支え＋押しジグ動的三点曲げ Process.
-
-    初速度制御: ワイヤ中央節点に初速度 v₀ を与え、自由振動応答を計算。
-    Generalized-α 時間積分で動的応答を計算し、解析解と比較する。
-
-    初速度の決定:
-      v₀ = ω₁ * δ_s（1次固有角振動数 × 静的等価変位）
-      → 最大変位 ≈ δ_s（自由振動の振幅が静的変位に一致）
-
-    解析解（初速度 v₀ による自由振動）:
-      - 静的等価変位: δ_s = jig_push
-      - 1次固有振動数: f₁ = π/(2L²) √(EI/ρA)
-      - 応答: δ(t) = (v₀/ω₁) * sin(ω₁t)  （モード1のみ）
-      - 最大変位: δ_max = v₀/ω₁ = δ_s
-
-    時間増分制御:
-      dt_initial, dt_min, max_increments で適応時間増分を制御。
-
-    パイプライン:
-    1. ワイヤメッシュ生成
-    2. UL CR 梁アセンブラ + 質量行列構築
-    3. 初速度設定 + 境界条件（支持のみ、外力なし）
-    4. ContactFrictionProcess（動的モード）で求解
-    5. 時刻歴応答 + 解析解比較
-    """
-
-    meta = ProcessMeta(
-        name="DynamicThreePointBendJig",
-        module="batch",
-        version="2.0.0",
-        document_path="docs/three_point_bend_jig.md",
-    )
-    uses = [ContactFrictionProcess]
-
-    def process(self, input_data: DynamicThreePointBendJigConfig) -> DynamicThreePointBendJigResult:
-        """動的三点曲げジグ試験を実行."""
-        cfg = input_data
-        sec = _circle_section(cfg.wire_diameter, cfg.nu)
-        G = cfg.E / (2.0 * (1.0 + cfg.nu))
-
-        # 1. メッシュ
-        mesh_data, wire_mid_node = _build_wire_mesh(
-            ThreePointBendJigConfig(
-                wire_length=cfg.wire_length,
-                wire_diameter=cfg.wire_diameter,
-                n_elems_wire=cfg.n_elems_wire,
-                E=cfg.E,
-                nu=cfg.nu,
-                jig_push=cfg.jig_push,
-            )
-        )
-        n_nodes = len(mesh_data.node_coords)
-        n_wire_nodes = n_nodes
-        ndof = n_nodes * 6
-
-        # 2. アセンブラ + 質量行列
-        assembler = ULCRBeamAssembler(
-            node_coords=mesh_data.node_coords,
-            connectivity=mesh_data.connectivity,
-            E=cfg.E,
-            G=G,
-            A=sec["A"],
-            Iy=sec["Iy"],
-            Iz=sec["Iz"],
-            J=sec["J"],
-            kappa_y=sec["kappa"],
-            kappa_z=sec["kappa"],
-        )
-        mass_matrix = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
-
-        # 3. 固有振動数 → 時間制御パラメータ
-        f1 = _beam_fundamental_frequency(cfg.wire_length, cfg.E, sec["Iy"], cfg.rho, sec["A"])
-        T1 = 1.0 / f1
-        omega1 = 2.0 * math.pi * f1
-        t_total = cfg.n_periods * T1
-
-        # 初期変位: 1次モード形状に比例
-        # u(x,0) = -jig_push × sin(πx/L), v(x,0) = 0
-        # 初速度方式は ω_analytical ≠ ω_FEM の差や高次モード励振で
-        # 振幅精度が劣化するため、初期変位方式を採用。
-        # 振幅 = jig_push が周波数に依存せず厳密に成立する。
-        wire_mid_y_dof = 6 * wire_mid_node + 1
-        v0 = omega1 * cfg.jig_push  # 記録用（解析解の等価初速度）
-
-        # 時間増分パラメータ
-        dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 20.0
-        dt_min = cfg.dt_min if cfg.dt_min > 0 else dt_initial / 32.0
-
-        # load_frac ベースの時間増分設定
-        dt_initial_frac = dt_initial / t_total
-        dt_min_frac = dt_min / t_total
-
-        # 4. 初期変位ベクトル（1次モード形状分布、速度ゼロ）
-        u0 = np.zeros(ndof)
-        for i in range(n_nodes):
-            x_i = mesh_data.node_coords[i, 0]
-            u0[6 * i + 1] = -cfg.jig_push * math.sin(math.pi * x_i / cfg.wire_length)
-        velocity = np.zeros(ndof)
-
-        # 5. 境界条件（支持のみ、外力なし）
-        fixed_dofs = set()
-        for d in [0, 1, 2, 3]:
-            fixed_dofs.add(d)
-        right_node = n_wire_nodes - 1
-        fixed_dofs.add(6 * right_node + 1)
-        fixed_dofs.add(6 * right_node + 2)
-        fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
-
-        boundary = BoundaryData(
-            fixed_dofs=fixed_dofs_arr,
-            f_ext_total=np.zeros(ndof),
-        )
-
-        # 6. 接触設定（ダミー、適応時間増分で制御）
-        contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
-            adaptive_timestepping=True,
-            dt_grow_factor=1.5,
-            dt_shrink_factor=0.5,
-            dt_min_fraction=dt_min_frac,
-            dt_max_fraction=dt_initial_frac,
-        )
-        manager = _ContactManagerInput(config=contact_config)
-        contact_setup = ContactSetupData(
-            manager=manager,
-            k_pen=0.0,
-            use_friction=False,
-            mu=None,
-            contact_mode="smooth_penalty",
-        )
-
-        # 7. ソルバー実行（動的モード、初期変位 + 速度ゼロ）
-        solver_input = ContactFrictionInputData(
-            mesh=mesh_data,
-            boundary=boundary,
-            contact=contact_setup,
-            callbacks=AssembleCallbacks(
-                assemble_tangent=assembler.assemble_tangent,
-                assemble_internal_force=assembler.assemble_internal_force,
-                ul_assembler=assembler,
-            ),
-            u0=u0,
-            mass_matrix=mass_matrix,
-            dt_physical=t_total,
-            rho_inf=cfg.rho_inf,
-            velocity=velocity,
-        )
-        solver = ContactFrictionProcess()
-        solver_result = solver.process(solver_input)
-
-        # 8. 結果評価
-        u = solver_result.u
-        wire_mid_y_dof = 6 * wire_mid_node + 1
-        wire_mid_deflection = abs(u[wire_mid_y_dof])
-
-        # 時刻歴（load_history × dt_physical で正確な時刻を再構築）
-        disp_hist = solver_result.displacement_history
-        load_hist = solver_result.load_history
-        n_hist = len(disp_hist)
-        if n_hist > 0 and len(load_hist) == n_hist:
-            time_arr = np.array(load_hist) * t_total
-        elif n_hist > 0:
-            time_arr = np.linspace(0, t_total, n_hist)
-        else:
-            time_arr = np.array([0.0])
-        # 符号付き変位（下向き=負）を保持
-        signed_defl_arr = np.array([d[wire_mid_y_dof] for d in disp_hist] if n_hist > 0 else [0.0])
-        defl_arr = np.abs(signed_defl_arr)
-        max_deflection = float(np.max(defl_arr)) if len(defl_arr) > 0 else 0.0
-
-        # FFTで実測周波数を計算
-        measured_frequency_hz = _measure_frequency_fft(time_arr, signed_defl_arr)
-
-        # 反力計算
-        K = _assemble_linear_stiffness(mesh_data, cfg.E, G, sec)
-        f_int = K.dot(u)
-        reaction_force = abs(f_int[wire_mid_y_dof])
-
-        # 解析解
-        static_deflection = cfg.jig_push  # v₀ = ω₁*δ_s → 振幅 = δ_s
-
-        # 動的増幅率（max_deflection / static_deflection）
-        dynamic_amplification = max_deflection / static_deflection if static_deflection > 0 else 0.0
-
-        return DynamicThreePointBendJigResult(
-            solver_result=solver_result,
-            wire_midpoint_deflection=wire_mid_deflection,
-            reaction_force=reaction_force,
-            analytical_deflection_static=static_deflection,
-            analytical_frequency_hz=f1,
-            analytical_period=T1,
-            dynamic_amplification=dynamic_amplification,
-            max_deflection=max_deflection,
-            initial_velocity=v0,
-            measured_frequency_hz=measured_frequency_hz,
-            config=cfg,
-            mesh=mesh_data,
-            wire_mid_node=wire_mid_node,
-            n_wire_nodes=n_wire_nodes,
-            time_history=time_arr,
-            deflection_history=defl_arr,
-            signed_deflection_history=signed_defl_arr,
-        )
-
-
 # ====================================================================
-# 動的三点曲げ Process（HEX8 接触ジグ + smooth_penalty + 摩擦）
+# 動的三点曲げ Process（剛体エッジ接触ジグ + smooth_penalty + 摩擦）
 # ====================================================================
 
 
@@ -1088,39 +871,41 @@ class DynamicThreePointBendContactJigConfig:
         ワイヤを曲げる。準静的（n_periods >> 1）では解析解と一致する。
     """
 
-    wire_length: float = 100.0  # mm
-    wire_diameter: float = 2.0  # mm
+    wire_length: float = 100.0  # mm（支点間距離）
+    wire_diameter: float = 17.0  # mm（φ17）
     n_elems_wire: int = 20
     E: float = 200e3  # MPa（ワイヤ）
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
-    jig_push: float = 0.1  # mm（ジグ押し込み量、gap 閉鎖後のワイヤ曲げ量）
+    jig_push: float = 30.0  # mm（押し込み深さ）
     n_periods: float = 3.0  # 押し下げ時間 = n_periods × T1（大きいほど準静的）
     rho_inf: float = 0.9  # Generalized-α の数値減衰パラメータ
     lumped_mass: bool = True  # 集中質量行列
     # ジグ形状
-    jig_E_factor: float = 1000.0  # ジグ/ワイヤ剛性比
-    jig_width: float = 1.0  # mm（x方向）
-    jig_depth: float = 4.0  # mm（z方向、ワイヤ径の2倍）
-    jig_height: float = 2.0  # mm（y方向）
+    jig_radius: float = 10.0  # mm（円柱ジグ半径 R）
+    jig_n_segments: int = 8  # ジグ円弧の分割数
+    jig_E_factor: float = 1000.0  # ジグ/ワイヤ剛性比（未使用、剛体エッジ）
+    jig_width: float = 20.0  # mm（x方向、未使用: jig_radius で決定）
+    jig_depth: float = 34.0  # mm（z方向）
+    jig_height: float = 10.0  # mm（y方向、未使用: jig_radius で決定）
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
-    smoothing_delta: float = 50.0  # softplus の平滑化パラメータ（幅 1/δ ≈ 0.02mm）
-    n_uzawa_max: int = (
-        1  # 純粋ペナルティ（Uzawa は力収束前提だが現NRは変位/エネルギー収束のため非互換）
-    )
+    # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
     mu: float = 0.15  # Coulomb 摩擦係数
+    # 被膜パラメータ（0=被膜なし）
+    coating_stiffness: float = 0.0  # 被膜剛性 [N/mm]
+    coating_damping: float = 0.0  # 被膜減衰 [N·s/mm]
+    coating_mu: float = 0.0  # 被膜摩擦係数
     # 時間増分制御
     dt_initial: float = 0.0  # 初期時間増分 [s]（0=自動: T1/40）
     dt_min: float = 0.0  # 許容最低時間増分 [s]（0=自動: dt_initial/64）
     max_increments: int = 10000  # 最大インクリメント数
     # NR ソルバーパラメータ
     tol_disp: float = 1e-8  # 変位収束許容値
-    tol_force: float = 1e-6  # 力収束許容値（接触遷移の力ジャンプに対応）
-    max_nr_attempts: int = 30  # NR 最大反復数（exact_tangent=True で2次収束 ~10 iter）
+    tol_force: float = 1e-6  # 力収束許容値
+    max_nr_attempts: int = 30  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
-    exact_tangent: bool = True  # 厳密接線（小 k_pen で K_eff 正定値維持、2次収束）
 
 
 @dataclass(frozen=True)
@@ -1184,7 +969,7 @@ class DynamicThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess]
+    uses = [ContactFrictionProcess, DynamicPenaltyEstimateProcess]
 
     def process(
         self, input_data: DynamicThreePointBendContactJigConfig
@@ -1209,27 +994,17 @@ class DynamicThreePointBendContactJigProcess(
         n_wire_nodes = len(wire_mesh.node_coords)
         n_wire_elems = len(wire_mesh.connectivity)
 
-        # 2. HEX8 ジグメッシュ
-        jig_cfg = ThreePointBendContactJigConfig(
-            wire_length=cfg.wire_length,
-            wire_diameter=cfg.wire_diameter,
-            n_elems_wire=cfg.n_elems_wire,
-            E=cfg.E,
-            nu=cfg.nu,
-            jig_push=cfg.jig_push,
-            jig_E_factor=cfg.jig_E_factor,
-            jig_width=cfg.jig_width,
-            jig_depth=cfg.jig_depth,
-            jig_height=cfg.jig_height,
+        # 2. 円弧ジグメッシュ（R=jig_radius の円柱ジグ）
+        cx = cfg.wire_length / 2.0
+        jig_coords, jig_edge_conn, jig_rot_dofs = _build_arc_jig_mesh(
+            cx=cx,
+            wire_radius=wire_radius,
+            jig_radius=cfg.jig_radius,
+            n_segments=cfg.jig_n_segments,
             initial_gap=cfg.initial_gap,
-            k_pen=cfg.k_pen,
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
+            n_wire_nodes=n_wire_nodes,
         )
-        jig_coords, _jig_hex_conn, jig_edge_conn, _jig_top_nodes, jig_rot_dofs = (
-            _build_hex8_jig_mesh(jig_cfg, n_wire_nodes, wire_radius)
-        )
-        n_hex_nodes = 8
+        n_hex_nodes = len(jig_coords)  # 円弧ノード数
 
         # 3. 統合メッシュ
         all_nodes = np.vstack([wire_mesh.node_coords, jig_coords])
@@ -1341,16 +1116,15 @@ class DynamicThreePointBendContactJigProcess(
             f_ext_total=np.zeros(ndof),
         )
 
-        # 9. 接触設定（smooth_penalty + 摩擦あり）
-        #    動的解析では k_pen を c0*M スケールに合わせる必要がある。
-        #    静的梁剛性ベース（48EI/L³）は動的の慣性項に対して桁違いに小さい。
+        # 9. 接触パラメータ自動推定
+        # smoothing_delta 自動推定: δ = 5000 / r_min（status-221）
+        _smoothing_delta = 5000.0 / wire_radius
+
+        # k_pen: 動的解析では c0*M スケールに合わせる（status-218）
         k_pen = cfg.k_pen
         if k_pen <= 0.0:
             # 動的 k_pen: c0*M_ii ベースの自動推定（status-218 で特定）
-            from xkep_cae.contact.penalty.strategy import (
-                DynamicPenaltyEstimateInput,
-                DynamicPenaltyEstimateProcess,
-            )
+            from xkep_cae.contact.penalty.strategy import DynamicPenaltyEstimateInput
 
             _dpe = DynamicPenaltyEstimateProcess()
             _dpe_out = _dpe.process(
@@ -1366,10 +1140,7 @@ class DynamicThreePointBendContactJigProcess(
             k_pen = _dpe_out.k_pen
 
         contact_config = _ContactConfigInput(
-            contact_mode="smooth_penalty",
-            smoothing_delta=cfg.smoothing_delta,
-            n_uzawa_max=cfg.n_uzawa_max,
-            exact_tangent=cfg.exact_tangent,
+            smoothing_delta=_smoothing_delta,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -1377,18 +1148,21 @@ class DynamicThreePointBendContactJigProcess(
             elem_layer_map=elem_layer_map,
             adjust_initial_penetration=False,
             adaptive_timestepping=True,
-            dt_grow_factor=1.2,
+            dt_grow_factor=2.0,
             dt_shrink_factor=0.5,
             dt_min_fraction=dt_min_frac,
-            dt_max_fraction=dt_initial_frac,
+            dt_max_fraction=min(dt_initial_frac * 16.0, 0.05),
+            dt_grow_attempt_threshold=20,
+            dt_shrink_attempt_threshold=25,
+            coating_stiffness=cfg.coating_stiffness,
+            coating_damping=cfg.coating_damping,
+            coating_mu=cfg.coating_mu,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
             manager=manager,
             k_pen=k_pen,
-            use_friction=True,
             mu=cfg.mu,
-            contact_mode="smooth_penalty",
         )
 
         # 10. ソルバー実行（動的モード、ジグ変位制御）

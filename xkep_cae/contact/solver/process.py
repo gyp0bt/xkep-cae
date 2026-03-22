@@ -4,9 +4,14 @@
 
 内部構成:
 - SolverStateOutput: 全可変状態（frozen dataclass）
-- NewtonUzawaProcess: 1荷重増分の NR + Uzawa
+- NewtonDynamicProcess: 1荷重増分の NR（動的のみ）
 - AdaptiveSteppingProcess: 適応荷重増分制御（QUERY/SUCCESS/FAILURE）
 - Strategy 5軸 + default_strategies()
+
+status-222 で一本化:
+- Uzawa 削除（純粋 Huber ペナルティ）
+- 準静的ソルバー削除（動的のみ）
+- 摩擦必須（Coulomb return mapping）
 """
 
 from __future__ import annotations
@@ -16,7 +21,7 @@ import warnings
 
 import numpy as np
 
-from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state, _n_pairs
+from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._manager_process import (
     DetectCandidatesInput,
     DetectCandidatesProcess,
@@ -33,6 +38,7 @@ from xkep_cae.contact.solver._contact_graph import (
 from xkep_cae.contact.solver._diagnostics import (
     DiagnosticsInput,
     DiagnosticsReportProcess,
+    IncrementDiagnosticsOutput,
 )
 from xkep_cae.contact.solver._energy_diagnostics import (
     EnergyHistory,
@@ -45,19 +51,13 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationProcess,
 )
 from xkep_cae.contact.solver._newton_uzawa_dynamic import (
-    NewtonUzawaDynamicInput,
-    NewtonUzawaDynamicProcess,
-    NewtonUzawaDynamicStepInput,
-)
-from xkep_cae.contact.solver._newton_uzawa_static import (
-    NewtonUzawaStaticInput,
-    NewtonUzawaStaticProcess,
-    NewtonUzawaStaticStepInput,
+    NewtonDynamicInput,
+    NewtonDynamicProcess,
+    NewtonDynamicStepInput,
 )
 from xkep_cae.contact.solver._solver_state import (
     SolverStateOutput,
     _build_u_output,
-    _ensure_lam_size,
     _restore_checkpoint,
     _save_checkpoint,
     _state_set,
@@ -81,22 +81,22 @@ from xkep_cae.core.slots import StrategySlot
 class ContactFrictionProcess(
     SolverProcess[ContactFrictionInputData, SolverResultData],
 ):
-    """統一摩擦接触ソルバー（smooth penalty + 自動時間積分選択）.
+    """統一摩擦接触ソルバー（Huber ペナルティ + Coulomb 摩擦 + 動的のみ）.
 
-    入力の mass_matrix / dt_physical の有無で動的/準静的を自動判定。
-    - 動的: Generalized-α 時間積分
-    - 準静的: 荷重制御 or 変位制御
+    status-222 で一本化:
+    - 動的ソルバーのみ（Generalized-α 時間積分）
+    - Huber ペナルティ接触力
+    - Coulomb 摩擦必須
     """
 
     meta = ProcessMeta(
         name="ContactFriction",
         module="solve",
-        version="1.0.0",
+        version="2.0.0",
         document_path="docs/contact_friction.md",
     )
     uses = [
-        NewtonUzawaStaticProcess,
-        NewtonUzawaDynamicProcess,
+        NewtonDynamicProcess,
         UnifiedTimeStepProcess,
         InitialPenetrationProcess,
         ContactGraphProcess,
@@ -168,14 +168,9 @@ class ContactFrictionProcess(
             beam_E=manager.config.beam_E,
             beam_I=manager.config.beam_I,
             beam_L=_beam_L,
-            use_friction=True,
             mu=input_data.contact.mu or 0.15,
-            contact_mode="smooth_penalty",
             line_contact=True,
             smoothing_delta=manager.config.smoothing_delta,
-            n_uzawa_max=manager.config.n_uzawa_max,
-            tol_uzawa=manager.config.tol_uzawa,
-            exact_tangent=manager.config.exact_tangent,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -183,16 +178,10 @@ class ContactFrictionProcess(
         _contact_force_strategy = strategies.contact_force
         _dynamics = _time_strategy.is_dynamic
 
-        # --- 静的ソルバー使用警告 ---
         if not _dynamics:
-            from xkep_cae.core.diagnostics import StaticSolverWarning
-
-            warnings.warn(
-                "ContactFrictionProcess: 準静的ソルバー（NewtonUzawaStaticProcess）を使用。"
-                " mass_matrix / dt_physical を指定すると動的ソルバー"
-                "（NewtonUzawaDynamicProcess）に切り替わります。",
-                StaticSolverWarning,
-                stacklevel=2,
+            raise ValueError(
+                "ContactFrictionProcess: 動的ソルバーのみ対応（status-222）。"
+                " mass_matrix / dt_physical を指定してください。"
             )
 
         # --- 固定DOF + 処方変位 ---
@@ -241,7 +230,6 @@ class ContactFrictionProcess(
 
         state = SolverStateOutput(
             u=u0,
-            lam_all=np.zeros(_n_pairs(manager)),
             u_ref=u0.copy(),
             node_coords_ref=node_coords_ref,
             u_prev_converged=u0.copy(),
@@ -335,17 +323,14 @@ class ContactFrictionProcess(
                 f"メッシュ生成時のgapを増やしてください。"
             )
 
-        _ensure_lam_size(state, _n_pairs(manager))
-
         # --- チェックポイント初期化 ---
         _save_checkpoint(state)
         if _ul:
             ul_assembler.checkpoint()
         _time_strategy.checkpoint()
 
-        # --- 適応荷重増分コントローラ（UnifiedTimeStepProcess 統一） ---
-        # 動的: t_total = dt_physical, 準静的: t_total = 1.0（擬似時間）
-        _t_total = input_data.dt_physical if _dynamics and input_data.dt_physical else 1.0
+        # --- 適応荷重増分コントローラ ---
+        _t_total = input_data.dt_physical if input_data.dt_physical else 1.0
         dt_grow_att = manager.config.dt_grow_attempt_threshold
         _dt_min_frac = manager.config.dt_min_fraction
         _dt_max_frac = manager.config.dt_max_fraction
@@ -368,31 +353,23 @@ class ContactFrictionProcess(
             )
         )
 
-        # --- Newton-Uzawa プロセス（Static/Dynamic 完全分離） ---
-        if _dynamics:
-            nr_config_dyn = NewtonUzawaDynamicInput(
-                show_progress=True,
-                max_attempts=input_data.max_nr_attempts,
-                tol_force=input_data.tol_force,
-                tol_disp=input_data.tol_disp,
-                divergence_window=input_data.divergence_window,
-                du_norm_cap=input_data.du_norm_cap,
-            )
-            nr_process_dyn = NewtonUzawaDynamicProcess()
-        else:
-            nr_config_sta = NewtonUzawaStaticInput(
-                show_progress=True,
-                max_attempts=input_data.max_nr_attempts,
-                tol_force=input_data.tol_force,
-                tol_disp=input_data.tol_disp,
-            )
-            nr_process_sta = NewtonUzawaStaticProcess()
+        # --- Newton プロセス（動的のみ） ---
+        nr_config_dyn = NewtonDynamicInput(
+            show_progress=True,
+            max_attempts=input_data.max_nr_attempts,
+            tol_force=input_data.tol_force,
+            tol_disp=input_data.tol_disp,
+            divergence_window=input_data.divergence_window,
+            du_norm_cap=input_data.du_norm_cap,
+        )
+        nr_process_dyn = NewtonDynamicProcess()
 
         # --- 最終診断 ---
         last_diag = None
-        _energy_history = EnergyHistory() if _dynamics else None
-        _energy_proc = StepEnergyDiagnosticsProcess() if _dynamics else None
+        _energy_history = EnergyHistory()
+        _energy_proc = StepEnergyDiagnosticsProcess()
         _n_cutbacks = 0
+        _increment_diag_list: list[IncrementDiagnosticsOutput] = []
 
         # ================================================================
         # 荷重ステップループ
@@ -413,21 +390,8 @@ class ContactFrictionProcess(
 
             # 接線予測子
             dt_sub = query_out.dt_sub
-            if _dynamics:
-                if hasattr(_time_strategy, "predict"):
-                    _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
-            else:
-                delta_frac = load_frac - state.load_frac_prev
-                if (
-                    state.delta_frac_prev > 1e-30
-                    and delta_frac > 1e-30
-                    and state.u_prev_converged is not None
-                ):
-                    du_prev = state.u - state.u_prev_converged
-                    du_prev_norm = float(np.linalg.norm(du_prev))
-                    if du_prev_norm > 1e-30:
-                        ratio = min(delta_frac / state.delta_frac_prev, 2.0)
-                        _state_set(state, "u", state.u + ratio * du_prev)
+            if hasattr(_time_strategy, "predict"):
+                _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
 
             # 処方変位
             if has_prescribed:
@@ -458,56 +422,30 @@ class ContactFrictionProcess(
                 UpdateGeometryInput(manager=manager, node_coords=coords_def)
             )
             manager = _ug_step.manager
-            _ensure_lam_size(state, _n_pairs(manager))
 
-            # --- NR + Uzawa 実行（Static/Dynamic 完全分離） ---
-            if _dynamics:
-                step_input = NewtonUzawaDynamicStepInput(
-                    config=nr_config_dyn,
-                    u=state.u,
-                    lam_all=state.lam_all,
-                    f_ext=f_ext,
-                    f_ext_ref_norm=f_ext_ref_norm,
-                    fixed_dofs=fixed_dofs,
-                    assemble_tangent=input_data.callbacks.assemble_tangent,
-                    assemble_internal_force=input_data.callbacks.assemble_internal_force,
-                    manager=manager,
-                    node_coords_ref=state.node_coords_ref,
-                    strategies=strategies,
-                    k_pen=k_pen,
-                    mu=mu,
-                    u_ref=state.u_ref,
-                    load_frac=load_frac,
-                    load_frac_prev=state.load_frac_prev,
-                    increment_display=state.increment_display,
-                    dt_sub=dt_sub,
-                    use_coating=use_coating,
-                    dynamic_ref=dynamic_ref,
-                )
-                step_result = nr_process_dyn.process(step_input)
-            else:
-                step_input = NewtonUzawaStaticStepInput(
-                    config=nr_config_sta,
-                    u=state.u,
-                    lam_all=state.lam_all,
-                    f_ext=f_ext,
-                    f_ext_ref_norm=f_ext_ref_norm,
-                    fixed_dofs=fixed_dofs,
-                    assemble_tangent=input_data.callbacks.assemble_tangent,
-                    assemble_internal_force=input_data.callbacks.assemble_internal_force,
-                    manager=manager,
-                    node_coords_ref=state.node_coords_ref,
-                    strategies=strategies,
-                    k_pen=k_pen,
-                    mu=mu,
-                    u_ref=state.u_ref,
-                    load_frac=load_frac,
-                    load_frac_prev=state.load_frac_prev,
-                    increment_display=state.increment_display,
-                    use_coating=use_coating,
-                    dynamic_ref=dynamic_ref,
-                )
-                step_result = nr_process_sta.process(step_input)
+            # --- NR 実行（動的のみ） ---
+            step_input = NewtonDynamicStepInput(
+                config=nr_config_dyn,
+                u=state.u,
+                f_ext=f_ext,
+                f_ext_ref_norm=f_ext_ref_norm,
+                fixed_dofs=fixed_dofs,
+                assemble_tangent=input_data.callbacks.assemble_tangent,
+                assemble_internal_force=input_data.callbacks.assemble_internal_force,
+                manager=manager,
+                node_coords_ref=state.node_coords_ref,
+                strategies=strategies,
+                k_pen=k_pen,
+                mu=mu,
+                u_ref=state.u_ref,
+                load_frac=load_frac,
+                load_frac_prev=state.load_frac_prev,
+                increment_display=state.increment_display,
+                dt_sub=dt_sub,
+                use_coating=use_coating,
+                dynamic_ref=dynamic_ref,
+            )
+            step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
             last_diag = step_result.diagnostics
 
@@ -530,8 +468,7 @@ class ContactFrictionProcess(
                     if _ul:
                         ul_assembler.rollback()
                         _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
-                    if _dynamics:
-                        _time_strategy.restore_checkpoint()
+                    _time_strategy.restore_checkpoint()
                     _state_set(state, "increment_display", state.increment_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
                     continue
@@ -558,14 +495,14 @@ class ContactFrictionProcess(
                         diagnostics=last_diag,
                         energy_history=_energy_history,
                         n_cutbacks=_n_cutbacks,
+                        increment_diagnostics=_increment_diag_list,
                     )
 
             # ==============================================================
             # ステップ完了
             # ==============================================================
 
-            # エネルギー診断（動的）
-            if _dynamics and _energy_proc is not None and _energy_history is not None:
+            # エネルギー診断
                 _f_int = input_data.callbacks.assemble_internal_force(state.u)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
@@ -604,20 +541,12 @@ class ContactFrictionProcess(
                         ),
                     )
 
-            # 動的解析: 速度・加速度更新
-            if _dynamics and dt_sub > 1e-30:
+            # 速度・加速度更新
+            if dt_sub > 1e-30:
                 _time_strategy.correct(state.u, np.zeros_like(state.u), dt_sub)
 
-            # Updated Lagrangian: 参照配置更新
             # 動的解析では UL 更新をスキップ — CR 梁の corotational 分解が
             # 大変形を処理するため、参照配置リセットは不要。
-            # リセットすると state.u=0 で復元力が消失し振動が再現されない。
-            if _ul and not _dynamics:
-                ul_assembler.update_reference(state.u)
-                _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
-                _state_set(state, "ul_frac_base", load_frac)
-                _state_set(state, "u", np.zeros(ndof))
-                _state_set(state, "u_ref", np.zeros(ndof))
 
             # 適応時間増分: 次ステップ幅決定
             stepping.process(
@@ -645,30 +574,67 @@ class ContactFrictionProcess(
             _state_set(state, "delta_frac_prev", load_frac - state.load_frac_prev)
             _state_set(state, "u_prev_converged", state.u.copy())
             _state_set(state, "load_frac_prev", load_frac)
-            for i, pair in enumerate(manager.pairs):
-                if i < len(state.lam_all):
-                    manager.pairs[i] = _evolve_pair(
-                        pair,
-                        state=_evolve_state(
-                            pair.state,
-                            lambda_n=state.lam_all[i],
-                            p_n=max(0.0, state.lam_all[i] + k_pen * (-pair.state.gap)),
-                        ),
-                    )
             _state_set(state, "u_ref", state.u.copy())
 
             # チェックポイント保存
             _save_checkpoint(state)
             if _ul:
                 ul_assembler.checkpoint()
-            if _dynamics:
-                _time_strategy.checkpoint()
+            _time_strategy.checkpoint()
+
+            # インクリメント診断生成
+            _fc_norm = float(np.linalg.norm(step_result.f_c))
+            _diag = last_diag
+            _final_res = _diag.res_history[-1] if _diag and _diag.res_history else 0.0
+            _conv_rate = 1.0
+            if _diag and len(_diag.res_history) >= 2:
+                _r_prev = _diag.res_history[-2]
+                _r_curr = _diag.res_history[-1]
+                _conv_rate = _r_curr / _r_prev if _r_prev > 1e-30 else 1.0
+            _n_active_final = step_result.n_active
+            _n_sliding = 0
+            _n_sticking = 0
+            if _diag and _diag.pair_snapshots:
+                _last_snap = _diag.pair_snapshots[-1]
+                _n_sliding = sum(1 for p in _last_snap if p.status == "sliding")
+                _n_sticking = sum(1 for p in _last_snap if p.status not in ("inactive", "sliding"))
+            _ke = 0.0
+            _se = 0.0
+            _te = 0.0
+            _er = 1.0
+            if _energy_history is not None and len(_energy_history.entries) > 0:
+                _last_e = _energy_history.entries[-1]
+                _ke = _last_e.kinetic_energy
+                _se = _last_e.strain_energy
+                _te = _last_e.total_energy
+                _er = _last_e.energy_ratio
+            _incr_diag = IncrementDiagnosticsOutput(
+                step=state.increment_display,
+                load_frac=load_frac,
+                converged=True,
+                n_attempts=step_result.n_attempts,
+                n_active=_n_active_final,
+                final_residual=_final_res,
+                convergence_rate=_conv_rate,
+                du_norm=_diag.du_norm_history[-1] if _diag and _diag.du_norm_history else 0.0,
+                kinetic_energy=_ke,
+                strain_energy=_se,
+                total_energy=_te,
+                energy_ratio=_er,
+                n_active_pairs=_n_active_final,
+                n_sliding_pairs=_n_sliding,
+                n_sticking_pairs=_n_sticking,
+                contact_force_norm=_fc_norm,
+                cutback_count=_n_cutbacks,
+                dt=dt_sub,
+            )
+            _increment_diag_list.append(_incr_diag)
 
             # 履歴記録
             state.load_history.append(load_frac)
             _u_hist = ul_assembler.u_total_accum + state.u if _ul else state.u.copy()
             state.disp_history.append(_u_hist.copy() if _ul else _u_hist)
-            state.contact_force_history.append(float(np.linalg.norm(step_result.f_c)))
+            state.contact_force_history.append(_fc_norm)
             try:
                 _cg_out = ContactGraphProcess().process(
                     ContactGraphInput(manager=manager, step=state.increment_display - 1)
@@ -699,4 +665,5 @@ class ContactFrictionProcess(
             diagnostics=last_diag,
             energy_history=_energy_history,
             n_cutbacks=_n_cutbacks,
+            increment_diagnostics=_increment_diag_list,
         )

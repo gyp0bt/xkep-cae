@@ -14,13 +14,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from xkep_cae.contact.contact_force.strategy import (
-    NCPContactForceProcess,
-    SmoothPenaltyContactForceProcess,
+    HuberContactForceProcess,
 )
 from xkep_cae.contact.friction.strategy import (
     CoulombReturnMappingProcess,
-    NoFrictionProcess,
-    SmoothPenaltyFrictionProcess,
 )
 from xkep_cae.contact.geometry.strategy import (
     LineToLineGaussProcess,
@@ -70,9 +67,7 @@ class StrandBatchConfig:
 
     mesh_config: StrandMeshConfig | None = None
     k_pen: float = 0.0
-    use_friction: bool = True
     mu: float = 0.15
-    contact_mode: str = "smooth_penalty"
     geometry_mode: str = "point_to_point"
     output_dir: str = "output"
     run_export: bool = True
@@ -135,15 +130,12 @@ class StrandBendingBatchProcess(
         ContactVerifyProcess,
         # Strategy プロセス（Phase 2 移行済み）
         AutoBeamEIPenalty,
-        NoFrictionProcess,
         CoulombReturnMappingProcess,
-        SmoothPenaltyFrictionProcess,
         QuasiStaticProcess,
         GeneralizedAlphaProcess,
         PointToPointProcess,
         LineToLineGaussProcess,
-        NCPContactForceProcess,
-        SmoothPenaltyContactForceProcess,
+        HuberContactForceProcess,
     ]
 
     def process(self, input_data: StrandBatchConfig) -> StrandBatchResult:
@@ -156,9 +148,7 @@ class StrandBendingBatchProcess(
 
         if input_data.mesh_config is None:
             log.append("StrandBendingBatchProcess: mesh_config 未指定 — スキップ")
-            log.append(f"  contact_mode={input_data.contact_mode}")
             log.append(f"  geometry_mode={input_data.geometry_mode}")
-            log.append(f"  use_friction={input_data.use_friction}")
             result.elapsed_seconds = time.perf_counter() - t0
             result.process_log = log
             return result
@@ -176,9 +166,7 @@ class StrandBendingBatchProcess(
         contact_config = ContactSetupConfig(
             mesh=mesh_result.mesh,
             k_pen=input_data.k_pen,
-            use_friction=input_data.use_friction,
             mu=input_data.mu,
-            contact_mode=input_data.contact_mode,
         )
         contact_result = contact_proc.process(contact_config)
         log.append("ContactSetupProcess: done")

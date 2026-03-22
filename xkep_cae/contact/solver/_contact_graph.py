@@ -1,6 +1,5 @@
 """接触グラフスナップショット生成 Process.
 
-__xkep_cae_deprecated/contact/graph.py の snapshot_contact_graph を移植。
 manager / ContactStatus は duck typing で受け取る。
 """
 
