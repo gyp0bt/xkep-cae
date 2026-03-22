@@ -26,7 +26,7 @@ def main():
         E=25.0,
         n_periods=1.0,
         jig_push=30.0,
-        max_increments=500,
+        max_increments=300,
         tol_force=1e-6,
         tol_disp=1e-8,
         max_nr_attempts=30,
