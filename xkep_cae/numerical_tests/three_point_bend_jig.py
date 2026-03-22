@@ -1185,6 +1185,7 @@ class DynamicThreePointBendContactJigProcess(
             tol_force=cfg.tol_force,
             divergence_window=20,
             du_norm_cap=cfg.du_norm_cap,
+            max_increments=cfg.max_increments,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
