@@ -16,6 +16,7 @@ import scipy.sparse as sp
 
 from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+from xkep_cae.contact._types import ContactStatus
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -141,7 +142,8 @@ class HuberContactForceProcess(
             for i, pair in enumerate(manager.pairs):
                 if not hasattr(pair, "state"):
                     continue
-                # status フィルタなし: Huber 関数が gap に基づき自然にフィルタ
+                if pair.state.status == ContactStatus.INACTIVE:
+                    continue
 
                 g_i = pair.state.gap
                 x_pen = k_pen * (-g_i)
@@ -197,7 +199,8 @@ class HuberContactForceProcess(
             for pair in manager.pairs:
                 if not hasattr(pair, "state"):
                     continue
-                # status フィルタなし: Huber 関数が gap に基づき自然にフィルタ
+                if pair.state.status == ContactStatus.INACTIVE:
+                    continue
 
                 g_i = pair.state.gap
                 x_pen = k_pen * (-g_i)
