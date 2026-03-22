@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-21）
+## 現在地（2026-03-22）
 
-**499 テスト**（CI修正+診断強化+3Dレンダリング — status-221） | 契約違反ゼロ | [最新status](status/status-index.md)
+**175+10s テスト**（摩擦接線幾何剛性追加 + smooth_clip revert — status-225） | 契約違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|

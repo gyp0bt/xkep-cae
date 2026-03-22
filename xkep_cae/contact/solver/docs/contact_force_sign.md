@@ -7,7 +7,7 @@
 **残差式内で `f_c = -f_c` とし、接触力を外力方向に反転する。**
 
 ```python
-# _nuzawa_steps.py ContactForceAssemblyProcess.process()
+# _newton_steps.py ContactForceAssemblyProcess.process()
 f_c = -f_c  # アセンブリ後に反転
 R_u = f_int + f_c - f_ext
 ```

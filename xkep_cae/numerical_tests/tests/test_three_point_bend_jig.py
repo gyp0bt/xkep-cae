@@ -52,7 +52,7 @@ class TestThreePointBendContactJigProcessAPI:
 class TestDynamicThreePointBendContactJigProcessAPI:
     """DynamicThreePointBendContactJigProcess の基本動作確認."""
 
-    @pytest.mark.xfail(reason="接触力符号規約問題で収束しない（status-220 TODO）")
+    @pytest.mark.slow
     def test_process_runs(self):
         """動的接触ジグが収束し、変位が記録される."""
         cfg = DynamicThreePointBendContactJigConfig(

@@ -185,6 +185,7 @@ class ContactFrictionInputData:
     tol_disp: float = 1e-8
     divergence_window: int = 5
     du_norm_cap: float = 0.0  # NR ステップ上限（||du|| < cap * ||u||、0=制限なし）
+    max_increments: int = 10000  # 最大インクリメント数（0=無制限）
 
     @property
     def is_dynamic(self) -> bool:

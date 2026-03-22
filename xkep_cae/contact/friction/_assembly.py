@@ -111,7 +111,7 @@ def _assemble_friction_tangent_stiffness(
     ndof_total: int,
     ndof_per_node: int = 6,
 ) -> sp.csr_matrix:
-    """摩擦接線剛性行列を COO 形式で組み立て → CSR 変換."""
+    """摩擦接線剛性行列（材料項）を COO 形式で組み立て → CSR 変換."""
     rows: list[int] = []
     cols: list[int] = []
     data: list[float] = []
@@ -157,6 +157,106 @@ def _assemble_friction_tangent_stiffness(
     ).tocsr()
 
 
+def _assemble_friction_geometric_stiffness(
+    contact_pairs: list,
+    friction_forces_local: dict[int, np.ndarray],
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """摩擦接線幾何剛性行列（接線方向回転項）を COO 形式で組み立て.
+
+    摩擦力 f_fric = q₁·G_t1 + q₂·G_t2 に対して、
+    G_tα = c_k·tα（接線方向形状ベクトル）が変形に伴い回転する項。
+
+    df_fric_{k,i}/du_{l,j} = c_k·c_l/dist · M_{ij}
+
+    M_{ij} = -q₁·n_i·t1_j + q₂·ε_{ijk}·t1_k - q₂·t2_i·n_j
+
+    ここで:
+    - dt1/dn = -n⊗t1（法線変化に対する t1 の追従）
+    - dt2/dn·P_perp = ε_{ijk}·t1_k - t2_i·n_j（t2 = n×t1 の連鎖微分 × 法線射影）
+    - dn/du = c_l/dist · (I - n⊗n)
+    """
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+
+    for pair_idx, pair in enumerate(contact_pairs):
+        if not hasattr(pair, "state"):
+            continue
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+        if pair_idx not in friction_forces_local:
+            continue
+
+        q = friction_forces_local[pair_idx]
+        q1, q2 = float(q[0]), float(q[1])
+        if abs(q1) < 1e-30 and abs(q2) < 1e-30:
+            continue
+
+        n = pair.state.normal
+        t1 = pair.state.tangent1
+        t2 = pair.state.tangent2
+        s = pair.state.s
+        t = pair.state.t
+
+        # dist = gap + r_A + r_B（接触間距離）
+        dist = pair.state.gap + pair.radius_a + pair.radius_b
+        if dist < 1e-15:
+            continue
+
+        inv_dist = 1.0 / dist
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+
+        # M_{ij} = -q₁·n_i·t1_j + q₂·ε_{ijk}·t1_k - q₂·t2_i·n_j
+        # ε_{ijk}·t1_k: skew-symmetric part (δn × t1 の連鎖微分)
+        # -t2_i·n_j: P_perp 射影による補正項
+        M = np.zeros((3, 3))
+        for i in range(3):
+            for j in range(3):
+                M[i, j] = -q1 * n[i] * t1[j] - q2 * t2[i] * n[j]
+        # skew part: ε_{ijk}·t1_k のエントリ
+        M[0, 1] += q2 * t1[2]
+        M[0, 2] += q2 * (-t1[1])
+        M[1, 0] += q2 * (-t1[2])
+        M[1, 2] += q2 * t1[0]
+        M[2, 0] += q2 * t1[1]
+        M[2, 1] += q2 * (-t1[0])
+
+        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        gdofs = np.empty(12, dtype=int)
+        for k, node in enumerate(nodes):
+            for d in range(3):
+                gdofs[k * 3 + d] = node * ndof_per_node + d
+
+        for ki in range(4):
+            ci = coeffs[ki]
+            if abs(ci) < 1e-30:
+                continue
+            for kj in range(4):
+                cj = coeffs[kj]
+                if abs(cj) < 1e-30:
+                    continue
+                w = ci * cj * inv_dist
+                for di in range(3):
+                    gi = gdofs[ki * 3 + di]
+                    for dj in range(3):
+                        gj = gdofs[kj * 3 + dj]
+                        val = w * M[di, dj]
+                        if abs(val) > 1e-30:
+                            rows.append(gi)
+                            cols.append(gj)
+                            data.append(val)
+
+    if len(data) == 0:
+        return sp.csr_matrix((ndof_total, ndof_total))
+
+    return sp.coo_matrix(
+        (data, (rows, cols)),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()
+
+
 def _friction_return_mapping_loop(
     contact_pairs: list,
     u: np.ndarray,
@@ -167,7 +267,7 @@ def _friction_return_mapping_loop(
     k_t_ratio: float,
     mu_eff: float,
     compute_p_n: callable,
-) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray]]:
+) -> tuple[np.ndarray, np.ndarray, dict[int, np.ndarray], dict[int, np.ndarray]]:
     """摩擦 return mapping ループの統合実装.
 
     各ペアで:
@@ -180,7 +280,7 @@ def _friction_return_mapping_loop(
     最後に assemble_friction_force() でグローバル力ベクトルを構築。
 
     Returns:
-        (f_friction, friction_residual, friction_tangents)
+        (f_friction, friction_residual, friction_tangents, friction_forces_local)
     """
     friction_forces_local: dict[int, np.ndarray] = {}
     friction_tangents: dict[int, np.ndarray] = {}
@@ -239,4 +339,4 @@ def _friction_return_mapping_loop(
     # グローバル力ベクトル組み立て
     f_friction = _assemble_friction_force(contact_pairs, friction_forces_local, ndof, ndof_per_node)
     friction_residual = np.array(residuals) if residuals else np.zeros(0)
-    return f_friction, friction_residual, friction_tangents
+    return f_friction, friction_residual, friction_tangents, friction_forces_local

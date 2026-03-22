@@ -150,9 +150,7 @@ class HuberContactForceProcess(
                 p_n = self._huber(x_pen, delta_h)
 
                 # pair.state.p_n を更新（摩擦力計算で使用）
-                manager.pairs[i] = _evolve_pair(
-                    pair, state=_evolve_state(pair.state, p_n=p_n)
-                )
+                manager.pairs[i] = _evolve_pair(pair, state=_evolve_state(pair.state, p_n=p_n))
                 pair = manager.pairs[i]
 
                 residuals.append(k_pen * g_i if p_n > 0.0 else 0.0)
@@ -177,15 +175,20 @@ class HuberContactForceProcess(
         manager: object,
         k_pen: float,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列（Huber C1 連続）.
+        """接触接線剛性行列（Huber C1 連続 + 幾何剛性）.
 
         残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
         したがって dR/du の接触寄与は:
-            K_c = -d(f_c_raw)/du = -dp_n/dg * g_shape ⊗ g_shape
 
-        p_n = huber(k_pen*(-g), δ_h)
-        dp_n/dg = huber'(x) * (-k_pen)  （h' > 0, -k_pen < 0 → 負）
-        よって K_c = huber'(x) * k_pen * g_shape ⊗ g_shape  （正定値）
+        K_c = K_mat - K_geo
+
+        材料剛性（ペナルティ勾配、正定値）:
+            K_mat = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
+
+        幾何剛性（法線回転、減算）:
+            K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
+
+        ここで c = [(1-s), s, -(1-t), -t], dist = gap + r_A + r_B。
         """
         rows: list[int] = []
         cols: list[int] = []
@@ -202,27 +205,42 @@ class HuberContactForceProcess(
                 g_i = pair.state.gap
                 x_pen = k_pen * (-g_i)
                 h_deriv = self._huber_deriv(x_pen, delta_h)
+                p_n = pair.state.p_n
 
-                if h_deriv < 1e-30:
+                if h_deriv < 1e-30 and p_n < 1e-30:
                     continue
 
-                weight = h_deriv * k_pen
+                # 材料剛性の重み
+                w_mat = h_deriv * k_pen
 
-                g_shape = _contact_shape_vector(pair)
+                # 幾何剛性の重み: p_n / dist
+                dist = g_i + pair.radius_a + pair.radius_b
+                w_geo = p_n / dist if dist > 1e-15 else 0.0
+
+                normal = pair.state.normal
+                s = pair.state.s
+                t = pair.state.t
+                coeffs = [(1.0 - s), s, -(1.0 - t), -t]
                 dofs = _contact_dofs(pair, self._ndof_per_node)
 
                 for ki in range(4):
-                    for di in range(3):
-                        li = ki * 3 + di
-                        gi = dofs[ki * self._ndof_per_node + di]
-                        w_gi = weight * g_shape[li]
-                        if abs(w_gi) < 1e-30:
+                    ci = coeffs[ki]
+                    if abs(ci) < 1e-30:
+                        continue
+                    for kj in range(4):
+                        cj = coeffs[kj]
+                        if abs(cj) < 1e-30:
                             continue
-                        for kj in range(4):
+                        cc = ci * cj
+                        for di in range(3):
+                            gi = dofs[ki * self._ndof_per_node + di]
                             for dj in range(3):
-                                lj = kj * 3 + dj
                                 gj = dofs[kj * self._ndof_per_node + dj]
-                                val = w_gi * g_shape[lj]
+                                # K_mat: +w_mat * cc * n_i * n_j（正定値）
+                                val = w_mat * cc * normal[di] * normal[dj]
+                                # K_geo: -w_geo * cc * (δ_ij - n_i * n_j)（法線回転）
+                                delta_ij = 1.0 if di == dj else 0.0
+                                val -= w_geo * cc * (delta_ij - normal[di] * normal[dj])
                                 if abs(val) > 1e-30:
                                     rows.append(gi)
                                     cols.append(gj)

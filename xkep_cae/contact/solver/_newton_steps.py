@@ -72,7 +72,7 @@ class ContactForceAssemblyProcess(
         name="ContactForceAssembly",
         module="solve",
         version="1.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
     uses = [DeformedCoordsProcess, UpdateGeometryProcess]
 
@@ -188,7 +188,7 @@ class ConvergenceCheckProcess(
         name="ConvergenceCheck",
         module="solve",
         version="1.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
 
     def process(self, inp: ConvergenceCheckInput) -> ConvergenceCheckOutput:
@@ -283,7 +283,7 @@ class TangentAssemblyProcess(
         name="TangentAssembly",
         module="solve",
         version="1.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
 
     def process(self, inp: TangentAssemblyInput) -> TangentAssemblyOutput:
@@ -305,10 +305,10 @@ class TangentAssemblyProcess(
                 )
                 K_T = K_T + K_coat_fric
 
-        # 摩擦剛性
+        # 摩擦剛性（符号反転: f_c=-f_c_raw なので dR/du には -d(f_fric)/du が必要）
         if inp.friction_strategy.friction_tangents:
             K_fric = inp.friction_strategy.tangent(inp.u, inp.manager.pairs, inp.mu)
-            K_T = K_T + K_fric
+            K_T = K_T - K_fric
 
         return TangentAssemblyOutput(K_T=K_T)
 
@@ -344,7 +344,7 @@ class LinearSolveProcess(
         name="LinearSolve",
         module="solve",
         version="1.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
 
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
@@ -404,7 +404,7 @@ class LineSearchUpdateProcess(
         name="LineSearchUpdate",
         module="solve",
         version="1.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
     uses = [NCPLineSearchProcess]
 
@@ -432,7 +432,6 @@ class LineSearchUpdateProcess(
                 scale_factor *= inp.du_norm_cap * _u_ref_n / _du_n
         du_scaled = scale_factor * inp.du
         return LineSearchUpdateOutput(du_scaled=du_scaled, scale_factor=scale_factor)
-
 
 
 # UzawaUpdateProcess は status-222 で削除。復元手順は status-222.md 参照。

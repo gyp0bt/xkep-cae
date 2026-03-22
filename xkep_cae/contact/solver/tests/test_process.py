@@ -38,8 +38,8 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationOutput,
     InitialPenetrationProcess,
 )
-from xkep_cae.contact.solver._newton_uzawa_dynamic import NewtonDynamicProcess
-from xkep_cae.contact.solver._nuzawa_steps import (
+from xkep_cae.contact.solver._newton_dynamic import NewtonDynamicProcess
+from xkep_cae.contact.solver._newton_steps import (
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
     ConvergenceCheckOutput,

@@ -1,0 +1,11 @@
+tag: run05_E100_beam_kpen_nofilt
+converged: false
+n_increments: 240
+elapsed_seconds: 1632.3
+deflection_mm: 2.9035
+contact_force_N: 56.0
+final_frac: 0.1132
+push_reached_mm: 3.40
+analytical_stiffness_eb: 19.68
+termination_reason: "INACTIVE ペア不正ジオメトリ + k_pen=16000 過大 + dt_min 到達"
+note: "status_filter=false + k_pen バグ (梁剛性の過大推定)"

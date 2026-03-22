@@ -1,0 +1,47 @@
+# Run 04: E=25 MPa, 梁剛性 k_pen, status フィルタなし
+# ログ: logs/04_E25_beam_kpen_nofilt.log
+# 結果: frac=0.1132, push=3.40mm, 接触力=13.9N, 時間=1575s
+# 備考: フィルタなしでは INACTIVE ペアの不正ジオメトリにより早期停滞
+
+geometry:
+  wire_length: 100.0       # mm
+  wire_diameter: 17.0      # mm
+  n_elems_wire: 20
+
+material:
+  E: 25.0                  # MPa
+  nu: 0.3
+  rho: 7.85e-9             # ton/mm³
+
+loading:
+  jig_push: 30.0           # mm
+  n_periods: 30.0
+  initial_gap: 0.0         # mm
+
+jig:
+  jig_radius: 10.0         # mm
+  jig_n_segments: 8
+  jig_depth: 34.0          # mm
+
+contact:
+  k_pen: 4.92              # 梁剛性 48EI/L³
+  mu: 0.15
+  status_filter: false     # INACTIVE ペア含む → 発散原因
+
+time_integration:
+  rho_inf: 0.9
+  lumped_mass: true
+  dt_initial: 0.0
+  dt_min: 0.0
+  max_increments: 500
+
+solver:
+  tol_disp: 1.0e-8
+  tol_force: 1.0e-6
+  max_nr_attempts: 30
+  du_norm_cap: 0.0
+
+coating:
+  coating_stiffness: 0.0
+  coating_damping: 0.0
+  coating_mu: 0.0

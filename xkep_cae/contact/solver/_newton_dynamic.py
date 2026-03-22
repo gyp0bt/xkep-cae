@@ -16,7 +16,7 @@ from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
     PairDiagnosticsOutput,
 )
-from xkep_cae.contact.solver._nuzawa_steps import (
+from xkep_cae.contact.solver._newton_steps import (
     ContactForceAssemblyInput,
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
@@ -102,7 +102,7 @@ class NewtonDynamicProcess(
         name="NewtonDynamic",
         module="solve",
         version="2.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
     uses = [
         ContactForceAssemblyProcess,
@@ -155,6 +155,7 @@ class NewtonDynamicProcess(
         _diverged = False
         _consecutive_increase = 0
         _prev_res_ratio = float("inf")
+        _incr_f_ref: float = 0.0  # インクリメント内の参照残差（初回で設定）
 
         for att in range(cfg.max_attempts):
             total_attempts += 1
@@ -193,12 +194,14 @@ class NewtonDynamicProcess(
             coords_def = force_out.coords_def
 
             # ── ステップ 6: 力収束判定 ──
+            # 変位制御問題: 初回反復の残差ノルムをインクリメント内参照値として保存
+            _eff_ref = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
             conv_out = _conv_proc.process(
                 ConvergenceCheckInput(
                     R_u=R_u,
                     du=None,
                     u=u,
-                    f_ext_ref_norm=input_data.f_ext_ref_norm,
+                    f_ext_ref_norm=_eff_ref,
                     tol_force=cfg.tol_force,
                     tol_disp=cfg.tol_disp,
                     dynamic_ref=input_data.dynamic_ref,
@@ -207,6 +210,9 @@ class NewtonDynamicProcess(
                     manager=manager,
                 )
             )
+            # 初回反復で参照残差を保存
+            if att == 0 and input_data.dynamic_ref:
+                _incr_f_ref = conv_out.f_ref
             n_active = conv_out.n_active
 
             _res_ratio = conv_out.res_u_norm / conv_out.f_ref
@@ -216,9 +222,7 @@ class NewtonDynamicProcess(
             diag.n_active_history.append(n_active)
             if len(diag.res_history) >= 2:
                 _prev = diag.res_history[-2]
-                diag.convergence_rate_history.append(
-                    _res_ratio / _prev if _prev > 1e-30 else 1.0
-                )
+                diag.convergence_rate_history.append(_res_ratio / _prev if _prev > 1e-30 else 1.0)
             else:
                 diag.convergence_rate_history.append(1.0)
 
@@ -344,12 +348,13 @@ class NewtonDynamicProcess(
             u += du
 
             # ── 変位・エネルギー収束判定 ──
+            _eff_ref2 = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
             conv_out2 = _conv_proc.process(
                 ConvergenceCheckInput(
                     R_u=R_u,
                     du=du,
                     u=u,
-                    f_ext_ref_norm=input_data.f_ext_ref_norm,
+                    f_ext_ref_norm=_eff_ref2,
                     tol_force=cfg.tol_force,
                     tol_disp=cfg.tol_disp,
                     dynamic_ref=input_data.dynamic_ref,
@@ -361,9 +366,7 @@ class NewtonDynamicProcess(
 
             du_norm_val = conv_out2.du_norm
             diag.du_norm_history.append(du_norm_val)
-            diag.max_du_dof_history.append(
-                int(np.argmax(np.abs(du))) if du_norm_val > 0 else -1
-            )
+            diag.max_du_dof_history.append(int(np.argmax(np.abs(du))) if du_norm_val > 0 else -1)
             energy_ref = conv_out2.energy_ref
 
             if conv_out2.converged:

@@ -50,7 +50,7 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationInput,
     InitialPenetrationProcess,
 )
-from xkep_cae.contact.solver._newton_uzawa_dynamic import (
+from xkep_cae.contact.solver._newton_dynamic import (
     NewtonDynamicInput,
     NewtonDynamicProcess,
     NewtonDynamicStepInput,
@@ -374,7 +374,11 @@ class ContactFrictionProcess(
         # ================================================================
         # 荷重ステップループ
         # ================================================================
+        _max_incr = input_data.max_increments
+        _incr_count = 0
         while True:
+            if _max_incr > 0 and _incr_count >= _max_incr:
+                break
             query_out = stepping.process(
                 TimeStepQueryInput(
                     action=StepAction.QUERY,
@@ -385,6 +389,7 @@ class ContactFrictionProcess(
                 break
             load_frac = query_out.load_frac
 
+            _incr_count += 1
             _state_set(state, "increment_display", state.increment_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
@@ -498,11 +503,11 @@ class ContactFrictionProcess(
                         increment_diagnostics=_increment_diag_list,
                     )
 
-            # ==============================================================
-            # ステップ完了
-            # ==============================================================
+                # ==============================================================
+                # ステップ完了
+                # ==============================================================
 
-            # エネルギー診断
+                # エネルギー診断
                 _f_int = input_data.callbacks.assemble_internal_force(state.u)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
