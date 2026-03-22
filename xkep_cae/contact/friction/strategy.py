@@ -16,6 +16,7 @@ import scipy.sparse as sp
 
 from xkep_cae.contact.friction._assembly import (
     _assemble_friction_geometric_stiffness,
+    _assemble_friction_st_stiffness,
     _assemble_friction_tangent_stiffness,
     _friction_return_mapping_loop,
 )
@@ -152,16 +153,31 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         u: np.ndarray,
         contact_pairs: list,
         mu: float,
+        *,
+        node_coords: np.ndarray | None = None,
+        consistent_st_tangent: bool = False,
         **kwargs: object,
     ) -> sp.csr_matrix:
-        """摩擦接線剛性行列（材料項 + 幾何項）."""
+        """摩擦接線剛性行列（材料項 + 幾何項 + K_st）."""
         K_mat = _assemble_friction_tangent_stiffness(
             contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
         )
         K_geo = _assemble_friction_geometric_stiffness(
             contact_pairs, self._friction_forces_local, self._ndof, self._ndof_per_node
         )
-        return K_mat + K_geo
+        K = K_mat + K_geo
+
+        if consistent_st_tangent and node_coords is not None:
+            K_st = _assemble_friction_st_stiffness(
+                contact_pairs,
+                self._friction_forces_local,
+                self._ndof,
+                node_coords,
+                self._ndof_per_node,
+            )
+            K = K + K_st
+
+        return K
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)

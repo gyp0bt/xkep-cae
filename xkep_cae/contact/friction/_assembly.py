@@ -257,6 +257,109 @@ def _assemble_friction_geometric_stiffness(
     ).tocsr()
 
 
+def _assemble_friction_st_stiffness(
+    contact_pairs: list,
+    friction_forces_local: dict[int, np.ndarray],
+    ndof_total: int,
+    node_coords: np.ndarray,
+    ndof_per_node: int = 6,
+) -> sp.csr_matrix:
+    """摩擦の K_st（接触点滑り剛性）を組み立て.
+
+    f_fric = Σ_α q_α · G_tα の s,t 依存の連鎖微分:
+        ∂f_fric/∂s = Σ_α q_α · ∂G_tα/∂s
+        ∂f_fric/∂t = Σ_α q_α · ∂G_tα/∂t
+
+    ∂G_tα/∂s の係数変化項: [-tα, tα, 0, 0]
+    ∂G_tα/∂t の係数変化項: [0, 0, tα, -tα]
+    """
+    from xkep_cae.contact.geometry._st_jacobian import (
+        ComputeStJacobianProcess,
+        StJacobianInput,
+    )
+
+    rows: list[int] = []
+    cols: list[int] = []
+    data: list[float] = []
+    st_proc = ComputeStJacobianProcess()
+
+    for pair_idx, pair in enumerate(contact_pairs):
+        if not hasattr(pair, "state"):
+            continue
+        if pair.state.status == ContactStatus.INACTIVE:
+            continue
+        if pair_idx not in friction_forces_local:
+            continue
+
+        q = friction_forces_local[pair_idx]
+        q1, q2 = float(q[0]), float(q[1])
+        if abs(q1) < 1e-30 and abs(q2) < 1e-30:
+            continue
+
+        st = pair.state
+        xA0 = node_coords[pair.nodes_a[0]]
+        xA1 = node_coords[pair.nodes_a[1]]
+        xB0 = node_coords[pair.nodes_b[0]]
+        xB1 = node_coords[pair.nodes_b[1]]
+
+        out = st_proc.process(
+            StJacobianInput(xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1, s=st.s, t=st.t)
+        )
+        if not out.valid:
+            continue
+
+        t1 = st.tangent1
+        t2 = st.tangent2
+        s = st.s
+        t = st.t
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+
+        # ∂f_fric/∂s = Σ_α q_α · ∂G_tα/∂s
+        # ∂G_tα/∂s の係数変化: dc_k/ds * tα_i
+        dc_ds = [-1.0, 1.0, 0.0, 0.0]
+        dc_dt = [0.0, 0.0, 1.0, -1.0]
+
+        df_ds = np.zeros(12)
+        df_dt = np.zeros(12)
+        for alpha, (qa, ta) in enumerate([(q1, t1), (q2, t2)]):
+            if abs(qa) < 1e-30:
+                continue
+            for k in range(4):
+                for i in range(3):
+                    li = k * 3 + i
+                    df_ds[li] += qa * dc_ds[k] * ta[i]
+                    df_dt[li] += qa * dc_dt[k] * ta[i]
+
+        # K_st_fric = outer(df_ds, ds_du) + outer(df_dt, dt_du)
+        # 摩擦剛性は TangentAssembly で K_T - K_fric（符号反転）されるので
+        # ここでは +df/d(s,t) · d(s,t)/du を返す
+        K_local = np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du)
+
+        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+        gdofs = np.empty(12, dtype=int)
+        for k, node_id in enumerate(nodes):
+            for d in range(3):
+                gdofs[k * 3 + d] = node_id * ndof_per_node + d
+
+        for li in range(12):
+            gi = gdofs[li]
+            for lj in range(12):
+                gj = gdofs[lj]
+                val = K_local[li, lj]
+                if abs(val) > 1e-30:
+                    rows.append(gi)
+                    cols.append(gj)
+                    data.append(val)
+
+    if len(data) == 0:
+        return sp.csr_matrix((ndof_total, ndof_total))
+
+    return sp.coo_matrix(
+        (data, (rows, cols)),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()
+
+
 def _friction_return_mapping_loop(
     contact_pairs: list,
     u: np.ndarray,

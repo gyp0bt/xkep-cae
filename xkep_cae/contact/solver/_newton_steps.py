@@ -309,7 +309,18 @@ class TangentAssemblyProcess(
 
         # 摩擦剛性（符号反転: f_c=-f_c_raw なので dR/du には -d(f_fric)/du が必要）
         if inp.friction_strategy.friction_tangents:
-            K_fric = inp.friction_strategy.tangent(inp.u, inp.manager.pairs, inp.mu)
+            _use_st = (
+                hasattr(inp.manager, "config")
+                and hasattr(inp.manager.config, "consistent_st_tangent")
+                and inp.manager.config.consistent_st_tangent
+            )
+            K_fric = inp.friction_strategy.tangent(
+                inp.u,
+                inp.manager.pairs,
+                inp.mu,
+                node_coords=inp.coords_def if _use_st else None,
+                consistent_st_tangent=_use_st,
+            )
             K_T = K_T - K_fric
 
         return TangentAssemblyOutput(K_T=K_T)
