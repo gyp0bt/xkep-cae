@@ -302,17 +302,12 @@ def _assemble_friction_st_stiffness(
         xB0 = node_coords[pair.nodes_b[0]]
         xB1 = node_coords[pair.nodes_b[1]]
 
-        out = st_proc.process(
-            StJacobianInput(xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1, s=st.s, t=st.t)
-        )
+        out = st_proc.process(StJacobianInput(xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1, s=st.s, t=st.t))
         if not out.valid:
             continue
 
         t1 = st.tangent1
         t2 = st.tangent2
-        s = st.s
-        t = st.t
-        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
 
         # ∂f_fric/∂s = Σ_α q_α · ∂G_tα/∂s
         # ∂G_tα/∂s の係数変化: dc_k/ds * tα_i
@@ -321,7 +316,7 @@ def _assemble_friction_st_stiffness(
 
         df_ds = np.zeros(12)
         df_dt = np.zeros(12)
-        for alpha, (qa, ta) in enumerate([(q1, t1), (q2, t2)]):
+        for _alpha, (qa, ta) in enumerate([(q1, t1), (q2, t2)]):
             if abs(qa) < 1e-30:
                 continue
             for k in range(4):

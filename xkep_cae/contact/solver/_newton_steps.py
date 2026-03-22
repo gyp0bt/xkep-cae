@@ -290,7 +290,10 @@ class TangentAssemblyProcess(
         K_T = inp.assemble_tangent(inp.u)
 
         K_c = inp.contact_force_strategy.tangent(
-            inp.u, inp.manager, inp.k_pen, node_coords=inp.coords_def,
+            inp.u,
+            inp.manager,
+            inp.k_pen,
+            node_coords=inp.coords_def,
         )
         K_T = K_T + K_c
 

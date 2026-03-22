@@ -268,8 +268,16 @@ class HuberContactForceProcess(
                 # K_st: 接触点滑り剛性（∂(s,t)/∂u の連鎖微分項）
                 if _use_st and p_n > 1e-30 and node_coords is not None:
                     self._add_kst_contact(
-                        pair, p_n, normal, dofs, _st_proc, StJacobianInput,
-                        rows, cols, vals, node_coords,
+                        pair,
+                        p_n,
+                        normal,
+                        dofs,
+                        _st_proc,
+                        StJacobianInput,
+                        rows,
+                        cols,
+                        vals,
+                        node_coords,
                     )
 
         if rows:
@@ -311,8 +319,12 @@ class HuberContactForceProcess(
 
         out = st_proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=st.s, t=st.t,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=st.s,
+                t=st.t,
             )
         )
         if not out.valid:

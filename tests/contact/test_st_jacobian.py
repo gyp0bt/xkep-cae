@@ -7,7 +7,6 @@ Process Architecture で再実装。
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 from xkep_cae.contact.geometry._st_jacobian import (
     ComputeStJacobianProcess,
@@ -90,8 +89,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=s0, t=t0, s_unclamped=s_unc, t_unclamped=t_unc,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=s0,
+                t=t0,
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
             )
         )
 
@@ -112,8 +117,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=s0, t=t0, s_unclamped=s_unc, t_unclamped=t_unc,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=s0,
+                t=t0,
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
             )
         )
 
@@ -134,8 +145,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=s0, t=t0, s_unclamped=s_unc, t_unclamped=t_unc,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=s0,
+                t=t0,
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
             )
         )
 
@@ -153,8 +170,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=0.5, t=0.5, s_unclamped=0.5, t_unclamped=0.5,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=0.5,
+                t=0.5,
+                s_unclamped=0.5,
+                t_unclamped=0.5,
             )
         )
 
@@ -169,8 +192,10 @@ class TestComputeStJacobian:
                 xA1=np.array([1.0, 0.0, 0.5]),
                 xB0=np.array([2.0, -0.5, 0.0]),
                 xB1=np.array([2.0, 0.5, 0.0]),
-                s=1.0, t=0.5,
-                s_unclamped=1.5, t_unclamped=-0.3,
+                s=1.0,
+                t=0.5,
+                s_unclamped=1.5,
+                t_unclamped=-0.3,
             )
         )
 
@@ -191,8 +216,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=s0, t=t0, s_unclamped=s_unc, t_unclamped=t_unc,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=s0,
+                t=t0,
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
             )
         )
 
@@ -213,8 +244,14 @@ class TestComputeStJacobian:
         proc = ComputeStJacobianProcess()
         out = proc.process(
             StJacobianInput(
-                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
-                s=s0, t=t0, s_unclamped=s_unc, t_unclamped=t_unc,
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=s0,
+                t=t0,
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
             )
         )
 

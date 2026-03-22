@@ -7,8 +7,6 @@ consistent_st_tangent=True のとき、接触力の完全接線剛性が
 from __future__ import annotations
 
 import numpy as np
-import pytest
-import scipy.sparse as sp
 
 from xkep_cae.contact._contact_pair import (
     _ContactConfigInput,
@@ -20,9 +18,7 @@ from xkep_cae.contact._types import ContactStatus
 from xkep_cae.contact.contact_force.strategy import HuberContactForceProcess
 
 
-def _make_manager_with_pair(
-    xA0, xA1, xB0, xB1, radius=0.5, *, consistent_st_tangent=False
-):
+def _make_manager_with_pair(xA0, xA1, xB0, xB1, radius=0.5, *, consistent_st_tangent=False):
     """テスト用の ContactManager を構築."""
     from xkep_cae.contact.geometry._compute import _closest_point_segments_batch
 
@@ -40,7 +36,8 @@ def _make_manager_with_pair(
         p_n=0.0,
     )
     pair = _ContactPairOutput(
-        elem_a=0, elem_b=1,
+        elem_a=0,
+        elem_b=1,
         nodes_a=np.array([0, 1]),
         nodes_b=np.array([2, 3]),
         state=state,
@@ -106,9 +103,7 @@ class TestConsistentStTangent:
         K_fd = _compute_tangent_fd(xA0, xA1, xB0, xB1, radius, k_pen, smoothing_delta)
 
         # consistent_st_tangent=True で解析的接線を計算
-        manager = _make_manager_with_pair(
-            xA0, xA1, xB0, xB1, radius, consistent_st_tangent=True
-        )
+        manager = _make_manager_with_pair(xA0, xA1, xB0, xB1, radius, consistent_st_tangent=True)
         proc = HuberContactForceProcess(ndof, ndof_per_node=6, smoothing_delta=smoothing_delta)
         # p_n を設定するために一度 evaluate を呼ぶ
         proc.evaluate(u, manager, k_pen)

@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-22）
 
-**175+10s テスト**（摩擦接線幾何剛性追加 + smooth_clip revert — status-225） | 契約違反ゼロ | [最新status](status/status-index.md)
+**175+11 テスト**（整合接線剛性 ∂(s,t)/∂u 実装 — status-226） | 契約違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -63,7 +63,7 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。**残課題**: (1) 接触力符号規約統一（softplus f_c の符号と残差式 R_u=f_int+f_c-f_ext の整合）、(2) 変位制御時の f_ext_ref_norm=0 対策、(3) 線形収束の原因調査（接触接線剛性の幾何剛性項欠落?）。~~Uzawa 有効化~~ → 凍結（status-221）
+- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。∂(s,t)/∂u 整合接線 K_st 実装済み（status-226）だが収束改善せず。**残課題**: (1) frac=0.60 壁の条件数・スペクトル分析、(2) NR 内幾何凍結の検討、(3) ラインサーチ強化（Armijo backtracking）、(4) 変位収束のみモード。~~Uzawa 有効化~~ → 凍結（status-221）
 
 ### 既知の問題
 
