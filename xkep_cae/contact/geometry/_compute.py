@@ -8,6 +8,50 @@ from __future__ import annotations
 import numpy as np
 
 
+def _smooth_clip_01(
+    s: np.ndarray,
+    epsilon: float = 0.02,
+) -> np.ndarray:
+    """Huber 風 C1 スムースクランプ [0, 1].
+
+    セグメント端点での np.clip 勾配不連続を除去する。
+
+    領域分割:
+        s < -ε       → 0                        (ハードクランプ)
+        -ε ≤ s < ε   → (s + ε)² / (4ε)          (C1 二次遷移, 下端)
+        ε ≤ s ≤ 1-ε  → s                        (線形通過)
+        1-ε < s ≤ 1+ε → 1 - (1+ε - s)² / (4ε)  (C1 二次遷移, 上端)
+        s > 1+ε      → 1                        (ハードクランプ)
+
+    連続性:
+        値:  全区間 C0
+        勾配: 全境界 C1 (ds_smooth/ds が連続)
+
+    Args:
+        s: パラメトリック座標 (N,)
+        epsilon: 遷移幅 (デフォルト 0.02)
+
+    Returns:
+        スムースクランプされた s (N,)
+    """
+    out = np.empty_like(s)
+
+    # 区間マスク
+    hard_lo = s < -epsilon
+    trans_lo = (~hard_lo) & (s < epsilon)
+    hard_hi = s > 1.0 + epsilon
+    trans_hi = (~hard_hi) & (s > 1.0 - epsilon)
+    linear = ~(hard_lo | trans_lo | hard_hi | trans_hi)
+
+    out[hard_lo] = 0.0
+    out[trans_lo] = (s[trans_lo] + epsilon) ** 2 / (4.0 * epsilon)
+    out[linear] = s[linear]
+    out[trans_hi] = 1.0 - (1.0 + epsilon - s[trans_hi]) ** 2 / (4.0 * epsilon)
+    out[hard_hi] = 1.0
+
+    return out
+
+
 def _closest_point_segments_batch(
     xA0: np.ndarray,
     xA1: np.ndarray,
@@ -69,27 +113,28 @@ def _closest_point_segments_batch(
     t_unc = np.where(is_parallel, 0.0, (a * e - b * d) / safe_det)
 
     safe_c = np.where(c > tol_parallel, c, 1.0)
+    # 平行セグメントでは端点遷移不連続は起きないため np.clip のまま
     t_parallel = np.clip(e / safe_c, 0.0, 1.0)
     t_parallel = np.where(c > tol_parallel, t_parallel, 0.0)
 
-    s = np.where(is_parallel, 0.0, np.clip(s_unc, 0.0, 1.0))
-    t = np.where(is_parallel, t_parallel, np.clip(t_unc, 0.0, 1.0))
+    s = np.where(is_parallel, 0.0, _smooth_clip_01(s_unc))
+    t = np.where(is_parallel, t_parallel, _smooth_clip_01(t_unc))
 
     s_clamped = (s_unc < 0.0) | (s_unc > 1.0)
     t_clamped = (t_unc < 0.0) | (t_unc > 1.0)
 
-    t_recalc = np.clip((b * s + e) / safe_c, 0.0, 1.0)
+    t_recalc = _smooth_clip_01((b * s + e) / safe_c)
     t_recalc = np.where(c > tol_parallel, t_recalc, 0.0)
     need_t_recalc = s_clamped & ~is_parallel
     t = np.where(need_t_recalc, t_recalc, t)
 
     safe_a = np.where(a > tol_parallel, a, 1.0)
-    s_recalc = np.clip((b * t - d) / safe_a, 0.0, 1.0)
+    s_recalc = _smooth_clip_01((b * t - d) / safe_a)
     s_recalc = np.where(a > tol_parallel, s_recalc, 0.0)
     need_s_recalc = t_clamped & ~is_parallel
     s = np.where(need_s_recalc, s_recalc, s)
 
-    t_recalc2 = np.clip((b * s + e) / safe_c, 0.0, 1.0)
+    t_recalc2 = _smooth_clip_01((b * s + e) / safe_c)
     t_recalc2 = np.where(c > tol_parallel, t_recalc2, 0.0)
     t = np.where(need_s_recalc, t_recalc2, t)
 
