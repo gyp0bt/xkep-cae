@@ -289,7 +289,9 @@ class TangentAssemblyProcess(
     def process(self, inp: TangentAssemblyInput) -> TangentAssemblyOutput:
         K_T = inp.assemble_tangent(inp.u)
 
-        K_c = inp.contact_force_strategy.tangent(inp.u, inp.manager, inp.k_pen)
+        K_c = inp.contact_force_strategy.tangent(
+            inp.u, inp.manager, inp.k_pen, node_coords=inp.coords_def,
+        )
         K_T = K_T + K_c
 
         # 被膜剛性

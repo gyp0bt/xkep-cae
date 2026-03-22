@@ -174,13 +174,15 @@ class HuberContactForceProcess(
         u: np.ndarray,
         manager: object,
         k_pen: float,
+        *,
+        node_coords: np.ndarray | None = None,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列（Huber C1 連続 + 幾何剛性）.
+        """接触接線剛性行列（Huber C1 連続 + 幾何剛性 + K_st）.
 
         残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
         したがって dR/du の接触寄与は:
 
-        K_c = K_mat - K_geo
+        K_c = K_mat - K_geo + K_st
 
         材料剛性（ペナルティ勾配、正定値）:
             K_mat = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
@@ -188,12 +190,29 @@ class HuberContactForceProcess(
         幾何剛性（法線回転、減算）:
             K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
 
+        滑り剛性（接触点移動、status-226）:
+            K_st = p_n * (outer(∂g_shape/∂s, ds_du) + outer(∂g_shape/∂t, dt_du))
+
         ここで c = [(1-s), s, -(1-t), -t], dist = gap + r_A + r_B。
         """
         rows: list[int] = []
         cols: list[int] = []
         vals: list[float] = []
         delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
+
+        # consistent_st_tangent フラグの取得
+        _use_st = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "consistent_st_tangent")
+            and manager.config.consistent_st_tangent
+        )
+        if _use_st:
+            from xkep_cae.contact.geometry._st_jacobian import (
+                ComputeStJacobianProcess,
+                StJacobianInput,
+            )
+
+            _st_proc = ComputeStJacobianProcess()
 
         if hasattr(manager, "pairs"):
             for pair in manager.pairs:
@@ -246,12 +265,105 @@ class HuberContactForceProcess(
                                     cols.append(gj)
                                     vals.append(val)
 
+                # K_st: 接触点滑り剛性（∂(s,t)/∂u の連鎖微分項）
+                if _use_st and p_n > 1e-30 and node_coords is not None:
+                    self._add_kst_contact(
+                        pair, p_n, normal, dofs, _st_proc, StJacobianInput,
+                        rows, cols, vals, node_coords,
+                    )
+
         if rows:
             return sp.csr_matrix(
                 (np.array(vals), (np.array(rows), np.array(cols))),
                 shape=(self._ndof, self._ndof),
             )
         return sp.csr_matrix((self._ndof, self._ndof))
+
+    def _add_kst_contact(
+        self,
+        pair: object,
+        p_n: float,
+        normal: np.ndarray,
+        dofs: np.ndarray,
+        st_proc: object,
+        StJacobianInput: type,
+        rows: list[int],
+        cols: list[int],
+        vals: list[float],
+        node_coords: np.ndarray,
+    ) -> None:
+        """接触力の K_st（接触点滑り剛性）を COO に追加.
+
+        f_c_raw = p_n * Σ_k c_k * n の s,t 依存の完全微分。
+
+        ∂f_raw/∂s = p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)
+        ∂f_raw/∂t = p_n * (∂c_k/∂t · n + c_k · ∂n/∂t)
+
+        ∂n/∂s = (1/dist)(I - n⊗n) · dA
+        ∂n/∂t = -(1/dist)(I - n⊗n) · dB
+        """
+        st = pair.state
+        # 節点座標を node_coords から取得
+        xA0 = node_coords[pair.nodes_a[0]]
+        xA1 = node_coords[pair.nodes_a[1]]
+        xB0 = node_coords[pair.nodes_b[0]]
+        xB1 = node_coords[pair.nodes_b[1]]
+
+        out = st_proc.process(
+            StJacobianInput(
+                xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1,
+                s=st.s, t=st.t,
+            )
+        )
+        if not out.valid:
+            return
+
+        s = st.s
+        t = st.t
+        dA = xA1 - xA0
+        dB = xB1 - xB0
+        dist = st.gap + pair.radius_a + pair.radius_b
+        if dist < 1e-15:
+            return
+
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+        # dc/ds = [-1, 1, 0, 0], dc/dt = [0, 0, 1, -1]
+        dc_ds = [-1.0, 1.0, 0.0, 0.0]
+        dc_dt = [0.0, 0.0, 1.0, -1.0]
+
+        # ∂n/∂s = (1/dist)(I - n⊗n) · dA
+        P_perp = np.eye(3) - np.outer(normal, normal)
+        dn_ds = (1.0 / dist) * P_perp @ dA
+        # ∂n/∂t = -(1/dist)(I - n⊗n) · dB
+        dn_dt = -(1.0 / dist) * P_perp @ dB
+
+        # ∂f_raw/∂s (12,): p_n * (dc_k/ds * n_i + c_k * dn_i/ds)
+        df_ds = np.zeros(12)
+        df_dt = np.zeros(12)
+        for k in range(4):
+            for i in range(3):
+                li = k * 3 + i
+                df_ds[li] = p_n * (dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i])
+                df_dt[li] = p_n * (dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i])
+
+        # tangent() は -df_c_raw/du を返す。
+        # K_st = -(df_ds ⊗ ds_du + df_dt ⊗ dt_du)
+        K_st_local = -(np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du))
+
+        ndpn = self._ndof_per_node
+        for ki in range(4):
+            for di in range(3):
+                li = ki * 3 + di
+                gi = dofs[ki * ndpn + di]
+                for kj in range(4):
+                    for dj in range(3):
+                        lj = kj * 3 + dj
+                        gj = dofs[kj * ndpn + dj]
+                        val = K_st_local[li, lj]
+                        if abs(val) > 1e-30:
+                            rows.append(gi)
+                            cols.append(gj)
+                            vals.append(val)
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:
         f, _ = self.evaluate(
