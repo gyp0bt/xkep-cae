@@ -180,13 +180,12 @@ class HuberContactForceProcess(
         残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
         したがって dR/du の接触寄与は:
 
-        K_c = K_mat + K_geo
+        K_c = K_mat - K_geo
 
-        材料剛性（ペナルティ勾配）:
-            K_mat = h'(x) * k_pen * g_shape ⊗ g_shape
-                  = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
+        材料剛性（ペナルティ勾配、正定値）:
+            K_mat = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
 
-        幾何剛性（法線回転）:
+        幾何剛性（法線回転、減算）:
             K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
 
         ここで c = [(1-s), s, -(1-t), -t], dist = gap + r_A + r_B。
@@ -237,11 +236,11 @@ class HuberContactForceProcess(
                             gi = dofs[ki * self._ndof_per_node + di]
                             for dj in range(3):
                                 gj = dofs[kj * self._ndof_per_node + dj]
-                                # K_mat: w_mat * cc * n_i * n_j
+                                # K_mat: +w_mat * cc * n_i * n_j（正定値）
                                 val = w_mat * cc * normal[di] * normal[dj]
-                                # K_geo: w_geo * cc * (δ_ij - n_i * n_j)
+                                # K_geo: -w_geo * cc * (δ_ij - n_i * n_j)（法線回転）
                                 delta_ij = 1.0 if di == dj else 0.0
-                                val += w_geo * cc * (delta_ij - normal[di] * normal[dj])
+                                val -= w_geo * cc * (delta_ij - normal[di] * normal[dj])
                                 if abs(val) > 1e-30:
                                     rows.append(gi)
                                     cols.append(gj)

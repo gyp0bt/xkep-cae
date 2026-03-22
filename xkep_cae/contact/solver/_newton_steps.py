@@ -305,10 +305,10 @@ class TangentAssemblyProcess(
                 )
                 K_T = K_T + K_coat_fric
 
-        # 摩擦剛性
+        # 摩擦剛性（符号反転: f_c=-f_c_raw なので dR/du には -d(f_fric)/du が必要）
         if inp.friction_strategy.friction_tangents:
             K_fric = inp.friction_strategy.tangent(inp.u, inp.manager.pairs, inp.mu)
-            K_T = K_T + K_fric
+            K_T = K_T - K_fric
 
         return TangentAssemblyOutput(K_T=K_T)
 
