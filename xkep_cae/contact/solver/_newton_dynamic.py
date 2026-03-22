@@ -16,7 +16,7 @@ from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
     PairDiagnosticsOutput,
 )
-from xkep_cae.contact.solver._nuzawa_steps import (
+from xkep_cae.contact.solver._newton_steps import (
     ContactForceAssemblyInput,
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
@@ -102,7 +102,7 @@ class NewtonDynamicProcess(
         name="NewtonDynamic",
         module="solve",
         version="2.0.0",
-        document_path="docs/newton_uzawa.md",
+        document_path="docs/newton_solver.md",
     )
     uses = [
         ContactForceAssemblyProcess,

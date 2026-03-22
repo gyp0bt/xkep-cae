@@ -179,7 +179,7 @@ class TestDivergenceDetectionIntegration:
 
     def test_divergence_window_default(self):
         """divergence_window のデフォルト値が5."""
-        from xkep_cae.contact.solver._newton_uzawa_dynamic import (
+        from xkep_cae.contact.solver._newton_dynamic import (
             NewtonUzawaDynamicInput,
         )
 

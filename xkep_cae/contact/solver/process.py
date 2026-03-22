@@ -50,7 +50,7 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationInput,
     InitialPenetrationProcess,
 )
-from xkep_cae.contact.solver._newton_uzawa_dynamic import (
+from xkep_cae.contact.solver._newton_dynamic import (
     NewtonDynamicInput,
     NewtonDynamicProcess,
     NewtonDynamicStepInput,
@@ -498,11 +498,11 @@ class ContactFrictionProcess(
                         increment_diagnostics=_increment_diag_list,
                     )
 
-            # ==============================================================
-            # ステップ完了
-            # ==============================================================
+                # ==============================================================
+                # ステップ完了
+                # ==============================================================
 
-            # エネルギー診断
+                # エネルギー診断
                 _f_int = input_data.callbacks.assemble_internal_force(state.u)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
