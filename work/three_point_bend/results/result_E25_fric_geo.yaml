@@ -1,0 +1,32 @@
+contact_force_N: 80.8
+converged: false
+deflection_mm: !!python/object/apply:numpy._core.multiarray.scalar
+- &id001 !!python/object/apply:numpy.dtype
+  args:
+  - f8
+  - false
+  - true
+  state: !!python/tuple
+  - 3
+  - <
+  - null
+  - null
+  - null
+  - -1
+  - -1
+  - 0
+- !!binary |
+  rrZif9mtMEA=
+effective_stiffness: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  ZmZmZmZmE0A=
+elapsed_seconds: 872.6
+final_frac: 0.6014
+n_increments: 301
+push_reached_mm: 18.04
+stiffness_error_eb: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  MuauJeSDjj8=
+tag: E25_fric_geo
