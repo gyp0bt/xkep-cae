@@ -354,6 +354,7 @@ class ContactFrictionProcess(
         )
 
         # --- Newton プロセス（動的のみ） ---
+        _compute_cond = getattr(input_data, "compute_condition_number", False)
         nr_config_dyn = NewtonDynamicInput(
             show_progress=True,
             max_attempts=input_data.max_nr_attempts,
@@ -361,6 +362,7 @@ class ContactFrictionProcess(
             tol_disp=input_data.tol_disp,
             divergence_window=input_data.divergence_window,
             du_norm_cap=input_data.du_norm_cap,
+            compute_condition_number=_compute_cond,
         )
         nr_process_dyn = NewtonDynamicProcess()
 

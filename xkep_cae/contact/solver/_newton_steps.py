@@ -88,8 +88,22 @@ class ContactForceAssemblyProcess(
             )
         )
         coords_def = _dc_out.coords
+        _freeze_st = (
+            hasattr(inp.manager, "config")
+            and hasattr(inp.manager.config, "freeze_geometry_in_nr")
+            and inp.manager.config.freeze_geometry_in_nr
+        )
+        _st_relax = 1.0
+        if hasattr(inp.manager, "config") and hasattr(inp.manager.config, "st_relaxation"):
+            _st_relax = inp.manager.config.st_relaxation
         _ug_out = UpdateGeometryProcess().process(
-            UpdateGeometryInput(manager=inp.manager, node_coords=coords_def, freeze_active_set=True)
+            UpdateGeometryInput(
+                manager=inp.manager,
+                node_coords=coords_def,
+                freeze_active_set=True,
+                freeze_st=_freeze_st,
+                st_relaxation=_st_relax,
+            )
         )
         inp.manager.pairs[:] = _ug_out.manager.pairs
 
