@@ -117,24 +117,24 @@ def _closest_point_segments_batch(
     t_parallel = np.clip(e / safe_c, 0.0, 1.0)
     t_parallel = np.where(c > tol_parallel, t_parallel, 0.0)
 
-    s = np.where(is_parallel, 0.0, _smooth_clip_01(s_unc))
-    t = np.where(is_parallel, t_parallel, _smooth_clip_01(t_unc))
+    s = np.where(is_parallel, 0.0, np.clip(s_unc, 0.0, 1.0))
+    t = np.where(is_parallel, t_parallel, np.clip(t_unc, 0.0, 1.0))
 
     s_clamped = (s_unc < 0.0) | (s_unc > 1.0)
     t_clamped = (t_unc < 0.0) | (t_unc > 1.0)
 
-    t_recalc = _smooth_clip_01((b * s + e) / safe_c)
+    t_recalc = np.clip((b * s + e) / safe_c, 0.0, 1.0)
     t_recalc = np.where(c > tol_parallel, t_recalc, 0.0)
     need_t_recalc = s_clamped & ~is_parallel
     t = np.where(need_t_recalc, t_recalc, t)
 
     safe_a = np.where(a > tol_parallel, a, 1.0)
-    s_recalc = _smooth_clip_01((b * t - d) / safe_a)
+    s_recalc = np.clip((b * t - d) / safe_a, 0.0, 1.0)
     s_recalc = np.where(a > tol_parallel, s_recalc, 0.0)
     need_s_recalc = t_clamped & ~is_parallel
     s = np.where(need_s_recalc, s_recalc, s)
 
-    t_recalc2 = _smooth_clip_01((b * s + e) / safe_c)
+    t_recalc2 = np.clip((b * s + e) / safe_c, 0.0, 1.0)
     t_recalc2 = np.where(c > tol_parallel, t_recalc2, 0.0)
     t = np.where(need_s_recalc, t_recalc2, t)
 

@@ -152,6 +152,7 @@ class TestContactConfig:
         assert cfg.g_on == 0.0
         assert cfg.g_off == pytest.approx(1e-6)
         assert cfg.n_outer_max == 5
+
     def test_custom_values(self):
         """カスタム設定."""
         cfg = _ContactConfigInput(k_pen_scale=2.0, mu=0.5)

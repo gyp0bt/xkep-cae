@@ -15,6 +15,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from xkep_cae.contact.friction._assembly import (
+    _assemble_friction_geometric_stiffness,
     _assemble_friction_tangent_stiffness,
     _friction_return_mapping_loop,
 )
@@ -80,6 +81,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         self._mu_ramp_counter = mu_ramp_counter
         self._mu_ramp_steps = mu_ramp_steps
         self._friction_tangents: dict[int, np.ndarray] = {}
+        self._friction_forces_local: dict[int, np.ndarray] = {}
 
     @property
     def friction_tangents(self) -> dict[int, np.ndarray]:
@@ -130,16 +132,18 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         def compute_p_n(i: int, pair: object) -> float:
             return getattr(pair.state, "p_n", 0.0)
 
-        f_friction, friction_residual, self._friction_tangents = _friction_return_mapping_loop(
-            contact_pairs,
-            u,
-            u_ref,
-            self._ndof,
-            self._ndof_per_node,
-            self._k_pen,
-            self._k_t_ratio,
-            mu_eff,
-            compute_p_n,
+        f_friction, friction_residual, self._friction_tangents, self._friction_forces_local = (
+            _friction_return_mapping_loop(
+                contact_pairs,
+                u,
+                u_ref,
+                self._ndof,
+                self._ndof_per_node,
+                self._k_pen,
+                self._k_t_ratio,
+                mu_eff,
+                compute_p_n,
+            )
         )
         return f_friction, friction_residual
 
@@ -150,10 +154,14 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         mu: float,
         **kwargs: object,
     ) -> sp.csr_matrix:
-        """摩擦接線剛性行列."""
-        return _assemble_friction_tangent_stiffness(
+        """摩擦接線剛性行列（材料項 + 幾何項）."""
+        K_mat = _assemble_friction_tangent_stiffness(
             contact_pairs, self._friction_tangents, self._ndof, self._ndof_per_node
         )
+        K_geo = _assemble_friction_geometric_stiffness(
+            contact_pairs, self._friction_forces_local, self._ndof, self._ndof_per_node
+        )
+        return K_mat + K_geo
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)

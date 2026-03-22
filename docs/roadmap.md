@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-22）
 
-**499 テスト**（接触幾何剛性+摩擦符号修正 — status-223） | 契約違反ゼロ | [最新status](status/status-index.md)
+**175+10s テスト**（摩擦接線幾何剛性追加 + smooth_clip revert — status-225） | 契約違反ゼロ | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
