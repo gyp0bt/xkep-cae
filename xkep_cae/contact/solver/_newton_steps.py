@@ -52,6 +52,7 @@ class ContactForceAssemblyInput:
     ndof_per_node: int
     use_coating: bool
     assemble_internal_force: object
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,7 @@ class ContactForceAssemblyProcess(
             UpdateGeometryInput(
                 manager=inp.manager,
                 node_coords=coords_def,
+                connectivity=inp.connectivity,
                 freeze_active_set=True,
                 freeze_st=_freeze_st,
                 st_relaxation=_st_relax,

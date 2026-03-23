@@ -63,22 +63,47 @@ class ComputeStJacobianProcess(
         document_path="docs/contact_geometry.md",
     )
 
+    # smooth_clip_01 のスカラー微分（C1 遷移重み）
+    _SMOOTH_EPS = 0.02
+
+    @staticmethod
+    def _smooth_clip_deriv(s_unc: float, epsilon: float = 0.02) -> float:
+        """_smooth_clip_01 の s_unc に対する微分.
+
+        ds_smooth/ds_unc:
+            s_unc < -ε      → 0
+            -ε ≤ s_unc < ε  → (s_unc + ε) / (2ε)
+            ε ≤ s_unc ≤ 1-ε → 1
+            1-ε < s_unc ≤ 1+ε → (1+ε - s_unc) / (2ε)
+            s_unc > 1+ε     → 0
+        """
+        if s_unc < -epsilon:
+            return 0.0
+        if s_unc < epsilon:
+            return (s_unc + epsilon) / (2.0 * epsilon)
+        if s_unc <= 1.0 - epsilon:
+            return 1.0
+        if s_unc <= 1.0 + epsilon:
+            return (1.0 + epsilon - s_unc) / (2.0 * epsilon)
+        return 0.0
+
     def process(self, inp: StJacobianInput) -> StJacobianOutput:
         dA = inp.xA1 - inp.xA0
         dB = inp.xB1 - inp.xB0
         s = inp.s
         t = inp.t
 
-        # クランプ状態の検出
+        # クランプ前の値でスムーズ遷移重みを計算
         s_unc = inp.s_unclamped if inp.s_unclamped is not None else s
         t_unc = inp.t_unclamped if inp.t_unclamped is not None else t
-        s_clamped = (s_unc < 0.0) or (s_unc > 1.0)
-        t_clamped = (t_unc < 0.0) or (t_unc > 1.0)
+        w_s = self._smooth_clip_deriv(s_unc, self._SMOOTH_EPS)
+        w_t = self._smooth_clip_deriv(t_unc, self._SMOOTH_EPS)
 
         ds_du = np.zeros(12)
         dt_du = np.zeros(12)
 
-        if s_clamped and t_clamped:
+        # 両方ゼロ重みなら早期リターン
+        if w_s < 1e-30 and w_t < 1e-30:
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
         # Gram 行列の要素
@@ -90,24 +115,17 @@ class ComputeStJacobianProcess(
         # δ = pA(s) - pB(t)
         delta = (1.0 - s) * inp.xA0 + s * inp.xA1 - (1.0 - t) * inp.xB0 - t * inp.xB1
 
-        if s_clamped:
-            # ds/du = 0, dt のみ 1×1 系
-            if c < inp.tol_singular:
-                return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=False)
-            dt_du = self._compute_dt_only(delta, dA, dB, s, t, c)
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
-
-        if t_clamped:
-            # dt/du = 0, ds のみ 1×1 系
-            if a < inp.tol_singular:
-                return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=False)
-            ds_du = self._compute_ds_only(delta, dA, dB, s, t, a)
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
-
-        # 通常: 2×2 系
+        # 通常: 2×2 系で計算し、スムーズ重みで減衰
         ac_product = max(a * c, 1e-30)
         if abs(det) < inp.tol_singular * ac_product:
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=False)
+            # 特異の場合は 1×1 フォールバック（重み付き）
+            if w_t > 1e-30 and c >= inp.tol_singular:
+                dt_du = self._compute_dt_only(delta, dA, dB, s, t, c)
+                dt_du *= w_t
+            if w_s > 1e-30 and a >= inp.tol_singular:
+                ds_du = self._compute_ds_only(delta, dA, dB, s, t, a)
+                ds_du *= w_s
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
         inv_det = 1.0 / det
         # J^{-1} = (1/det) * [[c, b], [b, a]]
@@ -120,6 +138,10 @@ class ComputeStJacobianProcess(
             st_deriv = -J_inv @ rhs
             ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
             dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+
+        # スムーズクランプの連鎖律: ds_smooth/du = (ds_smooth/ds_unc) * (ds_unc/du)
+        ds_du *= w_s
+        dt_du *= w_t
 
         return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 

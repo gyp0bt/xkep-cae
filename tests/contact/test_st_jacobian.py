@@ -181,7 +181,9 @@ class TestComputeStJacobian:
             )
         )
 
-        assert not out.valid
+        # スムーズ遷移で特異系でもフォールバック計算を行う
+        # det ≈ 0 の場合は 1×1 系フォールバックで valid=True
+        assert out.valid
 
     def test_both_clamped(self):
         """両方クランプ → ds/du = dt/du = 0."""

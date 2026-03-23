@@ -83,6 +83,7 @@ class NewtonDynamicStepInput:
     dt_sub: float
     use_coating: bool
     dynamic_ref: bool
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
 
 
 # 後方互換エイリアス（呼び出し側の段階的移行用）
@@ -181,6 +182,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     use_coating=input_data.use_coating,
                     assemble_internal_force=input_data.assemble_internal_force,
+                    connectivity=input_data.connectivity,
                 )
             )
             f_c = force_out.f_c

@@ -297,6 +297,7 @@ class UpdateGeometryInput:
 
     manager: _ContactManagerInput
     node_coords: np.ndarray
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
     allow_deactivation: bool = True
     freeze_active_set: bool = False
     freeze_st: bool = False  # s,t を凍結（既存値を使い gap/normal のみ再計算）
@@ -361,6 +362,37 @@ class UpdateGeometryProcess(
             s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
                 xA0, xA1, xB0, xB1
             )
+
+            # Hermite 中心線精密化: 要素間 C1 法線場
+            _use_hermite = (
+                input_data.connectivity is not None
+                and hasattr(config, "use_hermite_centerline")
+                and config.use_hermite_centerline
+            )
+            if _use_hermite:
+                from xkep_cae.contact.geometry._compute import (
+                    _closest_point_hermite_refine,
+                    _compute_node_tangents,
+                )
+
+                node_tangents = _compute_node_tangents(coords, input_data.connectivity)
+                mA0 = node_tangents[nodes_a0]
+                mA1 = node_tangents[nodes_a1]
+                mB0 = node_tangents[nodes_b0]
+                mB1 = node_tangents[nodes_b1]
+
+                s_all, t_all, _, _, dist_all, normal_all = _closest_point_hermite_refine(
+                    s_all,
+                    t_all,
+                    xA0,
+                    xA1,
+                    xB0,
+                    xB1,
+                    mA0,
+                    mA1,
+                    mB0,
+                    mB1,
+                )
 
         # s,t under-relaxation: s = α*s_new + (1-α)*s_old
         _alpha = input_data.st_relaxation
