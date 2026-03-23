@@ -207,10 +207,12 @@ def _batch_update_geometry(
     node_coords: np.ndarray,
     *,
     config: object | None = None,
+    connectivity: np.ndarray | None = None,
 ) -> None:
     """全ペアの幾何情報をバッチ計算で更新する共通処理.
 
     PointToPoint, LineToLineGauss, MortarSegment で共通のロジック。
+    Hermite 中心線補間有効時は線形初期推定を Newton 精密化する。
     """
     from xkep_cae.contact.geometry._compute import (
         _build_contact_frame_batch as build_contact_frame_batch,
@@ -235,8 +237,40 @@ def _batch_update_geometry(
     xB0 = coords[nodes_b0]
     xB1 = coords[nodes_b1]
 
-    # --- バッチ最近接点計算 ---
+    # --- バッチ最近接点計算（線形初期推定） ---
     s_all, t_all, _, _, dist_all, normal_all, _ = closest_point_segments_batch(xA0, xA1, xB0, xB1)
+
+    # --- Hermite 精密化 ---
+    _use_hermite = (
+        connectivity is not None
+        and config is not None
+        and hasattr(config, "use_hermite_centerline")
+        and config.use_hermite_centerline
+    )
+    if _use_hermite:
+        from xkep_cae.contact.geometry._compute import (
+            _closest_point_hermite_refine,
+            _compute_node_tangents,
+        )
+
+        node_tangents = _compute_node_tangents(coords, connectivity)
+        mA0 = node_tangents[nodes_a0]
+        mA1 = node_tangents[nodes_a1]
+        mB0 = node_tangents[nodes_b0]
+        mB1 = node_tangents[nodes_b1]
+
+        s_all, t_all, _, _, dist_all, normal_all = _closest_point_hermite_refine(
+            s_all,
+            t_all,
+            xA0,
+            xA1,
+            xB0,
+            xB1,
+            mA0,
+            mA1,
+            mB0,
+            mB1,
+        )
 
     # --- ギャップ計算 ---
     coating_stiffness = 0.0

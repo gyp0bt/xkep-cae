@@ -10,7 +10,7 @@ import numpy as np
 
 def _smooth_clip_01(
     s: np.ndarray,
-    epsilon: float = 0.02,
+    epsilon: float = 1e-6,
 ) -> np.ndarray:
     """Huber 風 C1 スムースクランプ [0, 1].
 
@@ -117,24 +117,24 @@ def _closest_point_segments_batch(
     t_parallel = np.clip(e / safe_c, 0.0, 1.0)
     t_parallel = np.where(c > tol_parallel, t_parallel, 0.0)
 
-    s = np.where(is_parallel, 0.0, np.clip(s_unc, 0.0, 1.0))
-    t = np.where(is_parallel, t_parallel, np.clip(t_unc, 0.0, 1.0))
+    s = np.where(is_parallel, 0.0, _smooth_clip_01(s_unc))
+    t = np.where(is_parallel, t_parallel, _smooth_clip_01(t_unc))
 
     s_clamped = (s_unc < 0.0) | (s_unc > 1.0)
     t_clamped = (t_unc < 0.0) | (t_unc > 1.0)
 
-    t_recalc = np.clip((b * s + e) / safe_c, 0.0, 1.0)
+    t_recalc = _smooth_clip_01((b * s + e) / safe_c)
     t_recalc = np.where(c > tol_parallel, t_recalc, 0.0)
     need_t_recalc = s_clamped & ~is_parallel
     t = np.where(need_t_recalc, t_recalc, t)
 
     safe_a = np.where(a > tol_parallel, a, 1.0)
-    s_recalc = np.clip((b * t - d) / safe_a, 0.0, 1.0)
+    s_recalc = _smooth_clip_01((b * t - d) / safe_a)
     s_recalc = np.where(a > tol_parallel, s_recalc, 0.0)
     need_s_recalc = t_clamped & ~is_parallel
     s = np.where(need_s_recalc, s_recalc, s)
 
-    t_recalc2 = np.clip((b * s + e) / safe_c, 0.0, 1.0)
+    t_recalc2 = _smooth_clip_01((b * s + e) / safe_c)
     t_recalc2 = np.where(c > tol_parallel, t_recalc2, 0.0)
     t = np.where(need_s_recalc, t_recalc2, t)
 
@@ -289,3 +289,177 @@ def _auto_select_n_gauss(
         return 3
     else:  # θ < 10°
         return 5
+
+
+# ── Hermite 中心線補間 ──────────────────────────────────────
+
+
+def _compute_node_tangents(
+    node_coords: np.ndarray,
+    connectivity: np.ndarray,
+) -> np.ndarray:
+    """各節点の接線ベクトルを隣接要素から Catmull-Rom 式で計算.
+
+    節点 i の接線 = Σ(隣接要素の方向ベクトル) を正規化し、
+    要素長でスケール（Hermite の m₀, m₁ に直接使える形）。
+
+    内部節点: 両隣の要素方向の平均 × 要素長
+    端点: 片方の要素方向 × 要素長
+
+    Returns:
+        (n_nodes, 3) 節点接線ベクトル（要素長スケール）
+    """
+    n_nodes = len(node_coords)
+    tangents = np.zeros((n_nodes, 3))
+    counts = np.zeros(n_nodes)
+
+    for elem_idx in range(len(connectivity)):
+        n0, n1 = connectivity[elem_idx]
+        d = node_coords[n1] - node_coords[n0]
+        tangents[n0] += d
+        tangents[n1] += d
+        counts[n0] += 1.0
+        counts[n1] += 1.0
+
+    safe_counts = np.maximum(counts, 1.0)
+    tangents /= safe_counts[:, None]
+
+    return tangents
+
+
+def _hermite_eval(
+    s: np.ndarray,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """Hermite 補間: s ∈ [0,1] → 位置 (N, 3).
+
+    H00(s) = 2s³ - 3s² + 1
+    H10(s) = s³ - 2s² + s
+    H01(s) = -2s³ + 3s²
+    H11(s) = s³ - s²
+
+    point(s) = H00·x0 + H10·m0 + H01·x1 + H11·m1
+    """
+    s2 = s * s
+    s3 = s2 * s
+
+    h00 = (2.0 * s3 - 3.0 * s2 + 1.0)[:, None]
+    h10 = (s3 - 2.0 * s2 + s)[:, None]
+    h01 = (-2.0 * s3 + 3.0 * s2)[:, None]
+    h11 = (s3 - s2)[:, None]
+
+    return h00 * x0 + h10 * m0 + h01 * x1 + h11 * m1
+
+
+def _hermite_deriv(
+    s: np.ndarray,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """Hermite 補間の s 微分: dp/ds (N, 3).
+
+    H00' = 6s² - 6s
+    H10' = 3s² - 4s + 1
+    H01' = -6s² + 6s
+    H11' = 3s² - 2s
+    """
+    s2 = s * s
+
+    dh00 = (6.0 * s2 - 6.0 * s)[:, None]
+    dh10 = (3.0 * s2 - 4.0 * s + 1.0)[:, None]
+    dh01 = (-6.0 * s2 + 6.0 * s)[:, None]
+    dh11 = (3.0 * s2 - 2.0 * s)[:, None]
+
+    return dh00 * x0 + dh10 * m0 + dh01 * x1 + dh11 * m1
+
+
+def _closest_point_hermite_refine(
+    s0: np.ndarray,
+    t0: np.ndarray,
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    mA0: np.ndarray,
+    mA1: np.ndarray,
+    mB0: np.ndarray,
+    mB1: np.ndarray,
+    *,
+    max_iter: int = 5,
+    tol: float = 1e-12,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """線形最近接点を初期値として Hermite 曲線上の最近接点を Newton 精密化.
+
+    最近接点条件:
+        F₁ = δ · dpA/ds = 0
+        F₂ = -δ · dpB/dt = 0
+    ただし δ = pA(s) - pB(t)（Hermite 補間上の点）
+
+    Returns:
+        s, t, point_a, point_b, distance, normal
+    """
+    s = s0.copy()
+    t = t0.copy()
+    eps = 0.02  # smooth_clip の遷移幅と同じ
+
+    for _iter in range(max_iter):
+        # Hermite 評価
+        pA = _hermite_eval(s, xA0, xA1, mA0, mA1)
+        pB = _hermite_eval(t, xB0, xB1, mB0, mB1)
+        dpA = _hermite_deriv(s, xA0, xA1, mA0, mA1)
+        dpB = _hermite_deriv(t, xB0, xB1, mB0, mB1)
+
+        delta = pA - pB
+
+        # 残差
+        F1 = np.einsum("ij,ij->i", delta, dpA)
+        F2 = -np.einsum("ij,ij->i", delta, dpB)
+
+        # 収束チェック
+        res = np.sqrt(F1 * F1 + F2 * F2)
+        if np.all(res < tol):
+            break
+
+        # Jacobian 要素
+        a = np.einsum("ij,ij->i", dpA, dpA)
+        b = np.einsum("ij,ij->i", dpA, dpB)
+        c = np.einsum("ij,ij->i", dpB, dpB)
+
+        # d²p/ds² も含めた完全 Jacobian
+        # ∂F₁/∂s = dpA·dpA + δ·d²pA/ds² = a + (高次項)
+        # 簡略化: Gauss-Newton 近似（高次項省略）
+        det = a * c - b * b
+        safe_det = np.where(np.abs(det) < 1e-30, 1.0, det)
+        inv_det = 1.0 / safe_det
+
+        ds = -(c * F1 + b * F2) * inv_det
+        dt = -(b * F1 + a * F2) * inv_det
+
+        # 特異ペアは更新しない
+        singular = np.abs(det) < 1e-30
+        ds = np.where(singular, 0.0, ds)
+        dt = np.where(singular, 0.0, dt)
+
+        s += ds
+        t += dt
+
+        # smooth clamp
+        s = _smooth_clip_01(s, eps)
+        t = _smooth_clip_01(t, eps)
+
+    # 最終評価
+    pA = _hermite_eval(s, xA0, xA1, mA0, mA1)
+    pB = _hermite_eval(t, xB0, xB1, mB0, mB1)
+    diff = pA - pB
+    distance = np.sqrt(np.einsum("ij,ij->i", diff, diff))
+    safe_dist = np.maximum(distance, 1e-30)
+    normal = diff / safe_dist[:, None]
+    zero_mask = distance < 1e-30
+    normal[zero_mask] = [0.0, 0.0, 1.0]
+
+    return s, t, pA, pB, distance, normal

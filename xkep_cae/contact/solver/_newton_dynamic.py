@@ -57,6 +57,7 @@ class NewtonDynamicInput:
     show_progress: bool = True
     ndof_per_node: int = 6
     divergence_window: int = 5
+    compute_condition_number: bool = False  # 条件数診断（低速: toarray() 使用）
 
 
 @dataclass(frozen=True)
@@ -82,6 +83,7 @@ class NewtonDynamicStepInput:
     dt_sub: float
     use_coating: bool
     dynamic_ref: bool
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
 
 
 # 後方互換エイリアス（呼び出し側の段階的移行用）
@@ -180,6 +182,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     use_coating=input_data.use_coating,
                     assemble_internal_force=input_data.assemble_internal_force,
+                    connectivity=input_data.connectivity,
                 )
             )
             f_c = force_out.f_c
@@ -313,6 +316,31 @@ class NewtonDynamicProcess(
             # 動的: 質量・減衰を接線剛性に加算
             if dt_sub > 1e-30:
                 K_T = _time_strategy.effective_stiffness(K_T, dt_sub)
+
+            # ── 条件数診断（オプション） ──
+            if cfg.compute_condition_number:
+                try:
+                    _K_bc = K_T.tocsc().copy()
+                    _free = np.setdiff1d(np.arange(_K_bc.shape[0]), input_data.fixed_dofs)
+                    _K_free = _K_bc[np.ix_(_free, _free)].toarray()
+                    _eigs = np.linalg.eigvalsh(_K_free)
+                    _eig_min = float(np.min(np.abs(_eigs)))
+                    _eig_max = float(np.max(np.abs(_eigs)))
+                    _cond = _eig_max / max(_eig_min, 1e-30)
+                    _n_negative = int(np.sum(_eigs < 0))
+                    diag.condition_number_history.append(_cond)
+                    diag.min_eigenvalue_history.append(float(np.min(_eigs)))
+                    diag.max_eigenvalue_history.append(_eig_max)
+                    if cfg.show_progress and att % 5 == 0:
+                        print(
+                            f"    [spectral] cond={_cond:.2e}, "
+                            f"λ_min={float(np.min(_eigs)):.2e}, "
+                            f"λ_max={_eig_max:.2e}, "
+                            f"n_neg={_n_negative}"
+                        )
+                except Exception as _e:
+                    if cfg.show_progress:
+                        print(f"    [spectral] 計算失敗: {_e}")
 
             # ── ステップ 8: 線形ソルブ ──
             solve_out = _solve_proc.process(

@@ -52,6 +52,7 @@ class ContactForceAssemblyInput:
     ndof_per_node: int
     use_coating: bool
     assemble_internal_force: object
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
 
 
 @dataclass(frozen=True)
@@ -88,8 +89,23 @@ class ContactForceAssemblyProcess(
             )
         )
         coords_def = _dc_out.coords
+        _freeze_st = (
+            hasattr(inp.manager, "config")
+            and hasattr(inp.manager.config, "freeze_geometry_in_nr")
+            and inp.manager.config.freeze_geometry_in_nr
+        )
+        _st_relax = 1.0
+        if hasattr(inp.manager, "config") and hasattr(inp.manager.config, "st_relaxation"):
+            _st_relax = inp.manager.config.st_relaxation
         _ug_out = UpdateGeometryProcess().process(
-            UpdateGeometryInput(manager=inp.manager, node_coords=coords_def, freeze_active_set=True)
+            UpdateGeometryInput(
+                manager=inp.manager,
+                node_coords=coords_def,
+                connectivity=inp.connectivity,
+                freeze_active_set=True,
+                freeze_st=_freeze_st,
+                st_relaxation=_st_relax,
+            )
         )
         inp.manager.pairs[:] = _ug_out.manager.pairs
 
@@ -289,7 +305,12 @@ class TangentAssemblyProcess(
     def process(self, inp: TangentAssemblyInput) -> TangentAssemblyOutput:
         K_T = inp.assemble_tangent(inp.u)
 
-        K_c = inp.contact_force_strategy.tangent(inp.u, inp.manager, inp.k_pen)
+        K_c = inp.contact_force_strategy.tangent(
+            inp.u,
+            inp.manager,
+            inp.k_pen,
+            node_coords=inp.coords_def,
+        )
         K_T = K_T + K_c
 
         # 被膜剛性
@@ -307,7 +328,18 @@ class TangentAssemblyProcess(
 
         # 摩擦剛性（符号反転: f_c=-f_c_raw なので dR/du には -d(f_fric)/du が必要）
         if inp.friction_strategy.friction_tangents:
-            K_fric = inp.friction_strategy.tangent(inp.u, inp.manager.pairs, inp.mu)
+            _use_st = (
+                hasattr(inp.manager, "config")
+                and hasattr(inp.manager.config, "consistent_st_tangent")
+                and inp.manager.config.consistent_st_tangent
+            )
+            K_fric = inp.friction_strategy.tangent(
+                inp.u,
+                inp.manager.pairs,
+                inp.mu,
+                node_coords=inp.coords_def if _use_st else None,
+                consistent_st_tangent=_use_st,
+            )
             K_T = K_T - K_fric
 
         return TangentAssemblyOutput(K_T=K_T)

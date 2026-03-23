@@ -35,6 +35,9 @@ class ConvergenceDiagnosticsOutput:
     du_norm_history: list[float] = field(default_factory=list)
     max_du_dof_history: list[int] = field(default_factory=list)
     condition_number: float | None = None
+    condition_number_history: list[float] = field(default_factory=list)
+    min_eigenvalue_history: list[float] = field(default_factory=list)
+    max_eigenvalue_history: list[float] = field(default_factory=list)
     # エネルギー診断（動的解析用）
     kinetic_energy: float = 0.0
     strain_energy: float = 0.0

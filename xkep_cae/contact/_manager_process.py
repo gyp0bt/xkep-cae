@@ -297,8 +297,11 @@ class UpdateGeometryInput:
 
     manager: _ContactManagerInput
     node_coords: np.ndarray
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用
     allow_deactivation: bool = True
     freeze_active_set: bool = False
+    freeze_st: bool = False  # s,t を凍結（既存値を使い gap/normal のみ再計算）
+    st_relaxation: float = 1.0  # s,t 更新の緩和係数（1.0=フル更新、<1.0=under-relaxation）
 
 
 @dataclass(frozen=True)
@@ -344,9 +347,70 @@ class UpdateGeometryProcess(
         xB0 = coords[nodes_b0]
         xB1 = coords[nodes_b1]
 
-        s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
-            xA0, xA1, xB0, xB1
-        )
+        if input_data.freeze_st:
+            # s,t を凍結: 既存値を使い、現在の座標から gap/normal のみ再計算
+            s_all = np.array([p.state.s for p in pairs])
+            t_all = np.array([p.state.t for p in pairs])
+            # 凍結 s,t での接触点: pA = (1-s)*xA0 + s*xA1, pB = (1-t)*xB0 + t*xB1
+            pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
+            pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
+            delta = pA - pB
+            dist_all = np.sqrt(np.einsum("ij,ij->i", delta, delta))
+            dist_safe = np.where(dist_all > 1e-30, dist_all, 1.0)
+            normal_all = delta / dist_safe[:, None]
+        else:
+            s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
+                xA0, xA1, xB0, xB1
+            )
+
+            # Hermite 中心線精密化: 要素間 C1 法線場
+            _use_hermite = (
+                input_data.connectivity is not None
+                and hasattr(config, "use_hermite_centerline")
+                and config.use_hermite_centerline
+            )
+            if _use_hermite:
+                from xkep_cae.contact.geometry._compute import (
+                    _closest_point_hermite_refine,
+                    _compute_node_tangents,
+                )
+
+                node_tangents = _compute_node_tangents(coords, input_data.connectivity)
+                mA0 = node_tangents[nodes_a0]
+                mA1 = node_tangents[nodes_a1]
+                mB0 = node_tangents[nodes_b0]
+                mB1 = node_tangents[nodes_b1]
+
+                s_all, t_all, _, _, dist_all, normal_all = _closest_point_hermite_refine(
+                    s_all,
+                    t_all,
+                    xA0,
+                    xA1,
+                    xB0,
+                    xB1,
+                    mA0,
+                    mA1,
+                    mB0,
+                    mB1,
+                )
+
+        # s,t under-relaxation: s = α*s_new + (1-α)*s_old
+        _alpha = input_data.st_relaxation
+        if _alpha < 1.0 - 1e-12:
+            s_old = np.array([p.state.s for p in pairs])
+            t_old = np.array([p.state.t for p in pairs])
+            s_all = _alpha * s_all + (1.0 - _alpha) * s_old
+            t_all = _alpha * t_all + (1.0 - _alpha) * t_old
+            # s,t クランプ [0, 1]
+            s_all = np.clip(s_all, 0.0, 1.0)
+            t_all = np.clip(t_all, 0.0, 1.0)
+            # gap/normal を緩和済み s,t で再計算
+            pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
+            pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
+            delta = pA - pB
+            dist_all = np.sqrt(np.einsum("ij,ij->i", delta, delta))
+            dist_safe = np.where(dist_all > 1e-30, dist_all, 1.0)
+            normal_all = delta / dist_safe[:, None]
 
         _use_coating = config.coating_stiffness > 0.0
         if _use_coating:
