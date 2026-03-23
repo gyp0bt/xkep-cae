@@ -906,7 +906,7 @@ class DynamicThreePointBendContactJigConfig:
     tol_force: float = 1e-6  # 力収束許容値
     max_nr_attempts: int = 30  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
-    use_hermite_centerline: bool = True  # Hermite 曲線補間（暫定ソルバー: status-228）
+    use_hermite_centerline: bool = False  # Hermite は NR 内 eps 不整合で回帰（revert）
 
 
 @dataclass(frozen=True)
