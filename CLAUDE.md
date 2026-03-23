@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**186+10s テスト** — 2026-03-23 | 契約違反 **1件** | 条例違反 **0件**
+**133+10s テスト** — 2026-03-23 | 契約違反 **1件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,8 +73,9 @@
 
 ### 次の課題
 
-**smooth_clamp ε 統一化** — status-228 で smooth_clamp C1 連続化により frac=0.60→0.96（189N）を達成。
-残課題は ε=1e-6 → 0.02 への統一（_smooth_clip_01, _st_jacobian, Hermite refine の3箇所）で frac=1.0 到達を目指す。
+**三点曲げ壁突破** — status-229 で s_unclamped 伝搬バグ修正 + ε=0.02 統一化 + freeze_normal_in_nr 実装。
+frac=0.60 壁の根本原因は NR 内法線振動。freeze_normal で壁突破可能（frac=0.53@600incr）。
+次課題: max_incr 増加または ハイブリッド法線更新で frac=1.0 到達。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -83,9 +84,11 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- `_smooth_clip_01` と `_st_jacobian._SMOOTH_EPS` の ε を 0.02 に統一し、動的接触三点曲げ frac=1.0 到達を目指す
+- freeze_normal_in_nr を有効化し max_incr=2000 以上で frac=1.0 到達確認
+- ハイブリッド法線更新（frac<0.5:通常、frac≥0.5:freeze_normal）の検討
+- Hermite 補間を力計算・Jacobian にも統一（ジグ弧セグメント対応）
+- 連続多様体パラメータ化（グローバル ξ 座標）の設計
 - 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認
-- ε 変更後の物理テスト（貫入量精度）への影響を検証
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

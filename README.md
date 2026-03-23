@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**186+10s テスト** — 2026-03-23時点 | smooth_clamp C1連続化 frac=0.96到達（status-228） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**133+10s テスト** — 2026-03-23時点 | s_unclamped伝搬+freeze_normal+Hermite不整合特定（status-229） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
