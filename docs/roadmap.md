@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-22）
 
-**186+10s テスト**（条件数スペクトル分析 + NR内幾何凍結検証 — status-227） | 契約違反1件 | [最新status](status/status-index.md)
+**186+10s テスト**（smooth_clamp C1連続化 frac=0.96到達 — status-228） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -63,7 +63,7 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: k_pen 適正化済み（status-219）、押し下げ変位制御化済み（status-220）。∂(s,t)/∂u 整合接線 K_st 実装済み（status-226）だが収束改善せず。**残課題**: (1) frac=0.60 壁の条件数・スペクトル分析、(2) NR 内幾何凍結の検討、(3) ラインサーチ強化（Armijo backtracking）、(4) 変位収束のみモード。~~Uzawa 有効化~~ → 凍結（status-221）
+- [ ] **動的三点曲げ接触収束**: smooth_clamp C1連続化により frac=0.60→0.96（189N）達成（status-228）。**残課題**: (1) ε=1e-6→0.02 統一化で frac=1.0 到達、(2) _smooth_clip_01 / _st_jacobian / Hermite refine の ε 不整合解消、(3) ε 拡大時の物理テスト影響検証
 
 ### 既知の問題
 
