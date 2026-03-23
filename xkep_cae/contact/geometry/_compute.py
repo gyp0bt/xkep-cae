@@ -10,7 +10,7 @@ import numpy as np
 
 def _smooth_clip_01(
     s: np.ndarray,
-    epsilon: float = 1e-6,
+    epsilon: float = 0.02,
 ) -> np.ndarray:
     """Huber 風 C1 スムースクランプ [0, 1].
 
@@ -67,6 +67,8 @@ def _closest_point_segments_batch(
     np.ndarray,
     np.ndarray,
     np.ndarray,
+    np.ndarray,
+    np.ndarray,
 ]:
     """複数ペアの最近接点を一括計算する（ベクトル化版）.
 
@@ -78,7 +80,7 @@ def _closest_point_segments_batch(
         tol_parallel: 平行判定閾値
 
     Returns:
-        s, t, point_a, point_b, distance, normal, parallel
+        s, t, point_a, point_b, distance, normal, parallel, s_unclamped, t_unclamped
     """
     N = len(xA0)
     if N == 0:
@@ -92,6 +94,8 @@ def _closest_point_segments_batch(
             empty1,
             empty3,
             np.empty(0, dtype=bool),
+            empty1,
+            empty1,
         )
 
     dA = xA1 - xA0
@@ -148,7 +152,7 @@ def _closest_point_segments_batch(
     zero_mask = distance < 1e-30
     normal[zero_mask] = [0.0, 0.0, 1.0]
 
-    return s, t, point_a, point_b, distance, normal, is_parallel
+    return s, t, point_a, point_b, distance, normal, is_parallel, s_unc, t_unc
 
 
 def _build_contact_frame_batch(

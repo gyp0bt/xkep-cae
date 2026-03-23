@@ -302,7 +302,18 @@ def _assemble_friction_st_stiffness(
         xB0 = node_coords[pair.nodes_b[0]]
         xB1 = node_coords[pair.nodes_b[1]]
 
-        out = st_proc.process(StJacobianInput(xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1, s=st.s, t=st.t))
+        out = st_proc.process(
+            StJacobianInput(
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=st.s,
+                t=st.t,
+                s_unclamped=st.s_unclamped,
+                t_unclamped=st.t_unclamped,
+            )
+        )
         if not out.valid:
             continue
 

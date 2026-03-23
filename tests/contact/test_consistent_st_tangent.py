@@ -22,14 +22,16 @@ def _make_manager_with_pair(xA0, xA1, xB0, xB1, radius=0.5, *, consistent_st_tan
     """テスト用の ContactManager を構築."""
     from xkep_cae.contact.geometry._compute import _closest_point_segments_batch
 
-    s_arr, t_arr, _, _, dist_arr, normal_arr, _ = _closest_point_segments_batch(
-        xA0[None], xA1[None], xB0[None], xB1[None]
+    s_arr, t_arr, _, _, dist_arr, normal_arr, _, s_unc_arr, t_unc_arr = (
+        _closest_point_segments_batch(xA0[None], xA1[None], xB0[None], xB1[None])
     )
     gap = float(dist_arr[0]) - 2 * radius
 
     state = _ContactStateOutput(
         s=float(s_arr[0]),
         t=float(t_arr[0]),
+        s_unclamped=float(s_unc_arr[0]),
+        t_unclamped=float(t_unc_arr[0]),
         gap=gap,
         normal=normal_arr[0].copy(),
         status=ContactStatus.ACTIVE if gap < 0 else ContactStatus.APPROACHING,

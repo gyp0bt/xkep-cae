@@ -301,6 +301,7 @@ class UpdateGeometryInput:
     allow_deactivation: bool = True
     freeze_active_set: bool = False
     freeze_st: bool = False  # s,t を凍結（既存値を使い gap/normal のみ再計算）
+    freeze_st_normal: bool = False  # s,t,normal を凍結（gap 距離のみ更新: status-229）
     st_relaxation: float = 1.0  # s,t 更新の緩和係数（1.0=フル更新、<1.0=under-relaxation）
 
 
@@ -347,10 +348,26 @@ class UpdateGeometryProcess(
         xB0 = coords[nodes_b0]
         xB1 = coords[nodes_b1]
 
-        if input_data.freeze_st:
+        if input_data.freeze_st_normal:
+            # s,t,normal を凍結: gap 距離のみ更新 (status-229)
+            # 法線方向の振動を防止し NR 安定性を改善
+            s_all = np.array([p.state.s for p in pairs])
+            t_all = np.array([p.state.t for p in pairs])
+            s_unc_all = np.array([p.state.s_unclamped for p in pairs])
+            t_unc_all = np.array([p.state.t_unclamped for p in pairs])
+            normal_all = np.array([p.state.normal for p in pairs])
+            # 凍結 s,t での接触点座標を更新座標で計算
+            pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
+            pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
+            delta = pA - pB
+            # gap は凍結法線方向への射影で計算（符号付き距離）
+            dist_all = np.einsum("ij,ij->i", delta, normal_all)
+        elif input_data.freeze_st:
             # s,t を凍結: 既存値を使い、現在の座標から gap/normal のみ再計算
             s_all = np.array([p.state.s for p in pairs])
             t_all = np.array([p.state.t for p in pairs])
+            s_unc_all = np.array([p.state.s_unclamped for p in pairs])
+            t_unc_all = np.array([p.state.t_unclamped for p in pairs])
             # 凍結 s,t での接触点: pA = (1-s)*xA0 + s*xA1, pB = (1-t)*xB0 + t*xB1
             pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
             pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
@@ -359,8 +376,8 @@ class UpdateGeometryProcess(
             dist_safe = np.where(dist_all > 1e-30, dist_all, 1.0)
             normal_all = delta / dist_safe[:, None]
         else:
-            s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
-                xA0, xA1, xB0, xB1
+            s_all, t_all, _, _, dist_all, normal_all, _, s_unc_all, t_unc_all = (
+                _closest_point_segments_batch(xA0, xA1, xB0, xB1)
             )
 
             # Hermite 中心線精密化: 要素間 C1 法線場
@@ -445,6 +462,8 @@ class UpdateGeometryProcess(
             geom_kw: dict[str, Any] = {
                 "s": float(s_all[i]),
                 "t": float(t_all[i]),
+                "s_unclamped": float(s_unc_all[i]),
+                "t_unclamped": float(t_unc_all[i]),
                 "gap": float(gap_all[i]),
                 "normal": n_all[i],
                 "tangent1": t1_all[i],

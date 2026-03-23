@@ -41,6 +41,8 @@ class _ContactStateOutput:
 
     s: float = 0.0
     t: float = 0.0
+    s_unclamped: float = 0.0
+    t_unclamped: float = 0.0
     gap: float = 0.0
     normal: np.ndarray = field(default_factory=lambda: np.zeros(3))
     tangent1: np.ndarray = field(default_factory=lambda: np.zeros(3))
@@ -163,12 +165,13 @@ class _ContactConfigInput:
     position_tolerance: float = 0.0
     coating_stiffness: float = 0.0
     coating_damping: float = 0.0
-    use_hermite_centerline: bool = True  # Hermite 曲線補間デフォルト有効（status-228）
+    use_hermite_centerline: bool = False  # Hermite 無効: ジグ弧-線形補間不整合 (status-229)
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
     smoothing_delta: float = 0.0
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
+    freeze_normal_in_nr: bool = False  # NR内で法線凍結（gap距離のみ更新: status-229）
     freeze_geometry_in_nr: bool = False  # NR 反復内で s,t を凍結（ステップ間のみ更新）
     st_relaxation: float = 1.0  # NR 反復内 s,t 更新の緩和係数（1.0=フル、<1.0=under-relax）
 

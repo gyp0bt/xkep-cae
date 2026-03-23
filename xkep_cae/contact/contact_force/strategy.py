@@ -325,6 +325,8 @@ class HuberContactForceProcess(
                 xB1=xB1,
                 s=st.s,
                 t=st.t,
+                s_unclamped=st.s_unclamped,
+                t_unclamped=st.t_unclamped,
             )
         )
         if not out.valid:

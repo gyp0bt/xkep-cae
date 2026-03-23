@@ -94,6 +94,11 @@ class ContactForceAssemblyProcess(
             and hasattr(inp.manager.config, "freeze_geometry_in_nr")
             and inp.manager.config.freeze_geometry_in_nr
         )
+        _freeze_st_normal = (
+            hasattr(inp.manager, "config")
+            and hasattr(inp.manager.config, "freeze_normal_in_nr")
+            and inp.manager.config.freeze_normal_in_nr
+        )
         _st_relax = 1.0
         if hasattr(inp.manager, "config") and hasattr(inp.manager.config, "st_relaxation"):
             _st_relax = inp.manager.config.st_relaxation
@@ -104,6 +109,7 @@ class ContactForceAssemblyProcess(
                 connectivity=inp.connectivity,
                 freeze_active_set=True,
                 freeze_st=_freeze_st,
+                freeze_st_normal=_freeze_st_normal,
                 st_relaxation=_st_relax,
             )
         )
