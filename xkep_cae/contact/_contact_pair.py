@@ -163,7 +163,7 @@ class _ContactConfigInput:
     position_tolerance: float = 0.0
     coating_stiffness: float = 0.0
     coating_damping: float = 0.0
-    use_hermite_centerline: bool = False
+    use_hermite_centerline: bool = True  # Hermite 曲線補間デフォルト有効（status-228）
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
