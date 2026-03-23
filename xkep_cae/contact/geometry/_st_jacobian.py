@@ -64,10 +64,10 @@ class ComputeStJacobianProcess(
     )
 
     # smooth_clip_01 のスカラー微分（C1 遷移重み）
-    _SMOOTH_EPS = 0.02
+    _SMOOTH_EPS = 1e-6
 
     @staticmethod
-    def _smooth_clip_deriv(s_unc: float, epsilon: float = 0.02) -> float:
+    def _smooth_clip_deriv(s_unc: float, epsilon: float = 1e-6) -> float:
         """_smooth_clip_01 の s_unc に対する微分.
 
         ds_smooth/ds_unc:

@@ -10,7 +10,7 @@ import numpy as np
 
 def _smooth_clip_01(
     s: np.ndarray,
-    epsilon: float = 0.02,
+    epsilon: float = 1e-6,
 ) -> np.ndarray:
     """Huber 風 C1 スムースクランプ [0, 1].
 
