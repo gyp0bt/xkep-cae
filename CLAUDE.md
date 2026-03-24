@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**100+10s テスト** — 2026-03-24 | 契約違反 **1件** | 条例違反 **0件**
+**100+14s テスト** — 2026-03-24 | 契約違反 **1件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,9 +73,9 @@
 
 ### 次の課題
 
-**接触法線連続化** — status-229 で ε=0.02 完全統一により frac=0.60→0.86（154N）を達成。
-status-228 の frac=0.96 は再現不能（STAP細胞問題）で、真のベースラインは frac=0.60 だった。
-残課題: Hermite 中心線有効化には st_jacobian の Hermite 幾何対応が必要（現在は線形セグメント前提で発散）。
+**Hermite 中心線 frac=0.98 達成** — status-230 で ComputeStJacobian Hermite 対応 + freeze_geometry_in_nr により
+Hermite OFF (frac=0.86, 154N) → Hermite ON (frac=0.98, 166.5N) に改善。
+残課題: frac=1.0 到達のためのさらなる安定化、摩擦アセンブリの Hermite 完全対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,9 +84,9 @@ status-228 の frac=0.96 は再現不能（STAP細胞問題）で、真のベー
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- ComputeStJacobianProcess を Hermite 幾何対応に拡張し、Hermite 中心線 ON で frac=1.0 到達を目指す
+- frac=1.0 到達: frac=0.98 の壁の原因分析と対策
 - 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認
-- ε=0.02 での物理テスト（貫入量精度）への影響を検証
+- 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

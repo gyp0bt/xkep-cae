@@ -63,7 +63,7 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ解析解一致**: FFT振動周期5%以内+振幅10%以内~~ — status-217 で達成
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
-- [ ] **動的三点曲げ接触収束**: smooth_clamp C1連続化により frac=0.60→0.96（189N）達成（status-228）。**残課題**: (1) ε=1e-6→0.02 統一化で frac=1.0 到達、(2) _smooth_clip_01 / _st_jacobian / Hermite refine の ε 不整合解消、(3) ε 拡大時の物理テスト影響検証
+- [ ] **動的三点曲げ接触収束**: Hermite 幾何対応 + freeze_geometry_in_nr で frac=0.86→0.98（166.5N）達成（status-230）。**残課題**: (1) frac=1.0 到達のためのさらなる安定化、(2) 摩擦アセンブリの Hermite 完全対応、(3) n_periods=30 での数百 N 確認
 
 ### 既知の問題
 
