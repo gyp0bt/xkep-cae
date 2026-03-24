@@ -58,6 +58,8 @@ class AdaptiveStepInput:
     n_active: int = 0
     prev_n_active: int = 0
     diverged: bool = False  # 発散検知フラグ（早期カットバック用）
+    contact_force_norm: float = 0.0  # 接触力ノルム（力ベース dt 制御用, status-233）
+    prev_contact_force_norm: float = 0.0  # 前ステップの接触力ノルム
 
 
 @dataclass(frozen=True)
@@ -146,12 +148,14 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         else:
             self._consecutive_good = 0
 
-        # 接触状態変化チェック（0→N の新規接触発生も含む）
-        _contact_changed = abs(input_data.n_active - input_data.prev_n_active)
-        if _contact_changed > 0:
-            _base = max(input_data.prev_n_active, input_data.n_active, 1)
-            change_rate = _contact_changed / _base
-            if change_rate > cfg.dt_contact_change_threshold:
+        # 接触力変化率チェック（力ベース SDI 判定, status-233）
+        # 旧: n_active の離散変化 → dt 縮小（SDI 誤検出の原因）
+        # 新: 接触力ノルムの相対変化率で判定。連続量なので SDI 誤検出しない。
+        _fc_cur = input_data.contact_force_norm
+        _fc_prev = input_data.prev_contact_force_norm
+        if _fc_prev > 1e-30:
+            _fc_change_rate = abs(_fc_cur - _fc_prev) / _fc_prev
+            if _fc_change_rate > cfg.dt_contact_change_threshold:
                 next_delta = min(next_delta, current_delta * cfg.dt_shrink_factor)
                 self._consecutive_good = 0
 

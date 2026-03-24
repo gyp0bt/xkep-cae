@@ -137,8 +137,8 @@ def _assemble_friction_tangent_stiffness(
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
             continue
-        if pair.state.status == ContactStatus.INACTIVE:
-            continue
+        # SDI 排除: INACTIVE skip を除去（status-233）。
+        # friction_tangents dict に存在するかで十分にフィルタされる。
         if pair_idx not in friction_tangents:
             continue
 
@@ -204,8 +204,7 @@ def _assemble_friction_geometric_stiffness(
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
             continue
-        if pair.state.status == ContactStatus.INACTIVE:
-            continue
+        # SDI 排除: INACTIVE skip を除去（status-233）。
         if pair_idx not in friction_forces_local:
             continue
 
@@ -311,8 +310,7 @@ def _assemble_friction_st_stiffness(
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
             continue
-        if pair.state.status == ContactStatus.INACTIVE:
-            continue
+        # SDI 排除: INACTIVE skip を除去（status-233）。
         if pair_idx not in friction_forces_local:
             continue
 

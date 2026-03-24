@@ -150,7 +150,7 @@ class TestContactConfig:
         assert cfg.k_t_ratio == 0.5
         assert cfg.mu == pytest.approx(0.3)
         assert cfg.g_on == 0.0
-        assert cfg.g_off == pytest.approx(1e-6)
+        assert cfg.g_off == pytest.approx(0.1)  # status-233: SDI 排除で拡大
         assert cfg.n_outer_max == 5
 
     def test_custom_values(self):

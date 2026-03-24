@@ -86,6 +86,8 @@ class TimeStepQueryInput:
     n_active: int = 0
     prev_n_active: int = 0
     diverged: bool = False
+    contact_force_norm: float = 0.0  # 接触力ノルム（力ベース dt 制御用, status-233）
+    prev_contact_force_norm: float = 0.0  # 前ステップの接触力ノルム
 
 
 @dataclass(frozen=True)
@@ -169,6 +171,8 @@ class UnifiedTimeStepProcess(
                 n_active=input_data.n_active,
                 prev_n_active=input_data.prev_n_active,
                 diverged=input_data.diverged,
+                contact_force_norm=input_data.contact_force_norm,
+                prev_contact_force_norm=input_data.prev_contact_force_norm,
             )
         )
         return self._convert(out, input_data)
