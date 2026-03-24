@@ -66,6 +66,9 @@ S7 (GPU)
 - [x] ~~**動的三点曲げ接触収束**: increment カウント修正で frac=1.0 到達（Hermite OFF 202N, Hermite ON 176N）~~ — status-231 で修正完了（旧 frac=0.86/0.98 はカットバックがmax_increments予算を食い潰すバグが原因）
 - [ ] **n_periods=30 での数百 N 確認**: n_periods=1 では 202N 到達。n_periods=30 テスト実行中
 - [ ] **摩擦アセンブリの Hermite 完全対応**: use_hermite=False デフォルト
+- [ ] **freeze_geometry_in_nr=True の必須化**: NR内で s,t を凍結しステップ間のみ更新。Hermite ON 時の NR 不収束（n_periods=30 で frac=0.08 停滞）の直接原因
+- [ ] **Node tangent 計算の局所化**: 現在 `_compute_node_tangents()` が全体メッシュ依存で、大変形時に接線急変→Hermite曲線形状ジャンプ→gap不連続→active接触点激減。隣接要素のみで局所計算に変更
+- [ ] **曲面連続関数化の代替手法調査**: Hermite 補間は接線感度が高すぎて大規模モデルで破綻。代替候補: B-spline/NURBS 曲線表現、Subdivision surface、Moving least squares (MLS) 近似、Isogeometric 接触（IGA-C）など。接線ベクトルへの過敏性を回避しつつ C1 連続性を確保する手法を比較検討
 
 ### 既知の問題
 
