@@ -391,7 +391,6 @@ class ContactFrictionProcess(
                 break
             load_frac = query_out.load_frac
 
-            _incr_count += 1
             _state_set(state, "increment_display", state.increment_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
@@ -572,6 +571,9 @@ class ContactFrictionProcess(
                 )
             )
             _state_set(state, "prev_n_active", step_result.n_active)
+
+            # 成功した dt ステップのみカウント（カットバックは含めない）
+            _incr_count += 1
 
             # k_pen continuation（明示指定されていない場合のみ）
             if not (_setup_kpen is not None and _setup_kpen > 0.0):

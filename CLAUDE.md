@@ -73,9 +73,10 @@
 
 ### 次の課題
 
-**Hermite 中心線 frac=0.98 達成** — status-230 で ComputeStJacobian Hermite 対応 + freeze_geometry_in_nr により
-Hermite OFF (frac=0.86, 154N) → Hermite ON (frac=0.98, 166.5N) に改善。
-残課題: frac=1.0 到達のためのさらなる安定化、摩擦アセンブリの Hermite 完全対応。
+**frac=1.0 到達** — status-231 で increment カウント修正（カットバック除外）により frac=1.0 完全収束。
+Hermite OFF: 202N, Hermite ON: 176N（n_periods=1, E=25, push=30mm）。
+旧 frac=0.86/0.98 はカットバックが max_increments を食い潰すバグが原因だった。
+残課題: n_periods=30 での数百 N 確認、摩擦アセンブリの Hermite 完全対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,13 +85,19 @@ Hermite OFF (frac=0.86, 154N) → Hermite ON (frac=0.98, 166.5N) に改善。
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- frac=1.0 到達: frac=0.98 の壁の原因分析と対策
-- 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認
+- 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認（n_periods=1では frac=1.0, 202N到達済み）
 - 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
+- Hermite ON vs OFF の接触力差の分析（175.7N vs 202.0N）
+- **dt を大きく保つ対策**: n_periods=30 Hermite OFF で dt が極小化しカットバック多発（frac=0.84 で 1358 increment）。adaptive timestepping の dt 下限引き上げ、接触チャタリング抑制、dt 回復ロジックの改善など
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
 - 収束トライ時に目標を緩和して本質的対策を先送りにすること
+
+## STA2 防止ルール（STAP細胞の二の舞防止）
+- **increment の定義**: increment は成功した dt ステップの数。カットバック（時間増分の縮小リトライ）は increment に含めない。`_incr_count` は成功パスでのみインクリメントし、`max_increments` はカットバック回数に侵食されない。
+- **結果の再現性**: 全ての収束結果は tee でログ保存し、YAML 出力と照合可能にすること。ベースライン（変更前）を先に確認してから改善テストを実施。
+- **数値の捏造禁止**: 収束しない場合は「収束しなかった」と報告する。目標を事後的に緩和して達成を装わない。
 
 ### セッション開始時の確認手順
 1. `docs/status/status-index.md` → 最新 status 番号を確認

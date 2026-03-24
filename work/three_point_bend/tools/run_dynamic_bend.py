@@ -52,7 +52,9 @@ def main() -> None:
     P_eb = k_eb * cfg.jig_push
 
     tag = args.tag or f"E{int(args.E)}"
-    print(f"=== {tag}: E={cfg.E}, push={cfg.jig_push}, k_pen={cfg.k_pen}, max_incr={cfg.max_increments} ===")
+    print(
+        f"=== {tag}: E={cfg.E}, push={cfg.jig_push}, k_pen={cfg.k_pen}, max_incr={cfg.max_increments} ==="
+    )
     print(f"解析剛性(EB): k={k_eb:.2f} N/mm, P({cfg.jig_push}mm)={P_eb:.1f} N")
 
     t0 = time.perf_counter()
@@ -61,7 +63,7 @@ def main() -> None:
 
     sr = result.solver_result
     print(f"\n--- 結果 ---")
-    print(f"収束={sr.converged}, incr={sr.n_increments}")
+    print(f"収束={sr.converged}, incr={sr.n_increments}, cutbacks={sr.n_cutbacks}")
     print(f"計算時間={elapsed:.1f} s")
     print(f"たわみ={result.wire_midpoint_deflection:.4f} mm")
     print(f"接触力={result.contact_force_norm:.1f} N")
@@ -85,6 +87,7 @@ def main() -> None:
         "tag": tag,
         "converged": bool(sr.converged),
         "n_increments": int(sr.n_increments),
+        "n_cutbacks": int(sr.n_cutbacks),
         "elapsed_seconds": round(elapsed, 1),
         "deflection_mm": round(result.wire_midpoint_deflection, 4),
         "contact_force_N": round(result.contact_force_norm, 1),
