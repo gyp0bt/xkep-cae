@@ -3,7 +3,7 @@
 最近接点条件の陰関数微分により、接触パラメータ (s, t) の
 節点変位に対する感度を計算する。
 
-理論:
+理論（線形セグメント）:
     最近接点条件:
         F₁ = δ · dA = 0
         F₂ = -δ · dB = 0
@@ -12,7 +12,17 @@
     陰関数定理: J · [ds, dt]ᵀ = -[∂F₁/∂u, ∂F₂/∂u]ᵀ
     J = [[a, -b], [-b, c]] (a=dA·dA, b=dA·dB, c=dB·dB)
 
+理論（Hermite 曲線 — status-230）:
+    最近接点条件:
+        F₁ = δ · dpA/ds = 0
+        F₂ = -δ · dpB/dt = 0
+    ただし δ = pA(s) - pB(t) (Hermite 補間), dpA/ds = Hermite 接線
+
+    Gram 行列: a=dpA·dpA, b=dpA·dpB, c=dpB·dpB
+    RHS: Hermite 基底関数の微分を使用（m は凍結近似）
+
 status-078 の旧実装を Process Architecture で再実装。
+status-230 で Hermite 幾何対応に拡張。
 """
 
 from __future__ import annotations
@@ -22,6 +32,114 @@ from dataclasses import dataclass
 import numpy as np
 
 from xkep_cae.core import ProcessMeta, SolverProcess
+
+# ── Hermite スカラーヘルパー ──────────────────────────────────
+
+
+def _hermite_h00(s: float) -> float:
+    """H00(s) = 2s³ - 3s² + 1 — 始点の位置基底."""
+    return 2.0 * s * s * s - 3.0 * s * s + 1.0
+
+
+def _hermite_h01(s: float) -> float:
+    """H01(s) = -2s³ + 3s² — 終点の位置基底."""
+    return -2.0 * s * s * s + 3.0 * s * s
+
+
+def _hermite_h10(s: float) -> float:
+    """H10(s) = s³ - 2s² + s — 始点の接線基底."""
+    return s * s * s - 2.0 * s * s + s
+
+
+def _hermite_h11(s: float) -> float:
+    """H11(s) = s³ - s² — 終点の接線基底."""
+    return s * s * s - s * s
+
+
+def _hermite_dh00(s: float) -> float:
+    """H00'(s) = 6s² - 6s."""
+    return 6.0 * s * s - 6.0 * s
+
+
+def _hermite_dh01(s: float) -> float:
+    """H01'(s) = -6s² + 6s."""
+    return -6.0 * s * s + 6.0 * s
+
+
+def _hermite_dh10(s: float) -> float:
+    """H10'(s) = 3s² - 4s + 1."""
+    return 3.0 * s * s - 4.0 * s + 1.0
+
+
+def _hermite_dh11(s: float) -> float:
+    """H11'(s) = 3s² - 2s."""
+    return 3.0 * s * s - 2.0 * s
+
+
+def _hermite_ddh00(s: float) -> float:
+    """H00''(s) = 12s - 6."""
+    return 12.0 * s - 6.0
+
+
+def _hermite_ddh01(s: float) -> float:
+    """H01''(s) = -12s + 6."""
+    return -12.0 * s + 6.0
+
+
+def _hermite_ddh10(s: float) -> float:
+    """H10''(s) = 6s - 4."""
+    return 6.0 * s - 4.0
+
+
+def _hermite_ddh11(s: float) -> float:
+    """H11''(s) = 6s - 2."""
+    return 6.0 * s - 2.0
+
+
+def _hermite_second_deriv_scalar(
+    s: float,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """スカラー版 Hermite 2階微分: d²p/ds² (3,)."""
+    return (
+        _hermite_ddh00(s) * x0
+        + _hermite_ddh10(s) * m0
+        + _hermite_ddh01(s) * x1
+        + _hermite_ddh11(s) * m1
+    )
+
+
+def _hermite_eval_scalar(
+    s: float,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """スカラー版 Hermite 補間: s → 位置 (3,)."""
+    return _hermite_h00(s) * x0 + _hermite_h10(s) * m0 + _hermite_h01(s) * x1 + _hermite_h11(s) * m1
+
+
+def _hermite_deriv_scalar(
+    s: float,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """スカラー版 Hermite 接線: dp/ds (3,)."""
+    return (
+        _hermite_dh00(s) * x0
+        + _hermite_dh10(s) * m0
+        + _hermite_dh01(s) * x1
+        + _hermite_dh11(s) * m1
+    )
+
+
+# ── Input / Output ───────────────────────────────────────────
 
 
 @dataclass(frozen=True)
@@ -37,6 +155,12 @@ class StJacobianInput:
     s_unclamped: float | None = None  # クランプ前の s（None なら s を使用）
     t_unclamped: float | None = None  # クランプ前の t（None なら t を使用）
     tol_singular: float = 1e-10  # 特異判定閾値
+    # Hermite 用フィールド（status-230）
+    mA0: np.ndarray | None = None  # (3,) A始点の接線ベクトル
+    mA1: np.ndarray | None = None  # (3,) A終点の接線ベクトル
+    mB0: np.ndarray | None = None  # (3,) B始点の接線ベクトル
+    mB1: np.ndarray | None = None  # (3,) B終点の接線ベクトル
+    use_hermite: bool = False  # True なら Hermite 幾何で計算
 
 
 @dataclass(frozen=True)
@@ -54,12 +178,13 @@ class ComputeStJacobianProcess(
     """最近接点パラメータの変位感度 ∂(s,t)/∂u を計算.
 
     status-078 の compute_st_jacobian を Process Architecture で再実装。
+    status-230 で Hermite 幾何対応を追加。
     """
 
     meta = ProcessMeta(
         name="ComputeStJacobian",
         module="geometry",
-        version="2.0.0",
+        version="3.0.0",
         document_path="docs/contact_geometry.md",
     )
 
@@ -88,6 +213,12 @@ class ComputeStJacobianProcess(
         return 0.0
 
     def process(self, inp: StJacobianInput) -> StJacobianOutput:
+        if inp.use_hermite and inp.mA0 is not None:
+            return self._process_hermite(inp)
+        return self._process_linear(inp)
+
+    def _process_linear(self, inp: StJacobianInput) -> StJacobianOutput:
+        """線形セグメント前提の ∂(s,t)/∂u 計算."""
         dA = inp.xA1 - inp.xA0
         dB = inp.xB1 - inp.xB0
         s = inp.s
@@ -145,6 +276,82 @@ class ComputeStJacobianProcess(
 
         return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
+    def _process_hermite(self, inp: StJacobianInput) -> StJacobianOutput:
+        """Hermite 幾何対応の ∂(s,t)/∂u 計算（status-230）.
+
+        最近接点条件（Hermite）:
+            F₁ = δ · dpA/ds = 0
+            F₂ = -δ · dpB/dt = 0
+
+        ここで dpA/ds は Hermite 接線ベクトル。
+        接線ベクトル m は凍結近似（∂m/∂u = 0）。
+
+        RHS 導出:
+            ∂F₁/∂u_Ak = H_Ak(s) · dpA + H_Ak'(s) · δ   (A 側ノード)
+            ∂F₁/∂u_Bk = -H_Bk(t) · dpA                   (B 側ノード)
+            ∂F₂/∂u_Ak = -H_Ak(s) · dpB                    (A 側ノード)
+            ∂F₂/∂u_Bk = H_Bk(t) · dpB - H_Bk'(t) · δ    (B 側ノード)
+
+        ここで H_A0=H00(s), H_A1=H01(s), H_B0=H00(t), H_B1=H01(t)。
+        """
+        s = inp.s
+        t = inp.t
+
+        # クランプ前の値でスムーズ遷移重みを計算
+        s_unc = inp.s_unclamped if inp.s_unclamped is not None else s
+        t_unc = inp.t_unclamped if inp.t_unclamped is not None else t
+        w_s = self._smooth_clip_deriv(s_unc, self._SMOOTH_EPS)
+        w_t = self._smooth_clip_deriv(t_unc, self._SMOOTH_EPS)
+
+        ds_du = np.zeros(12)
+        dt_du = np.zeros(12)
+
+        if w_s < 1e-30 and w_t < 1e-30:
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        # Hermite 接線ベクトル
+        dpA = _hermite_deriv_scalar(s, inp.xA0, inp.xA1, inp.mA0, inp.mA1)
+        dpB = _hermite_deriv_scalar(t, inp.xB0, inp.xB1, inp.mB0, inp.mB1)
+
+        # δ = pA(s) - pB(t)（Hermite 補間）
+        delta = _hermite_eval_scalar(s, inp.xA0, inp.xA1, inp.mA0, inp.mA1) - _hermite_eval_scalar(
+            t, inp.xB0, inp.xB1, inp.mB0, inp.mB1
+        )
+
+        # 完全 Jacobian（Gauss-Newton + 2階微分項）
+        # ∂F₁/∂s = dpA·dpA + δ·d²pA/ds², ∂F₂/∂t = dpB·dpB - δ·d²pB/dt²
+        d2pA = _hermite_second_deriv_scalar(s, inp.xA0, inp.xA1, inp.mA0, inp.mA1)
+        d2pB = _hermite_second_deriv_scalar(t, inp.xB0, inp.xB1, inp.mB0, inp.mB1)
+        a = float(np.dot(dpA, dpA) + np.dot(delta, d2pA))
+        b = float(np.dot(dpA, dpB))
+        c = float(np.dot(dpB, dpB) - np.dot(delta, d2pB))
+        det = a * c - b * b
+
+        ac_product = max(abs(a * c), 1e-30)
+        if abs(det) < inp.tol_singular * ac_product:
+            # 特異: 1×1 フォールバック
+            if w_t > 1e-30 and c >= inp.tol_singular:
+                dt_du = self._compute_dt_only_hermite(delta, dpA, dpB, s, t, c)
+                dt_du *= w_t
+            if w_s > 1e-30 and a >= inp.tol_singular:
+                ds_du = self._compute_ds_only_hermite(delta, dpA, dpB, s, t, a)
+                ds_du *= w_s
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        inv_det = 1.0 / det
+        J_inv = np.array([[c, b], [b, a]]) * inv_det
+
+        for node_idx in range(4):
+            rhs = self._compute_rhs_hermite(node_idx, delta, dpA, dpB, s, t)
+            st_deriv = -J_inv @ rhs
+            ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
+            dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+
+        ds_du *= w_s
+        dt_du *= w_t
+
+        return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
     @staticmethod
     def _compute_rhs(
         node_idx: int,
@@ -154,7 +361,7 @@ class ComputeStJacobianProcess(
         s: float,
         t: float,
     ) -> np.ndarray:
-        """ノード node_idx の各方向 d に対する [∂F₁/∂u_d, ∂F₂/∂u_d] を計算.
+        """線形版: ノード node_idx の [∂F₁/∂u_d, ∂F₂/∂u_d] を計算.
 
         Returns:
             (2, 3) array: rhs[eq, dim]
@@ -189,6 +396,58 @@ class ComputeStJacobianProcess(
         return rhs
 
     @staticmethod
+    def _compute_rhs_hermite(
+        node_idx: int,
+        delta: np.ndarray,
+        dpA: np.ndarray,
+        dpB: np.ndarray,
+        s: float,
+        t: float,
+    ) -> np.ndarray:
+        """Hermite 版: ノード node_idx の [∂F₁/∂u_d, ∂F₂/∂u_d] を計算.
+
+        m（接線ベクトル）は凍結近似。
+        A 側ノードの位置基底: H_A0=H00(s), H_A1=H01(s)
+        B 側ノードの位置基底: H_B0=H00(t), H_B1=H01(t)
+
+        ∂F₁/∂u_Ak = H_Ak(s) · dpA + H_Ak'(s) · δ
+        ∂F₁/∂u_Bk = -H_Bk(t) · dpA
+        ∂F₂/∂u_Ak = -H_Ak(s) · dpB
+        ∂F₂/∂u_Bk = H_Bk(t) · dpB - H_Bk'(t) · δ
+
+        Returns:
+            (2, 3) array: rhs[eq, dim]
+        """
+        rhs = np.zeros((2, 3))
+
+        if node_idx == 0:
+            # A0: h=H00(s), dh=H00'(s)
+            h = _hermite_h00(s)
+            dh = _hermite_dh00(s)
+            rhs[0] = h * dpA + dh * delta
+            rhs[1] = -h * dpB
+        elif node_idx == 1:
+            # A1: h=H01(s), dh=H01'(s)
+            h = _hermite_h01(s)
+            dh = _hermite_dh01(s)
+            rhs[0] = h * dpA + dh * delta
+            rhs[1] = -h * dpB
+        elif node_idx == 2:
+            # B0: h=H00(t), dh=H00'(t)
+            h = _hermite_h00(t)
+            dh = _hermite_dh00(t)
+            rhs[0] = -h * dpA
+            rhs[1] = h * dpB - dh * delta
+        else:
+            # B1: h=H01(t), dh=H01'(t)
+            h = _hermite_h01(t)
+            dh = _hermite_dh01(t)
+            rhs[0] = -h * dpA
+            rhs[1] = h * dpB - dh * delta
+
+        return rhs
+
+    @staticmethod
     def _compute_dt_only(
         delta: np.ndarray,
         dA: np.ndarray,
@@ -197,11 +456,7 @@ class ComputeStJacobianProcess(
         t: float,
         c: float,
     ) -> np.ndarray:
-        """s クランプ時: dt/du のみ計算（1×1 系）.
-
-        F₂ = -δ · dB = 0 のみ使用。
-        ∂F₂/∂t = c, dt/du = -(1/c) · ∂F₂/∂u
-        """
+        """線形版: s クランプ時 dt/du のみ計算（1×1 系）."""
         dt_du = np.zeros(12)
         inv_c = 1.0 / c
 
@@ -225,11 +480,7 @@ class ComputeStJacobianProcess(
         t: float,
         a: float,
     ) -> np.ndarray:
-        """t クランプ時: ds/du のみ計算（1×1 系）.
-
-        F₁ = δ · dA = 0 のみ使用。
-        ∂F₁/∂s = a (> 0), ds/du = -(1/a) · ∂F₁/∂u
-        """
+        """線形版: t クランプ時 ds/du のみ計算（1×1 系）."""
         ds_du = np.zeros(12)
         inv_a = 1.0 / a
 
@@ -241,5 +492,53 @@ class ComputeStJacobianProcess(
         ds_du[6:9] = inv_a * (1.0 - t) * dA
         # node 3 (B1): ∂F₁/∂u_B1 = -t·dA
         ds_du[9:12] = inv_a * t * dA
+
+        return ds_du
+
+    @staticmethod
+    def _compute_dt_only_hermite(
+        delta: np.ndarray,
+        dpA: np.ndarray,
+        dpB: np.ndarray,
+        s: float,
+        t: float,
+        c: float,
+    ) -> np.ndarray:
+        """Hermite 版: s クランプ時 dt/du のみ計算（1×1 系）."""
+        dt_du = np.zeros(12)
+        inv_c = 1.0 / c
+
+        # A0: ∂F₂/∂u_A0 = -H00(s)·dpB
+        dt_du[0:3] = inv_c * _hermite_h00(s) * dpB
+        # A1: ∂F₂/∂u_A1 = -H01(s)·dpB
+        dt_du[3:6] = inv_c * _hermite_h01(s) * dpB
+        # B0: ∂F₂/∂u_B0 = H00(t)·dpB - H00'(t)·δ
+        dt_du[6:9] = -inv_c * (_hermite_h00(t) * dpB - _hermite_dh00(t) * delta)
+        # B1: ∂F₂/∂u_B1 = H01(t)·dpB - H01'(t)·δ
+        dt_du[9:12] = -inv_c * (_hermite_h01(t) * dpB - _hermite_dh01(t) * delta)
+
+        return dt_du
+
+    @staticmethod
+    def _compute_ds_only_hermite(
+        delta: np.ndarray,
+        dpA: np.ndarray,
+        dpB: np.ndarray,
+        s: float,
+        t: float,
+        a: float,
+    ) -> np.ndarray:
+        """Hermite 版: t クランプ時 ds/du のみ計算（1×1 系）."""
+        ds_du = np.zeros(12)
+        inv_a = 1.0 / a
+
+        # A0: ∂F₁/∂u_A0 = H00(s)·dpA + H00'(s)·δ
+        ds_du[0:3] = -inv_a * (_hermite_h00(s) * dpA + _hermite_dh00(s) * delta)
+        # A1: ∂F₁/∂u_A1 = H01(s)·dpA + H01'(s)·δ
+        ds_du[3:6] = -inv_a * (_hermite_h01(s) * dpA + _hermite_dh01(s) * delta)
+        # B0: ∂F₁/∂u_B0 = -H00(t)·dpA
+        ds_du[6:9] = inv_a * _hermite_h00(t) * dpA
+        # B1: ∂F₁/∂u_B1 = -H01(t)·dpA
+        ds_du[9:12] = inv_a * _hermite_h01(t) * dpA
 
         return ds_du

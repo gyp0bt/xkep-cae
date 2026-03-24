@@ -86,7 +86,11 @@ class AddPairProcess(
         )
         new_pairs = list(input_data.manager.pairs)
         new_pairs.append(pair)
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=input_data.manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=input_data.manager.config,
+            connectivity=input_data.manager.connectivity,
+        )
         return AddPairOutput(manager=new_manager, pair=pair)
 
 
@@ -123,7 +127,11 @@ class ResetAllPairsProcess(
 
     def process(self, input_data: ResetAllPairsInput) -> ResetAllPairsOutput:
         new_pairs = [_evolve_pair(p, state=_ContactStateOutput()) for p in input_data.manager.pairs]
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=input_data.manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=input_data.manager.config,
+            connectivity=input_data.manager.connectivity,
+        )
         return ResetAllPairsOutput(manager=new_manager)
 
 
@@ -249,7 +257,11 @@ class DetectCandidatesProcess(
                 )
                 pairs.append(new_pair)
 
-        new_manager = _ContactManagerInput(pairs=pairs, config=config)
+        new_manager = _ContactManagerInput(
+            pairs=pairs,
+            config=config,
+            connectivity=input_data.manager.connectivity,
+        )
         return DetectCandidatesOutput(
             manager=new_manager,
             candidates=candidates,
@@ -351,9 +363,29 @@ class UpdateGeometryProcess(
             # s,t を凍結: 既存値を使い、現在の座標から gap/normal のみ再計算
             s_all = np.array([p.state.s for p in pairs])
             t_all = np.array([p.state.t for p in pairs])
-            # 凍結 s,t での接触点: pA = (1-s)*xA0 + s*xA1, pB = (1-t)*xB0 + t*xB1
-            pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
-            pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
+
+            # Hermite 使用時は Hermite 補間で接触点を計算（status-230）
+            _use_hermite_freeze = (
+                input_data.connectivity is not None
+                and hasattr(config, "use_hermite_centerline")
+                and config.use_hermite_centerline
+            )
+            if _use_hermite_freeze:
+                from xkep_cae.contact.geometry._compute import (
+                    _compute_node_tangents,
+                    _hermite_eval,
+                )
+
+                node_tangents = _compute_node_tangents(coords, input_data.connectivity)
+                mA0 = node_tangents[nodes_a0]
+                mA1 = node_tangents[nodes_a1]
+                mB0 = node_tangents[nodes_b0]
+                mB1 = node_tangents[nodes_b1]
+                pA = _hermite_eval(s_all, xA0, xA1, mA0, mA1)
+                pB = _hermite_eval(t_all, xB0, xB1, mB0, mB1)
+            else:
+                pA = (1.0 - s_all[:, None]) * xA0 + s_all[:, None] * xA1
+                pB = (1.0 - t_all[:, None]) * xB0 + t_all[:, None] * xB1
             delta = pA - pB
             dist_all = np.sqrt(np.einsum("ij,ij->i", delta, delta))
             dist_safe = np.where(dist_all > 1e-30, dist_all, 1.0)
@@ -460,7 +492,11 @@ class UpdateGeometryProcess(
                 )
             new_pairs.append(_evolve_pair(pair, state=new_state))
 
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=config,
+            connectivity=input_data.connectivity,
+        )
         return UpdateGeometryOutput(
             manager=new_manager,
             n_active=_n_active(new_manager),
@@ -524,7 +560,11 @@ class InitializePenaltyProcess(
                 )
             else:
                 new_pairs.append(pair)
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=manager.config,
+            connectivity=manager.connectivity,
+        )
         return InitializePenaltyOutput(
             manager=new_manager,
             n_initialized=_n_active(new_manager),

@@ -163,7 +163,7 @@ class _ContactConfigInput:
     position_tolerance: float = 0.0
     coating_stiffness: float = 0.0
     coating_damping: float = 0.0
-    use_hermite_centerline: bool = False  # st_jacobian が線形幾何前提のため OFF（status-229）
+    use_hermite_centerline: bool = False  # status-230: Hermite 幾何対応完了。テストで ON 検証中
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
@@ -182,6 +182,7 @@ class _ContactManagerInput:
 
     pairs: list[_ContactPairOutput] = field(default_factory=list)
     config: _ContactConfigInput = field(default_factory=_ContactConfigInput)
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用の要素接続情報
 
 
 # ── モジュールレベルユーティリティ関数 ──

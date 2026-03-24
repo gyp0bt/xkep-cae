@@ -906,7 +906,8 @@ class DynamicThreePointBendContactJigConfig:
     tol_force: float = 1e-6  # 力収束許容値
     max_nr_attempts: int = 30  # NR 最大反復数
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
-    use_hermite_centerline: bool = False  # st_jacobian が線形幾何前提のため OFF（status-229）
+    use_hermite_centerline: bool = True  # status-230: Hermite 幾何対応完了により ON
+    freeze_geometry_in_nr: bool = True  # status-230: Hermite ON 時は NR 内 s,t 凍結で安定化
 
 
 @dataclass(frozen=True)
@@ -1159,6 +1160,7 @@ class DynamicThreePointBendContactJigProcess(
             coating_damping=cfg.coating_damping,
             coating_mu=cfg.coating_mu,
             use_hermite_centerline=cfg.use_hermite_centerline,
+            freeze_geometry_in_nr=cfg.freeze_geometry_in_nr,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
