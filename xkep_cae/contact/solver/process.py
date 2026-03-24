@@ -426,7 +426,11 @@ class ContactFrictionProcess(
             )
             manager = _dc_step.manager
             _ug_step = _geom_proc.process(
-                UpdateGeometryInput(manager=manager, node_coords=coords_def)
+                UpdateGeometryInput(
+                    manager=manager,
+                    node_coords=coords_def,
+                    connectivity=connectivity,
+                )
             )
             manager = _ug_step.manager
 
