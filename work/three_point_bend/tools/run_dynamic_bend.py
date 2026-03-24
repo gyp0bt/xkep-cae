@@ -32,6 +32,7 @@ def main() -> None:
     parser.add_argument("--k-pen", type=float, default=0.0, help="ペナルティ剛性 (0=自動)")
     parser.add_argument("--n-periods", type=float, default=30.0, help="周期数")
     parser.add_argument("--tag", type=str, default="", help="実行タグ（ファイル名用）")
+    parser.add_argument("--no-hermite", action="store_true", help="Hermite 補間無効")
     args = parser.parse_args()
 
     warnings.filterwarnings("ignore", category=UserWarning)
@@ -42,6 +43,7 @@ def main() -> None:
         max_increments=args.max_incr,
         k_pen=args.k_pen,
         n_periods=args.n_periods,
+        use_hermite_centerline=not args.no_hermite,
     )
 
     # 解析解

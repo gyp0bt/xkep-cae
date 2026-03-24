@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-22）
 
-**186+10s テスト**（smooth_clamp C1連続化 frac=0.96到達 — status-228） | 契約違反1件 | [最新status](status/status-index.md)
+**100+10s テスト**（ε=0.02完全統一 frac=0.86到達 — status-229） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
