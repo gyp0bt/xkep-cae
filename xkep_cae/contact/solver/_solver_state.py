@@ -34,6 +34,7 @@ class SolverStateOutput:
     increment_display: int = 0
     total_attempts: int = 0
     prev_n_active: int = 0
+    prev_contact_force_norm: float = 0.0  # 力ベース dt 制御用（status-233）
 
     # --- 履歴 ---
     load_history: list[float] = field(default_factory=list)

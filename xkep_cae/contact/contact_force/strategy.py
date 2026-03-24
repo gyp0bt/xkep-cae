@@ -21,7 +21,6 @@ import scipy.sparse as sp
 
 from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
-from xkep_cae.contact._types import ContactStatus
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -199,8 +198,8 @@ class HuberContactForceProcess(
             for i, pair in enumerate(manager.pairs):
                 if not hasattr(pair, "state"):
                     continue
-                if pair.state.status == ContactStatus.INACTIVE:
-                    continue
+                # SDI 排除: INACTIVE skip を除去。Huber penalty は gap > 0 で
+                # 自然に p_n=0 を返すため、全候補ペアを評価する（status-233）。
 
                 g_i = pair.state.gap
                 x_pen = k_pen * (-g_i)
@@ -292,8 +291,7 @@ class HuberContactForceProcess(
             for pair in manager.pairs:
                 if not hasattr(pair, "state"):
                     continue
-                if pair.state.status == ContactStatus.INACTIVE:
-                    continue
+                # SDI 排除: INACTIVE skip を除去（status-233）。
 
                 g_i = pair.state.gap
                 x_pen = k_pen * (-g_i)

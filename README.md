@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**100+14s テスト** — 2026-03-24時点 | n_periods=30 dt分析+Hermite後回し（status-232） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**190+10s テスト** — 2026-03-24時点 | SDI排除+力ベースdt制御（status-233） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

@@ -92,7 +92,7 @@ class _ContactConfigInput:
     k_t_ratio: float = 0.5
     mu: float = 0.3
     g_on: float = 0.0
-    g_off: float = 1e-6
+    g_off: float = 0.1  # SDI 排除: 広いヒステリシスで診断用 ACTIVE を安定化（status-233）
     n_outer_max: int = 5
     tol_geometry: float = 1e-6
     mu_ramp_steps: int = 0
@@ -149,7 +149,7 @@ class _ContactConfigInput:
     dt_shrink_factor: float = 0.5
     dt_grow_attempt_threshold: int = 5
     dt_shrink_attempt_threshold: int = 15
-    dt_contact_change_threshold: float = 0.3
+    dt_contact_change_threshold: float = 0.5  # 接触力変化率閾値（status-233: n_active→力ベース）
     dt_min_fraction: float = 0.0
     dt_max_fraction: float = 0.0
     use_amg_preconditioner: bool = False

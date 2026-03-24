@@ -559,7 +559,8 @@ class ContactFrictionProcess(
             # 動的解析では UL 更新をスキップ — CR 梁の corotational 分解が
             # 大変形を処理するため、参照配置リセットは不要。
 
-            # 適応時間増分: 次ステップ幅決定
+            # 適応時間増分: 次ステップ幅決定（力ベース SDI 判定, status-233）
+            _fc_norm = float(np.linalg.norm(step_result.f_c))
             stepping.process(
                 TimeStepQueryInput(
                     action=StepAction.SUCCESS,
@@ -568,9 +569,12 @@ class ContactFrictionProcess(
                     n_attempts=step_result.n_attempts,
                     n_active=step_result.n_active,
                     prev_n_active=state.prev_n_active,
+                    contact_force_norm=_fc_norm,
+                    prev_contact_force_norm=state.prev_contact_force_norm,
                 )
             )
             _state_set(state, "prev_n_active", step_result.n_active)
+            _state_set(state, "prev_contact_force_norm", _fc_norm)
 
             # 成功した dt ステップのみカウント（カットバックは含めない）
             _incr_count += 1
