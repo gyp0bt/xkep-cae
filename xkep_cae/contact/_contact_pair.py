@@ -163,7 +163,7 @@ class _ContactConfigInput:
     position_tolerance: float = 0.0
     coating_stiffness: float = 0.0
     coating_damping: float = 0.0
-    use_hermite_centerline: bool = True  # ε=0.02 統一により NR 内不整合を解消（status-229）
+    use_hermite_centerline: bool = False  # st_jacobian が線形幾何前提のため OFF（status-229）
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0
