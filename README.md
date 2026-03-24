@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**100+14s テスト** — 2026-03-24時点 | Hermite幾何対応 frac=0.98到達（status-230） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**100+14s テスト** — 2026-03-24時点 | increment修正 frac=1.0到達（status-231） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

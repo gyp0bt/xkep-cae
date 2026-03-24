@@ -73,9 +73,10 @@
 
 ### 次の課題
 
-**Hermite 中心線 frac=0.98 達成** — status-230 で ComputeStJacobian Hermite 対応 + freeze_geometry_in_nr により
-Hermite OFF (frac=0.86, 154N) → Hermite ON (frac=0.98, 166.5N) に改善。
-残課題: frac=1.0 到達のためのさらなる安定化、摩擦アセンブリの Hermite 完全対応。
+**frac=1.0 到達** — status-231 で increment カウント修正（カットバック除外）により frac=1.0 完全収束。
+Hermite OFF: 202N, Hermite ON: 176N（n_periods=1, E=25, push=30mm）。
+旧 frac=0.86/0.98 はカットバックが max_increments を食い潰すバグが原因だった。
+残課題: n_periods=30 での数百 N 確認、摩擦アセンブリの Hermite 完全対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -84,9 +85,9 @@ Hermite OFF (frac=0.86, 154N) → Hermite ON (frac=0.98, 166.5N) に改善。
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- frac=1.0 到達: frac=0.98 の壁の原因分析と対策
-- 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認
+- 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認（n_periods=1では frac=1.0, 202N到達済み）
 - 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
+- Hermite ON vs OFF の接触力差の分析（175.7N vs 202.0N）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

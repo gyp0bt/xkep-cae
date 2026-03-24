@@ -52,7 +52,9 @@ def main() -> None:
     P_eb = k_eb * cfg.jig_push
 
     tag = args.tag or f"E{int(args.E)}"
-    print(f"=== {tag}: E={cfg.E}, push={cfg.jig_push}, k_pen={cfg.k_pen}, max_incr={cfg.max_increments} ===")
+    print(
+        f"=== {tag}: E={cfg.E}, push={cfg.jig_push}, k_pen={cfg.k_pen}, max_incr={cfg.max_increments} ==="
+    )
     print(f"解析剛性(EB): k={k_eb:.2f} N/mm, P({cfg.jig_push}mm)={P_eb:.1f} N")
 
     t0 = time.perf_counter()
