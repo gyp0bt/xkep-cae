@@ -73,10 +73,10 @@
 
 ### 次の課題
 
-**frac=1.0 到達** — status-231 で increment カウント修正（カットバック除外）により frac=1.0 完全収束。
-Hermite OFF: 202N, Hermite ON: 176N（n_periods=1, E=25, push=30mm）。
-旧 frac=0.86/0.98 はカットバックが max_increments を食い潰すバグが原因だった。
-残課題: n_periods=30 での数百 N 確認、摩擦アセンブリの Hermite 完全対応。
+**n_periods=30 frac=1.0 到達** — status-234 で SDI 排除効果検証完了。
+n_periods=30, Hermite OFF: **208.6N**（frac=1.0, 1592 incr, 73分）。
+n_periods=1: 202.8N。n_periods=30 の +2.9% は慣性残留で許容範囲。
+残課題: 摩擦アセンブリの Hermite 完全対応、NR 残差収束速度改善。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -85,11 +85,9 @@ Hermite OFF: 202N, Hermite ON: 176N（n_periods=1, E=25, push=30mm）。
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認（n_periods=1では frac=1.0, 202N到達済み）
 - 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
-- Hermite ON vs OFF の接触力差の分析（175.7N vs 202.0N）
-- **dt を大きく保つ対策**: status-233 で SDI 排除（全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化）を実装済み。n_periods=30 で frac=1.0 到達を検証すること
-- **SDI（Severe Discontinuous Iteration）**: ABAQUS の収束問題分類用語。接触 ON/OFF 急変等で NR 不安定化。status-233 で構造的に排除
+- NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
+- n_periods=30 Hermite ON テスト（現在は壊滅的: status-232 で frac=0.08 停滞）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

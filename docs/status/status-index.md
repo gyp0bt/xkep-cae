@@ -67,6 +67,7 @@
 | [231](status-231.md) | 2026-03-24 | incrementカウント修正 frac=1.0達成（STA2防止） | 100+14s(新) |
 | [232](status-232.md) | 2026-03-24 | n_periods=30結果+dt比較分析+Hermite後回し判断 | 100+14s(新) |
 | [233](status-233.md) | 2026-03-24 | SDI排除 — 全候補ペア評価+力ベースdt制御+g_offワイド化 | 190+10s(新) |
+| [234](status-234.md) | 2026-03-24 | n_periods=30 frac=1.0到達 208.6N — SDI排除効果検証 | 190+10s(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -180,6 +181,7 @@ Hermite対応:      100+14s(新) (2026-03-24) ← status-230（StJacobian Hermit
 incr修正:          100+14s(新) (2026-03-24) ← status-231（incrementカウント修正+frac=1.0達成）
 dt分析:             100+14s(新) (2026-03-24) ← status-232（n_periods=30結果+dt比較+Hermite後回し）
 SDI排除:            190+10s(新) (2026-03-24) ← status-233（全候補ペア評価+力ベースdt制御+g_off拡大）
+np30完走:           190+10s(新) (2026-03-24) ← status-234（n_periods=30 frac=1.0 208.6N達成）
 ```
 
 ## 備考

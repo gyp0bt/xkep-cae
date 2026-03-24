@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-24）
 
-**100+14s テスト**（increment修正 frac=1.0到達 — status-231） | 契約違反1件 | [最新status](status/status-index.md)
+**190+10s テスト**（n_periods=30 frac=1.0 到達 208.6N — status-234） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -64,13 +64,13 @@ S7 (GPU)
 - [x] ~~**UnifiedTimeStepProcess統合**: ContactFrictionProcess内のdt_sub二重管理解消~~ — status-217 で統合完了
 - [x] ~~**数値粘性の定量評価**: rho_inf 依存性の検証~~ — status-217 でパラメータ感度81.5%確認
 - [x] ~~**動的三点曲げ接触収束**: increment カウント修正で frac=1.0 到達（Hermite OFF 202N, Hermite ON 176N）~~ — status-231 で修正完了（旧 frac=0.86/0.98 はカットバックがmax_increments予算を食い潰すバグが原因）
-- [ ] **n_periods=30 での数百 N 確認**: n_periods=1 では 202N 到達。n_periods=30 テスト実行中
+- [x] ~~**n_periods=30 での数百 N 確認**: n_periods=30 frac=1.0 到達、208.6N（status-234）~~
 - [ ] **摩擦アセンブリの Hermite 完全対応**: use_hermite=False デフォルト
 - [ ] **freeze_geometry_in_nr=True の必須化**: NR内で s,t を凍結しステップ間のみ更新。Hermite ON 時の NR 不収束（n_periods=30 で frac=0.08 停滞）の直接原因
 - [ ] **Node tangent 計算の局所化**: 現在 `_compute_node_tangents()` が全体メッシュ依存で、大変形時に接線急変→Hermite曲線形状ジャンプ→gap不連続→active接触点激減。隣接要素のみで局所計算に変更
 - [ ] **曲面連続関数化の代替手法調査**: Hermite 補間は接線感度が高すぎて大規模モデルで破綻。代替候補: B-spline/NURBS 曲線表現、Subdivision surface、Moving least squares (MLS) 近似、Isogeometric 接触（IGA-C）など。接線ベクトルへの過敏性を回避しつつ C1 連続性を確保する手法を比較検討
 - [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
-- [ ] **n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証
+- [x] ~~**n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証（status-234: 1592 incr, 4403s, fc=208.6N）~~
 
 ### 既知の問題
 
