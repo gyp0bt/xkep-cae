@@ -69,6 +69,8 @@ S7 (GPU)
 - [ ] **freeze_geometry_in_nr=True の必須化**: NR内で s,t を凍結しステップ間のみ更新。Hermite ON 時の NR 不収束（n_periods=30 で frac=0.08 停滞）の直接原因
 - [ ] **Node tangent 計算の局所化**: 現在 `_compute_node_tangents()` が全体メッシュ依存で、大変形時に接線急変→Hermite曲線形状ジャンプ→gap不連続→active接触点激減。隣接要素のみで局所計算に変更
 - [ ] **曲面連続関数化の代替手法調査**: Hermite 補間は接線感度が高すぎて大規模モデルで破綻。代替候補: B-spline/NURBS 曲線表現、Subdivision surface、Moving least squares (MLS) 近似、Isogeometric 接触（IGA-C）など。接線ベクトルへの過敏性を回避しつつ C1 連続性を確保する手法を比較検討
+- [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
+- [ ] **n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証
 
 ### 既知の問題
 
