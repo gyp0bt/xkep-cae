@@ -88,6 +88,7 @@ Hermite OFF: 202N, Hermite ON: 176N（n_periods=1, E=25, push=30mm）。
 - 動的接触三点曲げ、L100,fi17,push30,n_periods30,E25で曲げ荷重が数百Nになることを確認（n_periods=1では frac=1.0, 202N到達済み）
 - 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
 - Hermite ON vs OFF の接触力差の分析（175.7N vs 202.0N）
+- **dt を大きく保つ対策**: n_periods=30 Hermite OFF で dt が極小化しカットバック多発（frac=0.84 で 1358 increment）。adaptive timestepping の dt 下限引き上げ、接触チャタリング抑制、dt 回復ロジックの改善など
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
