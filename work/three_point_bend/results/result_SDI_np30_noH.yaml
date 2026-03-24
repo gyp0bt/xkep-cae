@@ -1,0 +1,33 @@
+contact_force_N: 208.6
+converged: true
+deflection_mm: !!python/object/apply:numpy._core.multiarray.scalar
+- &id001 !!python/object/apply:numpy.dtype
+  args:
+  - f8
+  - false
+  - true
+  state: !!python/tuple
+  - 3
+  - <
+  - null
+  - null
+  - null
+  - -1
+  - -1
+  - 0
+- !!binary |
+  w/UoXI8yO0A=
+effective_stiffness: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  rkfhehSuHkA=
+elapsed_seconds: 4402.7
+final_frac: 1.0
+n_cutbacks: 907
+n_increments: 1592
+push_reached_mm: 30.0
+stiffness_error_eb: !!python/object/apply:numpy._core.multiarray.scalar
+- *id001
+- !!binary |
+  UiegibDh4T8=
+tag: SDI_np30_noH
