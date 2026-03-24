@@ -32,21 +32,29 @@ def _contact_dofs(pair: object, ndof_per_node: int = 6) -> np.ndarray:
     return (nodes[:, None] * ndof_per_node + offsets).ravel()
 
 
-def _contact_tangent_shape_vector(pair: object, axis: int) -> np.ndarray:
+def _contact_tangent_shape_vector(
+    pair: object, axis: int, *, use_hermite: bool = False
+) -> np.ndarray:
     """接線方向形状ベクトル (12,).
 
     axis=0 → t1, axis=1 → t2.
-    A 側: (1-s)*ti, s*ti  /  B 側: -(1-t)*ti, -t*ti
+    線形: A 側 (1-s)*ti, s*ti / B 側 -(1-t)*ti, -t*ti
+    Hermite: A 側 H00(s)*ti, H01(s)*ti / B 側 -H00(t)*ti, -H01(t)*ti
     """
     s = pair.state.s
     t = pair.state.t
     ti = pair.state.tangent1 if axis == 0 else pair.state.tangent2
 
+    if use_hermite:
+        from xkep_cae.contact.contact_force.strategy import _hermite_shape_coeffs
+
+        coeffs = _hermite_shape_coeffs(s, t)
+    else:
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+
     g_t = np.zeros(12)
-    g_t[0:3] = (1.0 - s) * ti
-    g_t[3:6] = s * ti
-    g_t[6:9] = -(1.0 - t) * ti
-    g_t[9:12] = -t * ti
+    for k in range(4):
+        g_t[k * 3 : k * 3 + 3] = coeffs[k] * ti
     return g_t
 
 
@@ -55,10 +63,13 @@ def _compute_tangential_displacement(
     u_cur: np.ndarray,
     u_ref: np.ndarray,
     ndof_per_node: int = 6,
+    *,
+    use_hermite: bool = False,
 ) -> np.ndarray:
     """接線相対変位増分 Δu_t (2,) を計算.
 
-    Δu_rel = [(1-t)(du_B0) + t(du_B1)] - [(1-s)(du_A0) + s(du_A1)]
+    線形: Δu_rel = [(1-t)(du_B0) + t(du_B1)] - [(1-s)(du_A0) + s(du_A1)]
+    Hermite: Δu_rel = [H00(t)du_B0 + H01(t)du_B1] - [H00(s)du_A0 + H01(s)du_A1]
     Δu_t = [Δu_rel · t1, Δu_rel · t2]
     """
     s = pair.state.s
@@ -75,8 +86,15 @@ def _compute_tangential_displacement(
     du_B0 = du[nB0 * ndof_per_node : nB0 * ndof_per_node + 3]
     du_B1 = du[nB1 * ndof_per_node : nB1 * ndof_per_node + 3]
 
-    du_A = (1.0 - s) * du_A0 + s * du_A1
-    du_B = (1.0 - t) * du_B0 + t * du_B1
+    if use_hermite:
+        from xkep_cae.contact.contact_force.strategy import _hermite_shape_coeffs
+
+        coeffs = _hermite_shape_coeffs(s, t)
+        du_A = coeffs[0] * du_A0 + coeffs[1] * du_A1
+        du_B = (-coeffs[2]) * du_B0 + (-coeffs[3]) * du_B1
+    else:
+        du_A = (1.0 - s) * du_A0 + s * du_A1
+        du_B = (1.0 - t) * du_B0 + t * du_B1
     du_rel = du_B - du_A
 
     return np.array([float(np.dot(du_rel, t1)), float(np.dot(du_rel, t2))])
@@ -162,6 +180,8 @@ def _assemble_friction_geometric_stiffness(
     friction_forces_local: dict[int, np.ndarray],
     ndof_total: int,
     ndof_per_node: int = 6,
+    *,
+    use_hermite: bool = False,
 ) -> sp.csr_matrix:
     """摩擦接線幾何剛性行列（接線方向回転項）を COO 形式で組み立て.
 
@@ -206,7 +226,12 @@ def _assemble_friction_geometric_stiffness(
             continue
 
         inv_dist = 1.0 / dist
-        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+        if use_hermite:
+            from xkep_cae.contact.contact_force.strategy import _hermite_shape_coeffs
+
+            coeffs = _hermite_shape_coeffs(s, t)
+        else:
+            coeffs = [(1.0 - s), s, -(1.0 - t), -t]
 
         # M_{ij} = -q₁·n_i·t1_j + q₂·ε_{ijk}·t1_k - q₂·t2_i·n_j
         # ε_{ijk}·t1_k: skew-symmetric part (δn × t1 の連鎖微分)

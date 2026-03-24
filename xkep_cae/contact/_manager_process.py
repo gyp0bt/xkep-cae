@@ -86,7 +86,11 @@ class AddPairProcess(
         )
         new_pairs = list(input_data.manager.pairs)
         new_pairs.append(pair)
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=input_data.manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=input_data.manager.config,
+            connectivity=input_data.manager.connectivity,
+        )
         return AddPairOutput(manager=new_manager, pair=pair)
 
 
@@ -123,7 +127,11 @@ class ResetAllPairsProcess(
 
     def process(self, input_data: ResetAllPairsInput) -> ResetAllPairsOutput:
         new_pairs = [_evolve_pair(p, state=_ContactStateOutput()) for p in input_data.manager.pairs]
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=input_data.manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=input_data.manager.config,
+            connectivity=input_data.manager.connectivity,
+        )
         return ResetAllPairsOutput(manager=new_manager)
 
 
@@ -249,7 +257,11 @@ class DetectCandidatesProcess(
                 )
                 pairs.append(new_pair)
 
-        new_manager = _ContactManagerInput(pairs=pairs, config=config)
+        new_manager = _ContactManagerInput(
+            pairs=pairs,
+            config=config,
+            connectivity=input_data.manager.connectivity,
+        )
         return DetectCandidatesOutput(
             manager=new_manager,
             candidates=candidates,
@@ -460,7 +472,11 @@ class UpdateGeometryProcess(
                 )
             new_pairs.append(_evolve_pair(pair, state=new_state))
 
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=config,
+            connectivity=input_data.connectivity,
+        )
         return UpdateGeometryOutput(
             manager=new_manager,
             n_active=_n_active(new_manager),
@@ -524,7 +540,11 @@ class InitializePenaltyProcess(
                 )
             else:
                 new_pairs.append(pair)
-        new_manager = _ContactManagerInput(pairs=new_pairs, config=manager.config)
+        new_manager = _ContactManagerInput(
+            pairs=new_pairs,
+            config=manager.config,
+            connectivity=manager.connectivity,
+        )
         return InitializePenaltyOutput(
             manager=new_manager,
             n_initialized=_n_active(new_manager),

@@ -5,6 +5,11 @@ ContactForceStrategy Protocol に従い、接触力を評価する Process。
 status-222 で完全一本化:
 - HuberContactForceProcess: Huber ペナルティ接触力（唯一の実装）
 - SmoothPenalty / NCP / Uzawa は status-222 で削除。復元手順は status-222.md 参照。
+
+status-230: Hermite 幾何対応
+- 形状関数係数を Hermite 基底 H00(s)/H01(s) に切替
+- ∂n/∂s を Hermite 接線 dpA/ds で計算
+- K_st に Hermite 版 StJacobian を使用
 """
 
 from __future__ import annotations
@@ -38,17 +43,60 @@ class ContactForceOutput:
     contact_force: np.ndarray
 
 
+# ── Hermite 形状関数ヘルパー ──────────────────────────────────
+
+
+def _hermite_shape_coeffs(s: float, t: float) -> list[float]:
+    """Hermite 位置基底による形状関数係数.
+
+    H00(s) = 2s³ - 3s² + 1  (始点)
+    H01(s) = -2s³ + 3s²     (終点)
+
+    Returns:
+        [H00(s), H01(s), -H00(t), -H01(t)]
+    """
+    s2, s3 = s * s, s * s * s
+    t2, t3 = t * t, t * t * t
+    return [
+        2.0 * s3 - 3.0 * s2 + 1.0,  # A0: H00(s)
+        -2.0 * s3 + 3.0 * s2,  # A1: H01(s)
+        -(2.0 * t3 - 3.0 * t2 + 1.0),  # B0: -H00(t)
+        -(-2.0 * t3 + 3.0 * t2),  # B1: -H01(t)
+    ]
+
+
+def _hermite_dc_ds(s: float) -> list[float]:
+    """Hermite 形状関数の s 微分: d[H00(s), H01(s), -, -]/ds.
+
+    H00'(s) = 6s² - 6s
+    H01'(s) = -6s² + 6s
+    """
+    s2 = s * s
+    return [6.0 * s2 - 6.0 * s, -6.0 * s2 + 6.0 * s, 0.0, 0.0]
+
+
+def _hermite_dc_dt(t: float) -> list[float]:
+    """Hermite 形状関数の t 微分: d[-, -, -H00(t), -H01(t)]/dt.
+
+    d(-H00(t))/dt = -H00'(t) = -(6t² - 6t)
+    d(-H01(t))/dt = -H01'(t) = -(-6t² + 6t)
+    """
+    t2 = t * t
+    return [0.0, 0.0, -(6.0 * t2 - 6.0 * t), -(-6.0 * t2 + 6.0 * t)]
+
+
 # ── ヘルパー ───────────────────────────────────────────────
 
 
-def _contact_shape_vector(pair: object) -> np.ndarray:
+def _contact_shape_vector(pair: object, *, use_hermite: bool = False) -> np.ndarray:
     """接触形状ベクトル g_shape (12,) を構築する.
 
-    法線方向の形状関数:
-        g_shape = [(1-s)*n, s*n, -(1-t)*n, -t*n]  (4×3 = 12)
+    線形: g_shape = [(1-s)*n, s*n, -(1-t)*n, -t*n]
+    Hermite: g_shape = [H00(s)*n, H01(s)*n, -H00(t)*n, -H01(t)*n]
 
     Args:
         pair: ContactPair（state.s, state.t, state.normal を持つ）
+        use_hermite: True なら Hermite 基底を使用
 
     Returns:
         g_shape: (12,) 形状ベクトル
@@ -56,7 +104,10 @@ def _contact_shape_vector(pair: object) -> np.ndarray:
     s = pair.state.s
     t = pair.state.t
     normal = pair.state.normal
-    coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+    if use_hermite:
+        coeffs = _hermite_shape_coeffs(s, t)
+    else:
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
     g_shape = np.zeros(12)
     for k in range(4):
         g_shape[k * 3 : k * 3 + 3] = coeffs[k] * normal
@@ -138,6 +189,12 @@ class HuberContactForceProcess(
         residuals: list[float] = []
         delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
 
+        _use_hermite = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "use_hermite_centerline")
+            and manager.config.use_hermite_centerline
+        )
+
         if hasattr(manager, "pairs"):
             for i, pair in enumerate(manager.pairs):
                 if not hasattr(pair, "state"):
@@ -158,7 +215,7 @@ class HuberContactForceProcess(
                 if p_n <= 1e-30:
                     continue
 
-                g_shape = _contact_shape_vector(pair)
+                g_shape = _contact_shape_vector(pair, use_hermite=_use_hermite)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
                 for k in range(4):
                     for d in range(3):
@@ -193,12 +250,20 @@ class HuberContactForceProcess(
         滑り剛性（接触点移動、status-226）:
             K_st = p_n * (outer(∂g_shape/∂s, ds_du) + outer(∂g_shape/∂t, dt_du))
 
-        ここで c = [(1-s), s, -(1-t), -t], dist = gap + r_A + r_B。
+        線形: c = [(1-s), s, -(1-t), -t]
+        Hermite: c = [H00(s), H01(s), -H00(t), -H01(t)]（status-230）
         """
         rows: list[int] = []
         cols: list[int] = []
         vals: list[float] = []
         delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
+
+        # Hermite フラグ
+        _use_hermite = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "use_hermite_centerline")
+            and manager.config.use_hermite_centerline
+        )
 
         # consistent_st_tangent フラグの取得
         _use_st = (
@@ -213,6 +278,15 @@ class HuberContactForceProcess(
             )
 
             _st_proc = ComputeStJacobianProcess()
+
+        # Hermite 用 node_tangents（K_st, dn/ds で使用）
+        _node_tangents = None
+        if _use_hermite and node_coords is not None:
+            _conn = getattr(manager, "connectivity", None)
+            if _conn is not None:
+                from xkep_cae.contact.geometry._compute import _compute_node_tangents
+
+                _node_tangents = _compute_node_tangents(node_coords, _conn)
 
         if hasattr(manager, "pairs"):
             for pair in manager.pairs:
@@ -239,7 +313,12 @@ class HuberContactForceProcess(
                 normal = pair.state.normal
                 s = pair.state.s
                 t = pair.state.t
-                coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+
+                if _use_hermite:
+                    coeffs = _hermite_shape_coeffs(s, t)
+                else:
+                    coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+
                 dofs = _contact_dofs(pair, self._ndof_per_node)
 
                 for ki in range(4):
@@ -278,6 +357,8 @@ class HuberContactForceProcess(
                         cols,
                         vals,
                         node_coords,
+                        use_hermite=_use_hermite,
+                        node_tangents=_node_tangents,
                     )
 
         if rows:
@@ -299,6 +380,9 @@ class HuberContactForceProcess(
         cols: list[int],
         vals: list[float],
         node_coords: np.ndarray,
+        *,
+        use_hermite: bool = False,
+        node_tangents: np.ndarray | None = None,
     ) -> None:
         """接触力の K_st（接触点滑り剛性）を COO に追加.
 
@@ -307,47 +391,69 @@ class HuberContactForceProcess(
         ∂f_raw/∂s = p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)
         ∂f_raw/∂t = p_n * (∂c_k/∂t · n + c_k · ∂n/∂t)
 
-        ∂n/∂s = (1/dist)(I - n⊗n) · dA
-        ∂n/∂t = -(1/dist)(I - n⊗n) · dB
+        線形: ∂n/∂s = (1/dist)(I - n⊗n) · dA
+        Hermite: ∂n/∂s = (1/dist)(I - n⊗n) · dpA/ds（status-230）
         """
         st = pair.state
-        # 節点座標を node_coords から取得
         xA0 = node_coords[pair.nodes_a[0]]
         xA1 = node_coords[pair.nodes_a[1]]
         xB0 = node_coords[pair.nodes_b[0]]
         xB1 = node_coords[pair.nodes_b[1]]
 
-        out = st_proc.process(
-            StJacobianInput(
-                xA0=xA0,
-                xA1=xA1,
-                xB0=xB0,
-                xB1=xB1,
-                s=st.s,
-                t=st.t,
-            )
-        )
+        # StJacobian 入力の構築
+        st_kw: dict = {
+            "xA0": xA0,
+            "xA1": xA1,
+            "xB0": xB0,
+            "xB1": xB1,
+            "s": st.s,
+            "t": st.t,
+        }
+        if use_hermite and node_tangents is not None:
+            st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
+            st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
+            st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
+            st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
+            st_kw["use_hermite"] = True
+
+        out = st_proc.process(StJacobianInput(**st_kw))
         if not out.valid:
             return
 
         s = st.s
         t = st.t
-        dA = xA1 - xA0
-        dB = xB1 - xB0
         dist = st.gap + pair.radius_a + pair.radius_b
         if dist < 1e-15:
             return
 
-        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
-        # dc/ds = [-1, 1, 0, 0], dc/dt = [0, 0, 1, -1]
-        dc_ds = [-1.0, 1.0, 0.0, 0.0]
-        dc_dt = [0.0, 0.0, 1.0, -1.0]
+        # 形状関数係数とその微分
+        if use_hermite:
+            coeffs = _hermite_shape_coeffs(s, t)
+            dc_ds = _hermite_dc_ds(s)
+            dc_dt = _hermite_dc_dt(t)
+        else:
+            coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+            dc_ds = [-1.0, 1.0, 0.0, 0.0]
+            dc_dt = [0.0, 0.0, 1.0, -1.0]
 
-        # ∂n/∂s = (1/dist)(I - n⊗n) · dA
+        # ∂n/∂s, ∂n/∂t
         P_perp = np.eye(3) - np.outer(normal, normal)
-        dn_ds = (1.0 / dist) * P_perp @ dA
-        # ∂n/∂t = -(1/dist)(I - n⊗n) · dB
-        dn_dt = -(1.0 / dist) * P_perp @ dB
+        if use_hermite and node_tangents is not None:
+            from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_scalar
+
+            dpA = _hermite_deriv_scalar(
+                s, xA0, xA1, node_tangents[pair.nodes_a[0]], node_tangents[pair.nodes_a[1]]
+            )
+            dpB = _hermite_deriv_scalar(
+                t, xB0, xB1, node_tangents[pair.nodes_b[0]], node_tangents[pair.nodes_b[1]]
+            )
+            dn_ds = (1.0 / dist) * P_perp @ dpA
+            dn_dt = -(1.0 / dist) * P_perp @ dpB
+        else:
+            dA = xA1 - xA0
+            dB = xB1 - xB0
+            dn_ds = (1.0 / dist) * P_perp @ dA
+            dn_dt = -(1.0 / dist) * P_perp @ dB
 
         # ∂f_raw/∂s (12,): p_n * (dc_k/ds * n_i + c_k * dn_i/ds)
         df_ds = np.zeros(12)
@@ -358,7 +464,6 @@ class HuberContactForceProcess(
                 df_ds[li] = p_n * (dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i])
                 df_dt[li] = p_n * (dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i])
 
-        # tangent() は -df_c_raw/du を返す。
         # K_st = -(df_ds ⊗ ds_du + df_dt ⊗ dt_du)
         K_st_local = -(np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du))
 

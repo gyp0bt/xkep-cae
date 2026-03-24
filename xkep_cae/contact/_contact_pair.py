@@ -182,6 +182,7 @@ class _ContactManagerInput:
 
     pairs: list[_ContactPairOutput] = field(default_factory=list)
     config: _ContactConfigInput = field(default_factory=_ContactConfigInput)
+    connectivity: np.ndarray | None = None  # Hermite 中心線補間用の要素接続情報
 
 
 # ── モジュールレベルユーティリティ関数 ──
