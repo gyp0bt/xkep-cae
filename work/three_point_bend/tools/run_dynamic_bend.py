@@ -61,7 +61,7 @@ def main() -> None:
 
     sr = result.solver_result
     print(f"\n--- 結果 ---")
-    print(f"収束={sr.converged}, incr={sr.n_increments}")
+    print(f"収束={sr.converged}, incr={sr.n_increments}, cutbacks={sr.n_cutbacks}")
     print(f"計算時間={elapsed:.1f} s")
     print(f"たわみ={result.wire_midpoint_deflection:.4f} mm")
     print(f"接触力={result.contact_force_norm:.1f} N")
@@ -85,6 +85,7 @@ def main() -> None:
         "tag": tag,
         "converged": bool(sr.converged),
         "n_increments": int(sr.n_increments),
+        "n_cutbacks": int(sr.n_cutbacks),
         "elapsed_seconds": round(elapsed, 1),
         "deflection_mm": round(result.wire_midpoint_deflection, 4),
         "contact_force_N": round(result.contact_force_norm, 1),
