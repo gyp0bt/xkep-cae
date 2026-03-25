@@ -272,6 +272,46 @@ def _batch_update_geometry(
             mB1,
         )
 
+    # --- 解析的剛体表面オーバーライド（status-237）---
+    _use_rigid = (
+        config is not None
+        and hasattr(config, "rigid_surface_type")
+        and config.rigid_surface_type == "cylinder"
+        and config.rigid_surface_elems is not None
+    )
+    if _use_rigid:
+        from xkep_cae.contact.geometry._rigid_surface import (
+            project_beam_to_cylinder_batch,
+        )
+
+        rigid_elems = config.rigid_surface_elems
+        # 剛体表面を含むペアを特定（elem_b が剛体表面要素）
+        elem_b_arr = np.array([p.elem_b for p in pairs], dtype=int)
+        rigid_mask = np.array([int(eb) in rigid_elems for eb in elem_b_arr])
+
+        if np.any(rigid_mask):
+            # 円柱中心を現在のジグ節点座標から計算
+            # （ジグ節点は変位処方で剛体移動済み）
+            rigid_node_set: set[int] = set()
+            for i in np.where(rigid_mask)[0]:
+                rigid_node_set.add(int(pairs[i].nodes_b[0]))
+                rigid_node_set.add(int(pairs[i].nodes_b[1]))
+            rigid_node_list = sorted(rigid_node_set)
+            current_center = coords[rigid_node_list].mean(axis=0)
+
+            idx = np.where(rigid_mask)[0]
+            s_rigid, dist_rigid, normal_rigid = project_beam_to_cylinder_batch(
+                xA0[idx],
+                xA1[idx],
+                current_center,
+                config.rigid_surface_radius,
+                config.rigid_surface_axis,
+            )
+            s_all[idx] = s_rigid
+            t_all[idx] = 0.5  # 形式的（剛体表面には t パラメータ不要）
+            dist_all[idx] = dist_rigid
+            normal_all[idx] = normal_rigid
+
     # --- ギャップ計算 ---
     coating_stiffness = 0.0
     if config is not None and hasattr(config, "coating_stiffness"):
