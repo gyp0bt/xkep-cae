@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**190+10s テスト** — 2026-03-24 | 契約違反 **1件** | 条例違反 **0件**
+**190+10s テスト** — 2026-03-25 | 契約違反 **1件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,10 +73,10 @@
 
 ### 次の課題
 
-**n_periods=30 frac=1.0 到達** — status-234 で SDI 排除効果検証完了。
-n_periods=30, Hermite OFF: **208.6N**（frac=1.0, 1592 incr, 73分）。
-n_periods=1: 202.8N。n_periods=30 の +2.9% は慣性残留で許容範囲。
-残課題: 摩擦アセンブリの Hermite 完全対応、NR 残差収束速度改善。
+**dt制御改善** — status-235 で adaptive stepping パラメータ改善。
+dt_max 4倍緩和、growth damping 撤廃、接触力閾値緩和（Phase A）。
+n_periods=1: 202.5N（ベースライン同等）。n_periods=30 検証待ち。
+残課題: NR力収束改善（カットバック率77%）、摩擦アセンブリの Hermite 完全対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
