@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-24）
+## 現在地（2026-03-25）
 
-**190+10s テスト**（n_periods=30 frac=1.0 到達 208.6N — status-234） | 契約違反1件 | [最新status](status/status-index.md)
+**190+10s テスト**（Phase Aリバート — status-236） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -71,6 +71,8 @@ S7 (GPU)
 - [ ] **曲面連続関数化の代替手法調査**: Hermite 補間は接線感度が高すぎて大規模モデルで破綻。代替候補: B-spline/NURBS 曲線表現、Subdivision surface、Moving least squares (MLS) 近似、Isogeometric 接触（IGA-C）など。接線ベクトルへの過敏性を回避しつつ C1 連続性を確保する手法を比較検討
 - [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
 - [x] ~~**n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証（status-234: 1592 incr, 4403s, fc=208.6N）~~
+- [x] ~~**adaptive stepping 高速化**: dt_max緩和+growth damping撤廃+接触力閾値緩和~~ — status-236 で **完全リバート**（n_periods=30 で逆効果: frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは NR 収束性問題を解決できない
+- [ ] **NR力収束改善**: カットバック率77%の根本原因対策（status-235: Phase B、接線剛性整合性調査が必要）。**Phase A 失敗により最優先課題に昇格**
 
 ### 既知の問題
 

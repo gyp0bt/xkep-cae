@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**190+10s テスト** — 2026-03-24時点 | n_periods=30 frac=1.0 到達 208.6N（status-234） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**190+10s テスト** — 2026-03-25時点 | Phase Aリバート（status-236） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
