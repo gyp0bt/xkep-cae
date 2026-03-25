@@ -149,7 +149,9 @@ class _ContactConfigInput:
     dt_shrink_factor: float = 0.5
     dt_grow_attempt_threshold: int = 5
     dt_shrink_attempt_threshold: int = 15
-    dt_contact_change_threshold: float = 0.5  # 接触力変化率閾値（status-233: n_active→力ベース）
+    dt_contact_change_threshold: float = (
+        1.0  # 接触力変化率閾値（status-233: n_active→力ベース, status-235: 0.5→1.0 緩和）
+    )
     dt_min_fraction: float = 0.0
     dt_max_fraction: float = 0.0
     use_amg_preconditioner: bool = False
