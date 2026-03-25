@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-25）
 
-**190+10s テスト**（Phase Aリバート — status-236） | 契約違反1件 | [最新status](status/status-index.md)
+**190+10s+8 テスト**（梁粗化+剛体表面 — status-237） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -69,6 +69,8 @@ S7 (GPU)
 - [ ] **freeze_geometry_in_nr=True の必須化**: NR内で s,t を凍結しステップ間のみ更新。Hermite ON 時の NR 不収束（n_periods=30 で frac=0.08 停滞）の直接原因
 - [ ] **Node tangent 計算の局所化**: 現在 `_compute_node_tangents()` が全体メッシュ依存で、大変形時に接線急変→Hermite曲線形状ジャンプ→gap不連続→active接触点激減。隣接要素のみで局所計算に変更
 - [ ] **曲面連続関数化の代替手法調査**: Hermite 補間は接線感度が高すぎて大規模モデルで破綻。代替候補: B-spline/NURBS 曲線表現、Subdivision surface、Moving least squares (MLS) 近似、Isogeometric 接触（IGA-C）など。接線ベクトルへの過敏性を回避しつつ C1 連続性を確保する手法を比較検討
+- [x] **解析的剛体円柱表面**: ジグ離散セグメント→C∞連続な解析的円柱（status-237）
+- [x] **梁メッシュ粗化**: L_elem > wire_diameter で梁サーフェス面連続化（status-237: n_elems 20→4）
 - [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
 - [x] ~~**n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証（status-234: 1592 incr, 4403s, fc=208.6N）~~
 - [x] ~~**adaptive stepping 高速化**: dt_max緩和+growth damping撤廃+接触力閾値緩和~~ — status-236 で **完全リバート**（n_periods=30 で逆効果: frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは NR 収束性問題を解決できない
