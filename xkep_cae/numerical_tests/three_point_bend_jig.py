@@ -873,7 +873,7 @@ class DynamicThreePointBendContactJigConfig:
 
     wire_length: float = 100.0  # mm（支点間距離）
     wire_diameter: float = 17.0  # mm（φ17）
-    n_elems_wire: int = 20
+    n_elems_wire: int = 4  # status-237: L_elem > wire_diameter（25mm > 17mm）で梁面連続化
     E: float = 200e3  # MPa（ワイヤ）
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
@@ -883,12 +883,13 @@ class DynamicThreePointBendContactJigConfig:
     lumped_mass: bool = True  # 集中質量行列
     # ジグ形状
     jig_radius: float = 10.0  # mm（円柱ジグ半径 R）
-    jig_n_segments: int = 8  # ジグ円弧の分割数
+    jig_n_segments: int = 4  # ジグ円弧の分割数（broadphase用、幾何は解析的）
     jig_E_factor: float = 1000.0  # ジグ/ワイヤ剛性比（未使用、剛体エッジ）
     jig_width: float = 20.0  # mm（x方向、未使用: jig_radius で決定）
     jig_depth: float = 34.0  # mm（z方向）
     jig_height: float = 10.0  # mm（y方向、未使用: jig_radius で決定）
     initial_gap: float = 0.0  # mm（ジグ底面–ワイヤ間ギャップ、0=接触面一致）
+    use_rigid_surface: bool = True  # status-237: 解析的剛体円柱表面
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
@@ -940,14 +941,19 @@ class DynamicThreePointBendContactJigProcess(
         DynamicThreePointBendContactJigResult,
     ],
 ):
-    """剛体エッジジグ + smooth_penalty + 摩擦 + 動的ソルバー三点曲げ Process.
+    """解析的剛体円柱ジグ + smooth_penalty + 摩擦 + 動的ソルバー三点曲げ Process.
 
     物理モデル:
-        ───────────────  ← 剛体エッジジグ（変位制御で下方に押す）
+        ╭───────────╮  ← 解析的剛体円柱ジグ（変位制御で下方に押す）
                ↓ smooth_penalty 接触 + Coulomb 摩擦
      ─────────●─────────  ← ワイヤ（CR 梁、静止状態から開始）
      △                 ○
      ピン             ローラー
+
+    status-237 変更:
+    - 梁メッシュ粗化: L_elem > wire_diameter で梁サーフェス連続化
+    - ジグ表面を解析的剛体円柱に変更（離散セグメント→C∞連続面）
+    - ジグセグメントは broadphase 候補検出のみに使用、幾何計算は解析的
 
     ジグを変位制御で下方に押し下げ、ワイヤを三点曲げする。
     押し下げ量 = initial_gap + jig_push。gap 閉鎖後にワイヤが曲がる。
@@ -955,13 +961,12 @@ class DynamicThreePointBendContactJigProcess(
 
     ジグは _RigidEdgeAssembler（剛性ゼロ）で実現。
     ジグ y-DOF は変位処方、x/z/回転 DOF は固定。
-    HEX8 要素は負定値対角問題があるため使用しない。
 
     パイプライン:
-    1. ワイヤメッシュ + ジグエッジメッシュ生成
+    1. ワイヤメッシュ + ジグエッジメッシュ生成（broadphase 用）
     2. MixedAssembler（梁 + 剛体エッジ）+ 質量行列（梁部分のみ）
     3. 境界条件（支持 + ジグ変位制御）
-    4. ContactFrictionProcess（動的、smooth_penalty + 摩擦）で求解
+    4. ContactFrictionProcess（動的、smooth_penalty + 摩擦 + 解析的剛体表面）で求解
     5. 時刻歴応答 + 解析解比較
     """
 
@@ -1141,6 +1146,20 @@ class DynamicThreePointBendContactJigProcess(
             )
             k_pen = _dpe_out.k_pen
 
+        # 解析的剛体表面パラメータ（status-237）
+        jig_elem_ids = frozenset(range(n_wire_elems, n_wire_elems + len(jig_edge_conn)))
+        _rigid_kw: dict = {}
+        if cfg.use_rigid_surface:
+            # 円柱中心: ワイヤ表面 + ジグ半径 + gap
+            cy = wire_radius + cfg.jig_radius + cfg.initial_gap
+            _rigid_kw = {
+                "rigid_surface_type": "cylinder",
+                "rigid_surface_center": np.array([cx, cy, 0.0]),
+                "rigid_surface_radius": cfg.jig_radius,
+                "rigid_surface_axis": np.array([0.0, 0.0, 1.0]),
+                "rigid_surface_elems": jig_elem_ids,
+            }
+
         contact_config = _ContactConfigInput(
             smoothing_delta=_smoothing_delta,
             beam_E=cfg.E,
@@ -1161,6 +1180,7 @@ class DynamicThreePointBendContactJigProcess(
             coating_mu=cfg.coating_mu,
             use_hermite_centerline=cfg.use_hermite_centerline,
             freeze_geometry_in_nr=cfg.freeze_geometry_in_nr,
+            **_rigid_kw,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(

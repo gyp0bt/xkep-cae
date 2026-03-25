@@ -171,6 +171,12 @@ class _ContactConfigInput:
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
     freeze_geometry_in_nr: bool = False  # NR 反復内で s,t を凍結（ステップ間のみ更新）
     st_relaxation: float = 1.0  # NR 反復内 s,t 更新の緩和係数（1.0=フル、<1.0=under-relax）
+    # 解析的剛体表面（status-237）
+    rigid_surface_type: str = ""  # "cylinder" or ""
+    rigid_surface_center: np.ndarray | None = None  # (3,) 円柱中心（参照配置）
+    rigid_surface_radius: float = 0.0  # 円柱半径
+    rigid_surface_axis: np.ndarray | None = None  # (3,) 円柱軸方向
+    rigid_surface_elems: frozenset[int] | None = None  # 剛体表面の要素 ID 集合
 
 
 @dataclass(frozen=True)
