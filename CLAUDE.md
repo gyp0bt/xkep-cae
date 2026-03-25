@@ -73,9 +73,8 @@
 
 ### 次の課題
 
-**dt制御改善** — status-235 で adaptive stepping パラメータ改善。
-dt_max 4倍緩和、growth damping 撤廃、接触力閾値緩和（Phase A）。
-n_periods=1: 202.5N（ベースライン同等）。n_periods=30 検証待ち。
+**NR力収束改善が最優先** — status-236 で Phase A（adaptive stepping パラメータ改善）を完全リバート。
+n_periods=30 で逆効果（frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは解決不可能。
 残課題: NR力収束改善（カットバック率77%）、摩擦アセンブリの Hermite 完全対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。

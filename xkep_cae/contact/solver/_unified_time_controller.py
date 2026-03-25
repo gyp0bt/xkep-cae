@@ -61,7 +61,7 @@ class UnifiedTimeStepInput:
     dt_shrink_factor: float = 0.5
     dt_grow_attempt_threshold: int = 5
     dt_shrink_attempt_threshold: int = 15
-    dt_contact_change_threshold: float = 1.0
+    dt_contact_change_threshold: float = 0.3
 
     def __post_init__(self) -> None:
         """自動パラメータ計算."""

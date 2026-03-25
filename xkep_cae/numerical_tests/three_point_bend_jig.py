@@ -1153,7 +1153,7 @@ class DynamicThreePointBendContactJigProcess(
             dt_grow_factor=2.0,
             dt_shrink_factor=0.5,
             dt_min_fraction=dt_min_frac,
-            dt_max_fraction=min(dt_initial_frac * 64.0, 0.2),
+            dt_max_fraction=min(dt_initial_frac * 16.0, 0.05),
             dt_grow_attempt_threshold=20,
             dt_shrink_attempt_threshold=25,
             coating_stiffness=cfg.coating_stiffness,
