@@ -74,7 +74,8 @@ S7 (GPU)
 - [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
 - [x] ~~**n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証（status-234: 1592 incr, 4403s, fc=208.6N）~~
 - [x] ~~**adaptive stepping 高速化**: dt_max緩和+growth damping撤廃+接触力閾値緩和~~ — status-236 で **完全リバート**（n_periods=30 で逆効果: frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは NR 収束性問題を解決できない
-- [ ] **NR力収束改善**: カットバック率77%の根本原因対策（status-235: Phase B、接線剛性整合性調査が必要）。**Phase A 失敗により最優先課題に昇格**
+- [ ] **NR力収束改善**: 根本原因特定済み — `consistent_st_tangent=False`（K_st無効）で接線100%不整合（status-238 FD検証）。ただし K_st 有効化は K_T 非正定値化で NR 発散。Levenberg-Marquardt正則化が必要
+- [x] ~~**n_periods=30 剛体表面効果検証**: incr 1592→707（55%削減）、cutback 2477→400（84%削減）、frac=1.0 fc=216.96N（status-238）~~
 
 ### 既知の問題
 

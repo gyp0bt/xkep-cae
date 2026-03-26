@@ -73,9 +73,10 @@
 
 ### 次の課題
 
-**NR力収束改善が最優先** — status-236 で Phase A（adaptive stepping パラメータ改善）を完全リバート。
-n_periods=30 で逆効果（frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは解決不可能。
-残課題: NR力収束改善（カットバック率77%）、摩擦アセンブリの Hermite 完全対応。
+**NR力収束改善が最優先** — status-238 で根本原因特定: `consistent_st_tangent=False`（K_st無効）による接線100%不整合。
+ただし K_st 有効化は K_T 非正定値化で NR 発散（Levenberg-Marquardt 正則化が必要）。
+n_periods=30 は status-237 改善（剛体表面+粗メッシュ）で incr 55%削減・cutback 84%削減。
+残課題: K_st の安全な有効化（正則化）、Hermite K_st の ∂p_n/∂s 項追加、摩擦 Hermite 対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
