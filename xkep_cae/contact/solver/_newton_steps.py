@@ -179,6 +179,7 @@ class ConvergenceCheckInput:
     is_first_attempt: bool
     energy_ref: float | None
     manager: object
+    ndof_per_node: int = 6
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,8 @@ class ConvergenceCheckOutput:
     du_norm: float
     energy: float
     energy_ref: float | None
+    res_trans_norm: float = 0.0
+    res_rot_norm: float = 0.0
 
 
 class ConvergenceCheckProcess(
@@ -209,14 +212,34 @@ class ConvergenceCheckProcess(
 
     def process(self, inp: ConvergenceCheckInput) -> ConvergenceCheckOutput:
         res_u_norm = float(np.linalg.norm(inp.R_u))
+
+        # 力/モーメント分離: 並進 DOF と回転 DOF のノルムを個別計算
+        ndpn = inp.ndof_per_node
+        if ndpn >= 6 and len(inp.R_u) >= ndpn:
+            n_nodes = len(inp.R_u) // ndpn
+            # 並進 DOF: 各節点の先頭3成分
+            trans_idx = np.array(
+                [i * ndpn + d for i in range(n_nodes) for d in range(3)], dtype=int
+            )
+            # 回転 DOF: 各節点の後半3成分
+            rot_idx = np.array(
+                [i * ndpn + d for i in range(n_nodes) for d in range(3, 6)], dtype=int
+            )
+            res_trans_norm = float(np.linalg.norm(inp.R_u[trans_idx]))
+            res_rot_norm = float(np.linalg.norm(inp.R_u[rot_idx]))
+        else:
+            res_trans_norm = res_u_norm
+            res_rot_norm = 0.0
+
         f_ref = inp.f_ext_ref_norm
-        if inp.dynamic_ref and inp.is_first_attempt and res_u_norm > 1e-30:
-            f_ref = res_u_norm
+        if inp.dynamic_ref and inp.is_first_attempt and res_trans_norm > 1e-30:
+            # 参照値も並進残差のみで設定
+            f_ref = res_trans_norm
 
         n_active = sum(1 for p in inp.manager.pairs if hasattr(p, "state") and p.state.p_n > 0.0)
 
-        # 力収束
-        if res_u_norm / f_ref < inp.tol_force:
+        # 力収束: 並進残差のみで判定（接触力は並進 DOF のみにアセンブリ）
+        if res_trans_norm / f_ref < inp.tol_force:
             return ConvergenceCheckOutput(
                 converged=True,
                 convergence_type=ConvergenceType.FORCE,
@@ -226,6 +249,8 @@ class ConvergenceCheckProcess(
                 du_norm=0.0,
                 energy=0.0,
                 energy_ref=inp.energy_ref,
+                res_trans_norm=res_trans_norm,
+                res_rot_norm=res_rot_norm,
             )
 
         # 変位・エネルギー収束は du が必要
@@ -256,6 +281,8 @@ class ConvergenceCheckProcess(
             du_norm=du_norm,
             energy=energy,
             energy_ref=energy_ref,
+            res_trans_norm=res_trans_norm,
+            res_rot_norm=res_rot_norm,
         )
 
 

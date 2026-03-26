@@ -215,6 +215,7 @@ class NewtonDynamicProcess(
                     is_first_attempt=(att == 0),
                     energy_ref=energy_ref,
                     manager=manager,
+                    ndof_per_node=cfg.ndof_per_node,
                 )
             )
             # 初回反復で参照残差を保存
@@ -222,7 +223,7 @@ class NewtonDynamicProcess(
                 _incr_f_ref = conv_out.f_ref
             n_active = conv_out.n_active
 
-            _res_ratio = conv_out.res_u_norm / conv_out.f_ref
+            _res_ratio = conv_out.res_trans_norm / conv_out.f_ref
             diag.res_history.append(_res_ratio)
             diag.ncp_history.append(0.0)
             diag.ncp_t_history.append(0.0)
@@ -259,8 +260,9 @@ class NewtonDynamicProcess(
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
                         f"attempt {att}, "
-                        f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e} "
-                        f"(converged, {n_active} active)"
+                        f"||R_t||/||f|| = {conv_out.res_trans_norm / conv_out.f_ref:.3e}, "
+                        f"||R_r|| = {conv_out.res_rot_norm:.3e} "
+                        f"(force converged, {n_active} active)"
                     )
                 break
 
@@ -304,7 +306,8 @@ class NewtonDynamicProcess(
                 print(
                     f"  Incr {increment_display} (frac={load_frac:.4f}), "
                     f"attempt {att}, "
-                    f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e}, "
+                    f"||R_t||/||f|| = {conv_out.res_trans_norm / conv_out.f_ref:.3e}, "
+                    f"||R_r|| = {conv_out.res_rot_norm:.3e}, "
                     f"active={n_active}{_lm_info}"
                 )
 
@@ -419,6 +422,7 @@ class NewtonDynamicProcess(
                     is_first_attempt=False,
                     energy_ref=energy_ref,
                     manager=manager,
+                    ndof_per_node=cfg.ndof_per_node,
                 )
             )
 
