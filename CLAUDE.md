@@ -73,11 +73,12 @@
 
 ### 次の課題
 
-**摩擦 Hermite 完全対応が最優先** — status-243 で frozen-m 解消済み:
-- frozen-m 解消: ∂m/∂u ローカル補正で FD 不整合 33% → 0%（端点で完全修正）
-- LM 正則化: 効果なし判定で完全削除（status-244）
-- **内部ノード残余誤差**: 非局所 ∂m/∂x（4ノードペア外）は未対応（dh=-1.375 vs 正解-1.0）
-**次のステップ**: 摩擦 Hermite 完全対応（use_hermite=True デフォルト化）、n_periods=30 収束検証。
+**Hermite デフォルト ON 完了** — status-245:
+- use_hermite_centerline=True デフォルト化（frozen-m 解消済み: status-243）
+- n_periods=30 検証: freeze=F + K_st=ON で frac=0.7360（status-232 の 0.08 から大幅改善）
+- **残課題**: n_periods=30 Hermite ON 完走には接触チャタリング対策が必要（active ペア 2↔3 振動）
+- **非局所 ∂m/∂x**: 4ノードペア外の DOF 結合は未対応
+**次のステップ**: 接触チャタリング抑制（gap 0 近傍の安定化）、NR 力収束速度改善。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -86,9 +87,9 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- 摩擦アセンブリの Hermite 完全対応（現在は use_hermite=False デフォルト）
+- n_periods=30 Hermite ON 完走（現在 frac=0.7360: status-245。接触チャタリング対策が必要）
 - NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
-- n_periods=30 Hermite ON テスト（現在は壊滅的: status-232 で frac=0.08 停滞）
+- Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

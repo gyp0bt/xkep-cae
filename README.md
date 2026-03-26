@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**200+10s テスト** — 2026-03-26時点 | LM正則化削除+frozen-m解消（status-244） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**200+10s テスト** — 2026-03-26時点 | HermiteデフォルトON+np30検証（status-245） | 契約違反 **1件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
