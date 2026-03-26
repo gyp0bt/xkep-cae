@@ -396,7 +396,6 @@ class LinearSolveInput:
     K_T: sp.spmatrix
     R_u: np.ndarray
     fixed_dofs: np.ndarray
-    lm_lambda: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -410,12 +409,7 @@ class LinearSolveOutput:
 class LinearSolveProcess(
     SolverProcess[LinearSolveInput, LinearSolveOutput],
 ):
-    """境界条件適用 + Levenberg-Marquardt 正則化 + 線形ソルブ.
-
-    lm_lambda > 0 の場合、Marquardt 型正則化を適用:
-        K_reg = K_T + λ · diag(max(|K_T_ii|, ε))
-    DOF スケール差（並進 vs 回転）を自動吸収する。
-    """
+    """境界条件適用 + 線形ソルブ."""
 
     meta = ProcessMeta(
         name="LinearSolve",
@@ -426,12 +420,6 @@ class LinearSolveProcess(
 
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
         K_eff = inp.K_T.tocsc()
-
-        # Levenberg-Marquardt 正則化（BC 適用前に実施）
-        if inp.lm_lambda > 0.0:
-            diag_abs = np.abs(K_eff.diagonal())
-            diag_floor = np.maximum(diag_abs, 1e-10 * np.max(diag_abs))
-            K_eff = K_eff + sp.diags(inp.lm_lambda * diag_floor)
 
         _rhs = -inp.R_u.copy()
         for d in inp.fixed_dofs:

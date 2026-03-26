@@ -355,19 +355,6 @@ class ContactFrictionProcess(
 
         # --- Newton プロセス（動的のみ） ---
         _compute_cond = getattr(input_data, "compute_condition_number", False)
-        _lm_init = getattr(input_data, "lm_lambda_init", 0.0)
-        _lm_adaptive = getattr(input_data, "lm_adaptive", True)
-        # λ 自動推定: beam_E > 0 かつ lm_auto_lambda=True のとき λ = c / E
-        # c は lm_auto_c で設定可能（デフォルト 20、status-243）
-        # 注: auto k_pen ∝ E のため λ*k_pen は材料間で定数（スケール不変）
-        _lm_auto = getattr(input_data, "lm_auto_lambda", False)
-        _lm_auto_c = getattr(input_data, "lm_auto_c", 20.0)
-        if _lm_auto and _lm_init == 0.0 and manager.config.beam_E > 0:
-            _lm_init = _lm_auto_c / manager.config.beam_E
-            _lm_adaptive = True
-            print(
-                f"  [LM auto] beam_E={manager.config.beam_E:.1f} c={_lm_auto_c:.1f} → λ_init={_lm_init:.2e}"
-            )
         nr_config_dyn = NewtonDynamicInput(
             show_progress=True,
             max_attempts=input_data.max_nr_attempts,
@@ -376,8 +363,6 @@ class ContactFrictionProcess(
             divergence_window=input_data.divergence_window,
             du_norm_cap=input_data.du_norm_cap,
             compute_condition_number=_compute_cond,
-            lm_lambda_init=_lm_init,
-            lm_adaptive=_lm_adaptive,
             char_length=_beam_L,
             dof_scale_rot=getattr(input_data, "dof_scale_rot", 1.0),
         )

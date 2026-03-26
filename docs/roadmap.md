@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-26）
 
-**190+10s+8+9+7+10 テスト**（frozen-m解消+λ定数設定可能化 — status-243） | 契約違反1件 | [最新status](status/status-index.md)
+**200+10s テスト**（LM正則化削除+frozen-m解消 — status-244） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
