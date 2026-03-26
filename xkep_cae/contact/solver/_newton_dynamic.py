@@ -58,6 +58,9 @@ class NewtonDynamicInput:
     ndof_per_node: int = 6
     divergence_window: int = 5
     compute_condition_number: bool = False  # 条件数診断（低速: toarray() 使用）
+    lm_lambda_init: float = 0.0  # LM 正則化初期値（0=無効）
+    lm_adaptive: bool = True  # 適応 λ 制御
+    lm_lambda_max: float = 1e6  # λ 上限
 
 
 @dataclass(frozen=True)
@@ -158,6 +161,7 @@ class NewtonDynamicProcess(
         _consecutive_increase = 0
         _prev_res_ratio = float("inf")
         _incr_f_ref: float = 0.0  # インクリメント内の参照残差（初回で設定）
+        _lm_lambda = cfg.lm_lambda_init  # LM 正則化パラメータ
 
         for att in range(cfg.max_attempts):
             total_attempts += 1
@@ -266,6 +270,9 @@ class NewtonDynamicProcess(
                 _consecutive_increase += 1
             else:
                 _consecutive_increase = 0
+                # 残差改善時: λ を緩やかに減衰
+                if cfg.lm_adaptive and _lm_lambda > 0:
+                    _lm_lambda = max(_lm_lambda * 0.5, cfg.lm_lambda_init)
             _prev_res_ratio = _cur_ratio
 
             _diverge_detected = False
@@ -277,6 +284,13 @@ class NewtonDynamicProcess(
                 _diverge_detected = True
                 _reason = f"残差爆発 (||R||/||f|| = {_cur_ratio:.1e} > 100)"
             if _diverge_detected:
+                # LM 適応: 発散時に λ を引き上げて続行
+                if cfg.lm_adaptive and _lm_lambda < cfg.lm_lambda_max:
+                    _lm_lambda = max(_lm_lambda * 10.0, 1e-4)
+                    _consecutive_increase = 0
+                    if cfg.show_progress:
+                        print(f"    [LM] 発散検知 ({_reason}) → λ={_lm_lambda:.1e} で続行")
+                    continue
                 _diverged = True
                 if cfg.show_progress:
                     print(
@@ -286,11 +300,12 @@ class NewtonDynamicProcess(
                 break
 
             if cfg.show_progress and att % 5 == 0:
+                _lm_info = f", λ={_lm_lambda:.1e}" if _lm_lambda > 0 else ""
                 print(
                     f"  Incr {increment_display} (frac={load_frac:.4f}), "
                     f"attempt {att}, "
                     f"||R_u||/||f|| = {conv_out.res_u_norm / conv_out.f_ref:.3e}, "
-                    f"active={n_active}"
+                    f"active={n_active}{_lm_info}"
                 )
 
             # ── ステップ 7: 接線剛性組立 ──
@@ -342,18 +357,33 @@ class NewtonDynamicProcess(
                     if cfg.show_progress:
                         print(f"    [spectral] 計算失敗: {_e}")
 
-            # ── ステップ 8: 線形ソルブ ──
+            # ── ステップ 8: 線形ソルブ（LM 正則化付き） ──
             solve_out = _solve_proc.process(
                 LinearSolveInput(
                     K_T=K_T,
                     R_u=R_u,
                     fixed_dofs=input_data.fixed_dofs,
+                    lm_lambda=_lm_lambda,
                 )
             )
             if not solve_out.success:
-                if cfg.show_progress:
-                    print(f"  WARNING: Linear solve failed at attempt {att}")
-                break
+                # LM 正則化でリトライ
+                if cfg.lm_adaptive and _lm_lambda < cfg.lm_lambda_max:
+                    _lm_lambda = max(_lm_lambda * 10.0, 1e-4)
+                    if cfg.show_progress:
+                        print(f"    [LM] solve failed → λ={_lm_lambda:.1e}")
+                    solve_out = _solve_proc.process(
+                        LinearSolveInput(
+                            K_T=K_T,
+                            R_u=R_u,
+                            fixed_dofs=input_data.fixed_dofs,
+                            lm_lambda=_lm_lambda,
+                        )
+                    )
+                if not solve_out.success:
+                    if cfg.show_progress:
+                        print(f"  WARNING: Linear solve failed at attempt {att}")
+                    break
 
             du = solve_out.du
 
