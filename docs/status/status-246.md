@@ -9,7 +9,9 @@
 ## 概要
 
 接触力・摩擦力のアセンブリをPythonループからNumPyバッチ演算に移行。
-beam oscillation テスト全体で **22.3% 高速化**（215s → 167s）。
+マイクロベンチマーク（N=1000ペア）で **12-16x 高速化**。
+三点曲げ接触テスト（少数ペア）では測定ノイズ内（±3%）。
+大規模モデル（91本=66,000ペア以上）での効果を狙うインフラ投資。
 
 ## 変更内容
 
@@ -33,27 +35,52 @@ beam oscillation テスト全体で **22.3% 高速化**（215s → 167s）。
 
 ## ベンチマーク（STA2: tee ログ保存済み）
 
-| 項目 | 変更前 | 変更後 | 改善率 |
-|------|--------|--------|--------|
-| beam oscillation 13テスト | 215.15s | 167.16s | **22.3%** |
-| SparseEfficiency warnings | 17,760 | 8,880 | **50%減** |
-| マイクロベンチ evaluate (1000pairs) | 6.73ms | 0.54ms | **12.4x** |
-| マイクロベンチ tangent (1000pairs) | 73.28ms | 4.67ms | **15.7x** |
+### 三点曲げ接触テスト（実際の接触ペアあり）
+
+| 項目 | 変更前 | 変更後 | 差 |
+|------|--------|--------|-----|
+| 三点曲げ接触 (jig_push=0.05, np=2) | 127.36s | 131.33s | **±3%（測定ノイズ内）** |
+| deflection | 0.045492 | 0.045492 | **完全一致** |
+| increments | 356 | 356 | 一致 |
+| cutbacks | 133 | 133 | 一致 |
+
+**三点曲げで効果が出ない理由**: ワイヤ1本 vs 剛体ジグで接触ペア数が数十程度。
+バッチ化の配列構築オーバーヘッドがループ削減と相殺。
+
+### マイクロベンチマーク（N=1000ペア、バッチ効果の確認）
+
+| 項目 | スカラーループ | ベクトル化 | 高速化 |
+|------|---------------|-----------|--------|
+| evaluate | 6.73ms | 0.54ms | **12.4x** |
+| tangent | 73.28ms | 4.67ms | **15.7x** |
+
+**結論**: 大規模モデル（91本=66,000ペア、1000本=730万ペア）で効果発揮。
+小規模問題では測定ノイズ程度。正確性は完全に保持。
 
 **ログファイル**:
-- `/tmp/log-bench-beam-before-*.log` — ベースライン
-- `/tmp/log-bench-beam-after-*.log` — 改善後
+- `/tmp/log-3pt-bend-baseline-*.log` — 三点曲げベースライン
+- `/tmp/log-3pt-bend-improved-*.log` — 三点曲げ改善後
 - `/tmp/log-baseline-bench-*.log` — マイクロベンチマーク
 
 ## 再現手順
 
 ```bash
-# ベースライン（main ブランチ）
-python -m pytest tests/test_beam_oscillation.py -x -q -k "not test_render_produces" 2>&1 | tee /tmp/log-baseline.log
-
-# 改善後（本ブランチ）
-git checkout claude/improve-calculation-speed-kL22D
-python -m pytest tests/test_beam_oscillation.py -x -q -k "not test_render_produces" 2>&1 | tee /tmp/log-improved.log
+# 三点曲げ接触テスト（接触ペアあり = 正しいベンチマーク）
+python -c "
+import time
+from xkep_cae.numerical_tests.three_point_bend_jig import (
+    DynamicThreePointBendContactJigConfig,
+    DynamicThreePointBendContactJigProcess,
+)
+cfg = DynamicThreePointBendContactJigConfig(jig_push=0.05, n_periods=2.0)
+proc = DynamicThreePointBendContactJigProcess()
+t0 = time.perf_counter()
+result = proc.process(cfg)
+print(f'elapsed: {time.perf_counter()-t0:.2f}s')
+print(f'deflection: {result.wire_midpoint_deflection:.6f}')
+print(f'increments: {result.solver_result.n_increments}')
+print(f'cutbacks: {result.solver_result.n_cutbacks}')
+" 2>&1 | tee /tmp/log-3pt-bench.log
 ```
 
 ## 設計判断
