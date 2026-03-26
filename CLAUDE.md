@@ -73,12 +73,11 @@
 
 ### 次の課題
 
-**Hermite 凍結接線問題の解消が最優先** — status-242 で以下を確認:
-- λ自動推定(c=20): アルミで悪化、汎用性低い
-- dof_scale_rot<1.0: 全値で悪化、回転DOF減衰は有害
-- K_st ∂p_n/∂s 項: 追加済み（曲線セグメントで有効）
-- **33% FD不整合の真因**: StJacobian の凍結接線近似(frozen-m)
-**次のステップ**: frozen-m 解消（非局所DOF結合が必要）、摩擦 Hermite 対応。
+**摩擦 Hermite 完全対応が最優先** — status-243 で frozen-m 解消済み:
+- frozen-m 解消: ∂m/∂u ローカル補正で FD 不整合 33% → 0%（端点で完全修正）
+- λ自動推定: `lm_auto_c` で定数設定可能化（c=20/E はスケール不変）
+- **内部ノード残余誤差**: 非局所 ∂m/∂x（4ノードペア外）は未対応（dh=-1.375 vs 正解-1.0）
+**次のステップ**: 摩擦 Hermite 完全対応（use_hermite=True デフォルト化）、n_periods=30 収束検証。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

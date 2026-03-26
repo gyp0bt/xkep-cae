@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-26）
 
-**190+10s+8+9+7+10 テスト**（K_st ∂p_n/∂s追加+凍結接線問題特定 — status-242） | 契約違反1件 | [最新status](status/status-index.md)
+**190+10s+8+9+7+10 テスト**（frozen-m解消+λ定数設定可能化 — status-243） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
