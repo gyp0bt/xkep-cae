@@ -336,7 +336,10 @@ def _compute_node_counts(
     Returns:
         (n_nodes,) 接続要素数（端点=1, 内部=2）
     """
-    counts = np.zeros(n_nodes)
+    # connectivity の最大ノード番号が n_nodes を超える場合に対応
+    _max_node = int(connectivity.max()) + 1 if len(connectivity) > 0 else 0
+    _size = max(n_nodes, _max_node)
+    counts = np.zeros(_size)
     for elem_idx in range(len(connectivity)):
         n0, n1 = connectivity[elem_idx]
         counts[n0] += 1.0

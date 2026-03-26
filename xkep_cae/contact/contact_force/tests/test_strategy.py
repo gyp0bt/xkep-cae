@@ -82,7 +82,8 @@ class TestHuberContactForceProcess:
         assert np.any(f != 0.0)
         assert len(r) == 1
 
-    def test_evaluate_inactive_pair_skipped(self):
+    def test_evaluate_inactive_pair_with_penetration(self):
+        """SDI 排除（status-233）: INACTIVE でも gap<0 なら Huber で力が発生."""
         proc = HuberContactForceProcess(ndof=24)
         from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 
@@ -90,7 +91,8 @@ class TestHuberContactForceProcess:
         pair = _evolve_pair(pair, state=_evolve_state(pair.state, status=_ContactStatus.INACTIVE))
         manager = _MockManager([pair])
         f, r = proc.evaluate(np.zeros(24), manager, k_pen=1e4)
-        np.testing.assert_array_equal(f, np.zeros(24))
+        # SDI 排除: 全候補ペアを評価するため、gap<0 なら力が発生
+        assert np.any(f != 0.0)
 
     def test_evaluate_positive_gap(self):
         proc = HuberContactForceProcess(ndof=24)

@@ -163,7 +163,7 @@ class _ContactConfigInput:
     position_tolerance: float = 0.0
     coating_stiffness: float = 0.0
     coating_damping: float = 0.0
-    use_hermite_centerline: bool = False  # status-230: Hermite 幾何対応完了。テストで ON 検証中
+    use_hermite_centerline: bool = True  # status-245: Hermite デフォルト ON（frozen-m 解消済み）
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     contact_compliance: float = 0.0

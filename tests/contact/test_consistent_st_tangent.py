@@ -45,7 +45,10 @@ def _make_manager_with_pair(xA0, xA1, xB0, xB1, radius=0.5, *, consistent_st_tan
         radius_b=radius,
     )
 
-    config = _ContactConfigInput(consistent_st_tangent=consistent_st_tangent)
+    config = _ContactConfigInput(
+        consistent_st_tangent=consistent_st_tangent,
+        use_hermite_centerline=False,  # 4ノード線形セグメントでの K_st 検証
+    )
     manager = _ContactManagerInput(pairs=[pair], config=config)
     return manager
 
