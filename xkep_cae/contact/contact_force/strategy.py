@@ -246,8 +246,9 @@ class HuberContactForceProcess(
         幾何剛性（法線回転、減算）:
             K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
 
-        滑り剛性（接触点移動、status-226）:
-            K_st = p_n * (outer(∂g_shape/∂s, ds_du) + outer(∂g_shape/∂t, dt_du))
+        滑り剛性（接触点移動、status-226 + status-242 ∂p_n/∂s 追加）:
+            K_st = outer(∂f_raw/∂s, ds_du) + outer(∂f_raw/∂t, dt_du)
+            ∂f_raw/∂s = (∂p_n/∂s)·g_shape + p_n·(∂g_shape/∂s)
 
         線形: c = [(1-s), s, -(1-t), -t]
         Hermite: c = [H00(s), H01(s), -H00(t), -H01(t)]（status-230）
@@ -357,6 +358,8 @@ class HuberContactForceProcess(
                         node_coords,
                         use_hermite=_use_hermite,
                         node_tangents=_node_tangents,
+                        h_deriv=h_deriv,
+                        k_pen=k_pen,
                     )
 
         if rows:
@@ -381,13 +384,18 @@ class HuberContactForceProcess(
         *,
         use_hermite: bool = False,
         node_tangents: np.ndarray | None = None,
+        h_deriv: float = 0.0,
+        k_pen: float = 0.0,
     ) -> None:
         """接触力の K_st（接触点滑り剛性）を COO に追加.
 
-        f_c_raw = p_n * Σ_k c_k * n の s,t 依存の完全微分。
+        f_c_raw = p_n(s,t) * Σ_k c_k(s,t) * n(s,t) の s,t 依存の完全微分。
 
-        ∂f_raw/∂s = p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)
-        ∂f_raw/∂t = p_n * (∂c_k/∂t · n + c_k · ∂n/∂t)
+        ∂f_raw/∂s = (∂p_n/∂s) * Σ c_k * n                  ← status-242 追加
+                  + p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)       ← 既存
+
+        ∂p_n/∂s = h'(x) * k_pen * (-∂gap/∂s)
+        ∂gap/∂s = (delta · dpA/ds) / dist
 
         線形: ∂n/∂s = (1/dist)(I - n⊗n) · dA
         Hermite: ∂n/∂s = (1/dist)(I - n⊗n) · dpA/ds（status-230）
@@ -453,14 +461,44 @@ class HuberContactForceProcess(
             dn_ds = (1.0 / dist) * P_perp @ dA
             dn_dt = -(1.0 / dist) * P_perp @ dB
 
-        # ∂f_raw/∂s (12,): p_n * (dc_k/ds * n_i + c_k * dn_i/ds)
+        # ∂p_n/∂s, ∂p_n/∂t（ペナルティ力の滑り微分、status-242）
+        # gap(s,t) = dist - R_A - R_B, dist = ||pA(s) - pB(t)||
+        # delta = pA(s) - pB(t) (normal 方向に dist を掛けたもの)
+        # ∂gap/∂s = (delta · dpA/ds) / dist = normal · dpA/ds
+        # ∂gap/∂t = -(delta · dpB/dt) / dist = -normal · dpB/dt
+        # ∂p_n/∂s = h'(x) * k_pen * (-∂gap/∂s)  (x = k_pen * (-gap))
+        dpn_ds = 0.0
+        dpn_dt = 0.0
+        if h_deriv > 1e-30 and k_pen > 0.0:
+            if use_hermite and node_tangents is not None:
+                dgap_ds = float(np.dot(normal, dpA))
+                dgap_dt = -float(np.dot(normal, dpB))
+            else:
+                dA = xA1 - xA0
+                dB = xB1 - xB0
+                dgap_ds = float(np.dot(normal, dA))
+                dgap_dt = -float(np.dot(normal, dB))
+            dpn_ds = h_deriv * k_pen * (-dgap_ds)
+            dpn_dt = h_deriv * k_pen * (-dgap_dt)
+
+        # g_shape = Σ c_k * n (12,)
+        g_shape = np.zeros(12)
+        for k in range(4):
+            for i in range(3):
+                g_shape[k * 3 + i] = coeffs[k] * normal[i]
+
+        # ∂f_raw/∂s (12,): (∂p_n/∂s) * g_shape + p_n * (dc_k/ds·n + c_k·∂n/∂s)
         df_ds = np.zeros(12)
         df_dt = np.zeros(12)
         for k in range(4):
             for i in range(3):
                 li = k * 3 + i
-                df_ds[li] = p_n * (dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i])
-                df_dt[li] = p_n * (dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i])
+                df_ds[li] = dpn_ds * g_shape[li] + p_n * (
+                    dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i]
+                )
+                df_dt[li] = dpn_dt * g_shape[li] + p_n * (
+                    dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i]
+                )
 
         # K_st = -(df_ds ⊗ ds_du + df_dt ⊗ dt_du)
         K_st_local = -(np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du))
