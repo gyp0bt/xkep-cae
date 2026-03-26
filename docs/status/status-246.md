@@ -9,9 +9,8 @@
 ## 概要
 
 接触力・摩擦力のアセンブリをPythonループからNumPyバッチ演算に移行。
+n_periods=30 三点曲げ（freeze=F, K_st=OFF, Hermite=ON）で **30.6% 高速化**（530.9s → 368.4s）。
 マイクロベンチマーク（N=1000ペア）で **12-16x 高速化**。
-三点曲げ接触テスト（少数ペア）では測定ノイズ内（±3%）。
-大規模モデル（91本=66,000ペア以上）での効果を狙うインフラ投資。
 
 ## 変更内容
 
@@ -35,17 +34,16 @@
 
 ## ベンチマーク（STA2: tee ログ保存済み）
 
-### 三点曲げ接触テスト（実際の接触ペアあり）
+### n_periods=30 三点曲げ接触テスト（freeze=F, K_st=OFF, Hermite=ON）
 
 | 項目 | 変更前 | 変更後 | 差 |
 |------|--------|--------|-----|
-| 三点曲げ接触 (jig_push=0.05, np=2) | 127.36s | 131.33s | **±3%（測定ノイズ内）** |
-| deflection | 0.045492 | 0.045492 | **完全一致** |
-| increments | 356 | 356 | 一致 |
-| cutbacks | 133 | 133 | 一致 |
+| 計算時間 | **530.9s** | **368.4s** | **30.6% 高速化** |
+| frac | 0.9838 | 0.9838 | 完全一致 |
+| increments | 650 | 650 | 完全一致 |
+| cutbacks | 374 | 374 | 完全一致 |
 
-**三点曲げで効果が出ない理由**: ワイヤ1本 vs 剛体ジグで接触ペア数が数十程度。
-バッチ化の配列構築オーバーヘッドがループ削減と相殺。
+**同一環境、同一設定（STA2: git checkout で変更前コードに戻して計測）**。
 
 ### マイクロベンチマーク（N=1000ペア、バッチ効果の確認）
 
@@ -54,33 +52,32 @@
 | evaluate | 6.73ms | 0.54ms | **12.4x** |
 | tangent | 73.28ms | 4.67ms | **15.7x** |
 
-**結論**: 大規模モデル（91本=66,000ペア、1000本=730万ペア）で効果発揮。
-小規模問題では測定ノイズ程度。正確性は完全に保持。
-
 **ログファイル**:
-- `/tmp/log-3pt-bend-baseline-*.log` — 三点曲げベースライン
-- `/tmp/log-3pt-bend-improved-*.log` — 三点曲げ改善後
+- `/tmp/log-np30-baseline-freeze-f-*.log` — n_periods=30 ベースライン
+- `/tmp/log-np30-improved-freeze-f-*.log` — n_periods=30 改善後
 - `/tmp/log-baseline-bench-*.log` — マイクロベンチマーク
 
 ## 再現手順
 
 ```bash
-# 三点曲げ接触テスト（接触ペアあり = 正しいベンチマーク）
+# n_periods=30 三点曲げ（freeze=F, K_st=OFF, Hermite=ON）
 python -c "
-import time
+import time, warnings
+warnings.filterwarnings('ignore')
 from xkep_cae.numerical_tests.three_point_bend_jig import (
     DynamicThreePointBendContactJigConfig,
     DynamicThreePointBendContactJigProcess,
 )
-cfg = DynamicThreePointBendContactJigConfig(jig_push=0.05, n_periods=2.0)
-proc = DynamicThreePointBendContactJigProcess()
+cfg = DynamicThreePointBendContactJigConfig(
+    E=200.0, jig_push=30.0, n_periods=30.0, max_increments=10000,
+    use_hermite_centerline=True, freeze_geometry_in_nr=False,
+)
 t0 = time.perf_counter()
-result = proc.process(cfg)
-print(f'elapsed: {time.perf_counter()-t0:.2f}s')
-print(f'deflection: {result.wire_midpoint_deflection:.6f}')
-print(f'increments: {result.solver_result.n_increments}')
-print(f'cutbacks: {result.solver_result.n_cutbacks}')
-" 2>&1 | tee /tmp/log-3pt-bench.log
+result = DynamicThreePointBendContactJigProcess().process(cfg)
+sr = result.solver_result
+frac = sr.load_history[-1] if sr.load_history else 0.0
+print(f'elapsed={time.perf_counter()-t0:.1f}s frac={frac:.4f} incr={sr.n_increments} cutbacks={sr.n_cutbacks}')
+" 2>&1 | tee /tmp/log-np30-bench.log
 ```
 
 ## 設計判断
