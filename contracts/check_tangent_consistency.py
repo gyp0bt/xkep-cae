@@ -24,8 +24,12 @@ from xkep_cae.contact._contact_pair import (
 )
 
 
-def _compute_geometry(node_coords, r_a, r_b):
-    """2梁の最近接点と接触幾何を計算."""
+def _compute_geometry(node_coords, r_a, r_b, *, use_hermite=False):
+    """2梁の最近接点と接触幾何を計算.
+
+    use_hermite=True の場合、線形最近接点を初期値として
+    Hermite 曲線上の Newton 精緻化を行う（実ソルバーと同一手順）。
+    """
     xA0, xA1 = node_coords[0], node_coords[1]
     xB0, xB1 = node_coords[2], node_coords[3]
     dA = xA1 - xA0
@@ -42,6 +46,38 @@ def _compute_geometry(node_coords, r_a, r_b):
         t = float(np.clip((a * e - b * d) / denom, 0.01, 0.99))
     else:
         s, t = 0.5, 0.5
+
+    if use_hermite:
+        # Hermite 精緻化（実ソルバーと同一手順: status-242）
+        from xkep_cae.contact.geometry._compute import (
+            _closest_point_hermite_refine,
+            _compute_node_tangents,
+        )
+
+        conn = np.array([[0, 1], [2, 3]])
+        tangents = _compute_node_tangents(node_coords, conn)
+        s_arr, t_arr, pA_arr, pB_arr, dist_arr, normal_arr = (
+            _closest_point_hermite_refine(
+                np.array([s]),
+                np.array([t]),
+                node_coords[0:1],
+                node_coords[1:2],
+                node_coords[2:3],
+                node_coords[3:4],
+                tangents[0:1],
+                tangents[1:2],
+                tangents[2:3],
+                tangents[3:4],
+            )
+        )
+        s = float(s_arr[0])
+        t = float(t_arr[0])
+        diff = pA_arr[0] - pB_arr[0]
+        dist = float(dist_arr[0])
+        normal = normal_arr[0]
+        gap = dist - r_a - r_b
+        return s, t, gap, normal, dist
+
     pA = xA0 + s * dA
     pB = xB0 + t * dB
     diff = pA - pB
@@ -72,7 +108,12 @@ def _make_manager(u, coords_ref, r_a, r_b, k_pen, delta, config):
     for i in range(n_nodes):
         node_coords[i] = coords_ref[i] + u[i * ndof_per_node : i * ndof_per_node + 3]
 
-    s, t, gap, normal, dist = _compute_geometry(node_coords, r_a, r_b)
+    _use_hermite = (
+        hasattr(config, "use_hermite_centerline") and config.use_hermite_centerline
+    )
+    s, t, gap, normal, dist = _compute_geometry(
+        node_coords, r_a, r_b, use_hermite=_use_hermite
+    )
     p_n = _compute_huber_pn(gap, k_pen, delta)
 
     state = _ContactStateOutput(
