@@ -180,6 +180,7 @@ class ConvergenceCheckInput:
     energy_ref: float | None
     manager: object
     ndof_per_node: int = 6
+    char_length: float = 0.0  # 代表長さ [mm]（回転残差の正規化用、status-241）
 
 
 @dataclass(frozen=True)
@@ -196,6 +197,7 @@ class ConvergenceCheckOutput:
     energy_ref: float | None
     res_trans_norm: float = 0.0
     res_rot_norm: float = 0.0
+    res_weighted_norm: float = 0.0  # 重み付き統合ノルム [N]（status-241）
 
 
 class ConvergenceCheckProcess(
@@ -231,6 +233,14 @@ class ConvergenceCheckProcess(
             res_trans_norm = res_u_norm
             res_rot_norm = 0.0
 
+        # 重み付き統合ノルム: 回転残差を代表長さで除して力単位に正規化
+        # R_rot [N·mm] / L_char [mm] → [N] として並進残差と統合
+        _L = inp.char_length
+        if _L > 0 and res_rot_norm > 0:
+            res_weighted_norm = float(np.sqrt(res_trans_norm**2 + (res_rot_norm / _L) ** 2))
+        else:
+            res_weighted_norm = res_trans_norm
+
         f_ref = inp.f_ext_ref_norm
         if inp.dynamic_ref and inp.is_first_attempt and res_trans_norm > 1e-30:
             # 参照値も並進残差のみで設定
@@ -251,6 +261,7 @@ class ConvergenceCheckProcess(
                 energy_ref=inp.energy_ref,
                 res_trans_norm=res_trans_norm,
                 res_rot_norm=res_rot_norm,
+                res_weighted_norm=res_weighted_norm,
             )
 
         # 変位・エネルギー収束は du が必要
@@ -283,6 +294,7 @@ class ConvergenceCheckProcess(
             energy_ref=energy_ref,
             res_trans_norm=res_trans_norm,
             res_rot_norm=res_rot_norm,
+            res_weighted_norm=res_weighted_norm,
         )
 
 

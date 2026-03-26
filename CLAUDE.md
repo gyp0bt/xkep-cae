@@ -73,10 +73,10 @@
 
 ### 次の課題
 
-**NR力収束改善が最優先** — 収束判定の力/モーメント分離実装済み（status-240）。
-E=200e3鉄鋼で K_st+LM がbaseline比22%改善（frac 0.037→0.045）を確認。
-**新発見**: NR中に並進/回転残差の逆相関を検出。NR更新が回転DOFを優先し並進残差が増加。
-根本対策: DOFスケーリング or 並進/回転の重み付きノルムが必要。
+**NR力収束改善が最優先** — λ自動推定・重み付きノルム・DOFスケーリング実装済み（status-241）。
+E=200e3鉄鋼で K_st+LM がbaseline比22%改善（frac 0.037→0.045）を確認（status-240）。
+NR中の並進/回転残差逆相関に対し、DOFスケーリング（`dof_scale_rot`）とλ自動推定（`lm_auto_lambda`）で対策。
+**次のステップ**: dof_scale_rot の最適値調査、λ自動推定の他材料検証。
 残課題: Hermite K_st の ∂p_n/∂s 項追加、摩擦 Hermite 対応。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
