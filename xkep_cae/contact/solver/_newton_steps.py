@@ -419,20 +419,31 @@ class LinearSolveProcess(
     )
 
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
-        K_eff = inp.K_T.tocsc()
+        K_eff = inp.K_T.tolil()
 
         _rhs = -inp.R_u.copy()
-        for d in inp.fixed_dofs:
-            K_eff[d, :] = 0.0
-            K_eff[:, d] = 0.0
-            K_eff[d, d] = 1.0
-            _rhs[d] = 0.0
-        K_eff.eliminate_zeros()
+        fixed = inp.fixed_dofs
+        if len(fixed) > 0:
+            # バッチ BC 適用: lil_matrix で行列操作（status-246）
+            for d in fixed:
+                K_eff[d, :] = 0.0
+            K_eff[fixed, :] = 0.0
+            for d in fixed:
+                K_eff[d, d] = 1.0
+            # 列方向のゼロ化は lil では高コストなので CSC 変換後にマスク
+            K_csc = K_eff.tocsc()
+            for d in fixed:
+                K_csc[:, d] = 0.0
+                K_csc[d, d] = 1.0
+            K_csc.eliminate_zeros()
+            _rhs[fixed] = 0.0
+        else:
+            K_csc = K_eff.tocsc()
 
         try:
             from scipy.sparse.linalg import spsolve
 
-            du = spsolve(K_eff.tocsc(), _rhs)
+            du = spsolve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)

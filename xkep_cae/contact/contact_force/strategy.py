@@ -247,26 +247,210 @@ class HuberContactForceProcess(
             return 1.0
         return (x + delta) / (2.0 * delta)
 
+    @staticmethod
+    def _huber_batch(x: np.ndarray, delta: float) -> np.ndarray:
+        """ベクトル化 Huber 関数: max(0,x) の C1 近似."""
+        if delta <= 0.0:
+            return np.maximum(0.0, x)
+        result = np.where(
+            x < -delta,
+            0.0,
+            np.where(x > delta, x, (x + delta) ** 2 / (4.0 * delta)),
+        )
+        return result
+
+    @staticmethod
+    def _huber_deriv_batch(x: np.ndarray, delta: float) -> np.ndarray:
+        """ベクトル化 Huber 導関数."""
+        if delta <= 0.0:
+            return np.where(x > 0.0, 1.0, 0.0)
+        return np.where(
+            x < -delta,
+            0.0,
+            np.where(x > delta, 1.0, (x + delta) / (2.0 * delta)),
+        )
+
+    def _extract_pair_arrays(
+        self,
+        pairs: list,
+    ) -> tuple[np.ndarray, ...] | None:
+        """全ペアの数値データをバッチ配列に抽出.
+
+        Returns:
+            (has_state, gaps, s_arr, t_arr, normals, nodes_a0, nodes_a1,
+             nodes_b0, nodes_b1, radius_a, radius_b) or None if no pairs.
+        """
+        n = len(pairs)
+        if n == 0:
+            return None
+        has_state = np.zeros(n, dtype=bool)
+        gaps = np.zeros(n)
+        s_arr = np.zeros(n)
+        t_arr = np.zeros(n)
+        normals = np.zeros((n, 3))
+        nodes = np.zeros((n, 4), dtype=int)  # A0, A1, B0, B1
+        radius_a = np.zeros(n)
+        radius_b = np.zeros(n)
+        for i, pair in enumerate(pairs):
+            if not hasattr(pair, "state"):
+                continue
+            has_state[i] = True
+            gaps[i] = pair.state.gap
+            s_arr[i] = pair.state.s
+            t_arr[i] = pair.state.t
+            normals[i] = pair.state.normal
+            nodes[i, 0] = pair.nodes_a[0]
+            nodes[i, 1] = pair.nodes_a[1]
+            nodes[i, 2] = pair.nodes_b[0]
+            nodes[i, 3] = pair.nodes_b[1]
+            radius_a[i] = pair.radius_a
+            radius_b[i] = pair.radius_b
+        return has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b
+
+    @staticmethod
+    def _batch_hermite_coeffs(
+        s: np.ndarray,
+        t: np.ndarray,
+    ) -> np.ndarray:
+        """バッチ Hermite 形状関数係数 (N, 4)."""
+        s2, s3 = s * s, s * s * s
+        t2, t3 = t * t, t * t * t
+        return np.column_stack(
+            [
+                2.0 * s3 - 3.0 * s2 + 1.0,
+                -2.0 * s3 + 3.0 * s2,
+                -(2.0 * t3 - 3.0 * t2 + 1.0),
+                -(-2.0 * t3 + 3.0 * t2),
+            ]
+        )
+
+    @staticmethod
+    def _batch_hermite_corrected_coeffs(
+        s: np.ndarray,
+        t: np.ndarray,
+        dm_A: np.ndarray,
+        dm_B: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """バッチ ∂m/∂u 補正付き Hermite 係数 + 微分 (N,4) each.
+
+        dm_A: (N, 2, 2), dm_B: (N, 2, 2)
+        """
+        s2, s3 = s * s, s * s * s
+        t2, t3 = t * t, t * t * t
+        h00_s = 2.0 * s3 - 3.0 * s2 + 1.0
+        h01_s = -2.0 * s3 + 3.0 * s2
+        h10_s = s3 - 2.0 * s2 + s
+        h11_s = s3 - s2
+        h00_t = 2.0 * t3 - 3.0 * t2 + 1.0
+        h01_t = -2.0 * t3 + 3.0 * t2
+        h10_t = t3 - 2.0 * t2 + t
+        h11_t = t3 - t2
+        dh00_s = 6.0 * s2 - 6.0 * s
+        dh01_s = -6.0 * s2 + 6.0 * s
+        dh10_s = 3.0 * s2 - 4.0 * s + 1.0
+        dh11_s = 3.0 * s2 - 2.0 * s
+        dh00_t = 6.0 * t2 - 6.0 * t
+        dh01_t = -6.0 * t2 + 6.0 * t
+        dh10_t = 3.0 * t2 - 4.0 * t + 1.0
+        dh11_t = 3.0 * t2 - 2.0 * t
+        coeffs = np.column_stack(
+            [
+                h00_s + h10_s * dm_A[:, 0, 0] + h11_s * dm_A[:, 1, 0],
+                h01_s + h10_s * dm_A[:, 0, 1] + h11_s * dm_A[:, 1, 1],
+                -(h00_t + h10_t * dm_B[:, 0, 0] + h11_t * dm_B[:, 1, 0]),
+                -(h01_t + h10_t * dm_B[:, 0, 1] + h11_t * dm_B[:, 1, 1]),
+            ]
+        )
+        dc_ds = np.column_stack(
+            [
+                dh00_s + dh10_s * dm_A[:, 0, 0] + dh11_s * dm_A[:, 1, 0],
+                dh01_s + dh10_s * dm_A[:, 0, 1] + dh11_s * dm_A[:, 1, 1],
+                np.zeros_like(s),
+                np.zeros_like(s),
+            ]
+        )
+        dc_dt = np.column_stack(
+            [
+                np.zeros_like(t),
+                np.zeros_like(t),
+                -(dh00_t + dh10_t * dm_B[:, 0, 0] + dh11_t * dm_B[:, 1, 0]),
+                -(dh01_t + dh10_t * dm_B[:, 0, 1] + dh11_t * dm_B[:, 1, 1]),
+            ]
+        )
+        return coeffs, dc_ds, dc_dt
+
+    @staticmethod
+    def _batch_dm_coeffs(
+        node_counts: np.ndarray, nodes: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """バッチ dm 係数計算 (N, 2, 2) for A and B sides.
+
+        nodes: (N, 4) [A0, A1, B0, B1]
+        """
+        n = len(nodes)
+        dm_A = np.zeros((n, 2, 2))
+        dm_B = np.zeros((n, 2, 2))
+        c_a0 = np.maximum(node_counts[nodes[:, 0]], 1.0)
+        c_a1 = np.maximum(node_counts[nodes[:, 1]], 1.0)
+        c_b0 = np.maximum(node_counts[nodes[:, 2]], 1.0)
+        c_b1 = np.maximum(node_counts[nodes[:, 3]], 1.0)
+        # A side
+        dm_A[:, 0, 0] = np.where(c_a0 < 1.5, -1.0, 0.0)
+        dm_A[:, 0, 1] = 1.0 / c_a0
+        dm_A[:, 1, 0] = -1.0 / c_a1
+        dm_A[:, 1, 1] = np.where(c_a1 < 1.5, 1.0, 0.0)
+        # B side
+        dm_B[:, 0, 0] = np.where(c_b0 < 1.5, -1.0, 0.0)
+        dm_B[:, 0, 1] = 1.0 / c_b0
+        dm_B[:, 1, 0] = -1.0 / c_b1
+        dm_B[:, 1, 1] = np.where(c_b1 < 1.5, 1.0, 0.0)
+        return dm_A, dm_B
+
+    def _batch_shape_coeffs(
+        self,
+        s: np.ndarray,
+        t: np.ndarray,
+        use_hermite: bool,
+        node_counts: np.ndarray | None,
+        nodes: np.ndarray,
+    ) -> np.ndarray:
+        """バッチ形状関数係数 (N, 4) を計算."""
+        if use_hermite:
+            if node_counts is not None:
+                dm_A, dm_B = self._batch_dm_coeffs(node_counts, nodes)
+                coeffs, _, _ = self._batch_hermite_corrected_coeffs(s, t, dm_A, dm_B)
+                return coeffs
+            return self._batch_hermite_coeffs(s, t)
+        return np.column_stack([1.0 - s, s, -(1.0 - t), -t])
+
     def evaluate(
         self,
         u: np.ndarray,
         manager: object,
         k_pen: float,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """接触力を評価.
+        """接触力を評価（バッチ化版: status-246）.
 
         Returns:
             (f_c, residuals): f_c は接触力ベクトル、residuals はペア毎の残差
         """
         f_c = np.zeros(self._ndof)
-        residuals: list[float] = []
         delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
+
+        if not hasattr(manager, "pairs") or len(manager.pairs) == 0:
+            return f_c, np.zeros(0)
 
         _use_hermite = (
             hasattr(manager, "config")
             and hasattr(manager.config, "use_hermite_centerline")
             and manager.config.use_hermite_centerline
         )
+
+        # バッチ配列抽出
+        extracted = self._extract_pair_arrays(manager.pairs)
+        if extracted is None:
+            return f_c, np.zeros(0)
+        has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
 
         # Hermite dm 補正用 node_counts（status-243）
         _eval_node_counts = None
@@ -275,66 +459,66 @@ class HuberContactForceProcess(
             if _conn is not None:
                 from xkep_cae.contact.geometry._compute import _compute_node_counts
 
-                # ノード数を pairs から推定
-                _max_node = 0
-                if hasattr(manager, "pairs"):
-                    for p in manager.pairs:
-                        if hasattr(p, "nodes_a"):
-                            _max_node = max(
-                                _max_node, int(np.max(p.nodes_a)), int(np.max(p.nodes_b))
-                            )
+                _max_node = int(nodes[has_state].max()) if has_state.any() else 0
                 _eval_node_counts = _compute_node_counts(_max_node + 1, _conn)
 
-        if hasattr(manager, "pairs"):
-            for i, pair in enumerate(manager.pairs):
-                if not hasattr(pair, "state"):
-                    continue
-                # SDI 排除: INACTIVE skip を除去。Huber penalty は gap > 0 で
-                # 自然に p_n=0 を返すため、全候補ペアを評価する（status-233）。
+        # バッチ Huber 計算
+        x_pen = k_pen * (-gaps)
+        p_n_all = self._huber_batch(x_pen, delta_h)
+        p_n_all[~has_state] = 0.0
 
-                g_i = pair.state.gap
-                x_pen = k_pen * (-g_i)
-                p_n = self._huber(x_pen, delta_h)
+        # 残差計算
+        residuals = np.where(
+            has_state & (p_n_all > 0.0),
+            k_pen * gaps,
+            0.0,
+        )
 
-                # pair.state.p_n を更新（摩擦力計算で使用）
-                manager.pairs[i] = _evolve_pair(pair, state=_evolve_state(pair.state, p_n=p_n))
+        # ペア状態更新（frozen dataclass 制約でループ必須）
+        for i in range(len(manager.pairs)):
+            if has_state[i]:
                 pair = manager.pairs[i]
-
-                residuals.append(k_pen * g_i if p_n > 0.0 else 0.0)
-
-                if p_n <= 1e-30:
-                    continue
-
-                # dm 係数の計算（frozen-m 解消: status-243）
-                _ev_dm_A = None
-                _ev_dm_B = None
-                if _use_hermite and _eval_node_counts is not None:
-                    from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
-
-                    _ev_dm_A = _compute_dm_coeffs(
-                        _eval_node_counts[pair.nodes_a[0]],
-                        _eval_node_counts[pair.nodes_a[1]],
-                    )
-                    _ev_dm_B = _compute_dm_coeffs(
-                        _eval_node_counts[pair.nodes_b[0]],
-                        _eval_node_counts[pair.nodes_b[1]],
-                    )
-
-                g_shape = _contact_shape_vector(
-                    pair,
-                    use_hermite=_use_hermite,
-                    dm_A=_ev_dm_A,
-                    dm_B=_ev_dm_B,
+                manager.pairs[i] = _evolve_pair(
+                    pair, state=_evolve_state(pair.state, p_n=float(p_n_all[i]))
                 )
-                dofs = _contact_dofs(pair, self._ndof_per_node)
-                for k in range(4):
-                    for d in range(3):
-                        local_idx = k * 3 + d
-                        global_idx = dofs[k * self._ndof_per_node + d]
-                        f_c[global_idx] += p_n * g_shape[local_idx]
 
-        residual_arr = np.array(residuals) if residuals else np.zeros(0)
-        return f_c, residual_arr
+        # アクティブペア（p_n > 0）のみで力ベクトル構築
+        active = has_state & (p_n_all > 1e-30)
+        n_active = int(np.sum(active))
+        if n_active == 0:
+            return f_c, residuals[has_state]
+
+        p_n_act = p_n_all[active]
+        s_act = s_arr[active]
+        t_act = t_arr[active]
+        n_act = normals[active]
+        nodes_act = nodes[active]
+
+        # 形状関数係数 (N, 4)
+        coeffs = self._batch_shape_coeffs(
+            s_act,
+            t_act,
+            _use_hermite,
+            _eval_node_counts,
+            nodes_act,
+        )
+
+        # g_shape: (N, 12) = coeffs[:, k] * normal
+        g_shape = np.zeros((n_active, 12))
+        for k in range(4):
+            g_shape[:, k * 3 : k * 3 + 3] = coeffs[:, k : k + 1] * n_act
+
+        # f_local = p_n * g_shape: (N, 12)
+        f_local = p_n_act[:, None] * g_shape
+
+        # グローバル DOF インデックス (N, 4) → scatter
+        ndpn = self._ndof_per_node
+        for k in range(4):
+            for d in range(3):
+                gdofs = nodes_act[:, k] * ndpn + d
+                np.add.at(f_c, gdofs, f_local[:, k * 3 + d])
+
+        return f_c, residuals[has_state]
 
     def tangent(
         self,
@@ -344,53 +528,32 @@ class HuberContactForceProcess(
         *,
         node_coords: np.ndarray | None = None,
     ) -> sp.csr_matrix:
-        """接触接線剛性行列（Huber C1 連続 + 幾何剛性 + K_st）.
-
-        残差 R = f_int + f_c - f_ext において f_c = -f_c_raw（status-221）。
-        したがって dR/du の接触寄与は:
+        """接触接線剛性行列（バッチ化版: status-246）.
 
         K_c = K_mat - K_geo + K_st
 
-        材料剛性（ペナルティ勾配、正定値）:
-            K_mat = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
-
-        幾何剛性（法線回転、減算）:
-            K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
-
-        滑り剛性（接触点移動、status-226 + status-242 ∂p_n/∂s 追加）:
-            K_st = outer(∂f_raw/∂s, ds_du) + outer(∂f_raw/∂t, dt_du)
-            ∂f_raw/∂s = (∂p_n/∂s)·g_shape + p_n·(∂g_shape/∂s)
-
-        線形: c = [(1-s), s, -(1-t), -t]
-        Hermite: c = [H00(s), H01(s), -H00(t), -H01(t)]（status-230）
+        材料剛性: K_mat = h'(x) * k_pen * Σ_ij c_i c_j (n ⊗ n)
+        幾何剛性: K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
+        滑り剛性: K_st = outer(∂f_raw/∂s, ds_du) + outer(∂f_raw/∂t, dt_du)
         """
-        rows: list[int] = []
-        cols: list[int] = []
-        vals: list[float] = []
         delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
 
-        # Hermite フラグ
+        if not hasattr(manager, "pairs") or len(manager.pairs) == 0:
+            return sp.csr_matrix((self._ndof, self._ndof))
+
         _use_hermite = (
             hasattr(manager, "config")
             and hasattr(manager.config, "use_hermite_centerline")
             and manager.config.use_hermite_centerline
         )
 
-        # consistent_st_tangent フラグの取得
         _use_st = (
             hasattr(manager, "config")
             and hasattr(manager.config, "consistent_st_tangent")
             and manager.config.consistent_st_tangent
         )
-        if _use_st:
-            from xkep_cae.contact.geometry._st_jacobian import (
-                ComputeStJacobianProcess,
-                StJacobianInput,
-            )
 
-            _st_proc = ComputeStJacobianProcess()
-
-        # Hermite 用 node_tangents + node_counts（K_st, dn/ds で使用）
+        # Hermite 用 node_tangents + node_counts
         _node_tangents = None
         _node_counts = None
         if _use_hermite and node_coords is not None:
@@ -404,99 +567,142 @@ class HuberContactForceProcess(
                 _node_tangents = _compute_node_tangents(node_coords, _conn)
                 _node_counts = _compute_node_counts(len(node_coords), _conn)
 
-        if hasattr(manager, "pairs"):
+        # バッチ配列抽出
+        extracted = self._extract_pair_arrays(manager.pairs)
+        if extracted is None:
+            return sp.csr_matrix((self._ndof, self._ndof))
+        has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
+
+        # バッチ Huber 導関数 + p_n
+        x_pen = k_pen * (-gaps)
+        h_deriv_all = self._huber_deriv_batch(x_pen, delta_h)
+        h_deriv_all[~has_state] = 0.0
+        p_n_all = np.array(
+            [manager.pairs[i].state.p_n if has_state[i] else 0.0 for i in range(len(manager.pairs))]
+        )
+
+        # アクティブ条件: h_deriv > 0 or p_n > 0
+        active = has_state & ((h_deriv_all > 1e-30) | (p_n_all > 1e-30))
+        n_act = int(np.sum(active))
+        if n_act == 0 and not _use_st:
+            return sp.csr_matrix((self._ndof, self._ndof))
+
+        # ── K_mat + K_geo のバッチ計算 ──
+        if n_act > 0:
+            h_deriv_act = h_deriv_all[active]
+            p_n_act = p_n_all[active]
+            gaps_act = gaps[active]
+            s_act = s_arr[active]
+            t_act = t_arr[active]
+            n_act_v = normals[active]
+            nodes_act = nodes[active]
+            ra_act = radius_a[active]
+            rb_act = radius_b[active]
+
+            # 重み計算
+            w_mat = h_deriv_act * k_pen  # (N,)
+            dist = gaps_act + ra_act + rb_act
+            w_geo = np.where(dist > 1e-15, p_n_act / dist, 0.0)  # (N,)
+
+            # 係数 (N, 4)
+            coeffs = self._batch_shape_coeffs(
+                s_act,
+                t_act,
+                _use_hermite,
+                _node_counts,
+                nodes_act,
+            )
+
+            # n⊗n: (N, 3, 3)
+            nn = n_act_v[:, :, None] * n_act_v[:, None, :]
+            # I3 - n⊗n
+            I3 = np.eye(3)[None, :, :]  # (1, 3, 3)
+            I_nn = I3 - nn  # (N, 3, 3)
+
+            # K_3x3 = w_mat * (n⊗n) - w_geo * (I - n⊗n) per pair
+            K_3x3 = w_mat[:, None, None] * nn - w_geo[:, None, None] * I_nn  # (N, 3, 3)
+
+            # c_i * c_j: (N, 4, 4)
+            cc = coeffs[:, :, None] * coeffs[:, None, :]
+
+            # 局所 12×12 行列: K_local[ki*3+di, kj*3+dj] = cc[ki,kj] * K_3x3[di,dj]
+            K_local = np.zeros((n_act, 12, 12))
+            for ki in range(4):
+                for kj in range(4):
+                    K_local[:, ki * 3 : (ki + 1) * 3, kj * 3 : (kj + 1) * 3] = (
+                        cc[:, ki, kj][:, None, None] * K_3x3
+                    )
+
+            # DOF インデックス (N, 12)
+            ndpn = self._ndof_per_node
+            gdofs = np.zeros((n_act, 12), dtype=int)
+            for k in range(4):
+                for d in range(3):
+                    gdofs[:, k * 3 + d] = nodes_act[:, k] * ndpn + d
+
+            # COO 配列構築
+            row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+            col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
+            val_arr = K_local.ravel()
+            mask = np.abs(val_arr) > 1e-30
+            rows_np = row_idx[mask]
+            cols_np = col_idx[mask]
+            vals_np = val_arr[mask]
+        else:
+            rows_np = np.array([], dtype=int)
+            cols_np = np.array([], dtype=int)
+            vals_np = np.array([], dtype=float)
+
+        # ── K_st（ペアごとループ: StJacobian プロセス呼び出しのため） ──
+        st_rows: list[int] = []
+        st_cols: list[int] = []
+        st_vals: list[float] = []
+        if _use_st and node_coords is not None:
+            from xkep_cae.contact.geometry._st_jacobian import (
+                ComputeStJacobianProcess,
+                StJacobianInput,
+            )
+
+            _st_proc = ComputeStJacobianProcess()
             for pair in manager.pairs:
                 if not hasattr(pair, "state"):
                     continue
-                # SDI 排除: INACTIVE skip を除去（status-233）。
-
-                g_i = pair.state.gap
-                x_pen = k_pen * (-g_i)
-                h_deriv = self._huber_deriv(x_pen, delta_h)
                 p_n = pair.state.p_n
-
-                if h_deriv < 1e-30 and p_n < 1e-30:
+                if p_n <= 1e-30:
                     continue
-
-                # 材料剛性の重み
-                w_mat = h_deriv * k_pen
-
-                # 幾何剛性の重み: p_n / dist
-                dist = g_i + pair.radius_a + pair.radius_b
-                w_geo = p_n / dist if dist > 1e-15 else 0.0
-
-                normal = pair.state.normal
-                s = pair.state.s
-                t = pair.state.t
-
-                if _use_hermite:
-                    if _node_counts is not None:
-                        from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
-
-                        _dm_A = _compute_dm_coeffs(
-                            _node_counts[pair.nodes_a[0]],
-                            _node_counts[pair.nodes_a[1]],
-                        )
-                        _dm_B = _compute_dm_coeffs(
-                            _node_counts[pair.nodes_b[0]],
-                            _node_counts[pair.nodes_b[1]],
-                        )
-                        coeffs, _, _ = _hermite_corrected_coeffs(s, t, _dm_A, _dm_B)
-                    else:
-                        coeffs = _hermite_shape_coeffs(s, t)
-                else:
-                    coeffs = [(1.0 - s), s, -(1.0 - t), -t]
-
+                g_i = pair.state.gap
+                x_p = k_pen * (-g_i)
+                h_d = self._huber_deriv(x_p, delta_h)
                 dofs = _contact_dofs(pair, self._ndof_per_node)
+                self._add_kst_contact(
+                    pair,
+                    p_n,
+                    pair.state.normal,
+                    dofs,
+                    _st_proc,
+                    StJacobianInput,
+                    st_rows,
+                    st_cols,
+                    st_vals,
+                    node_coords,
+                    use_hermite=_use_hermite,
+                    node_tangents=_node_tangents,
+                    node_counts=_node_counts,
+                    h_deriv=h_d,
+                    k_pen=k_pen,
+                )
 
-                for ki in range(4):
-                    ci = coeffs[ki]
-                    if abs(ci) < 1e-30:
-                        continue
-                    for kj in range(4):
-                        cj = coeffs[kj]
-                        if abs(cj) < 1e-30:
-                            continue
-                        cc = ci * cj
-                        for di in range(3):
-                            gi = dofs[ki * self._ndof_per_node + di]
-                            for dj in range(3):
-                                gj = dofs[kj * self._ndof_per_node + dj]
-                                # K_mat: +w_mat * cc * n_i * n_j（正定値）
-                                val = w_mat * cc * normal[di] * normal[dj]
-                                # K_geo: -w_geo * cc * (δ_ij - n_i * n_j)（法線回転）
-                                delta_ij = 1.0 if di == dj else 0.0
-                                val -= w_geo * cc * (delta_ij - normal[di] * normal[dj])
-                                if abs(val) > 1e-30:
-                                    rows.append(gi)
-                                    cols.append(gj)
-                                    vals.append(val)
+        # 結合
+        if st_rows:
+            rows_np = np.concatenate([rows_np, np.array(st_rows, dtype=int)])
+            cols_np = np.concatenate([cols_np, np.array(st_cols, dtype=int)])
+            vals_np = np.concatenate([vals_np, np.array(st_vals)])
 
-                # K_st: 接触点滑り剛性（∂(s,t)/∂u の連鎖微分項）
-                if _use_st and p_n > 1e-30 and node_coords is not None:
-                    self._add_kst_contact(
-                        pair,
-                        p_n,
-                        normal,
-                        dofs,
-                        _st_proc,
-                        StJacobianInput,
-                        rows,
-                        cols,
-                        vals,
-                        node_coords,
-                        use_hermite=_use_hermite,
-                        node_tangents=_node_tangents,
-                        node_counts=_node_counts,
-                        h_deriv=h_deriv,
-                        k_pen=k_pen,
-                    )
-
-        if rows:
-            return sp.csr_matrix(
-                (np.array(vals), (np.array(rows), np.array(cols))),
+        if len(vals_np) > 0:
+            return sp.coo_matrix(
+                (vals_np, (rows_np, cols_np)),
                 shape=(self._ndof, self._ndof),
-            )
+            ).tocsr()
         return sp.csr_matrix((self._ndof, self._ndof))
 
     def _add_kst_contact(
