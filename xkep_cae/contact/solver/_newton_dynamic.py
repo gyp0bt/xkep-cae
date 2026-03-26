@@ -61,6 +61,8 @@ class NewtonDynamicInput:
     lm_lambda_init: float = 0.0  # LM 正則化初期値（0=無効）
     lm_adaptive: bool = True  # 適応 λ 制御
     lm_lambda_max: float = 1e6  # λ 上限
+    char_length: float = 0.0  # 代表長さ [mm]（重み付きノルム用、status-241）
+    dof_scale_rot: float = 1.0  # 回転 DOF の NR 更新スケーリング（status-241）
 
 
 @dataclass(frozen=True)
@@ -216,6 +218,7 @@ class NewtonDynamicProcess(
                     energy_ref=energy_ref,
                     manager=manager,
                     ndof_per_node=cfg.ndof_per_node,
+                    char_length=cfg.char_length,
                 )
             )
             # 初回反復で参照残差を保存
@@ -303,11 +306,17 @@ class NewtonDynamicProcess(
 
             if cfg.show_progress and att % 5 == 0:
                 _lm_info = f", λ={_lm_lambda:.1e}" if _lm_lambda > 0 else ""
+                _wn_info = (
+                    f", ||R_w||/||f||={conv_out.res_weighted_norm / conv_out.f_ref:.3e}"
+                    if cfg.char_length > 0
+                    else ""
+                )
                 print(
                     f"  Incr {increment_display} (frac={load_frac:.4f}), "
                     f"attempt {att}, "
                     f"||R_t||/||f|| = {conv_out.res_trans_norm / conv_out.f_ref:.3e}, "
-                    f"||R_r|| = {conv_out.res_rot_norm:.3e}, "
+                    f"||R_r|| = {conv_out.res_rot_norm:.3e}"
+                    f"{_wn_info}, "
                     f"active={n_active}{_lm_info}"
                 )
 
@@ -390,6 +399,14 @@ class NewtonDynamicProcess(
 
             du = solve_out.du
 
+            # ── DOF スケーリング: 回転 DOF の更新を減衰（status-241） ──
+            _sr = cfg.dof_scale_rot
+            if _sr != 1.0 and cfg.ndof_per_node >= 6:
+                _n_nd = len(du) // cfg.ndof_per_node
+                for _ni in range(_n_nd):
+                    _base = _ni * cfg.ndof_per_node
+                    du[_base + 3 : _base + 6] *= _sr
+
             # ── ステップ 9: Line search + 更新 ──
             ls_out = _linesearch_proc.process(
                 LineSearchUpdateInput(
@@ -423,6 +440,7 @@ class NewtonDynamicProcess(
                     energy_ref=energy_ref,
                     manager=manager,
                     ndof_per_node=cfg.ndof_per_node,
+                    char_length=cfg.char_length,
                 )
             )
 

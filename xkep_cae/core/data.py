@@ -189,6 +189,8 @@ class ContactFrictionInputData:
     compute_condition_number: bool = False  # 条件数診断（低速）
     lm_lambda_init: float = 0.0  # LM 正則化初期値（0=無効、status-239）
     lm_adaptive: bool = True  # 適応 λ 制御
+    lm_auto_lambda: bool = False  # λ 自動推定（beam_E から λ = c/E、status-241）
+    dof_scale_rot: float = 1.0  # 回転 DOF の NR 更新スケーリング（status-241）
 
     @property
     def is_dynamic(self) -> bool:
