@@ -19,7 +19,8 @@
     ただし δ = pA(s) - pB(t) (Hermite 補間), dpA/ds = Hermite 接線
 
     Gram 行列: a=dpA·dpA, b=dpA·dpB, c=dpB·dpB
-    RHS: Hermite 基底関数の微分を使用（m は凍結近似）
+    RHS: Hermite 基底関数の微分を使用
+    dm_A/dm_B 指定時は ∂m/∂u のローカル寄与を含む（status-243）
 
 status-078 の旧実装を Process Architecture で再実装。
 status-230 で Hermite 幾何対応に拡張。
@@ -161,6 +162,9 @@ class StJacobianInput:
     mB0: np.ndarray | None = None  # (3,) B始点の接線ベクトル
     mB1: np.ndarray | None = None  # (3,) B終点の接線ベクトル
     use_hermite: bool = False  # True なら Hermite 幾何で計算
+    # frozen-m 解消用: ∂m/∂x のローカル係数（status-243）
+    dm_A: np.ndarray | None = None  # (2,2) [[∂mA0/∂xA0, ∂mA0/∂xA1], [∂mA1/∂xA0, ∂mA1/∂xA1]]
+    dm_B: np.ndarray | None = None  # (2,2) [[∂mB0/∂xB0, ∂mB0/∂xB1], [∂mB1/∂xB0, ∂mB1/∂xB1]]
 
 
 @dataclass(frozen=True)
@@ -286,13 +290,13 @@ class ComputeStJacobianProcess(
         ここで dpA/ds は Hermite 接線ベクトル。
         接線ベクトル m は凍結近似（∂m/∂u = 0）。
 
-        RHS 導出:
-            ∂F₁/∂u_Ak = H_Ak(s) · dpA + H_Ak'(s) · δ   (A 側ノード)
-            ∂F₁/∂u_Bk = -H_Bk(t) · dpA                   (B 側ノード)
-            ∂F₂/∂u_Ak = -H_Ak(s) · dpB                    (A 側ノード)
-            ∂F₂/∂u_Bk = H_Bk(t) · dpB - H_Bk'(t) · δ    (B 側ノード)
+        RHS 導出（dm_A/dm_B 指定時は ∂m/∂u 補正付き — status-243）:
+            h_eff = H_Ak(s) + H10(s)·dm_A[0,k] + H11(s)·dm_A[1,k]
+            dh_eff = H_Ak'(s) + H10'(s)·dm_A[0,k] + H11'(s)·dm_A[1,k]
+            ∂F₁/∂u_Ak = h_eff · dpA + dh_eff · δ   (A 側ノード)
+            ∂F₁/∂u_Bk = -h_eff · dpA                 (B 側ノード)
 
-        ここで H_A0=H00(s), H_A1=H01(s), H_B0=H00(t), H_B1=H01(t)。
+        dm_A=None 時は H_Ak(s), H_Ak'(s) のみ（従来の凍結近似）。
         """
         s = inp.s
         t = inp.t
@@ -331,10 +335,28 @@ class ComputeStJacobianProcess(
         if abs(det) < inp.tol_singular * ac_product:
             # 特異: 1×1 フォールバック
             if w_t > 1e-30 and c >= inp.tol_singular:
-                dt_du = self._compute_dt_only_hermite(delta, dpA, dpB, s, t, c)
+                dt_du = self._compute_dt_only_hermite(
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    c,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
                 dt_du *= w_t
             if w_s > 1e-30 and a >= inp.tol_singular:
-                ds_du = self._compute_ds_only_hermite(delta, dpA, dpB, s, t, a)
+                ds_du = self._compute_ds_only_hermite(
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    a,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
                 ds_du *= w_s
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
@@ -342,7 +364,16 @@ class ComputeStJacobianProcess(
         J_inv = np.array([[c, b], [b, a]]) * inv_det
 
         for node_idx in range(4):
-            rhs = self._compute_rhs_hermite(node_idx, delta, dpA, dpB, s, t)
+            rhs = self._compute_rhs_hermite(
+                node_idx,
+                delta,
+                dpA,
+                dpB,
+                s,
+                t,
+                dm_A=inp.dm_A,
+                dm_B=inp.dm_B,
+            )
             st_deriv = -J_inv @ rhs
             ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
             dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
@@ -403,17 +434,22 @@ class ComputeStJacobianProcess(
         dpB: np.ndarray,
         s: float,
         t: float,
+        *,
+        dm_A: np.ndarray | None = None,
+        dm_B: np.ndarray | None = None,
     ) -> np.ndarray:
         """Hermite 版: ノード node_idx の [∂F₁/∂u_d, ∂F₂/∂u_d] を計算.
 
-        m（接線ベクトル）は凍結近似。
-        A 側ノードの位置基底: H_A0=H00(s), H_A1=H01(s)
-        B 側ノードの位置基底: H_B0=H00(t), H_B1=H01(t)
+        dm_A/dm_B が指定された場合、∂m/∂u のローカル寄与を含む（status-243）。
+        None の場合は従来の凍結近似（∂m/∂u = 0）。
 
-        ∂F₁/∂u_Ak = H_Ak(s) · dpA + H_Ak'(s) · δ
-        ∂F₁/∂u_Bk = -H_Bk(t) · dpA
-        ∂F₂/∂u_Ak = -H_Ak(s) · dpB
-        ∂F₂/∂u_Bk = H_Bk(t) · dpB - H_Bk'(t) · δ
+        位置感度:
+            ∂pA/∂x_{Ak} = H_Ak(s)·I + H10(s)·∂mA0/∂x_{Ak}·I + H11(s)·∂mA1/∂x_{Ak}·I
+            → h_eff = H_Ak(s) + H10(s)*dm_A[0,k] + H11(s)*dm_A[1,k]
+
+        接線感度:
+            ∂(dpA/ds)/∂x_{Ak} = H_Ak'(s)·I + H10'(s)·∂mA0/∂x_{Ak}·I + H11'(s)·∂mA1/∂x_{Ak}·I
+            → dh_eff = H_Ak'(s) + H10'(s)*dm_A[0,k] + H11'(s)*dm_A[1,k]
 
         Returns:
             (2, 3) array: rhs[eq, dim]
@@ -424,24 +460,36 @@ class ComputeStJacobianProcess(
             # A0: h=H00(s), dh=H00'(s)
             h = _hermite_h00(s)
             dh = _hermite_dh00(s)
+            if dm_A is not None:
+                h += _hermite_h10(s) * dm_A[0, 0] + _hermite_h11(s) * dm_A[1, 0]
+                dh += _hermite_dh10(s) * dm_A[0, 0] + _hermite_dh11(s) * dm_A[1, 0]
             rhs[0] = h * dpA + dh * delta
             rhs[1] = -h * dpB
         elif node_idx == 1:
             # A1: h=H01(s), dh=H01'(s)
             h = _hermite_h01(s)
             dh = _hermite_dh01(s)
+            if dm_A is not None:
+                h += _hermite_h10(s) * dm_A[0, 1] + _hermite_h11(s) * dm_A[1, 1]
+                dh += _hermite_dh10(s) * dm_A[0, 1] + _hermite_dh11(s) * dm_A[1, 1]
             rhs[0] = h * dpA + dh * delta
             rhs[1] = -h * dpB
         elif node_idx == 2:
             # B0: h=H00(t), dh=H00'(t)
             h = _hermite_h00(t)
             dh = _hermite_dh00(t)
+            if dm_B is not None:
+                h += _hermite_h10(t) * dm_B[0, 0] + _hermite_h11(t) * dm_B[1, 0]
+                dh += _hermite_dh10(t) * dm_B[0, 0] + _hermite_dh11(t) * dm_B[1, 0]
             rhs[0] = -h * dpA
             rhs[1] = h * dpB - dh * delta
         else:
             # B1: h=H01(t), dh=H01'(t)
             h = _hermite_h01(t)
             dh = _hermite_dh01(t)
+            if dm_B is not None:
+                h += _hermite_h10(t) * dm_B[0, 1] + _hermite_h11(t) * dm_B[1, 1]
+                dh += _hermite_dh10(t) * dm_B[0, 1] + _hermite_dh11(t) * dm_B[1, 1]
             rhs[0] = -h * dpA
             rhs[1] = h * dpB - dh * delta
 
@@ -503,19 +551,38 @@ class ComputeStJacobianProcess(
         s: float,
         t: float,
         c: float,
+        *,
+        dm_A: np.ndarray | None = None,
+        dm_B: np.ndarray | None = None,
     ) -> np.ndarray:
         """Hermite 版: s クランプ時 dt/du のみ計算（1×1 系）."""
         dt_du = np.zeros(12)
         inv_c = 1.0 / c
 
-        # A0: ∂F₂/∂u_A0 = -H00(s)·dpB
-        dt_du[0:3] = inv_c * _hermite_h00(s) * dpB
-        # A1: ∂F₂/∂u_A1 = -H01(s)·dpB
-        dt_du[3:6] = inv_c * _hermite_h01(s) * dpB
-        # B0: ∂F₂/∂u_B0 = H00(t)·dpB - H00'(t)·δ
-        dt_du[6:9] = -inv_c * (_hermite_h00(t) * dpB - _hermite_dh00(t) * delta)
-        # B1: ∂F₂/∂u_B1 = H01(t)·dpB - H01'(t)·δ
-        dt_du[9:12] = -inv_c * (_hermite_h01(t) * dpB - _hermite_dh01(t) * delta)
+        # A0: ∂F₂/∂u_A0 = -h_eff·dpB
+        h_a0 = _hermite_h00(s)
+        if dm_A is not None:
+            h_a0 += _hermite_h10(s) * dm_A[0, 0] + _hermite_h11(s) * dm_A[1, 0]
+        dt_du[0:3] = inv_c * h_a0 * dpB
+        # A1: ∂F₂/∂u_A1 = -h_eff·dpB
+        h_a1 = _hermite_h01(s)
+        if dm_A is not None:
+            h_a1 += _hermite_h10(s) * dm_A[0, 1] + _hermite_h11(s) * dm_A[1, 1]
+        dt_du[3:6] = inv_c * h_a1 * dpB
+        # B0: ∂F₂/∂u_B0 = h_eff·dpB - dh_eff·δ
+        h_b0 = _hermite_h00(t)
+        dh_b0 = _hermite_dh00(t)
+        if dm_B is not None:
+            h_b0 += _hermite_h10(t) * dm_B[0, 0] + _hermite_h11(t) * dm_B[1, 0]
+            dh_b0 += _hermite_dh10(t) * dm_B[0, 0] + _hermite_dh11(t) * dm_B[1, 0]
+        dt_du[6:9] = -inv_c * (h_b0 * dpB - dh_b0 * delta)
+        # B1: ∂F₂/∂u_B1 = h_eff·dpB - dh_eff·δ
+        h_b1 = _hermite_h01(t)
+        dh_b1 = _hermite_dh01(t)
+        if dm_B is not None:
+            h_b1 += _hermite_h10(t) * dm_B[0, 1] + _hermite_h11(t) * dm_B[1, 1]
+            dh_b1 += _hermite_dh10(t) * dm_B[0, 1] + _hermite_dh11(t) * dm_B[1, 1]
+        dt_du[9:12] = -inv_c * (h_b1 * dpB - dh_b1 * delta)
 
         return dt_du
 
@@ -527,18 +594,37 @@ class ComputeStJacobianProcess(
         s: float,
         t: float,
         a: float,
+        *,
+        dm_A: np.ndarray | None = None,
+        dm_B: np.ndarray | None = None,
     ) -> np.ndarray:
         """Hermite 版: t クランプ時 ds/du のみ計算（1×1 系）."""
         ds_du = np.zeros(12)
         inv_a = 1.0 / a
 
-        # A0: ∂F₁/∂u_A0 = H00(s)·dpA + H00'(s)·δ
-        ds_du[0:3] = -inv_a * (_hermite_h00(s) * dpA + _hermite_dh00(s) * delta)
-        # A1: ∂F₁/∂u_A1 = H01(s)·dpA + H01'(s)·δ
-        ds_du[3:6] = -inv_a * (_hermite_h01(s) * dpA + _hermite_dh01(s) * delta)
-        # B0: ∂F₁/∂u_B0 = -H00(t)·dpA
-        ds_du[6:9] = inv_a * _hermite_h00(t) * dpA
-        # B1: ∂F₁/∂u_B1 = -H01(t)·dpA
-        ds_du[9:12] = inv_a * _hermite_h01(t) * dpA
+        # A0: ∂F₁/∂u_A0 = h_eff·dpA + dh_eff·δ
+        h_a0 = _hermite_h00(s)
+        dh_a0 = _hermite_dh00(s)
+        if dm_A is not None:
+            h_a0 += _hermite_h10(s) * dm_A[0, 0] + _hermite_h11(s) * dm_A[1, 0]
+            dh_a0 += _hermite_dh10(s) * dm_A[0, 0] + _hermite_dh11(s) * dm_A[1, 0]
+        ds_du[0:3] = -inv_a * (h_a0 * dpA + dh_a0 * delta)
+        # A1: ∂F₁/∂u_A1 = h_eff·dpA + dh_eff·δ
+        h_a1 = _hermite_h01(s)
+        dh_a1 = _hermite_dh01(s)
+        if dm_A is not None:
+            h_a1 += _hermite_h10(s) * dm_A[0, 1] + _hermite_h11(s) * dm_A[1, 1]
+            dh_a1 += _hermite_dh10(s) * dm_A[0, 1] + _hermite_dh11(s) * dm_A[1, 1]
+        ds_du[3:6] = -inv_a * (h_a1 * dpA + dh_a1 * delta)
+        # B0: ∂F₁/∂u_B0 = -h_eff·dpA
+        h_b0 = _hermite_h00(t)
+        if dm_B is not None:
+            h_b0 += _hermite_h10(t) * dm_B[0, 0] + _hermite_h11(t) * dm_B[1, 0]
+        ds_du[6:9] = inv_a * h_b0 * dpA
+        # B1: ∂F₁/∂u_B1 = -h_eff·dpA
+        h_b1 = _hermite_h01(t)
+        if dm_B is not None:
+            h_b1 += _hermite_h10(t) * dm_B[0, 1] + _hermite_h11(t) * dm_B[1, 1]
+        ds_du[9:12] = inv_a * h_b1 * dpA
 
         return ds_du

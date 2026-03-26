@@ -327,6 +327,69 @@ def _compute_node_tangents(
     return tangents
 
 
+def _compute_node_counts(
+    n_nodes: int,
+    connectivity: np.ndarray,
+) -> np.ndarray:
+    """各節点の接続要素数を計算.
+
+    Returns:
+        (n_nodes,) 接続要素数（端点=1, 内部=2）
+    """
+    counts = np.zeros(n_nodes)
+    for elem_idx in range(len(connectivity)):
+        n0, n1 = connectivity[elem_idx]
+        counts[n0] += 1.0
+        counts[n1] += 1.0
+    return counts
+
+
+def _compute_dm_coeffs(count_left: float, count_right: float) -> np.ndarray:
+    """要素 (n0, n1) のローカル ∂m/∂x 係数を計算.
+
+    Hermite 接線ベクトル m の節点座標微分（frozen-m 解消用）。
+
+    dm[i,j] = ∂m_{node_i}/∂x_{node_j} のスカラー係数
+    （∂m/∂x = coeff * I₃ なのでスカラーで表現可能）
+
+    端点 (count=1):
+        dm_self = -1 (左端) or +1 (右端)
+        dm_cross = +1/count (対側ノードへ) or -1/count (対側ノードから)
+    内部 (count=2):
+        dm_self = 0（±I が相殺）
+        dm_cross = ±1/2
+
+    Returns:
+        (2, 2) array: [[dm(m0,x0), dm(m0,x1)],
+                        [dm(m1,x0), dm(m1,x1)]]
+    """
+    c0 = max(count_left, 1.0)
+    c1 = max(count_right, 1.0)
+    dm = np.zeros((2, 2))
+
+    # dm(m0, x0): 左端ノードの自己微分
+    # 端点(c0=1): n0 は n0 としてのみ存在 → ∂d/∂x0 = -I → -1/1 = -1
+    # 内部(c0=2): n0 は n0 + 前要素の n1 → (-I+I)/2 = 0
+    if c0 < 1.5:  # 端点
+        dm[0, 0] = -1.0
+    # else: 0.0 (already zero)
+
+    # dm(m0, x1): 右端ノードから左端タンジェントへ → +1/c0
+    dm[0, 1] = 1.0 / c0
+
+    # dm(m1, x0): 左端ノードから右端タンジェントへ → -1/c1
+    dm[1, 0] = -1.0 / c1
+
+    # dm(m1, x1): 右端ノードの自己微分
+    # 端点(c1=1): n1 は n1 としてのみ存在 → ∂d/∂x1 = +I → +1/1 = +1
+    # 内部(c1=2): n1 は n1 + 次要素の n0 → (+I-I)/2 = 0
+    if c1 < 1.5:  # 端点
+        dm[1, 1] = 1.0
+    # else: 0.0 (already zero)
+
+    return dm
+
+
 def _hermite_eval(
     s: np.ndarray,
     x0: np.ndarray,
