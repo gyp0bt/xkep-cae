@@ -24,7 +24,7 @@ def _run_config(label, **overrides):
     cfg = DynamicThreePointBendContactJigConfig(**overrides)
     print(f"\n{'=' * 60}")
     print(f"構成: {label}")
-    print(f"  dof_scale_rot={cfg.dof_scale_rot}, lm_auto_lambda={cfg.lm_auto_lambda}")
+    print(f"  dof_scale_rot={cfg.dof_scale_rot}")
     print(f"  E={cfg.E}, freeze={cfg.freeze_geometry_in_nr}")
     print("=" * 60)
     sys.stdout.flush()
@@ -74,7 +74,7 @@ def _run_config(label, **overrides):
         }
 
 
-# 共通パラメータ: E=200e3 鉄鋼, K_st+LM自動推定
+# 共通パラメータ: E=200e3 鉄鋼, K_st ON
 COMMON = {
     "E": 200e3,
     "nu": 0.3,
@@ -87,8 +87,6 @@ COMMON = {
     "max_nr_attempts": 30,
     "freeze_geometry_in_nr": False,
     "consistent_st_tangent": True,
-    "lm_auto_lambda": True,
-    "lm_adaptive": True,
 }
 
 SCALE_VALUES = [1.0, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3]

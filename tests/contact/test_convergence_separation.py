@@ -298,24 +298,8 @@ class TestWeightedNormAPI:
         assert inp.char_length == 0.0
 
 
-class TestLMAutoLambdaAPI:
-    """λ 自動推定の API テスト（status-241）."""
-
-    def test_auto_lambda_field_exists(self):
-        """ContactFrictionInputData に lm_auto_lambda フィールドがある."""
-        from xkep_cae.core.data import ContactFrictionInputData
-
-        assert hasattr(ContactFrictionInputData, "lm_auto_lambda")
-
-    def test_auto_lambda_default_false(self):
-        """lm_auto_lambda のデフォルトは False."""
-        # dataclass のデフォルトを確認
-        import dataclasses
-
-        from xkep_cae.core.data import ContactFrictionInputData
-
-        fields = {f.name: f for f in dataclasses.fields(ContactFrictionInputData)}
-        assert fields["lm_auto_lambda"].default is False
+class TestDofScaleRotAPI:
+    """dof_scale_rot の API テスト（status-241）."""
 
     def test_dof_scale_rot_field_exists(self):
         """ContactFrictionInputData に dof_scale_rot フィールドがある."""

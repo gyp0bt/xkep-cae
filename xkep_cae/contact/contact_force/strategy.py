@@ -84,18 +84,89 @@ def _hermite_dc_dt(t: float) -> list[float]:
     return [0.0, 0.0, -(6.0 * t2 - 6.0 * t), -(-6.0 * t2 + 6.0 * t)]
 
 
+def _hermite_corrected_coeffs(
+    s: float,
+    t: float,
+    dm_A: np.ndarray,
+    dm_B: np.ndarray,
+) -> tuple[list[float], list[float], list[float]]:
+    """∂m/∂u 補正付き Hermite 形状関数係数と微分（status-243）.
+
+    位置感度:
+        coeff[Ak] = H_Ak(s) + H10(s)·dm_A[0,k] + H11(s)·dm_A[1,k]
+
+    微分:
+        dc_ds[Ak] = H_Ak'(s) + H10'(s)·dm_A[0,k] + H11'(s)·dm_A[1,k]
+
+    Returns:
+        (coeffs, dc_ds, dc_dt): 各 4要素のリスト
+    """
+    s2, s3 = s * s, s * s * s
+    t2, t3 = t * t, t * t * t
+
+    # Hermite 基底関数
+    h00_s = 2.0 * s3 - 3.0 * s2 + 1.0
+    h01_s = -2.0 * s3 + 3.0 * s2
+    h10_s = s3 - 2.0 * s2 + s
+    h11_s = s3 - s2
+    h00_t = 2.0 * t3 - 3.0 * t2 + 1.0
+    h01_t = -2.0 * t3 + 3.0 * t2
+    h10_t = t3 - 2.0 * t2 + t
+    h11_t = t3 - t2
+
+    # 微分
+    dh00_s = 6.0 * s2 - 6.0 * s
+    dh01_s = -6.0 * s2 + 6.0 * s
+    dh10_s = 3.0 * s2 - 4.0 * s + 1.0
+    dh11_s = 3.0 * s2 - 2.0 * s
+    dh00_t = 6.0 * t2 - 6.0 * t
+    dh01_t = -6.0 * t2 + 6.0 * t
+    dh10_t = 3.0 * t2 - 4.0 * t + 1.0
+    dh11_t = 3.0 * t2 - 2.0 * t
+
+    # 補正付き係数
+    coeffs = [
+        h00_s + h10_s * dm_A[0, 0] + h11_s * dm_A[1, 0],  # A0
+        h01_s + h10_s * dm_A[0, 1] + h11_s * dm_A[1, 1],  # A1
+        -(h00_t + h10_t * dm_B[0, 0] + h11_t * dm_B[1, 0]),  # B0
+        -(h01_t + h10_t * dm_B[0, 1] + h11_t * dm_B[1, 1]),  # B1
+    ]
+    dc_ds = [
+        dh00_s + dh10_s * dm_A[0, 0] + dh11_s * dm_A[1, 0],  # A0
+        dh01_s + dh10_s * dm_A[0, 1] + dh11_s * dm_A[1, 1],  # A1
+        0.0,
+        0.0,
+    ]
+    dc_dt = [
+        0.0,
+        0.0,
+        -(dh00_t + dh10_t * dm_B[0, 0] + dh11_t * dm_B[1, 0]),  # B0
+        -(dh01_t + dh10_t * dm_B[0, 1] + dh11_t * dm_B[1, 1]),  # B1
+    ]
+    return coeffs, dc_ds, dc_dt
+
+
 # ── ヘルパー ───────────────────────────────────────────────
 
 
-def _contact_shape_vector(pair: object, *, use_hermite: bool = False) -> np.ndarray:
+def _contact_shape_vector(
+    pair: object,
+    *,
+    use_hermite: bool = False,
+    dm_A: np.ndarray | None = None,
+    dm_B: np.ndarray | None = None,
+) -> np.ndarray:
     """接触形状ベクトル g_shape (12,) を構築する.
 
     線形: g_shape = [(1-s)*n, s*n, -(1-t)*n, -t*n]
     Hermite: g_shape = [H00(s)*n, H01(s)*n, -H00(t)*n, -H01(t)*n]
+    Hermite+dm: ∂m/∂u 補正付き（status-243）
 
     Args:
         pair: ContactPair（state.s, state.t, state.normal を持つ）
         use_hermite: True なら Hermite 基底を使用
+        dm_A: (2,2) A側 ∂m/∂x 係数（None なら凍結近似）
+        dm_B: (2,2) B側 ∂m/∂x 係数
 
     Returns:
         g_shape: (12,) 形状ベクトル
@@ -104,7 +175,10 @@ def _contact_shape_vector(pair: object, *, use_hermite: bool = False) -> np.ndar
     t = pair.state.t
     normal = pair.state.normal
     if use_hermite:
-        coeffs = _hermite_shape_coeffs(s, t)
+        if dm_A is not None and dm_B is not None:
+            coeffs, _, _ = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
+        else:
+            coeffs = _hermite_shape_coeffs(s, t)
     else:
         coeffs = [(1.0 - s), s, -(1.0 - t), -t]
     g_shape = np.zeros(12)
@@ -194,6 +268,23 @@ class HuberContactForceProcess(
             and manager.config.use_hermite_centerline
         )
 
+        # Hermite dm 補正用 node_counts（status-243）
+        _eval_node_counts = None
+        if _use_hermite:
+            _conn = getattr(manager, "connectivity", None)
+            if _conn is not None:
+                from xkep_cae.contact.geometry._compute import _compute_node_counts
+
+                # ノード数を pairs から推定
+                _max_node = 0
+                if hasattr(manager, "pairs"):
+                    for p in manager.pairs:
+                        if hasattr(p, "nodes_a"):
+                            _max_node = max(
+                                _max_node, int(np.max(p.nodes_a)), int(np.max(p.nodes_b))
+                            )
+                _eval_node_counts = _compute_node_counts(_max_node + 1, _conn)
+
         if hasattr(manager, "pairs"):
             for i, pair in enumerate(manager.pairs):
                 if not hasattr(pair, "state"):
@@ -214,7 +305,27 @@ class HuberContactForceProcess(
                 if p_n <= 1e-30:
                     continue
 
-                g_shape = _contact_shape_vector(pair, use_hermite=_use_hermite)
+                # dm 係数の計算（frozen-m 解消: status-243）
+                _ev_dm_A = None
+                _ev_dm_B = None
+                if _use_hermite and _eval_node_counts is not None:
+                    from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
+
+                    _ev_dm_A = _compute_dm_coeffs(
+                        _eval_node_counts[pair.nodes_a[0]],
+                        _eval_node_counts[pair.nodes_a[1]],
+                    )
+                    _ev_dm_B = _compute_dm_coeffs(
+                        _eval_node_counts[pair.nodes_b[0]],
+                        _eval_node_counts[pair.nodes_b[1]],
+                    )
+
+                g_shape = _contact_shape_vector(
+                    pair,
+                    use_hermite=_use_hermite,
+                    dm_A=_ev_dm_A,
+                    dm_B=_ev_dm_B,
+                )
                 dofs = _contact_dofs(pair, self._ndof_per_node)
                 for k in range(4):
                     for d in range(3):
@@ -279,14 +390,19 @@ class HuberContactForceProcess(
 
             _st_proc = ComputeStJacobianProcess()
 
-        # Hermite 用 node_tangents（K_st, dn/ds で使用）
+        # Hermite 用 node_tangents + node_counts（K_st, dn/ds で使用）
         _node_tangents = None
+        _node_counts = None
         if _use_hermite and node_coords is not None:
             _conn = getattr(manager, "connectivity", None)
             if _conn is not None:
-                from xkep_cae.contact.geometry._compute import _compute_node_tangents
+                from xkep_cae.contact.geometry._compute import (
+                    _compute_node_counts,
+                    _compute_node_tangents,
+                )
 
                 _node_tangents = _compute_node_tangents(node_coords, _conn)
+                _node_counts = _compute_node_counts(len(node_coords), _conn)
 
         if hasattr(manager, "pairs"):
             for pair in manager.pairs:
@@ -314,7 +430,20 @@ class HuberContactForceProcess(
                 t = pair.state.t
 
                 if _use_hermite:
-                    coeffs = _hermite_shape_coeffs(s, t)
+                    if _node_counts is not None:
+                        from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
+
+                        _dm_A = _compute_dm_coeffs(
+                            _node_counts[pair.nodes_a[0]],
+                            _node_counts[pair.nodes_a[1]],
+                        )
+                        _dm_B = _compute_dm_coeffs(
+                            _node_counts[pair.nodes_b[0]],
+                            _node_counts[pair.nodes_b[1]],
+                        )
+                        coeffs, _, _ = _hermite_corrected_coeffs(s, t, _dm_A, _dm_B)
+                    else:
+                        coeffs = _hermite_shape_coeffs(s, t)
                 else:
                     coeffs = [(1.0 - s), s, -(1.0 - t), -t]
 
@@ -358,6 +487,7 @@ class HuberContactForceProcess(
                         node_coords,
                         use_hermite=_use_hermite,
                         node_tangents=_node_tangents,
+                        node_counts=_node_counts,
                         h_deriv=h_deriv,
                         k_pen=k_pen,
                     )
@@ -384,6 +514,7 @@ class HuberContactForceProcess(
         *,
         use_hermite: bool = False,
         node_tangents: np.ndarray | None = None,
+        node_counts: np.ndarray | None = None,
         h_deriv: float = 0.0,
         k_pen: float = 0.0,
     ) -> None:
@@ -406,6 +537,21 @@ class HuberContactForceProcess(
         xB0 = node_coords[pair.nodes_b[0]]
         xB1 = node_coords[pair.nodes_b[1]]
 
+        # dm 係数の計算（frozen-m 解消: status-243）
+        _dm_A = None
+        _dm_B = None
+        if use_hermite and node_counts is not None:
+            from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
+
+            _dm_A = _compute_dm_coeffs(
+                node_counts[pair.nodes_a[0]],
+                node_counts[pair.nodes_a[1]],
+            )
+            _dm_B = _compute_dm_coeffs(
+                node_counts[pair.nodes_b[0]],
+                node_counts[pair.nodes_b[1]],
+            )
+
         # StJacobian 入力の構築
         st_kw: dict = {
             "xA0": xA0,
@@ -421,6 +567,9 @@ class HuberContactForceProcess(
             st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
             st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
             st_kw["use_hermite"] = True
+            if _dm_A is not None:
+                st_kw["dm_A"] = _dm_A
+                st_kw["dm_B"] = _dm_B
 
         out = st_proc.process(StJacobianInput(**st_kw))
         if not out.valid:
@@ -434,9 +583,12 @@ class HuberContactForceProcess(
 
         # 形状関数係数とその微分
         if use_hermite:
-            coeffs = _hermite_shape_coeffs(s, t)
-            dc_ds = _hermite_dc_ds(s)
-            dc_dt = _hermite_dc_dt(t)
+            if _dm_A is not None:
+                coeffs, dc_ds, dc_dt = _hermite_corrected_coeffs(s, t, _dm_A, _dm_B)
+            else:
+                coeffs = _hermite_shape_coeffs(s, t)
+                dc_ds = _hermite_dc_ds(s)
+                dc_dt = _hermite_dc_dt(t)
         else:
             coeffs = [(1.0 - s), s, -(1.0 - t), -t]
             dc_ds = [-1.0, 1.0, 0.0, 0.0]
