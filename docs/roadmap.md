@@ -14,14 +14,14 @@
 
 ## 現在地（2026-03-26）
 
-**200+10s テスト**（HermiteデフォルトON+np30検証 — status-245） | 契約違反1件 | [最新status](status/status-index.md)
+**200+10s テスト**（接触アセンブリバッチ化22%高速化 — status-246） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
 | FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 平面 + HEX8、非線形、動的解析 — 完了 |
 | 接触 | NCP + Line contact + Mortar + smooth penalty Coulomb摩擦 — 完了 |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース、ヒステリシス — 完了 |
-| 高速化 | NCP 6x + 要素12.6x バッチ化、ソルバー一本化 — 完了 |
+| 高速化 | NCP 6x + 要素12.6x + **接触アセンブリ12-16x** バッチ化 — status-246 |
 | **壁** | **61本以上の曲げ揺動収束** / 1000本6時間 / broadphase最適化 |
 
 ---
