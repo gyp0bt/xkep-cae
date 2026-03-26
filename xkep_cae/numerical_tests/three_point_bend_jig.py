@@ -909,6 +909,9 @@ class DynamicThreePointBendContactJigConfig:
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
     use_hermite_centerline: bool = True  # status-230: Hermite 幾何対応完了により ON
     freeze_geometry_in_nr: bool = True  # status-230: Hermite ON 時は NR 内 s,t 凍結で安定化
+    consistent_st_tangent: bool = False  # K_st 整合接線（status-239: LM 正則化と併用）
+    lm_lambda_init: float = 0.0  # LM 正則化初期値（0=無効）
+    lm_adaptive: bool = True  # 適応 λ 制御
 
 
 @dataclass(frozen=True)
@@ -1180,6 +1183,7 @@ class DynamicThreePointBendContactJigProcess(
             coating_mu=cfg.coating_mu,
             use_hermite_centerline=cfg.use_hermite_centerline,
             freeze_geometry_in_nr=cfg.freeze_geometry_in_nr,
+            consistent_st_tangent=cfg.consistent_st_tangent,
             **_rigid_kw,
         )
         manager = _ContactManagerInput(config=contact_config)
@@ -1210,6 +1214,8 @@ class DynamicThreePointBendContactJigProcess(
             divergence_window=20,
             du_norm_cap=cfg.du_norm_cap,
             max_increments=cfg.max_increments,
+            lm_lambda_init=cfg.lm_lambda_init,
+            lm_adaptive=cfg.lm_adaptive,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)

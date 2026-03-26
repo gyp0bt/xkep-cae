@@ -187,6 +187,8 @@ class ContactFrictionInputData:
     du_norm_cap: float = 0.0  # NR ステップ上限（||du|| < cap * ||u||、0=制限なし）
     max_increments: int = 10000  # 最大インクリメント数（0=無制限）
     compute_condition_number: bool = False  # 条件数診断（低速）
+    lm_lambda_init: float = 0.0  # LM 正則化初期値（0=無効、status-239）
+    lm_adaptive: bool = True  # 適応 λ 制御
 
     @property
     def is_dynamic(self) -> bool:
