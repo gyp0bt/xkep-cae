@@ -28,22 +28,30 @@ status-244 の TODO 2件を実施:
 
 ### 2. n_periods=30 収束検証結果
 
-| 設定 | frac | incr | 備考 |
-|------|------|------|------|
-| freeze=F, K_st=ON, Hermite=ON | **0.7360** | 346 | 発散（残差振動 active=2↔3）|
-| freeze=T, K_st=OFF, Hermite=ON | 0.0003 | 5 | 壊滅的（初期カットバック地獄）|
-| freeze=T, K_st=OFF, Hermite=OFF | 1.0 | 1592 | status-234 ベースライン |
+| 設定 | frac | incr | cutbacks | 時間 | 備考 |
+|------|------|------|----------|------|------|
+| freeze=F, K_st=OFF, Hermite=ON | **0.9838** | 653 | 377 | 629s | **ほぼ完走** |
+| freeze=F, K_st=ON, Hermite=ON | 0.7360 | 346 | — | — | 発散（残差振動 active=2↔3）|
+| freeze=T, K_st=OFF, Hermite=ON | 0.0003 | 5 | — | — | 壊滅的（初期カットバック地獄）|
+| freeze=T, K_st=OFF, Hermite=OFF | 1.0 | 870 | 655 | 1161s | ベースライン |
 
-**freeze=F + K_st=ON + Hermite=ON は status-232（frac=0.08）から 0.7360 に大幅改善**。
-frozen-m 解消と K_st の ∂p_n/∂s 追加が効いている。
-ただし frac=0.74 付近で active 接触点数が 2↔3 で振動し、接線不整合で発散。
+**重要な発見**: K_st=OFF + freeze=F + Hermite=ON が **frac=0.9838** でほぼ完走。
+K_st=ON よりも K_st=OFF の方が Hermite と相性が良い。
+K_st の ∂(s,t)/∂u 項が Hermite の非局所効果と干渉して発散を早める可能性。
 
-### 発散箇所の分析
+status-232（frac=0.08）→ 0.9838 に劇的改善。frozen-m 解消の効果が明確。
+
+### 発散箇所の分析（K_st=ON, frac=0.7360）
 
 - frac=0.73 付近で active ペア数が 2↔3 で NR 反復ごとに切り替わる
 - 接触チャタリング: gap が 0 近傍の境界ペアが ACTIVE/INACTIVE を反復内で繰り返す
-- Hermite の接線感度が高く、node tangent の微小変化が gap 判定を変える
-- K_st=ON でも Hermite ∂g/∂u の非局所成分（4ノードペア外）が未対応
+- K_st の ∂(s,t)/∂u が Hermite の非局所接線感度と干渉
+
+### K_st=OFF が良い理由の推測
+
+- K_st=ON は接線剛性に ∂(s,t)/∂u を含めるが、Hermite の ∂g/∂u は非局所（4ノードペア外の DOF 依存）
+- K_st が不完全な非局所成分を含めることで、Newton 方向が劣化
+- K_st=OFF（修正 Newton 相当）の方がロバストに収束する局面がある
 
 ---
 
@@ -63,7 +71,8 @@ IndexError が発生。`max(n_nodes, max(connectivity)+1)` で配列サイズを
 
 ## TODO
 
-- [ ] **n_periods=30 Hermite ON 完走**: 接触チャタリング対策が必要（active ペア振動の抑制）
+- [ ] **n_periods=30 Hermite ON 完走**: K_st=OFF で frac=0.9838 まで到達。max_increments 増加 or 微調整で完走見込み
+- [ ] **K_st + Hermite の非局所干渉調査**: K_st=ON が逆効果になるメカニズムの解明
 - [ ] **Hermite 非局所 ∂g/∂u**: 4ノードペア外の DOF 結合対応（status-243 で指摘済み）
 - [ ] **Node tangent 局所化**: 大変形時の接線急変対策（roadmap に記載済み）
 
@@ -72,8 +81,9 @@ IndexError が発生。`max(n_nodes, max(connectivity)+1)` で配列サイズを
 ## 確認事項（次セッションへ）
 
 - Hermite デフォルト ON は n_periods=1〜3 では問題なし（テスト全パス）
-- n_periods=30 では Hermite ON は未完走だが、0.08→0.7360 に大幅改善
-- freeze=T + Hermite=ON の組合せは壊滅的（0.0003）→ freeze=F が必須
-- K_st=ON は Hermite と組み合わせることで効果を発揮
+- n_periods=30: **K_st=OFF + freeze=F + Hermite=ON で frac=0.9838**（ほぼ完走）
+- K_st=ON は Hermite と干渉して逆効果（0.7360）→ K_st=OFF 推奨
+- freeze=T + Hermite=ON は壊滅的（0.0003）→ freeze=F が必須
+- Hermite=OFF ベースライン: frac=1.0, 870 incr, 1161s（剛体表面効果で status-234 より高速化）
 
 ---
