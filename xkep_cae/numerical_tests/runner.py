@@ -399,30 +399,6 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# 公開API
-# ---------------------------------------------------------------------------
-def _run_test(cfg: NumericalTestConfig) -> StaticTestResult:
-    """単一の静的試験を実行する（Process API 経由）."""
-    return StaticBeamTestProcess().process(cfg)
-
-
-def _run_all_tests(
-    configs: list[NumericalTestConfig],
-) -> list[StaticTestResult]:
-    """複数の試験を一括実行する."""
-    return [_run_test(cfg) for cfg in configs]
-
-
-def _run_tests(
-    configs: list[NumericalTestConfig],
-    names: list[str],
-) -> list[StaticTestResult]:
-    """指定した試験名のみ部分実行する."""
-    filtered = [cfg for cfg in configs if cfg.name in names]
-    return [_run_test(cfg) for cfg in filtered]
-
-
 # ====================================================================
 # Process
 # ====================================================================

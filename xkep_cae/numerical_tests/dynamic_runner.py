@@ -289,21 +289,6 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# 公開 API
-# ---------------------------------------------------------------------------
-def _run_dynamic_test(cfg: DynamicTestConfig) -> DynamicTestResult:
-    """動的試験を実行する（Process API 経由）."""
-    return DynamicBeamTestProcess().process(cfg)
-
-
-def _run_dynamic_tests(
-    configs: list[DynamicTestConfig],
-) -> list[DynamicTestResult]:
-    """複数の動的試験を一括実行する."""
-    return [_run_dynamic_test(cfg) for cfg in configs]
-
-
 # ====================================================================
 # Process
 # ====================================================================

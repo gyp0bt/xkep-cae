@@ -32,7 +32,7 @@ from xkep_cae.numerical_tests.csv_export import (
 )
 from xkep_cae.numerical_tests.frequency import _run_frequency_response
 from xkep_cae.numerical_tests.inp_input import _parse_test_input
-from xkep_cae.numerical_tests.runner import _run_all_tests, _run_test, _run_tests
+from xkep_cae.numerical_tests.runner import StaticBeamTestProcess
 
 # slow マーカーは実際に計算を伴うテストクラスにのみ付与（status-212）
 
@@ -168,29 +168,29 @@ class TestBend3p:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert isinstance(result, StaticTestResult)
         assert result.relative_error is not None
         assert result.relative_error < 1e-6
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
     def test_section_forces_exist(self):
         cfg = self._make_config("timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert len(result.element_forces) == N_ELEMS
 
     def test_friction_warning_present(self):
         cfg = self._make_config("timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         # L/h = 100/20 = 5 → 軽微の範囲
         assert result.friction_warning != ""
 
@@ -217,17 +217,17 @@ class TestBend4p:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
 
@@ -252,18 +252,18 @@ class TestTensile:
 
     def test_eb2d(self):
         cfg = self._make_config("eb2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
     def test_timo2d(self):
         cfg = self._make_config("timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-10
 
     def test_timo3d(self):
         cfg = self._make_config("timo3d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-10
 
 
@@ -288,7 +288,7 @@ class TestTorsion:
 
     def test_torsion_analytical(self):
         cfg = self._make_config()
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -337,11 +337,14 @@ class TestRunAPI:
         ]
 
     def test_run_all(self):
-        results = _run_all_tests(self._configs())
+        proc = StaticBeamTestProcess()
+        results = [proc.process(cfg) for cfg in self._configs()]
         assert len(results) == 2
 
     def test_run_partial(self):
-        results = _run_tests(self._configs(), ["tensile"])
+        proc = StaticBeamTestProcess()
+        filtered = [c for c in self._configs() if c.name == "tensile"]
+        results = [proc.process(cfg) for cfg in filtered]
         assert len(results) == 1
         assert results[0].config.name == "tensile"
 
@@ -436,7 +439,7 @@ class TestCSVExport:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         outputs = _export_static_csv(result)
         assert "summary" in outputs
         assert "nodal_disp" in outputs
@@ -456,7 +459,7 @@ class TestCSVExport:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         with tempfile.TemporaryDirectory() as tmpdir:
             outputs = _export_static_csv(result, output_dir=tmpdir)
             for key, path in outputs.items():
@@ -608,7 +611,7 @@ class TestInpInput:
  1000.0
 """
         cfg = _parse_test_input(text, beam_type="timo2d")
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-10
 
     def test_parse_pipe_section(self):
@@ -645,7 +648,7 @@ class TestCircularSection:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-4
 
     def test_tensile_circle_3d(self):
@@ -660,7 +663,7 @@ class TestCircularSection:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error < 1e-10
 
 
@@ -738,7 +741,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -755,7 +758,7 @@ class TestCosseratNumerical:
             section_shape="circle",
             section_params=CIRC_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 1e-10
 
@@ -772,7 +775,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         # Cosserat rod は B行列定式化のため 20要素ではTimo3Dほど正確でないが収束する
         assert result.relative_error < 0.05
@@ -791,7 +794,7 @@ class TestCosseratNumerical:
             section_params=RECT_PARAMS,
             load_span=25.0,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert result.relative_error is not None
         assert result.relative_error < 0.05
 
@@ -808,7 +811,7 @@ class TestCosseratNumerical:
             section_shape="rectangle",
             section_params=RECT_PARAMS,
         )
-        result = _run_test(cfg)
+        result = StaticBeamTestProcess().process(cfg)
         assert len(result.element_forces) == 4
 
 
@@ -992,7 +995,7 @@ class TestDynamicBend3p:
 
     def test_step_load_converges(self):
         """ステップ荷重の動的3点曲げが収束する."""
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1006,7 +1009,7 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=50,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged, "全ステップ収束すべき"
         assert result.displacement.shape == (51, 3 * 11)
         assert result.time.shape == (51,)
@@ -1018,7 +1021,7 @@ class TestDynamicBend3p:
         Rayleigh減衰を十分大きくすると、振動が減衰して
         最終的に静的たわみに収束する。
         """
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         # 十分な減衰と長い解析時間
         cfg = DynamicTestConfig(
@@ -1035,7 +1038,7 @@ class TestDynamicBend3p:
             damping_alpha=500.0,  # 強い質量比例減衰
             damping_beta=1e-5,  # 軽い剛性比例減衰
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
         # 静的解との比較（十分な減衰後は10%以内に収束）
         assert result.displacement_analytical is not None
@@ -1046,7 +1049,7 @@ class TestDynamicBend3p:
 
     def test_ramp_load(self):
         """ランプ荷重の動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1062,7 +1065,7 @@ class TestDynamicBend3p:
             load_type="ramp",
             ramp_time=0.002,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
 
         # ランプ荷重初期は変位がゼロに近い
@@ -1073,7 +1076,7 @@ class TestDynamicBend3p:
 
     def test_eb2d_beam_type(self):
         """EB2D 梁タイプでの動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1087,13 +1090,13 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=20,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
         assert result.displacement_analytical is not None
 
     def test_3d_beam_type(self):
         """3D Timoshenko 梁タイプでの動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1107,13 +1110,13 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=20,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
         assert result.displacement.shape[1] == 6 * 11
 
     def test_lumped_mass(self):
         """集中質量行列での動的3点曲げ."""
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1128,7 +1131,7 @@ class TestDynamicBend3p:
             n_steps=20,
             mass_type="lumped",
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
         assert result.solver_info["mass_type"] == "lumped"
 
@@ -1138,7 +1141,7 @@ class TestDynamicBend3p:
         減衰なしのステップ荷重では、線形系の最大応答は
         静的解の2倍（動的増幅係数 = 2）に近づく。
         """
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1152,7 +1155,7 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=500,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
 
         mid_node = result.solver_info["mid_node"]
@@ -1169,7 +1172,7 @@ class TestDynamicBend3p:
     def test_run_via_public_api(self):
         """公開APIからの実行."""
         from xkep_cae.numerical_tests import DynamicTestConfig
-        from xkep_cae.numerical_tests.dynamic_runner import _run_dynamic_test
+        from xkep_cae.numerical_tests.dynamic_runner import DynamicBeamTestProcess
 
         cfg = DynamicTestConfig(
             name="dynamic_bend3p",
@@ -1183,5 +1186,5 @@ class TestDynamicBend3p:
             dt=1e-4,
             n_steps=10,
         )
-        result = _run_dynamic_test(cfg)
+        result = DynamicBeamTestProcess().process(cfg)
         assert result.converged
