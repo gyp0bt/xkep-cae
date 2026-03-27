@@ -59,7 +59,7 @@
 - Fischer-Burmeister NCP（Huber）が主力接触力評価
 - UL+NCP統合: `ul_assembler` + `adaptive_timestepping=True`
 - 解析的接線剛性: `analytical_tangent=True`（デフォルト）
-- Line-to-line Gauss積分 + 同層除外
+- Line-to-line Gauss積分 + 同素線除外（`exclude_same_strand=True`）
 - **摩擦あり**: `contact_mode="smooth_penalty"`（必須。NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
 - **Uzawa凍結**: `n_uzawa_max=1`（純粋ペナルティ。拡大ラグランジアンは status-221 で凍結）
 
@@ -74,10 +74,9 @@
 ### 次の課題
 
 **7本撚線曲げ揺動** — status-249:
-- 7本撚線メッシュ作成完了（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm, 貫入ゼロ確認）
+- **バグ修正**: `exclude_same_layer` → `exclude_same_strand`（同層除外が外周素線間の接触を全除外していた）
+- 7本撚線メッシュ作成完了（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm, gap=2.5mm, 貫入ゼロ確認）
 - プロセス脱法摘発: アセンブラ4件、frozen漏れ9件、大規模プライベート関数13件を検出
-- _RigidEdgeAssembler Process化 + VerifyResult/StrandBatchResult frozen化 完了
-- **バグ修正**: ContactSetupProcess の layer_ids→elem_layer_map 変換漏れ（同層除外が機能していなかった）
 - **次**: DOF消去MPC実装 → 端部剛体結合 → 曲げ揺動Process
 **並行**: アセンブラProcess化（A1-A3）、幾何計算Process化（C2-C3）
 
