@@ -29,6 +29,10 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.constraints.rigid_assembler import (
+    RigidEdgeAssemblerConfig,
+    RigidEdgeAssemblerProcess,
+)
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 from xkep_cae.contact.penalty.strategy import DynamicPenaltyEstimateProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
@@ -47,57 +51,21 @@ from xkep_cae.elements._beam_cr import timo_beam3d_ke_global
 from xkep_cae.elements._mixed_assembler import MixedAssembler
 
 
-class _RigidEdgeAssembler:
-    """剛体ジグ辺用ダミーアセンブラ（剛性ゼロ、座標のみ保持）.
-
-    HEX8 要素の剛性行列が負定値対角を持つ問題を回避するため、
-    ジグ節点の座標管理のみ行い、剛性・内力はゼロを返す。
-    ジグ DOF は境界条件で全固定し、接触検出のみに参加させる。
-    """
-
-    def __init__(
-        self,
-        jig_coords: np.ndarray,
-        n_jig_nodes: int,
-        global_node_offset: int,
-        total_ndof: int,
-    ) -> None:
-        self.coords_ref = jig_coords.copy()
-        self._n_jig = n_jig_nodes
-        self._offset = global_node_offset
-        self._total_ndof = total_ndof
-        self._u_total_accum = np.zeros(total_ndof)
-        self._ckpt_coords_ref: np.ndarray | None = None
-        self._ckpt_u_total_accum: np.ndarray | None = None
-
-    @property
-    def ndof(self) -> int:
-        return self._total_ndof
-
-    def assemble_tangent(self, u: np.ndarray) -> sp.csr_matrix:
-        return sp.csr_matrix((self._total_ndof, self._total_ndof))
-
-    def assemble_internal_force(self, u: np.ndarray) -> np.ndarray:
-        return np.zeros(self._total_ndof)
-
-    def update_reference(self, u_incr: np.ndarray) -> None:
-        for i in range(self._n_jig):
-            gn = self._offset + i
-            self.coords_ref[i] += u_incr[6 * gn : 6 * gn + 3]
-        self._u_total_accum += u_incr
-
-    def checkpoint(self) -> None:
-        self._ckpt_coords_ref = self.coords_ref.copy()
-        self._ckpt_u_total_accum = self._u_total_accum.copy()
-
-    def rollback(self) -> None:
-        if self._ckpt_coords_ref is not None:
-            self.coords_ref = self._ckpt_coords_ref.copy()
-            self._u_total_accum = self._ckpt_u_total_accum.copy()
-
-    @property
-    def u_total_accum(self) -> np.ndarray:
-        return self._u_total_accum
+def _create_rigid_edge_assembler(
+    jig_coords: np.ndarray,
+    n_jig_nodes: int,
+    global_node_offset: int,
+    total_ndof: int,
+) -> object:
+    """RigidEdgeAssemblerProcess 経由で剛体アセンブラを生成."""
+    config = RigidEdgeAssemblerConfig(
+        jig_coords=jig_coords,
+        n_jig_nodes=n_jig_nodes,
+        global_node_offset=global_node_offset,
+        total_ndof=total_ndof,
+    )
+    result = RigidEdgeAssemblerProcess().process(config)
+    return result.assembler
 
 
 # ====================================================================
@@ -594,7 +562,7 @@ class ThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess]
+    uses = [ContactFrictionProcess, RigidEdgeAssemblerProcess]
 
     def process(self, input_data: ThreePointBendContactJigConfig) -> ThreePointBendContactJigResult:
         """接触ジグ三点曲げ試験を実行."""
@@ -666,7 +634,7 @@ class ThreePointBendContactJigProcess(
             kappa_z=sec["kappa"],
         )
 
-        rigid_asm = _RigidEdgeAssembler(
+        rigid_asm = _create_rigid_edge_assembler(
             jig_coords=jig_coords,
             n_jig_nodes=n_hex_nodes,
             global_node_offset=n_wire_nodes,
@@ -978,7 +946,7 @@ class DynamicThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess, DynamicPenaltyEstimateProcess]
+    uses = [ContactFrictionProcess, DynamicPenaltyEstimateProcess, RigidEdgeAssemblerProcess]
 
     def process(
         self, input_data: DynamicThreePointBendContactJigConfig
@@ -1055,7 +1023,7 @@ class DynamicThreePointBendContactJigProcess(
             kappa_z=sec["kappa"],
         )
 
-        rigid_asm = _RigidEdgeAssembler(
+        rigid_asm = _create_rigid_edge_assembler(
             jig_coords=jig_coords,
             n_jig_nodes=n_hex_nodes,
             global_node_offset=n_wire_nodes,
