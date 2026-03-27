@@ -63,6 +63,7 @@ class NewtonDynamicInput:
     # 接触力リラクゼーション（status-247: NR 2-サイクル対策）
     contact_relax_omega: float = 0.5  # リラクゼーション係数（0.5 = 半分ブレンド）
     stall_window: int = 4  # 残差プラトーをストールと判定するまでの反復数
+    relax_max_iter: int = 25  # リラクゼーション有効後の最大反復数（超過で早期打切り）
 
 
 @dataclass(frozen=True)
@@ -300,9 +301,9 @@ class NewtonDynamicProcess(
                 _consecutive_increase = 0
 
             # ストール検知: 残差変化 < 5% AND active set 振動（status-247）
+            _active_changed = n_active != _prev_n_active
             if att > 0 and _cur_ratio > 0.5:
                 _ratio_change = abs(_cur_ratio - _prev_res_ratio) / max(_prev_res_ratio, 1e-30)
-                _active_changed = n_active != _prev_n_active
                 if _ratio_change < 0.05 and _active_changed:
                     _consecutive_stall += 1
                 else:
@@ -315,6 +316,16 @@ class NewtonDynamicProcess(
                             f"接触チャタリング検知 → リラクゼーション有効化 "
                             f"(ω={cfg.contact_relax_omega})"
                         )
+            # リラクゼーション早期打切り（status-248: 無駄な反復を削減）
+            if _relax_active and _relax_iter >= cfg.relax_max_iter:
+                _diverged = True
+                if cfg.show_progress:
+                    print(
+                        f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                        f"リラクゼーション {_relax_iter} 反復で未収束 → early abort"
+                    )
+                break
+
             _prev_n_active = n_active
             _prev_res_ratio = _cur_ratio
 
