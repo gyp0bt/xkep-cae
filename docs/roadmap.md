@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-27）
 
-**200+10s テスト**（NRリラクゼーション早期脱出 — status-248） | 契約違反1件 | [最新status](status/status-index.md)
+**200+10s テスト**（脱法摘発 + 7本撚線メッシュ — status-249） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -103,7 +103,7 @@ S7 (GPU)
 | **ソルバー** | `newton_raphson_contact_ncp`（`solver_ncp.py`） | Outer loop 不要 |
 | **摩擦** | `contact_mode="smooth_penalty"` | NCP鞍点系は符号問題あり（status-147） |
 | **接触離散化** | Line-to-line Gauss 積分 | セグメント間力の連続性 |
-| **同層除外** | `exclude_same_layer=True` | ~80% ペア削減 |
+| **同素線除外** | `exclude_same_strand=True` | ~80% ペア削減 |
 | **k_pen** | 自動推定（beam EI ベース） | 手動設定不要 |
 | **線形ソルバー** | DOF閾値自動切替（直接法 / GMRES+ILU） | スケーラビリティ |
 

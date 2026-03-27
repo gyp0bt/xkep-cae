@@ -98,7 +98,7 @@ def _make_two_beam_mesh() -> MeshData:
         connectivity=np.array(conn_list),
         radii=0.05,
         n_strands=2,
-        layer_ids=np.array([0] * (n_nodes_per_strand - 1) + [1] * (n_nodes_per_strand - 1)),
+        strand_ids=np.array([0] * (n_nodes_per_strand - 1) + [1] * (n_nodes_per_strand - 1)),
     )
 
 
@@ -126,7 +126,7 @@ def _make_contact_setup(mesh: MeshData) -> ContactSetupData:
         mesh=mesh,
         k_pen=1e4,
         mu=0.15,
-        exclude_same_layer=True,
+        exclude_same_strand=True,
     )
     return setup.process(setup_config)
 
@@ -655,7 +655,7 @@ class TestDetectCandidatesProcessAPI:
         """基本的な候補検出."""
         from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 
-        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_layer=False))
+        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_strand=False))
         mesh = _make_two_beam_mesh()
         proc = DetectCandidatesProcess()
         out = proc.process(
@@ -681,7 +681,7 @@ class TestUpdateGeometryProcessAPI:
         """基本的な幾何更新."""
         from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
 
-        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_layer=False))
+        manager = _ContactManagerInput(config=_ContactConfigInput(exclude_same_strand=False))
         mesh = _make_two_beam_mesh()
         # まず候補検出（Process API 経由）
         detect_out = DetectCandidatesProcess().process(

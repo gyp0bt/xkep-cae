@@ -59,7 +59,7 @@
 - Fischer-Burmeister NCP（Huber）が主力接触力評価
 - UL+NCP統合: `ul_assembler` + `adaptive_timestepping=True`
 - 解析的接線剛性: `analytical_tangent=True`（デフォルト）
-- Line-to-line Gauss積分 + 同層除外
+- Line-to-line Gauss積分 + 同素線除外（`exclude_same_strand=True`）
 - **摩擦あり**: `contact_mode="smooth_penalty"`（必須。NCP鞍点系は摩擦接線剛性符号問題で発散: status-147）
 - **Uzawa凍結**: `n_uzawa_max=1`（純粋ペナルティ。拡大ラグランジアンは status-221 で凍結）
 
@@ -73,13 +73,12 @@
 
 ### 次の課題
 
-**NRリラクゼーション早期脱出** — status-248:
-- relax_max_iter=25 で無駄な NR 反復を 6 回分削減（580.7s, 3%短縮）
-- omega 回復スケジュールは逆効果（frac=0.9846 停止）→ リバート済み
-- 持続的リラクゼーション（omega 減衰のみ）が壁突破に必須と判明
-- **残課題**: NR 力収束速度改善、Hermite 非局所 ∂g/∂u 対応
-- **非局所 ∂m/∂x**: 4ノードペア外の DOF 結合は未対応
-**次のステップ**: デフォルト設定（E=200e3）検証、反復ソルバー導入（Phase 3）、GPU 対応（S7）。
+**7本撚線曲げ揺動** — status-249:
+- **バグ修正**: `exclude_same_layer` → `exclude_same_strand`（同層除外が外周素線間の接触を全除外していた）
+- 7本撚線メッシュ作成完了（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm, gap=2.5mm, 貫入ゼロ確認）
+- プロセス脱法摘発: アセンブラ4件、frozen漏れ9件、大規模プライベート関数13件を検出
+- **次**: DOF消去MPC実装 → 端部剛体結合 → 曲げ揺動Process
+**並行**: アセンブラProcess化（A1-A3）、幾何計算Process化（C2-C3）
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -88,10 +87,15 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- ~~n_periods=30 Hermite ON 完走~~ → **status-247 で達成**（frac=1.0000）
+- **7本撚線曲げ揺動の完走**（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm）
+  - DOF消去MPC実装（端部剛体結合）
+  - StrandBendingOscillationProcess 実装
+  - 端部参照点 + 曲げ処方変位 + 揺動サイクル
+- プロセス脱法修正（Phase A〜E、status-249 参照）
+  - A1-A3: アセンブラProcess化（ULCRBeam, Hex8, Mixed）
+  - C2-C3: 幾何計算Process化
 - NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
 - Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
-- カットバック削減（dt 成長ダンピング緩和、リラクゼーション後の NR 反復数削減）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

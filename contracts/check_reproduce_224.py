@@ -48,6 +48,7 @@ print(f"  push_reached={push_reached:.2f}mm / {cfg.jig_push}mm")
 
 # 解析比較
 import numpy as np
+
 I = np.pi * (cfg.wire_diameter / 2) ** 4 / 4
 k_eb = 48.0 * cfg.E * I / cfg.wire_length**3
 P_eb = k_eb * push_reached

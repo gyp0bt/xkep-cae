@@ -11,7 +11,7 @@ Phase 5: ソルバー結果連携 — Export/Render/Verify ワイヤリング完
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from xkep_cae.contact.contact_force.strategy import (
     HuberContactForceProcess,
@@ -79,7 +79,7 @@ class StrandBatchConfig:
     run_solver: bool = False
 
 
-@dataclass
+@dataclass(frozen=True)
 class StrandBatchResult:
     """撚線曲げ揺動バッチの結果."""
 
@@ -90,7 +90,7 @@ class StrandBatchResult:
     export_result: ExportResult | None = None
     render_result: RenderResult | None = None
     elapsed_seconds: float = 0.0
-    process_log: list[str] = field(default_factory=list)
+    process_log: tuple[str, ...] = ()  # frozen 対応: list → tuple
 
 
 # ── BatchProcess ───────────────────────────────────────────
@@ -144,20 +144,28 @@ class StrandBendingBatchProcess(
 
         t0 = time.perf_counter()
         log: list[str] = []
-        result = StrandBatchResult()
+
+        # ローカル変数に蓄積（frozen dataclass のため一括生成）
+        _mesh: MeshData | None = None
+        _solver_converged = False
+        _solver_result: SolverResultData | None = None
+        _verify_result: VerifyResult | None = None
+        _export_result: ExportResult | None = None
+        _render_result: RenderResult | None = None
 
         if input_data.mesh_config is None:
             log.append("StrandBendingBatchProcess: mesh_config 未指定 — スキップ")
             log.append(f"  geometry_mode={input_data.geometry_mode}")
-            result.elapsed_seconds = time.perf_counter() - t0
-            result.process_log = log
-            return result
+            return StrandBatchResult(
+                elapsed_seconds=time.perf_counter() - t0,
+                process_log=tuple(log),
+            )
 
         # 1. メッシュ生成
         log.append("StrandMeshProcess: start")
         mesh_proc = StrandMeshProcess()
         mesh_result = mesh_proc.process(input_data.mesh_config)
-        result.mesh = mesh_result.mesh
+        _mesh = mesh_result.mesh
         log.append("StrandMeshProcess: done")
 
         # 2. 接触設定
@@ -182,8 +190,8 @@ class StrandBendingBatchProcess(
             )
             solver_proc = ContactFrictionProcess()
             solver_result = solver_proc.process(solver_input)
-            result.solver_converged = solver_result.converged
-            result.solver_result = solver_result
+            _solver_converged = solver_result.converged
+            _solver_result = solver_result
             log.append(
                 f"ContactFrictionProcess: done "
                 f"(converged={solver_result.converged}, "
@@ -199,10 +207,8 @@ class StrandBendingBatchProcess(
                     mesh=mesh_result.mesh,
                     output_dir=input_data.output_dir,
                 )
-                result.export_result = export_proc.process(export_config)
-                log.append(
-                    f"ExportProcess: done (files={len(result.export_result.exported_files)})"
-                )
+                _export_result = export_proc.process(export_config)
+                log.append(f"ExportProcess: done (files={len(_export_result.exported_files)})")
 
             # 5. Render（ソルバー結果あり + run_render 有効時）
             if input_data.run_render:
@@ -213,10 +219,8 @@ class StrandBendingBatchProcess(
                     mesh=mesh_result.mesh,
                     output_dir=input_data.output_dir,
                 )
-                result.render_result = render_proc.process(render_config)
-                log.append(
-                    f"BeamRenderProcess: done (images={len(result.render_result.image_paths)})"
-                )
+                _render_result = render_proc.process(render_config)
+                log.append(f"BeamRenderProcess: done (images={len(_render_result.image_paths)})")
 
             # 6. Verify（ソルバー結果あり + run_verify 有効時）
             if input_data.run_verify:
@@ -246,7 +250,7 @@ class StrandBendingBatchProcess(
 
                 # 3検証の統合結果
                 all_passed = conv_result.passed and energy_result.passed and contact_v_result.passed
-                result.verify_result = VerifyResult(
+                _verify_result = VerifyResult(
                     passed=all_passed,
                     checks={
                         **conv_result.checks,
@@ -259,6 +263,13 @@ class StrandBendingBatchProcess(
         else:
             log.append("ContactFrictionProcess: skipped (no boundary/callbacks)")
 
-        result.elapsed_seconds = time.perf_counter() - t0
-        result.process_log = log
-        return result
+        return StrandBatchResult(
+            mesh=_mesh,
+            solver_converged=_solver_converged,
+            solver_result=_solver_result,
+            verify_result=_verify_result,
+            export_result=_export_result,
+            render_result=_render_result,
+            elapsed_seconds=time.perf_counter() - t0,
+            process_log=tuple(log),
+        )

@@ -44,8 +44,10 @@ def _run(label: str, **kwargs) -> dict:
     fc_last = sr.contact_force_history[-1] if sr.contact_force_history else 0.0
 
     print(f"\n--- {label} ---")
-    print(f"  frac={final_frac:.4f} fc={fc_last:.2f}N incr={sr.n_increments} "
-          f"cutback={sr.n_cutbacks} time={sr.elapsed_seconds:.1f}s")
+    print(
+        f"  frac={final_frac:.4f} fc={fc_last:.2f}N incr={sr.n_increments} "
+        f"cutback={sr.n_cutbacks} time={sr.elapsed_seconds:.1f}s"
+    )
 
     return {
         "label": label,

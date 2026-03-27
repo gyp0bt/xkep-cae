@@ -106,7 +106,7 @@ class _ContactConfigInput:
     penalty_growth_factor: float = 2.0
     k_pen_max: float = 1e12
     staged_activation_steps: int = 0
-    elem_layer_map: dict[int, int] | None = None
+    elem_strand_map: dict[int, int] | None = None
     use_modified_newton: bool = False
     modified_newton_refresh: int = 5
     contact_damping: float = 1.0
@@ -133,7 +133,7 @@ class _ContactConfigInput:
     ncp_type: str = "fb"
     ncp_reg: float = 1e-12
     ncp_block_preconditioner: bool = False
-    exclude_same_layer: bool = False
+    exclude_same_strand: bool = False
     use_mortar: bool = False
     midpoint_prescreening: bool = True
     prescreening_margin: float = 0.0

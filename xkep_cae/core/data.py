@@ -23,7 +23,7 @@ class MeshData:
     connectivity: np.ndarray  # (n_elems, 2)
     radii: np.ndarray | float
     n_strands: int
-    layer_ids: np.ndarray | None = None  # 同層除外用
+    strand_ids: np.ndarray | None = None  # 同素線除外用（要素→素線ID）
 
 
 @dataclass(frozen=True)
@@ -228,11 +228,11 @@ class VerifyInput:
     tolerance: float = 0.05  # 5% 許容
 
 
-@dataclass
+@dataclass(frozen=True)
 class VerifyResult:
     """検証結果."""
 
     passed: bool
     checks: dict[str, tuple[float, float, bool]]  # {name: (actual, expected, ok)}
     report_markdown: str = ""
-    snapshot_paths: list[str] = field(default_factory=list)
+    snapshot_paths: tuple[str, ...] = ()  # frozen 対応: list → tuple

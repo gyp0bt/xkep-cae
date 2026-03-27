@@ -94,13 +94,13 @@ class TestPointToPointProcess:
         assert isinstance(out, ContactGeometryOutput)
         assert out.contact_pairs == []
 
-    def test_exclude_same_layer_default(self):
+    def test_exclude_same_strand_default(self):
         proc = PointToPointProcess()
-        assert proc._exclude_same_layer is True
+        assert proc._exclude_same_strand is True
 
-    def test_exclude_same_layer_false(self):
-        proc = PointToPointProcess(exclude_same_layer=False)
-        assert proc._exclude_same_layer is False
+    def test_exclude_same_strand_false(self):
+        proc = PointToPointProcess(exclude_same_strand=False)
+        assert proc._exclude_same_strand is False
 
 
 # ── LineToLineGauss ────────────────────────────────────────

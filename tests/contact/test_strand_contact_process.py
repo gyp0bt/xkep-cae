@@ -91,7 +91,7 @@ class TestContactSetupProcessAPI:
                 mesh=mesh_result.mesh,
                 k_pen=1e6,
                 mu=0.0,
-                exclude_same_layer=True,
+                exclude_same_strand=True,
             )
         )
 
