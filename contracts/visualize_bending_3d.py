@@ -142,8 +142,7 @@ def main():
     # --- yz平面投影（2D側面図） ---
     fig2, axes2 = plt.subplots(2, 4, figsize=(20, 8))
     fig2.suptitle(
-        f"YZ-plane projection: E={cfg.E}, push={cfg.jig_push}mm, "
-        f"n_periods={cfg.n_periods}",
+        f"YZ-plane projection: E={cfg.E}, push={cfg.jig_push}mm, n_periods={cfg.n_periods}",
         fontsize=13,
     )
 
@@ -212,10 +211,7 @@ def main():
         # ワイヤ中央のy座標
         wire_mid_y = X_ref[mid_node, 1] + u_snap[6 * mid_node + 1]
         # ジグの最低y座標
-        jig_min_y = min(
-            X_ref[n_wire + i, 1] + u_snap[6 * (n_wire + i) + 1]
-            for i in range(n_hex)
-        )
+        jig_min_y = min(X_ref[n_wire + i, 1] + u_snap[6 * (n_wire + i) + 1] for i in range(n_hex))
         # gap = ワイヤ上面 - ジグ底面（正=隙間、負=貫入）
         gap = wire_mid_y + cfg.wire_diameter / 2.0 - jig_min_y
         print(
@@ -240,7 +236,7 @@ def main():
 
     # EB 解析解
     I = np.pi * (cfg.wire_diameter / 2) ** 4 / 4
-    k_eb = 48.0 * cfg.E * I / cfg.wire_length ** 3
+    k_eb = 48.0 * cfg.E * I / cfg.wire_length**3
     push_reached = final_frac * cfg.jig_push
     P_eb = k_eb * push_reached
     print(f"\n  k_EB = {k_eb:.2f} N/mm")

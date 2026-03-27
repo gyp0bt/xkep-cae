@@ -55,8 +55,10 @@ def _run(label: str, st_relaxation: float, max_increments: int = 200) -> dict:
     fc_last = sr.contact_force_history[-1] if sr.contact_force_history else 0.0
 
     print(f"\n--- {label} ---")
-    print(f"  frac={final_frac:.4f} fc={fc_last:.2f}N incr={sr.n_increments} "
-          f"cutback={sr.n_cutbacks} time={sr.elapsed_seconds:.1f}s")
+    print(
+        f"  frac={final_frac:.4f} fc={fc_last:.2f}N incr={sr.n_increments} "
+        f"cutback={sr.n_cutbacks} time={sr.elapsed_seconds:.1f}s"
+    )
 
     # インクリメント履歴（要約）
     print(f"  {'incr':>4} {'frac':>8} {'att':>4} {'res':>10} {'rate':>8} {'fc':>10}")

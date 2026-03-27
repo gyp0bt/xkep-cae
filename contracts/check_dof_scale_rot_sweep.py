@@ -42,10 +42,7 @@ def _run_config(label, **overrides):
         cutback_rate = sr.n_cutbacks / n_total if n_total > 0 else 0.0
 
         print(f"\nRESULT: conv={sr.converged} frac={final_frac:.4f} fc={fc_last:.2f}N")
-        print(
-            f"  incr={sr.n_increments} cutback={sr.n_cutbacks} "
-            f"cutback_rate={cutback_rate:.1%}"
-        )
+        print(f"  incr={sr.n_increments} cutback={sr.n_cutbacks} cutback_rate={cutback_rate:.1%}")
         print(f"  wall_time={elapsed:.1f}s")
         return {
             "label": label,
@@ -97,18 +94,13 @@ if __name__ == "__main__":
 
     for scale in SCALE_VALUES:
         label = f"dof_scale_rot={scale:.1f}"
-        results.append(
-            _run_config(label, **COMMON, dof_scale_rot=scale)
-        )
+        results.append(_run_config(label, **COMMON, dof_scale_rot=scale))
 
     # サマリ
     print("\n" + "=" * 90)
     print("SUMMARY — dof_scale_rot スイープ (E=200e3, K_st+LM auto, n_periods=1)")
     print("=" * 90)
-    print(
-        f"{'scale':>6} {'frac':>6} {'fc':>8} {'incr':>6} "
-        f"{'cb':>6} {'cb%':>6} {'time':>6}"
-    )
+    print(f"{'scale':>6} {'frac':>6} {'fc':>8} {'incr':>6} {'cb':>6} {'cb%':>6} {'time':>6}")
     print("-" * 90)
     for r in results:
         print(
@@ -119,5 +111,7 @@ if __name__ == "__main__":
 
     # 最適値判定
     best = max(results, key=lambda r: (r["frac"], -r["cutback_rate"]))
-    print(f"\n最適: dof_scale_rot={best['dof_scale_rot']:.1f} "
-          f"(frac={best['frac']:.3f}, cutback={best['cutback_rate']:.1%})")
+    print(
+        f"\n最適: dof_scale_rot={best['dof_scale_rot']:.1f} "
+        f"(frac={best['frac']:.3f}, cutback={best['cutback_rate']:.1%})"
+    )
