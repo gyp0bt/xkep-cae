@@ -1,12 +1,17 @@
 """数値試験フレームワーク — 動的試験ランナー.
 
 3点曲げ等の動的（過渡応答）解析を実行する。
+
+status-251: DynamicBeamTestProcess 追加（STA2 防止 H5）。
+
+[← README](../../README.md)
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from xkep_cae.core import ProcessMeta, VerifyProcess
 from xkep_cae.numerical_tests._backend import (
     _cosserat_nl_assembler_factory,
     _cr_assembler_factory,
@@ -288,14 +293,8 @@ def _run_dynamic_bend3p(cfg: DynamicTestConfig) -> DynamicTestResult:
 # 公開 API
 # ---------------------------------------------------------------------------
 def _run_dynamic_test(cfg: DynamicTestConfig) -> DynamicTestResult:
-    """動的試験を実行する."""
-    dispatch = {
-        "dynamic_bend3p": _run_dynamic_bend3p,
-    }
-    runner = dispatch.get(cfg.name)
-    if runner is None:
-        raise ValueError(f"未対応の動的試験種別: {cfg.name}")
-    return runner(cfg)
+    """動的試験を実行する（Process API 経由）."""
+    return DynamicBeamTestProcess().process(cfg)
 
 
 def _run_dynamic_tests(
@@ -303,3 +302,35 @@ def _run_dynamic_tests(
 ) -> list[DynamicTestResult]:
     """複数の動的試験を一括実行する."""
     return [_run_dynamic_test(cfg) for cfg in configs]
+
+
+# ====================================================================
+# Process
+# ====================================================================
+
+
+class DynamicBeamTestProcess(
+    VerifyProcess[DynamicTestConfig, DynamicTestResult],
+):
+    """動的梁試験 Process.
+
+    動的三点曲げ等の過渡応答解析を
+    Process トレーシング付きで実行する。
+    """
+
+    meta = ProcessMeta(
+        name="DynamicBeamTest",
+        module="verify",
+        version="1.0.0",
+        document_path="../../docs/numerical_tests.md",
+    )
+
+    def process(self, input_data: DynamicTestConfig) -> DynamicTestResult:
+        """動的試験を実行."""
+        dispatch = {
+            "dynamic_bend3p": _run_dynamic_bend3p,
+        }
+        runner = dispatch.get(input_data.name)
+        if runner is None:
+            raise ValueError(f"未対応の動的試験種別: {input_data.name}")
+        return runner(input_data)
