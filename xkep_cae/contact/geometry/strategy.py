@@ -137,7 +137,7 @@ def _detect_candidates(
     connectivity: np.ndarray,
     radii: np.ndarray | float,
     *,
-    exclude_same_layer: bool = True,
+    exclude_same_strand: bool = True,
     margin: float = 0.0,
     cell_size: float | None = None,
 ) -> list:
@@ -147,7 +147,7 @@ def _detect_candidates(
         node_coords: (n_nodes, 3) 節点座標
         connectivity: (n_elems, 2) 要素接続（各行: [node0, node1]）
         radii: 要素ごとの断面半径
-        exclude_same_layer: 共有ノードを持つペアを除外
+        exclude_same_strand: 共有ノードを持つペアを除外
         margin: 探索マージン
         cell_size: 格子セルサイズ
 
@@ -172,10 +172,10 @@ def _detect_candidates(
     # Broadphase
     candidates = _broadphase_aabb(segments, r_arr, margin=margin, cell_size=cell_size)
 
-    # フィルタリング: 共有ノード（同層）除外
+    # フィルタリング: 共有ノード（同素線）除外
     pairs = []
     for ei, ej in candidates:
-        if exclude_same_layer:
+        if exclude_same_strand:
             nodes_i = set(conn[ei])
             nodes_j = set(conn[ej])
             if nodes_i & nodes_j:
@@ -398,8 +398,8 @@ class PointToPointProcess(
         document_path="docs/contact_geometry.md",
     )
 
-    def __init__(self, *, exclude_same_layer: bool = True) -> None:
-        self._exclude_same_layer = exclude_same_layer
+    def __init__(self, *, exclude_same_strand: bool = True) -> None:
+        self._exclude_same_strand = exclude_same_strand
 
     def detect(
         self,
@@ -412,7 +412,7 @@ class PointToPointProcess(
             node_coords,
             connectivity,
             radii,
-            exclude_same_layer=self._exclude_same_layer,
+            exclude_same_strand=self._exclude_same_strand,
         )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
@@ -469,11 +469,11 @@ class LineToLineGaussProcess(
         self,
         *,
         n_gauss: int = 2,
-        exclude_same_layer: bool = True,
+        exclude_same_strand: bool = True,
         auto_gauss: bool = False,
     ) -> None:
         self._n_gauss = n_gauss
-        self._exclude_same_layer = exclude_same_layer
+        self._exclude_same_strand = exclude_same_strand
         self._auto_gauss = auto_gauss
 
     def detect(
@@ -487,7 +487,7 @@ class LineToLineGaussProcess(
             node_coords,
             connectivity,
             radii,
-            exclude_same_layer=self._exclude_same_layer,
+            exclude_same_strand=self._exclude_same_strand,
         )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
@@ -558,10 +558,10 @@ class MortarSegmentProcess(
         self,
         *,
         n_gauss: int = 2,
-        exclude_same_layer: bool = True,
+        exclude_same_strand: bool = True,
     ) -> None:
         self._n_gauss = n_gauss
-        self._exclude_same_layer = exclude_same_layer
+        self._exclude_same_strand = exclude_same_strand
 
     def detect(
         self,
@@ -574,7 +574,7 @@ class MortarSegmentProcess(
             node_coords,
             connectivity,
             radii,
-            exclude_same_layer=self._exclude_same_layer,
+            exclude_same_strand=self._exclude_same_strand,
         )
 
     def compute_gap(self, pair: object, node_coords: np.ndarray) -> float:
@@ -613,7 +613,7 @@ class MortarSegmentProcess(
 def _create_contact_geometry_strategy(
     *,
     mode: str = "point_to_point",
-    exclude_same_layer: bool = True,
+    exclude_same_strand: bool = True,
     n_gauss: int = 2,
     auto_gauss: bool = False,
     line_contact: bool = False,
@@ -623,7 +623,7 @@ def _create_contact_geometry_strategy(
 
     Args:
         mode: "point_to_point" | "line_to_line" | "mortar"
-        exclude_same_layer: 同層接触除外
+        exclude_same_strand: 同層接触除外
         n_gauss: Gauss積分点数（L2L/Mortar用）
         auto_gauss: ペア角度に基づくGauss点自動選択
         line_contact: True → LineToLineGauss（mode の代替指定）
@@ -640,14 +640,14 @@ def _create_contact_geometry_strategy(
     if mode == "mortar":
         return MortarSegmentProcess(
             n_gauss=n_gauss,
-            exclude_same_layer=exclude_same_layer,
+            exclude_same_strand=exclude_same_strand,
         )
 
     if mode == "line_to_line":
         return LineToLineGaussProcess(
             n_gauss=n_gauss,
-            exclude_same_layer=exclude_same_layer,
+            exclude_same_strand=exclude_same_strand,
             auto_gauss=auto_gauss,
         )
 
-    return PointToPointProcess(exclude_same_layer=exclude_same_layer)
+    return PointToPointProcess(exclude_same_strand=exclude_same_strand)

@@ -206,17 +206,17 @@ class DetectCandidatesProcess(
         )
 
         candidates: list[tuple[int, int]] = []
-        lm = config.elem_layer_map
-        exclude_same = config.exclude_same_layer and lm is not None
+        sm = config.elem_strand_map
+        exclude_same = config.exclude_same_strand and sm is not None
         for i, j in raw_candidates:
             nodes_i = set(int(n) for n in conn[i])
             nodes_j = set(int(n) for n in conn[j])
             if nodes_i & nodes_j:
                 continue
             if exclude_same:
-                layer_i = lm.get(i, -1)
-                layer_j = lm.get(j, -1)
-                if layer_i == layer_j and layer_i >= 0:
+                strand_i = sm.get(i, -1)
+                strand_j = sm.get(j, -1)
+                if strand_i == strand_j and strand_i >= 0:
                     continue
             candidates.append((i, j))
 

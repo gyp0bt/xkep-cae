@@ -23,7 +23,7 @@ class MeshData:
     connectivity: np.ndarray  # (n_elems, 2)
     radii: np.ndarray | float
     n_strands: int
-    layer_ids: np.ndarray | None = None  # 同層除外用
+    strand_ids: np.ndarray | None = None  # 同素線除外用（要素→素線ID）
 
 
 @dataclass(frozen=True)

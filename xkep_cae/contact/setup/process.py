@@ -21,7 +21,7 @@ class ContactSetupConfig:
     mu: float = 0.15
     broadphase_margin: float = 0.0
     broadphase_cell_size: float | None = None
-    exclude_same_layer: bool = True
+    exclude_same_strand: bool = True
     line_contact: bool = False
     n_gauss: int = 2
     use_mortar: bool = False
@@ -44,19 +44,19 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
 
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:
         """接触設定の実行."""
-        # layer_ids → elem_layer_map 変換
+        # strand_ids → elem_strand_map 変換
         mesh = input_data.mesh
-        elem_layer_map: dict[int, int] | None = None
-        if mesh.layer_ids is not None and input_data.exclude_same_layer:
+        elem_strand_map: dict[int, int] | None = None
+        if mesh.strand_ids is not None and input_data.exclude_same_strand:
             import numpy as np
 
-            layer_arr = np.asarray(mesh.layer_ids)
-            elem_layer_map = {int(i): int(layer_arr[i]) for i in range(len(layer_arr))}
+            strand_arr = np.asarray(mesh.strand_ids)
+            elem_strand_map = {int(i): int(strand_arr[i]) for i in range(len(strand_arr))}
 
         config = _ContactConfigInput(
             mu=input_data.mu,
-            exclude_same_layer=input_data.exclude_same_layer,
-            elem_layer_map=elem_layer_map,
+            exclude_same_strand=input_data.exclude_same_strand,
+            elem_strand_map=elem_strand_map,
             line_contact=input_data.line_contact,
             n_gauss=input_data.n_gauss,
             use_mortar=input_data.use_mortar,

@@ -607,17 +607,17 @@ class ThreePointBendContactJigProcess(
         jig_radii = np.zeros(len(jig_edge_conn))
         all_radii = np.concatenate([wire_radii, jig_radii])
 
-        # レイヤー ID（同層除外用）: ワイヤ=0、ジグ=1
-        layer_ids = np.zeros(n_total_segments, dtype=int)
-        layer_ids[n_wire_elems:] = 1
-        elem_layer_map = {i: int(layer_ids[i]) for i in range(n_total_segments)}
+        # 素線 ID（同素線除外用）: ワイヤ=0、ジグ=1
+        strand_ids = np.zeros(n_total_segments, dtype=int)
+        strand_ids[n_wire_elems:] = 1
+        elem_strand_map = {i: int(strand_ids[i]) for i in range(n_total_segments)}
 
         mesh_data = MeshData(
             node_coords=all_nodes,
             connectivity=all_conn,
             radii=all_radii,
             n_strands=1,
-            layer_ids=layer_ids,
+            strand_ids=strand_ids,
         )
 
         # 4. アセンブラ
@@ -697,8 +697,8 @@ class ThreePointBendContactJigProcess(
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
-            exclude_same_layer=True,
-            elem_layer_map=elem_layer_map,
+            exclude_same_strand=True,
+            elem_strand_map=elem_strand_map,
             adjust_initial_penetration=False,
             adaptive_timestepping=True,
             dt_grow_factor=1.5,
@@ -997,16 +997,16 @@ class DynamicThreePointBendContactJigProcess(
         jig_radii = np.zeros(len(jig_edge_conn))
         all_radii = np.concatenate([wire_radii, jig_radii])
 
-        layer_ids = np.zeros(n_total_segments, dtype=int)
-        layer_ids[n_wire_elems:] = 1
-        elem_layer_map = {i: int(layer_ids[i]) for i in range(n_total_segments)}
+        strand_ids = np.zeros(n_total_segments, dtype=int)
+        strand_ids[n_wire_elems:] = 1
+        elem_strand_map = {i: int(strand_ids[i]) for i in range(n_total_segments)}
 
         mesh_data = MeshData(
             node_coords=all_nodes,
             connectivity=all_conn,
             radii=all_radii,
             n_strands=1,
-            layer_ids=layer_ids,
+            strand_ids=strand_ids,
         )
 
         # 4. アセンブラ
@@ -1135,8 +1135,8 @@ class DynamicThreePointBendContactJigProcess(
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
-            exclude_same_layer=True,
-            elem_layer_map=elem_layer_map,
+            exclude_same_strand=True,
+            elem_strand_map=elem_strand_map,
             adjust_initial_penetration=False,
             adaptive_timestepping=True,
             dt_grow_factor=2.0,

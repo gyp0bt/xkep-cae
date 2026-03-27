@@ -27,7 +27,7 @@
 ```python
 create_contact_geometry_strategy(
     mode="point_to_point",  # "point_to_point" | "line_to_line" | "mortar"
-    exclude_same_layer=True,
+    exclude_same_strand=True,
     n_gauss=2,
     auto_gauss=False,
     line_contact=False,     # True → LineToLineGauss
