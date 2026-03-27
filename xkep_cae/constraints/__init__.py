@@ -5,6 +5,12 @@
 [← README](../../README.md)
 """
 
+from xkep_cae.constraints.mpc_elimination import (
+    MPCEliminationConfig,
+    MPCEliminationProcess,
+    MPCEliminationResult,
+    MPCGroup,
+)
 from xkep_cae.constraints.rigid_assembler import (
     RigidEdgeAssemblerConfig,
     RigidEdgeAssemblerProcess,
@@ -12,6 +18,10 @@ from xkep_cae.constraints.rigid_assembler import (
 )
 
 __all__ = [
+    "MPCEliminationConfig",
+    "MPCEliminationProcess",
+    "MPCEliminationResult",
+    "MPCGroup",
     "RigidEdgeAssemblerConfig",
     "RigidEdgeAssemblerResult",
     "RigidEdgeAssemblerProcess",
