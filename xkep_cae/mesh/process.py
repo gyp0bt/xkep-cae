@@ -66,12 +66,19 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
             coating_thickness=input_data.coating_thickness,
         )
 
+        # 要素ごとの layer_id を strand_infos から構築
+        layer_ids = np.empty(len(mesh.connectivity), dtype=int)
+        for info in mesh.strand_infos:
+            s = info.strand_id
+            start, end = mesh.strand_elem_ranges[s]
+            layer_ids[start:end] = info.layer
+
         mesh_data = MeshData(
             node_coords=mesh.node_coords,
             connectivity=mesh.connectivity,
             radii=_radii(mesh),
             n_strands=input_data.n_strands,
-            layer_ids=getattr(mesh, "layer_ids", None),
+            layer_ids=layer_ids,
         )
 
         return StrandMeshResult(

@@ -44,9 +44,19 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
 
     def process(self, input_data: ContactSetupConfig) -> ContactSetupData:
         """接触設定の実行."""
+        # layer_ids → elem_layer_map 変換
+        mesh = input_data.mesh
+        elem_layer_map: dict[int, int] | None = None
+        if mesh.layer_ids is not None and input_data.exclude_same_layer:
+            import numpy as np
+
+            layer_arr = np.asarray(mesh.layer_ids)
+            elem_layer_map = {int(i): int(layer_arr[i]) for i in range(len(layer_arr))}
+
         config = _ContactConfigInput(
             mu=input_data.mu,
             exclude_same_layer=input_data.exclude_same_layer,
+            elem_layer_map=elem_layer_map,
             line_contact=input_data.line_contact,
             n_gauss=input_data.n_gauss,
             use_mortar=input_data.use_mortar,
