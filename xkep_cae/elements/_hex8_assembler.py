@@ -6,14 +6,19 @@ ULCRBeamAssembler と同じインターフェースで HEX8 ソリッド要素�
 全節点 6 DOF/node レイアウト（梁要素との混合組立用）。
 回転 DOF (d=3,4,5) はゼロ剛性。
 
+status-250: Hex8AssemblerProcess 追加（脱法修正 A2）。
+
 [← README](../../README.md)
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.core import PreProcess, ProcessMeta
 from xkep_cae.elements._hex8 import hex8_internal_force_6dof, hex8_stiffness_6dof
 
 
@@ -145,3 +150,81 @@ class Hex8Assembler:
             for d in [3, 4, 5]:
                 rot_dofs.append(6 * gn + d)
         return rot_dofs
+
+
+# ====================================================================
+# Process I/O データ
+# ====================================================================
+
+
+@dataclass(frozen=True)
+class Hex8AssemblerInput:
+    """HEX8 ソリッドアセンブラ生成の入力.
+
+    Attributes:
+        node_coords: ソリッド節点座標 (n_nodes, 3)
+        connectivity: 要素接続 (n_elems, 8)
+        E: ヤング率
+        nu: ポアソン比
+        global_node_offset: 全体節点番号オフセット
+        total_ndof: 全体自由度数（0なら自動計算）
+    """
+
+    node_coords: np.ndarray
+    connectivity: np.ndarray
+    E: float
+    nu: float
+    global_node_offset: int = 0
+    total_ndof: int = 0
+
+
+@dataclass(frozen=True)
+class Hex8AssemblerOutput:
+    """HEX8 ソリッドアセンブラ生成の出力.
+
+    Attributes:
+        assembler: 生成された Hex8Assembler インスタンス
+        n_nodes: ソリッド節点数
+        rotational_dofs: 回転DOFリスト（固定すべきDOF）
+    """
+
+    assembler: object  # Hex8Assembler
+    n_nodes: int
+    rotational_dofs: tuple[int, ...]
+
+
+# ====================================================================
+# Process
+# ====================================================================
+
+
+class Hex8AssemblerProcess(
+    PreProcess[Hex8AssemblerInput, Hex8AssemblerOutput],
+):
+    """HEX8 ソリッドアセンブラ生成 Process.
+
+    6 DOF/node レイアウトの HEX8 ソリッドアセンブラを生成する。
+    """
+
+    meta = ProcessMeta(
+        name="Hex8Assembler",
+        module="pre",
+        version="1.0.0",
+        document_path="../../docs/elements.md",
+    )
+
+    def process(self, input_data: Hex8AssemblerInput) -> Hex8AssemblerOutput:
+        """HEX8 ソリッドアセンブラを生成."""
+        assembler = Hex8Assembler(
+            node_coords=input_data.node_coords,
+            connectivity=input_data.connectivity,
+            E=input_data.E,
+            nu=input_data.nu,
+            global_node_offset=input_data.global_node_offset,
+            total_ndof=input_data.total_ndof,
+        )
+        return Hex8AssemblerOutput(
+            assembler=assembler,
+            n_nodes=assembler.n_nodes,
+            rotational_dofs=tuple(assembler.rotational_dofs()),
+        )

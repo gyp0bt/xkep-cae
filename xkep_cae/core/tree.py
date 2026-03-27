@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
@@ -20,13 +20,13 @@ class NodeType(Enum):
     CONDITIONAL = auto()
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessNode:
     """実行グラフのノード."""
 
     process_class: type[AbstractProcess]
     process_instance: AbstractProcess | None = None
-    children: list[ProcessNode] = field(default_factory=list)
+    children: tuple[ProcessNode, ...] = ()
     node_type: NodeType = NodeType.SEQUENTIAL
     condition: Any | None = None
 
@@ -41,7 +41,7 @@ class ProcessNode:
         return "\n".join(lines)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessTree:
     """プロセス実行グラフ全体."""
 

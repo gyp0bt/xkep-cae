@@ -2,6 +2,10 @@
 
 3点曲げ・4点曲げ・引張・ねん回の各試験を
 統一インタフェースで実行する。
+
+status-251: StaticBeamTestProcess 追加（STA2 防止 H1-H4）。
+
+[← README](../../README.md)
 """
 
 from __future__ import annotations
@@ -9,6 +13,7 @@ from __future__ import annotations
 import numpy as np
 import scipy.sparse as sp
 
+from xkep_cae.core import ProcessMeta, VerifyProcess
 from xkep_cae.numerical_tests._backend import (
     _apply_dirichlet,
     _ke_func_factory,
@@ -394,34 +399,36 @@ def _run_torsion(cfg: NumericalTestConfig) -> StaticTestResult:
     )
 
 
-# ---------------------------------------------------------------------------
-# 公開API
-# ---------------------------------------------------------------------------
-def _run_test(cfg: NumericalTestConfig) -> StaticTestResult:
-    """単一の静的試験を実行する."""
-    dispatch = {
-        "bend3p": _run_bend3p,
-        "bend4p": _run_bend4p,
-        "tensile": _run_tensile,
-        "torsion": _run_torsion,
-    }
-    runner = dispatch.get(cfg.name)
-    if runner is None:
-        raise ValueError(f"未対応の試験種別: {cfg.name}")
-    return runner(cfg)
+# ====================================================================
+# Process
+# ====================================================================
 
 
-def _run_all_tests(
-    configs: list[NumericalTestConfig],
-) -> list[StaticTestResult]:
-    """複数の試験を一括実行する."""
-    return [_run_test(cfg) for cfg in configs]
+class StaticBeamTestProcess(
+    VerifyProcess[NumericalTestConfig, StaticTestResult],
+):
+    """静的梁試験 Process.
 
+    3点曲げ・4点曲げ・引張・ねん回の各試験を
+    Process トレーシング付きで実行する。
+    """
 
-def _run_tests(
-    configs: list[NumericalTestConfig],
-    names: list[str],
-) -> list[StaticTestResult]:
-    """指定した試験名のみ部分実行する."""
-    filtered = [cfg for cfg in configs if cfg.name in names]
-    return [_run_test(cfg) for cfg in filtered]
+    meta = ProcessMeta(
+        name="StaticBeamTest",
+        module="verify",
+        version="1.0.0",
+        document_path="../../docs/numerical_tests.md",
+    )
+
+    def process(self, input_data: NumericalTestConfig) -> StaticTestResult:
+        """静的試験を実行."""
+        dispatch = {
+            "bend3p": _run_bend3p,
+            "bend4p": _run_bend4p,
+            "tensile": _run_tensile,
+            "torsion": _run_torsion,
+        }
+        runner = dispatch.get(input_data.name)
+        if runner is None:
+            raise ValueError(f"未対応の試験種別: {input_data.name}")
+        return runner(input_data)

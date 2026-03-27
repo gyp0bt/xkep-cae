@@ -3,13 +3,19 @@
 ULCRBeamAssembler と Hex8Assembler を統合し、
 ContactFrictionProcess が要求する AssembleCallbacks を提供する。
 
+status-250: MixedAssemblerProcess 追加（脱法修正 A3）。
+
 [← README](../../README.md)
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import scipy.sparse as sp
+
+from xkep_cae.core import PreProcess, ProcessMeta
 
 
 def _resize_csr(mat: sp.spmatrix, n: int) -> sp.csr_matrix:
@@ -109,3 +115,69 @@ class MixedAssembler:
     def get_total_displacement(self, u_incr: np.ndarray) -> np.ndarray:
         """増分変位を初期配置からの total 変位に変換."""
         return self.u_total_accum + u_incr
+
+
+# ====================================================================
+# Process I/O データ
+# ====================================================================
+
+
+@dataclass(frozen=True)
+class MixedAssemblerInput:
+    """梁 + ソリッド混合アセンブラ生成の入力.
+
+    Attributes:
+        beam_assembler: 梁アセンブラインスタンス
+        hex_assembler: HEX8 ソリッドアセンブラインスタンス
+        total_ndof: 全体自由度数
+    """
+
+    beam_assembler: object  # ULCRBeamAssembler
+    hex_assembler: object  # Hex8Assembler | _RigidEdgeAssembler
+    total_ndof: int
+
+
+@dataclass(frozen=True)
+class MixedAssemblerOutput:
+    """梁 + ソリッド混合アセンブラ生成の出力.
+
+    Attributes:
+        assembler: 生成された MixedAssembler インスタンス
+        total_ndof: 全体自由度数
+    """
+
+    assembler: object  # MixedAssembler
+    total_ndof: int
+
+
+# ====================================================================
+# Process
+# ====================================================================
+
+
+class MixedAssemblerProcess(
+    PreProcess[MixedAssemblerInput, MixedAssemblerOutput],
+):
+    """梁 + ソリッド混合アセンブラ生成 Process.
+
+    ULCRBeamAssembler と Hex8Assembler（または剛体アセンブラ）を統合する。
+    """
+
+    meta = ProcessMeta(
+        name="MixedAssembler",
+        module="pre",
+        version="1.0.0",
+        document_path="../../docs/elements.md",
+    )
+
+    def process(self, input_data: MixedAssemblerInput) -> MixedAssemblerOutput:
+        """混合アセンブラを生成."""
+        assembler = MixedAssembler(
+            beam_assembler=input_data.beam_assembler,
+            hex_assembler=input_data.hex_assembler,
+            total_ndof=input_data.total_ndof,
+        )
+        return MixedAssemblerOutput(
+            assembler=assembler,
+            total_ndof=input_data.total_ndof,
+        )

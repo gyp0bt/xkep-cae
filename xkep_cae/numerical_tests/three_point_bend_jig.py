@@ -46,9 +46,12 @@ from xkep_cae.core import (
     ProcessMeta,
     SolverResultData,
 )
-from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
+from xkep_cae.elements._beam_assembler import (
+    ULCRBeamAssemblerInput,
+    ULCRBeamAssemblerProcess,
+)
 from xkep_cae.elements._beam_cr import timo_beam3d_ke_global
-from xkep_cae.elements._mixed_assembler import MixedAssembler
+from xkep_cae.elements._mixed_assembler import MixedAssemblerInput, MixedAssemblerProcess
 
 
 def _create_rigid_edge_assembler(
@@ -258,7 +261,7 @@ class ThreePointBendJigProcess(BatchProcess[ThreePointBendJigConfig, ThreePointB
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess]
+    uses = [ContactFrictionProcess, ULCRBeamAssemblerProcess]
 
     def process(self, input_data: ThreePointBendJigConfig) -> ThreePointBendJigResult:
         """三点曲げジグ試験を実行."""
@@ -272,19 +275,22 @@ class ThreePointBendJigProcess(BatchProcess[ThreePointBendJigConfig, ThreePointB
         n_wire_nodes = n_nodes
         ndof = n_nodes * 6
 
-        # 2. アセンブラ（UL CR 梁）
-        assembler = ULCRBeamAssembler(
-            node_coords=mesh_data.node_coords,
-            connectivity=mesh_data.connectivity,
-            E=cfg.E,
-            G=G,
-            A=sec["A"],
-            Iy=sec["Iy"],
-            Iz=sec["Iz"],
-            J=sec["J"],
-            kappa_y=sec["kappa"],
-            kappa_z=sec["kappa"],
+        # 2. アセンブラ（UL CR 梁）— Process API 経由
+        beam_result = ULCRBeamAssemblerProcess().process(
+            ULCRBeamAssemblerInput(
+                node_coords=mesh_data.node_coords,
+                connectivity=mesh_data.connectivity,
+                E=cfg.E,
+                G=G,
+                A=sec["A"],
+                Iy=sec["Iy"],
+                Iz=sec["Iz"],
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
         )
+        assembler = beam_result.assembler
 
         # 3. 境界条件
         #    左端（node 0）: x, y, z 並進 + rx 固定（ピン + ねじり拘束）
@@ -562,7 +568,12 @@ class ThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess, RigidEdgeAssemblerProcess]
+    uses = [
+        ContactFrictionProcess,
+        RigidEdgeAssemblerProcess,
+        ULCRBeamAssemblerProcess,
+        MixedAssemblerProcess,
+    ]
 
     def process(self, input_data: ThreePointBendContactJigConfig) -> ThreePointBendContactJigResult:
         """接触ジグ三点曲げ試験を実行."""
@@ -620,19 +631,22 @@ class ThreePointBendContactJigProcess(
             strand_ids=strand_ids,
         )
 
-        # 4. アセンブラ
-        beam_asm = ULCRBeamAssembler(
-            node_coords=wire_mesh.node_coords,
-            connectivity=wire_mesh.connectivity,
-            E=cfg.E,
-            G=G,
-            A=sec["A"],
-            Iy=sec["Iy"],
-            Iz=sec["Iz"],
-            J=sec["J"],
-            kappa_y=sec["kappa"],
-            kappa_z=sec["kappa"],
+        # 4. アセンブラ — Process API 経由
+        beam_result = ULCRBeamAssemblerProcess().process(
+            ULCRBeamAssemblerInput(
+                node_coords=wire_mesh.node_coords,
+                connectivity=wire_mesh.connectivity,
+                E=cfg.E,
+                G=G,
+                A=sec["A"],
+                Iy=sec["Iy"],
+                Iz=sec["Iz"],
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
         )
+        beam_asm = beam_result.assembler
 
         rigid_asm = _create_rigid_edge_assembler(
             jig_coords=jig_coords,
@@ -641,7 +655,14 @@ class ThreePointBendContactJigProcess(
             total_ndof=ndof,
         )
 
-        mixed_asm = MixedAssembler(beam_asm, rigid_asm, ndof)
+        mixed_result = MixedAssemblerProcess().process(
+            MixedAssemblerInput(
+                beam_assembler=beam_asm,
+                hex_assembler=rigid_asm,
+                total_ndof=ndof,
+            )
+        )
+        mixed_asm = mixed_result.assembler
 
         # 5. 境界条件
         fixed_dofs = set()
@@ -946,7 +967,13 @@ class DynamicThreePointBendContactJigProcess(
         version="1.0.0",
         document_path="docs/three_point_bend_jig.md",
     )
-    uses = [ContactFrictionProcess, DynamicPenaltyEstimateProcess, RigidEdgeAssemblerProcess]
+    uses = [
+        ContactFrictionProcess,
+        DynamicPenaltyEstimateProcess,
+        RigidEdgeAssemblerProcess,
+        ULCRBeamAssemblerProcess,
+        MixedAssemblerProcess,
+    ]
 
     def process(
         self, input_data: DynamicThreePointBendContactJigConfig
@@ -1009,19 +1036,22 @@ class DynamicThreePointBendContactJigProcess(
             strand_ids=strand_ids,
         )
 
-        # 4. アセンブラ
-        beam_asm = ULCRBeamAssembler(
-            node_coords=wire_mesh.node_coords,
-            connectivity=wire_mesh.connectivity,
-            E=cfg.E,
-            G=G,
-            A=sec["A"],
-            Iy=sec["Iy"],
-            Iz=sec["Iz"],
-            J=sec["J"],
-            kappa_y=sec["kappa"],
-            kappa_z=sec["kappa"],
+        # 4. アセンブラ — Process API 経由
+        beam_result = ULCRBeamAssemblerProcess().process(
+            ULCRBeamAssemblerInput(
+                node_coords=wire_mesh.node_coords,
+                connectivity=wire_mesh.connectivity,
+                E=cfg.E,
+                G=G,
+                A=sec["A"],
+                Iy=sec["Iy"],
+                Iz=sec["Iz"],
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
         )
+        beam_asm = beam_result.assembler
 
         rigid_asm = _create_rigid_edge_assembler(
             jig_coords=jig_coords,
@@ -1030,7 +1060,14 @@ class DynamicThreePointBendContactJigProcess(
             total_ndof=ndof,
         )
 
-        mixed_asm = MixedAssembler(beam_asm, rigid_asm, ndof)
+        mixed_result = MixedAssemblerProcess().process(
+            MixedAssemblerInput(
+                beam_assembler=beam_asm,
+                hex_assembler=rigid_asm,
+                total_ndof=ndof,
+            )
+        )
+        mixed_asm = mixed_result.assembler
 
         # 5. 質量行列（梁部分のみ、ジグ DOF はゼロ）
         beam_mass = beam_asm.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)

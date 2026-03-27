@@ -6,7 +6,7 @@ status-222 で lam_all / _ensure_lam_size を削除。
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -35,12 +35,6 @@ class SolverStateOutput:
     total_attempts: int = 0
     prev_n_active: int = 0
     prev_contact_force_norm: float = 0.0  # 力ベース dt 制御用（status-233）
-
-    # --- 履歴 ---
-    load_history: list[float] = field(default_factory=list)
-    disp_history: list[np.ndarray] = field(default_factory=list)
-    contact_force_history: list[float] = field(default_factory=list)
-    graph_snapshots: list[object] = field(default_factory=list)
 
     # --- 接線予測用 ---
     u_prev_converged: np.ndarray | None = None

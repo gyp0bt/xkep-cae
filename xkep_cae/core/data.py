@@ -9,7 +9,7 @@ SolverStrategies: ソルバー内部の振る舞いを合成するStrategy群。
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
@@ -55,7 +55,7 @@ class AssembleCallbacks:
     ul_assembler: object | None = None
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolverStrategies:
     """ソルバー内部の振る舞いを合成するStrategy群.
 
@@ -198,7 +198,7 @@ class ContactFrictionInputData:
         return self.mass_matrix is not None and self.dt_physical > 0.0
 
 
-@dataclass
+@dataclass(frozen=True)
 class SolverResultData:
     """ソルバー結果."""
 
@@ -206,16 +206,16 @@ class SolverResultData:
     converged: bool
     n_increments: int
     total_attempts: int
-    displacement_history: list[np.ndarray] = field(default_factory=list)
-    contact_force_history: list[float] = field(default_factory=list)
-    load_history: list[float] = field(default_factory=list)
+    displacement_history: tuple = ()
+    contact_force_history: tuple = ()
+    load_history: tuple = ()
     elapsed_seconds: float = 0.0
     diagnostics: object | None = None
     # エネルギー診断履歴（動的解析時に記録）
     energy_history: object | None = None  # EnergyHistory
     n_cutbacks: int = 0  # カットバック総数
     # 全インクリメント診断（IncrementDiagnosticsOutput のリスト）
-    increment_diagnostics: list = field(default_factory=list)
+    increment_diagnostics: tuple = ()
 
 
 @dataclass(frozen=True)

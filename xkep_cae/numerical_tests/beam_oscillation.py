@@ -44,7 +44,10 @@ from xkep_cae.core import (
     ProcessMeta,
     SolverResultData,
 )
-from xkep_cae.elements._beam_assembler import ULCRBeamAssembler
+from xkep_cae.elements._beam_assembler import (
+    ULCRBeamAssemblerInput,
+    ULCRBeamAssemblerProcess,
+)
 from xkep_cae.numerical_tests.three_point_bend_jig import (
     ThreePointBendJigConfig,
     _beam_fundamental_frequency,
@@ -213,7 +216,7 @@ def _compute_kinetic_energy(
 
 
 def _compute_strain_energy(
-    assembler: ULCRBeamAssembler,
+    assembler: object,
     u_incr: np.ndarray,
 ) -> float:
     """ひずみエネルギー U ≈ 0.5 * u^T f_int."""
@@ -248,7 +251,7 @@ class BeamOscillationProcess(
         version="1.0.0",
         document_path="docs/beam_oscillation.md",
     )
-    uses = [ContactFrictionProcess, ElementBendingStrainProcess]
+    uses = [ContactFrictionProcess, ElementBendingStrainProcess, ULCRBeamAssemblerProcess]
 
     def process(self, input_data: BeamOscillationConfig) -> BeamOscillationResult:
         """梁揺動解析を実行."""
@@ -271,19 +274,22 @@ class BeamOscillationProcess(
         n_nodes = len(mesh_data.node_coords)
         ndof = n_nodes * 6
 
-        # 2. アセンブラ + 質量行列
-        assembler = ULCRBeamAssembler(
-            node_coords=mesh_data.node_coords,
-            connectivity=mesh_data.connectivity,
-            E=cfg.E,
-            G=G,
-            A=sec["A"],
-            Iy=sec["Iy"],
-            Iz=sec["Iz"],
-            J=sec["J"],
-            kappa_y=sec["kappa"],
-            kappa_z=sec["kappa"],
+        # 2. アセンブラ + 質量行列 — Process API 経由
+        beam_result = ULCRBeamAssemblerProcess().process(
+            ULCRBeamAssemblerInput(
+                node_coords=mesh_data.node_coords,
+                connectivity=mesh_data.connectivity,
+                E=cfg.E,
+                G=G,
+                A=sec["A"],
+                Iy=sec["Iy"],
+                Iz=sec["Iz"],
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
         )
+        assembler = beam_result.assembler
         mass_matrix = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
 
         # 3. 固有振動数 → 時間制御パラメータ
