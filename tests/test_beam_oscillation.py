@@ -123,6 +123,10 @@ class TestBeamOscillationAPI:
         expected_strain = 2.0 * a * R  # κ * R = 2a * R
         # 端部以外は一定
         interior = result.element_strain[2:-2]
+        # NOTE(STA2): rtol=0.05 は梁要素離散化誤差（要素数依存）による。
+        # 解析解 κ*R と要素歪みの差は要素長/曲率半径比で O(h²) 収束。
+        # 現在の要素数(20要素)では 5% が妥当な上界。
+        # TODO(STA2): 要素数増加時（≥40要素）に rtol=0.02 へ厳格化
         assert np.allclose(interior, expected_strain, rtol=0.05)
 
 
