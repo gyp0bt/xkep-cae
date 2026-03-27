@@ -73,12 +73,12 @@
 
 ### 次の課題
 
-**Hermite デフォルト ON 完了** — status-245:
-- use_hermite_centerline=True デフォルト化（frozen-m 解消済み: status-243）
-- n_periods=30 検証: freeze=F + K_st=ON で frac=0.7360（status-232 の 0.08 から大幅改善）
-- **残課題**: n_periods=30 Hermite ON 完走には接触チャタリング対策が必要（active ペア 2↔3 振動）
+**接触アセンブリバッチ化完了** — status-246:
+- evaluate/tangent/摩擦アセンブリを NumPy バッチ演算に移行（マイクロベンチ N=1000 で 12-16x）
+- n_periods=30 三点曲げ（freeze=F, K_st=OFF, Hermite=ON）で **30.6% 高速化**（530.9s → 368.4s）
+- **残課題**: n_periods=30 Hermite ON 完走（frac=0.9838）、接触チャタリング対策
 - **非局所 ∂m/∂x**: 4ノードペア外の DOF 結合は未対応
-**次のステップ**: 接触チャタリング抑制（gap 0 近傍の安定化）、NR 力収束速度改善。
+**次のステップ**: 接触安定化ダンピング（Phase 2）、反復ソルバー導入（Phase 3）、GPU 対応（S7）。
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -99,6 +99,12 @@
 - **increment の定義**: increment は成功した dt ステップの数。カットバック（時間増分の縮小リトライ）は increment に含めない。`_incr_count` は成功パスでのみインクリメントし、`max_increments` はカットバック回数に侵食されない。
 - **結果の再現性**: 全ての収束結果は tee でログ保存し、YAML 出力と照合可能にすること。ベースライン（変更前）を先に確認してから改善テストを実施。
 - **数値の捏造禁止**: 収束しない場合は「収束しなかった」と報告する。目標を事後的に緩和して達成を装わない。
+
+### 担当者間再現性ルール（status-246 追加）
+- **ベンチマーク条件の記録**: テスト名、ブランチ名、コミットハッシュ、実行コマンドを tee ログおよび status ファイルに記録すること。
+- **変更前ベースラインの先行取得**: 性能改善テスト前に必ず `git stash` で変更前コードのベースラインを計測し、ログに残す。
+- **再現手順の status 記載**: status ファイルに「再現手順」セクションを設け、別の担当者が同じ結果を得られるコマンド列を明記する。
+- **Process profiling の活用**: `ProcessMetaclass._profile_data` による自動計測結果を活用し、手動計測に頼らない仕組みを推進する。
 
 ### セッション開始時の確認手順
 1. `docs/status/status-index.md` → 最新 status 番号を確認
