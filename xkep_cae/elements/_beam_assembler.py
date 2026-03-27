@@ -2,12 +2,19 @@
 
 ULCRBeamAssembler: Updated Lagrangian + Corotational 定式化の梁アセンブラ。
 各収束ステップ後に参照配置を更新し、ヘリカル梁の大回転に対応。
+
+status-250: ULCRBeamAssemblerProcess 追加（脱法修正 A1）。
+
+[← README](../../README.md)
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 
+from xkep_cae.core import PreProcess, ProcessMeta
 from xkep_cae.elements._beam_assembly import assemble_cr_beam3d
 from xkep_cae.elements._beam_cr import (
     _rotvec_to_rotmat,
@@ -194,3 +201,99 @@ class ULCRBeamAssembler:
                 (np.array(vals), (np.array(rows), np.array(cols))),
                 shape=(ndof, ndof),
             )
+
+
+# ====================================================================
+# Process I/O データ
+# ====================================================================
+
+
+@dataclass(frozen=True)
+class ULCRBeamAssemblerInput:
+    """UL+CR 梁アセンブラ生成の入力.
+
+    Attributes:
+        node_coords: 節点座標 (n_nodes, 3)
+        connectivity: 要素接続 (n_elems, 2)
+        E: ヤング率
+        G: せん断弾性係数
+        A: 断面積
+        Iy: 断面二次モーメント (y軸)
+        Iz: 断面二次モーメント (z軸)
+        J: ねじり定数
+        kappa_y: せん断補正係数 (y)
+        kappa_z: せん断補正係数 (z), 0なら kappa_y と同値
+        v_ref: 参照ベクトル (省略可)
+        scf: 応力集中係数 (省略可)
+    """
+
+    node_coords: np.ndarray
+    connectivity: np.ndarray
+    E: float
+    G: float
+    A: float
+    Iy: float
+    Iz: float
+    J: float
+    kappa_y: float
+    kappa_z: float = 0.0
+    v_ref: np.ndarray | None = None
+    scf: float | None = None
+
+
+@dataclass(frozen=True)
+class ULCRBeamAssemblerOutput:
+    """UL+CR 梁アセンブラ生成の出力.
+
+    Attributes:
+        assembler: 生成された ULCRBeamAssembler インスタンス
+        n_nodes: 節点数
+        ndof: 自由度数
+    """
+
+    assembler: object  # ULCRBeamAssembler
+    n_nodes: int
+    ndof: int
+
+
+# ====================================================================
+# Process
+# ====================================================================
+
+
+class ULCRBeamAssemblerProcess(
+    PreProcess[ULCRBeamAssemblerInput, ULCRBeamAssemblerOutput],
+):
+    """UL+CR 梁アセンブラ生成 Process.
+
+    Updated Lagrangian + Corotational 定式化の梁アセンブラを生成する。
+    """
+
+    meta = ProcessMeta(
+        name="ULCRBeamAssembler",
+        module="pre",
+        version="1.0.0",
+        document_path="../../docs/elements.md",
+    )
+
+    def process(self, input_data: ULCRBeamAssemblerInput) -> ULCRBeamAssemblerOutput:
+        """UL+CR 梁アセンブラを生成."""
+        assembler = ULCRBeamAssembler(
+            node_coords=input_data.node_coords,
+            connectivity=input_data.connectivity,
+            E=input_data.E,
+            G=input_data.G,
+            A=input_data.A,
+            Iy=input_data.Iy,
+            Iz=input_data.Iz,
+            J=input_data.J,
+            kappa_y=input_data.kappa_y,
+            kappa_z=input_data.kappa_z,
+            v_ref=input_data.v_ref,
+            scf=input_data.scf,
+        )
+        return ULCRBeamAssemblerOutput(
+            assembler=assembler,
+            n_nodes=assembler.n_nodes,
+            ndof=assembler.ndof,
+        )
