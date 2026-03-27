@@ -17,6 +17,7 @@ from xkep_cae.contact.geometry._st_jacobian import (
     ComputeStJacobianProcess,
     StJacobianInput,
 )
+from xkep_cae.core.testing import binds_to
 
 
 def _compute_s_t_numerical(xA0, xA1, xB0, xB1):
@@ -78,6 +79,7 @@ def _finite_diff_st_jacobian(xA0, xA1, xB0, xB1, eps=1e-7):
     return ds_du, dt_du, s0, t0
 
 
+@binds_to(ComputeStJacobianProcess)
 class TestComputeStJacobian:
     """∂(s,t)/∂u の解析微分と有限差分の一致検証."""
 
@@ -336,6 +338,13 @@ class TestComputeStJacobianHermite:
         assert out.valid
         np.testing.assert_allclose(out.ds_du, ds_fd, atol=1e-5)
         np.testing.assert_allclose(out.dt_du, dt_fd, atol=1e-5)
+
+    # NOTE(STA2): 以下3テスト (curved/skew/asymmetric) は atol=1e-2。
+    # 理由: Hermite ∂(s,t)/∂u は frozen-tangent 近似（接線ベクトル m を u の
+    # 関数としない）で計算しており、FD との系統的不整合が ~33% 存在する
+    # (status-239)。非局所 DOF 結合（∂m/∂u 4ノードペア外）解消後に
+    # atol=1e-5 へ厳格化すること。
+    # TODO(STA2): frozen-m 解消後に atol=1e-5 へ戻す（roadmap 参照）
 
     def test_curved_hermite_orthogonal(self):
         """曲がった Hermite 曲線（直交配置）."""
