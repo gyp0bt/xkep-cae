@@ -365,6 +365,8 @@ class ContactFrictionProcess(
             compute_condition_number=_compute_cond,
             char_length=_beam_L,
             dof_scale_rot=getattr(input_data, "dof_scale_rot", 1.0),
+            contact_relax_omega=getattr(input_data, "contact_relax_omega", 0.5),
+            stall_window=getattr(input_data, "stall_window", 4),
         )
         nr_process_dyn = NewtonDynamicProcess()
 

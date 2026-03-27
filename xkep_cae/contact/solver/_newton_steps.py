@@ -320,6 +320,7 @@ class TangentAssemblyInput:
     load_frac: float
     load_frac_prev: float
     use_coating: bool
+    contact_tangent_scale: float = 1.0  # 接触剛性スケーリング（status-247 リラクゼーション用）
 
 
 @dataclass(frozen=True)
@@ -350,7 +351,9 @@ class TangentAssemblyProcess(
             inp.k_pen,
             node_coords=inp.coords_def,
         )
-        K_T = K_T + K_c
+        # リラクゼーション中は接触剛性をスケーリング（残差との整合性、status-247）
+        _cts = inp.contact_tangent_scale
+        K_T = K_T + (K_c * _cts if _cts < 1.0 else K_c)
 
         # 被膜剛性
         if inp.use_coating and inp.coating_strategy is not None:

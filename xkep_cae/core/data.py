@@ -188,6 +188,9 @@ class ContactFrictionInputData:
     max_increments: int = 10000  # 最大インクリメント数（0=無制限）
     compute_condition_number: bool = False  # 条件数診断（低速）
     dof_scale_rot: float = 1.0  # 回転 DOF の NR 更新スケーリング（status-241）
+    # 接触力リラクゼーション（status-247: NR 2-サイクル対策）
+    contact_relax_omega: float = 0.5  # リラクゼーション係数
+    stall_window: int = 4  # ストール検知窓
 
     @property
     def is_dynamic(self) -> bool:

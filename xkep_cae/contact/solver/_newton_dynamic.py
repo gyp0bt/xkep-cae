@@ -60,6 +60,9 @@ class NewtonDynamicInput:
     compute_condition_number: bool = False  # 条件数診断（低速: toarray() 使用）
     char_length: float = 0.0  # 代表長さ [mm]（重み付きノルム用、status-241）
     dof_scale_rot: float = 1.0  # 回転 DOF の NR 更新スケーリング（status-241）
+    # 接触力リラクゼーション（status-247: NR 2-サイクル対策）
+    contact_relax_omega: float = 0.5  # リラクゼーション係数（0.5 = 半分ブレンド）
+    stall_window: int = 4  # 残差プラトーをストールと判定するまでの反復数
 
 
 @dataclass(frozen=True)
@@ -161,6 +164,14 @@ class NewtonDynamicProcess(
         _prev_res_ratio = float("inf")
         _incr_f_ref: float = 0.0  # インクリメント内の参照残差（初回で設定）
 
+        # 接触力リラクゼーション用トラッキング（status-247）
+        _f_c_prev = np.zeros(ndof)
+        _consecutive_stall = 0
+        _relax_active = False
+        _relax_iter = 0  # リラクゼーション有効化後の反復数
+        _current_omega = 1.0  # 現在のリラクゼーション係数
+        _prev_n_active = -1
+
         for att in range(cfg.max_attempts):
             total_attempts += 1
 
@@ -189,6 +200,22 @@ class NewtonDynamicProcess(
             )
             f_c = force_out.f_c
             R_u = force_out.R_u
+
+            # ── 接触力リラクゼーション（status-247: NR 2-サイクル対策） ──
+            # 残差プラトー + active set 振動を検知し、接触力をブレンドして安定化。
+            # 収束時は f_c ≈ f_c_prev なので収束解は不変。
+            # omega は漸進的に低下: ω₀ * 0.7^(iter//2)、下限 0.05
+            if att > 0 and _relax_active and cfg.contact_relax_omega < 1.0:
+                _relax_iter += 1
+                _current_omega = max(
+                    0.05,
+                    cfg.contact_relax_omega * (0.7 ** (_relax_iter // 2)),
+                )
+                f_c_blend = _current_omega * f_c + (1.0 - _current_omega) * _f_c_prev
+                R_u = R_u - f_c + f_c_blend
+                R_u[input_data.fixed_dofs] = 0.0
+                f_c = f_c_blend
+            _f_c_prev = f_c.copy()
 
             # 動的: 慣性力・減衰力を残差に加算
             if dt_sub > 1e-30:
@@ -271,6 +298,24 @@ class NewtonDynamicProcess(
                 _consecutive_increase += 1
             else:
                 _consecutive_increase = 0
+
+            # ストール検知: 残差変化 < 5% AND active set 振動（status-247）
+            if att > 0 and _cur_ratio > 0.5:
+                _ratio_change = abs(_cur_ratio - _prev_res_ratio) / max(_prev_res_ratio, 1e-30)
+                _active_changed = n_active != _prev_n_active
+                if _ratio_change < 0.05 and _active_changed:
+                    _consecutive_stall += 1
+                else:
+                    _consecutive_stall = max(0, _consecutive_stall - 1)
+                if _consecutive_stall >= cfg.stall_window and not _relax_active:
+                    _relax_active = True
+                    if cfg.show_progress:
+                        print(
+                            f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                            f"接触チャタリング検知 → リラクゼーション有効化 "
+                            f"(ω={cfg.contact_relax_omega})"
+                        )
+            _prev_n_active = n_active
             _prev_res_ratio = _cur_ratio
 
             _diverge_detected = False
@@ -321,6 +366,7 @@ class NewtonDynamicProcess(
                     load_frac=load_frac,
                     load_frac_prev=load_frac_prev,
                     use_coating=input_data.use_coating,
+                    contact_tangent_scale=_current_omega if _relax_active else 1.0,
                 )
             )
             K_T = tangent_out.K_T
