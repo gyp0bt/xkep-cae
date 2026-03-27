@@ -26,7 +26,7 @@ TOut = TypeVar("TOut")
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExecutionContext:
     """プロセス実行のコンテキスト."""
 
@@ -37,7 +37,7 @@ class ExecutionContext:
     checksum_inputs: bool = __debug__
 
 
-@dataclass
+@dataclass(frozen=True)
 class ExecutionRecord:
     """1回の実行記録."""
 
