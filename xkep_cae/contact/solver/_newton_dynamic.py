@@ -90,6 +90,7 @@ class NewtonDynamicStepInput:
     use_coating: bool
     dynamic_ref: bool
     connectivity: np.ndarray | None = None  # Hermite 中心線補間用
+    mpc_transform: object | None = None  # MPCEliminationResult（status-253）
 
 
 # 後方互換エイリアス（呼び出し側の段階的移行用）
@@ -417,6 +418,7 @@ class NewtonDynamicProcess(
                     K_T=K_T,
                     R_u=R_u,
                     fixed_dofs=input_data.fixed_dofs,
+                    mpc_transform=input_data.mpc_transform,
                 )
             )
             if not solve_out.success:
