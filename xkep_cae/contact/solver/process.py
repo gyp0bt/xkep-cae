@@ -508,14 +508,14 @@ class ContactFrictionProcess(
                         converged=False,
                         n_increments=state.increment_display,
                         total_attempts=state.total_attempts,
-                        displacement_history=_disp_history,
-                        contact_force_history=_contact_force_history,
-                        load_history=list(_load_history),
+                        displacement_history=tuple(_disp_history),
+                        contact_force_history=tuple(_contact_force_history),
+                        load_history=tuple(_load_history),
                         elapsed_seconds=elapsed,
                         diagnostics=last_diag,
                         energy_history=_energy_history,
                         n_cutbacks=_n_cutbacks,
-                        increment_diagnostics=_increment_diag_list,
+                        increment_diagnostics=tuple(_increment_diag_list),
                     )
 
                 # ==============================================================
