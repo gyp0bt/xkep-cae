@@ -35,6 +35,7 @@ class BoundaryData:
     prescribed_values: np.ndarray | None = None
     f_ext_total: np.ndarray | None = None
     f_ext_base: np.ndarray | None = None
+    mpc_transform: object | None = None  # MPCEliminationResult（循環参照回避で object）
 
 
 @dataclass(frozen=True)

@@ -399,6 +399,7 @@ class LinearSolveInput:
     K_T: sp.spmatrix
     R_u: np.ndarray
     fixed_dofs: np.ndarray
+    mpc_transform: object | None = None  # MPCEliminationResult
 
 
 @dataclass(frozen=True)
@@ -422,6 +423,16 @@ class LinearSolveProcess(
     )
 
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
+        _mpc = inp.mpc_transform
+
+        if _mpc is not None:
+            # MPC DOF消去: T^T K T の縮退系を求解
+            return self._solve_with_mpc(inp, _mpc)
+
+        return self._solve_standard(inp)
+
+    def _solve_standard(self, inp: LinearSolveInput) -> LinearSolveOutput:
+        """標準BC適用 + 線形ソルブ."""
         K_eff = inp.K_T.tolil()
 
         _rhs = -inp.R_u.copy()
@@ -448,6 +459,63 @@ class LinearSolveProcess(
 
             du = spsolve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
+        except Exception:
+            return LinearSolveOutput(du=None, success=False)
+
+    def _solve_with_mpc(self, inp: LinearSolveInput, mpc: object) -> LinearSolveOutput:
+        """MPC DOF消去による縮退系ソルブ.
+
+        K_red = T^T K T, f_red = T^T f
+        du_red = solve(K_red, f_red)
+        du_full = T @ du_red
+
+        固定DOFはMPC変換後の縮退系で適用する。
+        """
+        T = mpc.T  # (ndof_total, ndof_reduced)
+        K_full = inp.K_T.tocsc()
+        _rhs_full = -inp.R_u.copy()
+
+        # 縮退系に変換
+        K_red = T.T @ K_full @ T
+        _rhs_red = T.T @ _rhs_full
+
+        # 固定DOFを縮退系のindexに変換
+        # master DOF中の固定DOFを特定
+        _indep_to_reduced = np.full(K_full.shape[0], -1, dtype=int)
+        for j, d in enumerate(mpc.independent_dofs):
+            _indep_to_reduced[d] = j
+
+        fixed_reduced = []
+        for d in inp.fixed_dofs:
+            rd = _indep_to_reduced[d]
+            if rd >= 0:
+                fixed_reduced.append(rd)
+        fixed_reduced = np.array(fixed_reduced, dtype=int)
+
+        # 縮退系にBC適用
+        K_red_lil = K_red.tolil()
+        if len(fixed_reduced) > 0:
+            for d in fixed_reduced:
+                K_red_lil[d, :] = 0.0
+            K_red_lil[fixed_reduced, :] = 0.0
+            for d in fixed_reduced:
+                K_red_lil[d, d] = 1.0
+            K_red_csc = K_red_lil.tocsc()
+            for d in fixed_reduced:
+                K_red_csc[:, d] = 0.0
+                K_red_csc[d, d] = 1.0
+            K_red_csc.eliminate_zeros()
+            _rhs_red[fixed_reduced] = 0.0
+        else:
+            K_red_csc = K_red_lil.tocsc()
+
+        try:
+            from scipy.sparse.linalg import spsolve
+
+            du_red = spsolve(K_red_csc, _rhs_red)
+            # 全体系に復元
+            du_full = (T @ du_red).A.ravel() if sp.issparse(T @ du_red) else T @ du_red
+            return LinearSolveOutput(du=du_full, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
 

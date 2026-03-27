@@ -464,6 +464,7 @@ class ContactFrictionProcess(
                 use_coating=use_coating,
                 dynamic_ref=dynamic_ref,
                 connectivity=connectivity,
+                mpc_transform=input_data.boundary.mpc_transform,
             )
             step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)

@@ -17,6 +17,11 @@ from xkep_cae.numerical_tests.core import (
     StaticTestResult,
     SupportCondition,
 )
+from xkep_cae.numerical_tests.strand_bending_oscillation import (
+    StrandBendingOscillationConfig,
+    StrandBendingOscillationProcess,
+    StrandBendingOscillationResult,
+)
 
 __all__ = [
     "TEST_TYPES_ALL",
@@ -29,5 +34,8 @@ __all__ = [
     "FrequencyResponseResult",
     "NumericalTestConfig",
     "StaticTestResult",
+    "StrandBendingOscillationConfig",
+    "StrandBendingOscillationProcess",
+    "StrandBendingOscillationResult",
     "SupportCondition",
 ]
