@@ -23,6 +23,7 @@ from xkep_cae.contact.friction._assembly import (
 from xkep_cae.contact.friction.law_friction import (
     _compute_mu_effective,
 )
+from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -64,6 +65,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         version="2.0.0",
         document_path="docs/friction.md",
     )
+    uses = [ComputeStJacobianProcess]
 
     def __init__(
         self,

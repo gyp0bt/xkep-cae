@@ -376,6 +376,11 @@ class ContactFrictionProcess(
         _energy_proc = StepEnergyDiagnosticsProcess()
         _n_cutbacks = 0
         _increment_diag_list: list[IncrementDiagnosticsOutput] = []
+        # 履歴アキュムレータ（SolverStateOutput から分離: status-251 S1修正）
+        _load_history: list[float] = []
+        _disp_history: list[np.ndarray] = []
+        _contact_force_history: list[float] = []
+        _graph_snapshots: list[object] = []
 
         # ================================================================
         # 荷重ステップループ
@@ -503,9 +508,9 @@ class ContactFrictionProcess(
                         converged=False,
                         n_increments=state.increment_display,
                         total_attempts=state.total_attempts,
-                        displacement_history=state.disp_history,
-                        contact_force_history=state.contact_force_history,
-                        load_history=list(state.load_history),
+                        displacement_history=_disp_history,
+                        contact_force_history=_contact_force_history,
+                        load_history=list(_load_history),
                         elapsed_seconds=elapsed,
                         diagnostics=last_diag,
                         energy_history=_energy_history,
@@ -653,15 +658,15 @@ class ContactFrictionProcess(
             _increment_diag_list.append(_incr_diag)
 
             # 履歴記録
-            state.load_history.append(load_frac)
+            _load_history.append(load_frac)
             _u_hist = ul_assembler.u_total_accum + state.u if _ul else state.u.copy()
-            state.disp_history.append(_u_hist.copy() if _ul else _u_hist)
-            state.contact_force_history.append(_fc_norm)
+            _disp_history.append(_u_hist.copy() if _ul else _u_hist)
+            _contact_force_history.append(_fc_norm)
             try:
                 _cg_out = ContactGraphProcess().process(
                     ContactGraphInput(manager=manager, step=state.increment_display - 1)
                 )
-                state.graph_snapshots.append(_cg_out.graph)
+                _graph_snapshots.append(_cg_out.graph)
             except Exception:
                 pass
 
@@ -680,9 +685,9 @@ class ContactFrictionProcess(
             converged=True,
             n_increments=state.increment_display,
             total_attempts=state.total_attempts,
-            displacement_history=state.disp_history,
-            contact_force_history=state.contact_force_history,
-            load_history=list(state.load_history),
+            displacement_history=_disp_history,
+            contact_force_history=_contact_force_history,
+            load_history=list(_load_history),
             elapsed_seconds=elapsed,
             diagnostics=last_diag,
             energy_history=_energy_history,
