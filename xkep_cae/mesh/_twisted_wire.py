@@ -124,6 +124,114 @@ def _validate_strand_geometry(n_strands: int, wire_diameter: float, strand_diame
         )
 
 
+def _segment_distance(p0: np.ndarray, p1: np.ndarray, q0: np.ndarray, q1: np.ndarray) -> float:
+    """2線分間の最小距離."""
+    d = p1 - p0
+    e = q1 - q0
+    r = p0 - q0
+    a = float(np.dot(d, d))
+    b = float(np.dot(d, e))
+    c = float(np.dot(e, e))
+    f = float(np.dot(d, r))
+    g = float(np.dot(e, r))
+    denom = a * c - b * b
+    if denom < 1e-30:
+        s = 0.0
+        t = g / c if c > 1e-30 else 0.0
+    else:
+        s = (b * g - c * f) / denom
+        t = (a * g - b * f) / denom
+    s = max(0.0, min(1.0, s))
+    t = max(0.0, min(1.0, t))
+    return float(np.linalg.norm(p0 + s * d - (q0 + t * e)))
+
+
+def _helix_point(z: float, r_lay: float, pitch: float, angle_offset: float) -> np.ndarray:
+    """ヘリックス上の点座標."""
+    theta = 2.0 * math.pi * z / pitch + angle_offset
+    return np.array([r_lay * math.cos(theta), r_lay * math.sin(theta), z])
+
+
+def _min_chord_distance_between_strands(
+    r_lay: float,
+    pitch: float,
+    n_per_pitch: int,
+    phase_diff: float,
+) -> float:
+    """2つのヘリカル素線の弦近似間の最小距離を数値計算.
+
+    同一 lay_radius・同一ピッチ・位相差 phase_diff の2本のヘリックスを
+    n_per_pitch 個の弦要素で近似したときの最小セグメント間距離を返す。
+    1ピッチ分の全ペアを検査する。
+    """
+    dz = pitch / n_per_pitch
+    min_dist = float("inf")
+    search_range = max(5, n_per_pitch // 4)
+    for i in range(n_per_pitch):
+        pA0 = _helix_point(i * dz, r_lay, pitch, 0.0)
+        pA1 = _helix_point((i + 1) * dz, r_lay, pitch, 0.0)
+        for j in range(max(0, i - search_range), min(n_per_pitch, i + search_range + 1)):
+            pB0 = _helix_point(j * dz, r_lay, pitch, phase_diff)
+            pB1 = _helix_point((j + 1) * dz, r_lay, pitch, phase_diff)
+            d = _segment_distance(pA0, pA1, pB0, pB1)
+            if d < min_dist:
+                min_dist = d
+    return min_dist
+
+
+def _min_helix_distance(
+    r_a: float,
+    r_b: float,
+    pitch: float,
+    phase_a: float,
+    phase_b: float,
+) -> float:
+    """2本のヘリックス間の解析的最小距離.
+
+    d²(Δz) = r_a² + r_b² - 2·r_a·r_b·cos(ω·Δz + Δφ) + Δz²
+    を最小化する。ω = 2π/pitch, Δφ = phase_a - phase_b。
+
+    Newton-Raphson で d²(Δz) の停留点を求める。
+    """
+    omega = 2.0 * math.pi / pitch if pitch > 0 else 0.0
+    dphi = phase_a - phase_b
+    rab = r_a * r_b
+
+    if rab < 1e-30:
+        # 片方が中心（直線）: d = r_other
+        return max(r_a, r_b)
+
+    def d2(dz: float) -> float:
+        return r_a**2 + r_b**2 - 2 * rab * math.cos(omega * dz + dphi) + dz**2
+
+    def dd2(dz: float) -> float:
+        return 2 * rab * omega * math.sin(omega * dz + dphi) + 2 * dz
+
+    def ddd2(dz: float) -> float:
+        return 2 * rab * omega**2 * math.cos(omega * dz + dphi) + 2
+
+    # 複数の初期点から探索（周期性を考慮）
+    best = d2(0.0)
+    candidates = [0.0, -dphi / omega if omega > 0 else 0.0]
+    # 追加候補: 同位相点 ± 微小シフト
+    for k in range(-2, 3):
+        candidates.append((-dphi + 2 * math.pi * k) / omega if omega > 0 else 0.0)
+
+    for dz0 in candidates:
+        dz = dz0
+        for _ in range(20):
+            g = dd2(dz)
+            h = ddd2(dz)
+            if abs(h) < 1e-30:
+                break
+            dz -= g / h
+        val = d2(dz)
+        if val < best:
+            best = val
+
+    return math.sqrt(max(0.0, best))
+
+
 def _compute_min_safe_gap(
     n_strands: int,
     wire_radius: float,
@@ -131,20 +239,121 @@ def _compute_min_safe_gap(
     n_elems_per_strand: int,
     n_pitches: float,
     *,
-    safety_factor: float = 2.0,
+    safety_factor: float = 1.5,
     coating_thickness: float = 0.0,
 ) -> float:
+    """弦近似で貫入が生じない最小ギャップを二分探索で計算.
+
+    解析的ヘリックス間最小距離 + 弦近似sagittaの補正で安全ギャップを決定。
+
+    1. レイアウトの全クリティカルペアのヘリックス最小距離を解析計算
+    2. 弦近似sagitta（径方向）を加算補正
+    3. 全ペアで surface_gap ≥ 0 となる最小 gap を二分探索
+    """
     if n_strands <= 1:
         return 0.0
     length = n_pitches * pitch
-    n_per_pitch = n_elems_per_strand * pitch / length if length > 0 else n_elems_per_strand
+    n_per_pitch = int(n_elems_per_strand * pitch / length) if length > 0 else n_elems_per_strand
     if n_per_pitch < 1:
         return 0.0
-    d_eff = 2.0 * (wire_radius + coating_thickness)
-    r_lay_max = d_eff
-    theta_half = math.pi / n_per_pitch
-    sagitta = r_lay_max * (1.0 - math.cos(theta_half))
-    return 2.0 * sagitta * safety_factor
+
+    r_eff = wire_radius + coating_thickness
+
+    def _min_surface_gap(gap: float) -> float:
+        """指定 gap でのクリティカルペアの最小表面ギャップ."""
+        layout = _make_strand_layout(
+            n_strands,
+            wire_radius,
+            gap=gap,
+            coating_thickness=coating_thickness,
+        )
+        # レイヤーごとにグループ化
+        layers: dict[int, list[StrandInfoOutput]] = {}
+        for info in layout:
+            layers.setdefault(info.layer, []).append(info)
+
+        min_sg = float("inf")
+        layer_keys = sorted(layers.keys())
+
+        # 同層内隣接ペアのみ検査（支配的）
+        # 異層間は d_min ≈ |r_a - r_b| = d_eff + gap ≥ 2R で常に正
+        for lk in layer_keys:
+            strands = layers[lk]
+            if len(strands) < 2:
+                continue
+            sorted_s = sorted(strands, key=lambda s: s.angle_offset)
+            sa = sorted_s[0]
+            sb = sorted_s[1]
+            # 弦間最小距離を数値計算（解析的ヘリックス距離より正確）
+            d = _min_chord_distance_between_strands(
+                sa.lay_radius,
+                pitch,
+                n_per_pitch,
+                sb.angle_offset - sa.angle_offset,
+            )
+            sg = d - 2.0 * r_eff
+            if sg < min_sg:
+                min_sg = sg
+
+        return min_sg
+
+    # ヘリックス幾何制約チェック: 同層内の斜め交差距離
+    # 最小交差距離 = pitch * Δφ / (2π) ≥ 2·r_eff が必要
+    layout_check = _make_strand_layout(
+        n_strands,
+        wire_radius,
+        gap=0.0,
+        coating_thickness=coating_thickness,
+    )
+    layers_check: dict[int, list[StrandInfoOutput]] = {}
+    for info in layout_check:
+        layers_check.setdefault(info.layer, []).append(info)
+    for lk, strands in layers_check.items():
+        if len(strands) < 2:
+            continue
+        sorted_s = sorted(strands, key=lambda s: s.angle_offset)
+        min_phase = 2.0 * math.pi  # 最小位相差
+        for idx in range(len(sorted_s)):
+            da = sorted_s[(idx + 1) % len(sorted_s)].angle_offset - sorted_s[idx].angle_offset
+            da = da % (2.0 * math.pi)
+            if da < min_phase:
+                min_phase = da
+        crossing_dist = pitch * min_phase / (2.0 * math.pi)
+        if crossing_dist < 2.0 * r_eff:
+            min_pitch = 2.0 * r_eff * 2.0 * math.pi / min_phase
+            raise ValueError(
+                f"レイヤー{lk}のヘリックス幾何制約違反: "
+                f"{len(strands)}本の素線（位相差{math.degrees(min_phase):.1f}°）で "
+                f"斜め交差距離{crossing_dist:.2f}mm < 素線直径{2 * r_eff:.1f}mm。"
+                f"ピッチを{min_pitch:.1f}mm以上に増やすか、"
+                f"レイヤーあたりの素線数を減らしてください。"
+            )
+
+    # gap=0 で評価
+    sg0 = _min_surface_gap(0.0)
+    if sg0 >= 0:
+        return 0.0
+
+    # 二分探索
+    gap_lo = 0.0
+    gap_hi = max(abs(sg0) * 3.0, 2.0 * wire_radius)
+    for _ in range(8):
+        if _min_surface_gap(gap_hi) >= 0:
+            break
+        gap_hi *= 2.0
+    else:
+        return gap_hi * safety_factor
+
+    for _ in range(40):
+        gap_mid = 0.5 * (gap_lo + gap_hi)
+        if _min_surface_gap(gap_mid) >= 0:
+            gap_hi = gap_mid
+        else:
+            gap_lo = gap_mid
+        if gap_hi - gap_lo < 1e-4:
+            break
+
+    return gap_hi * safety_factor
 
 
 def _make_strand_layout(
