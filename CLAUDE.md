@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3 テスト** — 2026-03-27 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23 テスト** — 2026-03-27 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,12 +73,13 @@
 
 ### 次の課題
 
-**7本撚線曲げ揺動** — status-249:
-- **バグ修正**: `exclude_same_layer` → `exclude_same_strand`（同層除外が外周素線間の接触を全除外していた）
-- 7本撚線メッシュ作成完了（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm, gap=2.5mm, 貫入ゼロ確認）
-- プロセス脱法摘発: アセンブラ4件、frozen漏れ9件、大規模プライベート関数13件を検出
-- **次**: DOF消去MPC実装 → 端部剛体結合 → 曲げ揺動Process
-**並行**: アセンブラProcess化（A1-A3）、幾何計算Process化（C2-C3）
+**7本撚線曲げ揺動の収束完走** — status-253:
+- DOF消去MPC実装完了（MPCEliminationProcess + LinearSolveProcess統合）
+- StrandBendingOscillationProcess 実装完了（端部参照点 + MPC + 曲げ処方変位）
+- **次**: 7本撚線曲げ揺動の実行収束テスト（teeログ必須）
+  - MPC + 動的ソルバーの力残差整合性確認
+  - M1-M2 幾何Process化（MPC収束確認後）
+**並行**: 幾何計算Process化（C2-C3）、摩擦アセンブリProcess化（B1-B4）
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -87,12 +88,13 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **7本撚線曲げ揺動の完走**（E=130MPa, ρ=8.96e-9, R=5mm, pitch=100mm）
-  - DOF消去MPC実装（端部剛体結合）
-  - StrandBendingOscillationProcess 実装
-  - 端部参照点 + 曲げ処方変位 + 揺動サイクル
-- プロセス脱法修正（Phase A〜E、status-249 参照）
-  - A1-A3: アセンブラProcess化（ULCRBeam, Hex8, Mixed）
+- **7本撚線曲げ揺動の収束完走テスト**（E=130MPa, ρ=8.96e-9, R=0.5mm, pitch=100mm）
+  - ~~DOF消去MPC実装（端部剛体結合）~~ ← status-253で完了
+  - ~~StrandBendingOscillationProcess 実装~~ ← status-253で完了
+  - 実行収束テスト（teeログ必須）
+  - MPC + 動的ソルバーの力残差整合性確認
+- プロセス脱法修正（Phase D〜E、status-249 参照）
+  - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - C2-C3: 幾何計算Process化
 - NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
 - Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
