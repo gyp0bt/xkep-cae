@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-27）
 
-**200+10s テスト**（NR接触チャタリング対策 n_periods=30完走 — status-247） | 契約違反1件 | [最新status](status/status-index.md)
+**200+10s テスト**（NRリラクゼーション早期脱出 — status-248） | 契約違反1件 | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
