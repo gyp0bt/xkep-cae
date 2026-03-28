@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-28）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9 テスト**（δ=1000完走テスト+active_contact_dofs NR結合+delta_h直接指定API — status-261） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト**（delta_h=0.025最適値探索+three_point_bend貫通+3Dパイプ — status-262） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -31,7 +31,8 @@
 | smoothing_delta | **Huber smoothing_deltaパイプライン貫通**: ContactSetupConfig→HuberProcess全経路で設定可能、自動推定(5000/r)有効化 — status-259 |
 | δチューニング | **smoothing_delta最適化**: 1000/rに変更でfrac 0.35→0.59（69%改善）、δ=1000手動指定でfrac=1.0完走達成。FD診断に活性DOFフィルタ追加 — status-260 |
 | delta_h API | **huber_delta_h直接指定API**: k_penスケール非依存の遷移幅指定。active_contact_dofs NRソルバー結合。δ=1000完走テスト追加 — status-261 |
-| **壁** | **delta_h最適値の問題非依存化** / Hermite非局所∂g/���u / 61本以上 / 1000本6時間 |
+| delta_h探索 | **delta_h=0.025が最速完走（132s）**: 梁-梁で有効範囲[0.020,0.025]∪{0.040}、非単調性あり。three_point_bend貫通。3Dパイプ貫入なし — status-262 |
+| **壁** | **delta_hデフォルト値検討（非単調性）** / Hermite非局所∂g/∂u / 61本以上 / 1000本6時間 |
 
 ---
 
