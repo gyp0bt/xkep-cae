@@ -12,12 +12,24 @@ __all__ = [
     "MortarSegmentProcess",
     "ContactGeometryInput",
     "ContactGeometryOutput",
+    "BatchUpdateGeometryProcess",
+    "BatchUpdateGeometryInput",
+    "BatchUpdateGeometryOutput",
+    "ContactFrameProcess",
+    "ContactFrameInput",
+    "ContactFrameOutput",
 ]
 
 
 def __getattr__(name: str):
     if name in __all__:
         from xkep_cae.contact.geometry.strategy import (
+            BatchUpdateGeometryInput,
+            BatchUpdateGeometryOutput,
+            BatchUpdateGeometryProcess,
+            ContactFrameInput,
+            ContactFrameOutput,
+            ContactFrameProcess,
             ContactGeometryInput,
             ContactGeometryOutput,
             LineToLineGaussProcess,
@@ -31,6 +43,12 @@ def __getattr__(name: str):
             "MortarSegmentProcess": MortarSegmentProcess,
             "ContactGeometryInput": ContactGeometryInput,
             "ContactGeometryOutput": ContactGeometryOutput,
+            "BatchUpdateGeometryProcess": BatchUpdateGeometryProcess,
+            "BatchUpdateGeometryInput": BatchUpdateGeometryInput,
+            "BatchUpdateGeometryOutput": BatchUpdateGeometryOutput,
+            "ContactFrameProcess": ContactFrameProcess,
+            "ContactFrameInput": ContactFrameInput,
+            "ContactFrameOutput": ContactFrameOutput,
         }
         return _exports[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -9,6 +9,10 @@ import numpy as np
 import pytest
 
 from xkep_cae.contact.geometry import (
+    BatchUpdateGeometryInput,
+    BatchUpdateGeometryProcess,
+    ContactFrameInput,
+    ContactFrameProcess,
     ContactGeometryInput,
     ContactGeometryOutput,
     LineToLineGaussProcess,
@@ -244,3 +248,118 @@ class TestCreateContactGeometryStrategy:
         s = _create_contact_geometry_strategy(mode="line_to_line", auto_gauss=True)
         assert isinstance(s, LineToLineGaussProcess)
         assert s._auto_gauss is True
+
+
+# ── ContactFrameProcess (C3) ──────────────────────────��──────
+
+
+@binds_to(ContactFrameProcess)
+class TestContactFrameProcess:
+    """ContactFrameProcess の単体テスト（status-255 C3）."""
+
+    def test_empty_input(self):
+        proc = ContactFrameProcess()
+        out = proc.process(ContactFrameInput(normals=np.empty((0, 3))))
+        assert out.n.shape == (0, 3)
+        assert out.t1.shape == (0, 3)
+        assert out.t2.shape == (0, 3)
+
+    def test_single_normal(self):
+        proc = ContactFrameProcess()
+        normals = np.array([[0.0, 0.0, 1.0]])
+        out = proc.process(ContactFrameInput(normals=normals))
+        assert out.n.shape == (1, 3)
+        np.testing.assert_allclose(out.n[0], [0, 0, 1], atol=1e-10)
+        # t1, t2 は n に直交
+        assert abs(np.dot(out.t1[0], out.n[0])) < 1e-10
+        assert abs(np.dot(out.t2[0], out.n[0])) < 1e-10
+        # t1 × t2 ≈ n (右手系)
+        cross = np.cross(out.t1[0], out.t2[0])
+        np.testing.assert_allclose(np.abs(np.dot(cross, out.n[0])), 1.0, atol=1e-10)
+
+    def test_batch_normals(self):
+        proc = ContactFrameProcess()
+        normals = np.array(
+            [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        out = proc.process(ContactFrameInput(normals=normals))
+        assert out.n.shape == (3, 3)
+        for i in range(3):
+            # 正規直交性
+            assert abs(np.dot(out.t1[i], out.n[i])) < 1e-10
+            assert abs(np.dot(out.t2[i], out.n[i])) < 1e-10
+            assert abs(np.dot(out.t1[i], out.t2[i])) < 1e-10
+
+    def test_parallel_transport(self):
+        proc = ContactFrameProcess()
+        normals = np.array([[0.0, 0.0, 1.0]])
+        prev_normals = np.array([[0.0, 0.1, 0.995]])
+        prev_t1 = np.array([[1.0, 0.0, 0.0]])
+        out = proc.process(
+            ContactFrameInput(
+                normals=normals,
+                prev_tangent1s=prev_t1,
+                prev_normals=prev_normals,
+                has_prev_mask=np.array([True]),
+                has_prev_n_mask=np.array([True]),
+            )
+        )
+        # t1 は前ステップから連続的に輸送されている
+        assert abs(np.dot(out.t1[0], out.n[0])) < 1e-10
+        # t1 が前ステップの t1 と近い方向を向く
+        assert np.dot(out.t1[0], prev_t1[0]) > 0.9
+
+
+# ── BatchUpdateGeometryProcess (C2) ──────────────────────────
+
+
+@binds_to(BatchUpdateGeometryProcess)
+class TestBatchUpdateGeometryProcess:
+    """BatchUpdateGeometryProcess の単体テスト（status-255 C2）."""
+
+    def test_empty_pairs(self):
+        proc = BatchUpdateGeometryProcess()
+        out = proc.process(
+            BatchUpdateGeometryInput(
+                pairs=[],
+                node_coords=np.zeros((4, 3)),
+            )
+        )
+        assert out.pairs == []
+
+    def test_returns_updated_pairs(self):
+        """2本近接セグメントでギャップが正しく計算される."""
+        proc = BatchUpdateGeometryProcess()
+        # 2本の近接平行セグメント: A=(0,0,0)→(1,0,0), B=(0,0.15,0)→(1,0.15,0)
+        # 距離=0.15, 半径=0.1 → ギャップ = 0.15 - 0.2 = -0.05（貫入）
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.15, 0.0],
+                [1.0, 0.15, 0.0],
+            ]
+        )
+        conn = np.array([[0, 1], [2, 3]], dtype=int)
+
+        # PointToPoint で候補検出して初期ペアを生成
+        ptp = PointToPointProcess(exclude_same_strand=False)
+        pairs = ptp.detect(coords, conn, 0.1)
+        assert len(pairs) > 0
+
+        # BatchUpdateGeometryProcess でペアを更新
+        out = proc.process(
+            BatchUpdateGeometryInput(
+                pairs=pairs,
+                node_coords=coords,
+            )
+        )
+        assert len(out.pairs) > 0
+        for p in out.pairs:
+            assert hasattr(p, "state")
+            # ギャップ = 0.15 - 0.2 = -0.05（貫入）
+            assert p.state.gap < 0.0
