@@ -77,6 +77,7 @@ class StrandBatchConfig:
     boundary: BoundaryData | None = None
     callbacks: AssembleCallbacks | None = None
     run_solver: bool = False
+    smoothing_delta: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -175,6 +176,7 @@ class StrandBendingBatchProcess(
             mesh=mesh_result.mesh,
             k_pen=input_data.k_pen,
             mu=input_data.mu,
+            smoothing_delta=input_data.smoothing_delta,
         )
         contact_result = contact_proc.process(contact_config)
         log.append("ContactSetupProcess: done")
