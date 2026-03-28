@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-28）
 
-**200+10s+16+3+23+1+6 テスト**（MPC縮退系残差判定+C2-C3 Process化 — status-255） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18 テスト**（B1-B4 Process化+FD接線診断 — status-256） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -25,6 +25,7 @@
 | NR安定化 | **NR接触チャタリング対策**: 接触力リラクゼーション + 接線スケーリング → n_periods=30 frac=1.0 完走 — status-247 |
 | MPC | **DOF消去MPC剛体結合**: T^T K T 変換 + LinearSolveProcess統合 + 端部参照点 — status-253 |
 | MPC収束 | **MPC u伝搬修正 + NR内再射影 + 縮退系残差判定**: frac=0.35到達（接線不整合で壁） — status-255 |
+| FD診断 | **TangentFDDiagnosticProcess**: MPC+接触の接線方向有効性をFDで検証 — status-256 |
 | **壁** | **MPC+接触の接線剛性不整合**（NR方向が残差減少しない） / 61本以上 / 1000本6時間 |
 
 ---
