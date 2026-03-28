@@ -73,13 +73,15 @@
 
 ### 次の課題
 
-**接触接線剛性K_cの不整合修正** — status-257:
+**NR収束改善（活性集合変化対策）** — status-258:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
 - ~~MPC縮退系残差判定 + u_pred MPC射影 + ストール検知拡張~~ ← status-255で完了
 - ~~B1-B4 摩擦アセンブリProcess化~~ ← status-256で完了
 - ~~TangentFDDiagnosticProcess実装~~ ← status-256で完了
-- ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了（K_c自体が94-100%不整合）
-- **次**: HuberContactForceProcess.tangent() の幾何学的接線項追加 + クロスエレメント結合
+- ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了
+- ~~K_c不整合再解析~~ ← status-258で完了（K_c自体は正確、94-100%不整合は活性集合変化が原因）
+- ~~consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了
+- **次**: Huber smoothing_delta > 0 有効化（接触ON/OFF境界の平滑化）
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -95,8 +97,9 @@
   - ~~MPC + 動的ソルバーの力残差整合性確認~~ ← status-254で確認（slave残差問題特定）
   - ~~MPC縮退系残差判定 + u_pred射影 + ストール検知拡張~~ ← status-255で完了
   - ~~MPC+接触の接線剛性FD診断~~ ← status-256で完了（TangentFDDiagnosticProcess実装）
-  - ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了（K_c自体が94-100%不整合）
-  - K_c修正: HuberContactForceProcess.tangent() 幾何学的接線項 + クロスエレメント結合
+  - ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了
+  - ~~K_c不整合再解析 + consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了（K_c正確、不整合は活性集合変化）
+  - Huber smoothing_delta > 0 有効化（接触ON/OFF境界平滑化でNR収束改善）
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了
