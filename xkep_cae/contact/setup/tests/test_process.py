@@ -90,3 +90,16 @@ class TestContactSetupProcess:
         proc = ContactSetupProcess()
         result = proc.process(config)
         assert result.manager.config.smoothing_delta == 5000.0
+
+    def test_huber_delta_h_default_zero(self):
+        mesh = _make_simple_mesh()
+        config = ContactSetupConfig(mesh=mesh)
+        assert config.huber_delta_h == 0.0
+
+    def test_huber_delta_h_passthrough(self):
+        """huber_delta_h が _ContactConfigInput まで貫通すること."""
+        mesh = _make_simple_mesh()
+        config = ContactSetupConfig(mesh=mesh, huber_delta_h=0.01)
+        proc = ContactSetupProcess()
+        result = proc.process(config)
+        assert result.manager.config.huber_delta_h == 0.01

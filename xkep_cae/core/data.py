@@ -96,6 +96,7 @@ def default_strategies(
     use_mortar: bool = False,
     n_gauss: int = 2,
     smoothing_delta: float = 0.0,
+    huber_delta_h: float = 0.0,
     coating_stiffness: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
@@ -141,6 +142,7 @@ def default_strategies(
             ndof=ndof,
             ndof_per_node=ndof_per_node,
             smoothing_delta=smoothing_delta,
+            huber_delta_h=huber_delta_h,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,

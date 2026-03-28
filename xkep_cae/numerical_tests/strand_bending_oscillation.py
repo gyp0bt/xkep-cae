@@ -138,6 +138,7 @@ class StrandBendingOscillationConfig:
     exclude_same_strand: bool = True
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
+    huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
 
 
 @dataclass(frozen=True)
@@ -420,6 +421,7 @@ class StrandBendingOscillationProcess(
             dt_max_fraction=dt_initial / t_total,
             exclude_same_strand=cfg.exclude_same_strand,
             smoothing_delta=_smoothing_delta,
+            huber_delta_h=cfg.huber_delta_h,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(

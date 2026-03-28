@@ -55,6 +55,16 @@ class TestStrandBendingOscillationProcessAPI:
         cfg = StrandBendingOscillationConfig(smoothing_delta=3000.0)
         assert cfg.smoothing_delta == 3000.0
 
+    def test_huber_delta_h_default_zero(self) -> None:
+        """huber_delta_h デフォルトは 0（smoothing_delta で間接計算）."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.huber_delta_h == 0.0
+
+    def test_huber_delta_h_manual_override(self) -> None:
+        """huber_delta_h > 0 のとき直接指定値をそのまま使用."""
+        cfg = StrandBendingOscillationConfig(huber_delta_h=0.01)
+        assert cfg.huber_delta_h == 0.01
+
 
 class TestCollectEndNodes:
     """端部節点収集のテスト."""

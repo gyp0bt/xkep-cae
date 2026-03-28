@@ -171,6 +171,7 @@ class ContactFrictionProcess(
             mu=input_data.contact.mu or 0.15,
             line_contact=True,
             smoothing_delta=manager.config.smoothing_delta,
+            huber_delta_h=manager.config.huber_delta_h,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty

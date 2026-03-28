@@ -494,10 +494,20 @@ class HuberContactForceProcess(
         ndof_per_node: int = 6,
         *,
         smoothing_delta: float = 0.0,
+        huber_delta_h: float = 0.0,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
         self._smoothing_delta = smoothing_delta
+        self._huber_delta_h = huber_delta_h  # >0: delta_h直接指定（status-261）
+
+    def _resolve_delta_h(self, k_pen: float) -> float:
+        """Huber遷移幅を解決: huber_delta_h直接指定 > smoothing_delta間接指定 > 0."""
+        if self._huber_delta_h > 0.0:
+            return self._huber_delta_h
+        if self._smoothing_delta > 0.0:
+            return k_pen / self._smoothing_delta
+        return 0.0
 
     @staticmethod
     def _huber(x: float, delta: float) -> float:
@@ -709,7 +719,7 @@ class HuberContactForceProcess(
             (f_c, residuals): f_c は接触力ベクトル、residuals はペア毎の残差
         """
         f_c = np.zeros(self._ndof)
-        delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
+        delta_h = self._resolve_delta_h(k_pen)
 
         if not hasattr(manager, "pairs") or len(manager.pairs) == 0:
             return f_c, np.zeros(0)
@@ -810,7 +820,7 @@ class HuberContactForceProcess(
         幾何剛性: K_geo = p_n / dist * Σ_ij c_i c_j (I₃ - n ⊗ n)
         滑り剛性: K_st = outer(∂f_raw/∂s, ds_du) + outer(∂f_raw/∂t, dt_du)
         """
-        delta_h = k_pen / self._smoothing_delta if self._smoothing_delta > 0.0 else 0.0
+        delta_h = self._resolve_delta_h(k_pen)
 
         if not hasattr(manager, "pairs") or len(manager.pairs) == 0:
             return sp.csr_matrix((self._ndof, self._ndof))
@@ -974,10 +984,12 @@ def _create_contact_force_strategy(
     ndof: int = 0,
     ndof_per_node: int = 6,
     smoothing_delta: float = 0.0,
+    huber_delta_h: float = 0.0,
 ) -> HuberContactForceProcess:
     """接触力 Strategy ファクトリ（status-222 で一本化）."""
     return HuberContactForceProcess(
         ndof=ndof,
         ndof_per_node=ndof_per_node,
         smoothing_delta=smoothing_delta,
+        huber_delta_h=huber_delta_h,
     )
