@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1+6+18+2+4+3 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,7 +73,7 @@
 
 ### 次の課題
 
-**NR収束改善（活性集合変化対策）** — status-258:
+**NR収束改善（活性集合変化対策）** — status-260:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
 - ~~MPC縮退系残差判定 + u_pred MPC射影 + ストール検知拡張~~ ← status-255で完了
 - ~~B1-B4 摩擦アセンブリProcess化~~ ← status-256で完了
@@ -81,7 +81,9 @@
 - ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了
 - ~~K_c不整合再解析~~ ← status-258で完了（K_c自体は正確、94-100%不整合は活性集合変化が原因）
 - ~~consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了
-- **次**: Huber smoothing_delta > 0 有効化（接触ON/OFF境界の平滑化）
+- ~~Huber smoothing_deltaパイプライン貫通~~ ← status-259で完了
+- ~~smoothing_deltaチューニング + FD診断活性DOFフィルタ~~ ← status-260で完了（δ=1000/rで frac 0.35→0.59改善）
+- **次**: smoothing_delta=1000（手動指定）でfrac=1.0完走確認テスト + NRソルバーからactive_contact_dofs受け渡し実装
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -99,7 +101,10 @@
   - ~~MPC+接触の接線剛性FD診断~~ ← status-256で完了（TangentFDDiagnosticProcess実装）
   - ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了
   - ~~K_c不整合再解析 + consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了（K_c正確、不整合は活性集合変化）
-  - Huber smoothing_delta > 0 有効化（接触ON/OFF境界平滑化でNR収束改善）
+  - ~~Huber smoothing_deltaパイプライン貫通 + 自動推定有効化~~ ← status-259で完了
+  - ~~smoothing_deltaチューニング（1000/rで frac 0.35→0.59）~~ ← status-260で完了
+  - smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合
+  - delta_h直接指定API検討（smoothing_deltaはk_penスケール依存で系ごとに最適値が異なる。delta_h指定なら一貫性あり — status-260設計メモ参照）
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了

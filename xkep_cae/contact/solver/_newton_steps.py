@@ -629,6 +629,7 @@ class TangentFDDiagnosticInput:
     fixed_dofs: np.ndarray | None = None
     eps: float = 1e-7
     compute_residual: object | None = None  # u → R_u を計算する callable
+    active_contact_dofs: np.ndarray | None = None  # gap<0 ペアの関連DOF（status-260）
 
 
 @dataclass(frozen=True)
@@ -639,7 +640,8 @@ class TangentFDDiagnosticOutput:
     fd_directional_deriv: float  # (R(u+eps*du) - R(u))/eps · du/||du||
     analytical_directional_deriv: float  # K_T @ du · du / ||du||
     deriv_agreement: float  # |fd - analytical| / max(|fd|, |analytical|)
-    report: str  # 診断レポート文字列
+    active_dof_rel_err: float = -1.0  # 活性DOFのみの相対誤差（-1=未計算, status-260）
+    report: str = ""  # 診断レポート文字列
 
 
 class TangentFDDiagnosticProcess(
@@ -708,6 +710,7 @@ class TangentFDDiagnosticProcess(
         # FD方向検証（compute_residual がある場合）
         fd_dd = 0.0
         directional_ratio = 1.0
+        active_dof_rel_err = -1.0
         if inp.compute_residual is not None:
             eps = inp.eps
             # 一貫性のため R(u) も compute_residual で再計算（status-257）
@@ -770,6 +773,28 @@ class TangentFDDiagnosticProcess(
                             f"diff={_full_diff[idx]:.4e}"
                         )
 
+            # 活性DOFのみの精度評価（status-260: 活性集合変化を除外）
+            if inp.active_contact_dofs is not None and len(inp.active_contact_dofs) > 0:
+                _ac_dofs = inp.active_contact_dofs
+                _ac_fd = dR_arr[_ac_dofs]
+                _ac_an = K_du_arr[_ac_dofs]
+                _ac_diff = _ac_fd - _ac_an
+                _ac_diff_norm = float(np.linalg.norm(_ac_diff))
+                _ac_ref = max(
+                    float(np.linalg.norm(_ac_fd)),
+                    float(np.linalg.norm(_ac_an)),
+                    1e-30,
+                )
+                active_dof_rel_err = _ac_diff_norm / _ac_ref
+                lines.append(
+                    f"  活性DOF K@du: FD vs 解析 相対誤差 = {active_dof_rel_err:.4e}"
+                    f" ({len(_ac_dofs)} DOFs)"
+                )
+                if active_dof_rel_err > 0.1:
+                    lines.append("  ⚠ 活性DOFで接線剛性不整合")
+                else:
+                    lines.append("  ✓ 活性DOFの接線剛性は整合")
+
             # MPC系でのFD検証
             if inp.mpc_transform is not None:
                 T = inp.mpc_transform
@@ -819,5 +844,6 @@ class TangentFDDiagnosticProcess(
             fd_directional_deriv=fd_dd,
             analytical_directional_deriv=analytical_dd,
             deriv_agreement=deriv_agreement,
+            active_dof_rel_err=active_dof_rel_err,
             report="\n".join(lines),
         )

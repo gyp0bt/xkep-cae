@@ -137,7 +137,7 @@ class StrandBendingOscillationConfig:
     lumped_mass: bool = True
     exclude_same_strand: bool = True
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
-    smoothing_delta: float = 0.0  # 0=自動推定（5000/wire_radius）, >0=手動指定
+    smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
 
 
 @dataclass(frozen=True)
@@ -407,9 +407,9 @@ class StrandBendingOscillationProcess(
         )
 
         # ── 7. 接触設定 ──
-        # smoothing_delta 自動推定: δ = 5000 / r_min（status-259）
+        # smoothing_delta 自動推定: δ = 1000 / r_min（status-260: 5000→1000に変更）
         _smoothing_delta = (
-            cfg.smoothing_delta if cfg.smoothing_delta > 0.0 else 5000.0 / cfg.wire_radius
+            cfg.smoothing_delta if cfg.smoothing_delta > 0.0 else 1000.0 / cfg.wire_radius
         )
         contact_config = _ContactConfigInput(
             beam_E=cfg.E,

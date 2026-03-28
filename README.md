@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4 テスト** — 2026-03-28時点 | Huber smoothing_deltaパイプライン貫通+自動推定有効化（status-259） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3 テスト** — 2026-03-28時点 | smoothing_deltaチューニング+FD診断活性DOFフィルタ（status-260） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
