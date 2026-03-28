@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
     PairDiagnosticsOutput,
@@ -477,6 +478,18 @@ class NewtonDynamicProcess(
                         _R_eval[input_data.fixed_dofs] = 0.0
                     return _R_eval
 
+                # gap<0 ペアの関連DOFを収集（status-261）
+                _active_dofs_set: set[int] = set()
+                if hasattr(manager, "pairs"):
+                    for _pair in manager.pairs:
+                        if hasattr(_pair, "state") and _pair.state.gap < 0.0:
+                            _active_dofs_set.update(
+                                _contact_dofs(_pair, cfg.ndof_per_node).tolist()
+                            )
+                _active_dofs_arr = (
+                    np.array(sorted(_active_dofs_set), dtype=int) if _active_dofs_set else None
+                )
+
                 _fd_out = _fd_diag_proc.process(
                     TangentFDDiagnosticInput(
                         u=u,
@@ -486,6 +499,7 @@ class NewtonDynamicProcess(
                         mpc_transform=_mpc_T,
                         fixed_dofs=input_data.fixed_dofs,
                         compute_residual=_compute_residual_at,
+                        active_contact_dofs=_active_dofs_arr,
                     )
                 )
                 if cfg.show_progress:

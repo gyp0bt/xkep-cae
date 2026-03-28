@@ -82,3 +82,50 @@ class TestStrandBendingConvergence:
         # status-260: smoothing_delta=1000/r でfrac≈0.59達成（0.35→0.59改善）
         assert u_max > 0.0, "変位がゼロ — MPCが機能していない可能性"
         assert frac >= 0.50, f"frac={frac} < 0.50 — smoothing_delta改善後の期待値未達"
+
+    def test_strand_bending_full_completion_delta1000(self) -> None:
+        """smoothing_delta=1000（手動指定）で frac=1.0 完走を確認.
+
+        status-260 ベンチマーク: δ=1000 で frac=1.0 完走済み（176s）。
+        自動推定 1000/r=2000 では frac≈0.59 止まりだが、手動 δ=1000 で完走可能。
+        """
+        cfg = StrandBendingOscillationConfig(
+            n_strands=7,
+            wire_radius=0.5,
+            pitch_length=100.0,
+            n_elements_per_pitch=16,
+            n_pitches=1.0,
+            E=130.0e3,
+            nu=0.3,
+            rho=8.96e-9,
+            bending_curvature=0.001,
+            n_cycles=1,
+            n_increments_per_cycle=40,
+            rho_inf=0.9,
+            mu=0.15,
+            max_nr_attempts=50,
+            tol_force=1e-8,
+            max_increments=10000,
+            exclude_same_strand=True,
+            smoothing_delta=1000,  # 手動指定（status-260: δ=1000で完走確認済み）
+        )
+        proc = StrandBendingOscillationProcess()
+        result = proc.process(cfg)
+
+        sr = result.solver_result
+        frac = sr.load_history[-1] if sr.load_history else 0.0
+        print("\n=== 7本撚線曲げ揺動 δ=1000 完走テスト ===")
+        print(f"  frac_completed: {frac:.4f}")
+        print(f"  converged:      {sr.converged}")
+        print(f"  n_increments:   {sr.n_increments}")
+        print(f"  n_cutbacks:     {sr.n_cutbacks}")
+        print(f"  elapsed:        {sr.elapsed_seconds:.2f} s")
+
+        import numpy as np
+
+        u_max = float(np.max(np.abs(sr.u)))
+        print(f"  max |u|:        {u_max:.6e}")
+
+        # δ=1000 では frac=1.0 完走が期待される（status-260 ベンチマーク）
+        assert u_max > 0.0, "変位がゼロ — MPCが機能していない可能性"
+        assert frac >= 0.95, f"frac={frac} < 0.95 — δ=1000で完走が期待されるが未達"

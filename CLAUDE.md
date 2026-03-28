@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1+6+18+2+4+3+9 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,7 +73,7 @@
 
 ### 次の課題
 
-**NR収束改善（活性集合変化対策）** — status-260:
+**NR収束改善（活性集合変化対策）** — status-261:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
 - ~~MPC縮退系残差判定 + u_pred MPC射影 + ストール検知拡張~~ ← status-255で完了
 - ~~B1-B4 摩擦アセンブリProcess化~~ ← status-256で完了
@@ -83,7 +83,8 @@
 - ~~consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了
 - ~~Huber smoothing_deltaパイプライン貫通~~ ← status-259で完了
 - ~~smoothing_deltaチューニング + FD診断活性DOFフィルタ~~ ← status-260で完了（δ=1000/rで frac 0.35→0.59改善）
-- **次**: smoothing_delta=1000（手動指定）でfrac=1.0完走確認テスト + NRソルバーからactive_contact_dofs受け渡し実装
+- ~~δ=1000完走テスト + active_contact_dofs NR結合 + delta_h直接指定API~~ ← status-261で完了
+- **次**: delta_h最適値の問題非依存探索（梁-梁で0.01-0.03が有効範囲）+ Hermite非局所∂g/∂u対応
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -103,8 +104,9 @@
   - ~~K_c不整合再解析 + consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了（K_c正確、不整合は活性集合変化）
   - ~~Huber smoothing_deltaパイプライン貫通 + 自動推定有効化~~ ← status-259で完了
   - ~~smoothing_deltaチューニング（1000/rで frac 0.35→0.59）~~ ← status-260で完了
-  - smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合
-  - delta_h直接指定API検討（smoothing_deltaはk_penスケール依存で系ごとに最適値が異なる。delta_h指定なら一貫性あり — status-260設計メモ参照）
+  - ~~smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合~~ ← status-261で完了
+  - ~~delta_h直接指定API実装（huber_delta_h パイプライン貫通）~~ ← status-261で完了
+  - delta_h最適値の問題非依存探索（梁-梁で0.01-0.03が有効範囲、three_point_bendへの統一適用）
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了

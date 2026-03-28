@@ -175,3 +175,29 @@ class TestCreateContactForceStrategy:
         s = _create_contact_force_strategy(ndof=24, smoothing_delta=10.0)
         assert isinstance(s, HuberContactForceProcess)
         assert s._smoothing_delta == 10.0
+
+    def test_with_huber_delta_h(self):
+        """huber_delta_h 直接指定がファクトリ経由で貫通する."""
+        s = _create_contact_force_strategy(ndof=24, huber_delta_h=0.01)
+        assert isinstance(s, HuberContactForceProcess)
+        assert s._huber_delta_h == 0.01
+
+    def test_resolve_delta_h_direct(self):
+        """huber_delta_h > 0 なら k_pen に関わらず直接値を返す."""
+        s = HuberContactForceProcess(ndof=24, huber_delta_h=0.05)
+        assert s._resolve_delta_h(k_pen=100.0) == 0.05
+
+    def test_resolve_delta_h_indirect(self):
+        """huber_delta_h=0 なら k_pen/smoothing_delta で間接計算."""
+        s = HuberContactForceProcess(ndof=24, smoothing_delta=1000.0)
+        assert s._resolve_delta_h(k_pen=100.0) == 0.1  # 100/1000
+
+    def test_resolve_delta_h_none(self):
+        """両方 0 なら delta_h=0（max(0,x)相当）."""
+        s = HuberContactForceProcess(ndof=24)
+        assert s._resolve_delta_h(k_pen=100.0) == 0.0
+
+    def test_resolve_delta_h_priority(self):
+        """huber_delta_h が smoothing_delta より優先される."""
+        s = HuberContactForceProcess(ndof=24, smoothing_delta=1000.0, huber_delta_h=0.01)
+        assert s._resolve_delta_h(k_pen=100.0) == 0.01

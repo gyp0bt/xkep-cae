@@ -27,6 +27,7 @@ class ContactSetupConfig:
     use_mortar: bool = False
     coating_stiffness: float = 0.0
     smoothing_delta: float = 0.0
+    huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（status-261）
 
 
 class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
@@ -63,6 +64,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
             use_mortar=input_data.use_mortar,
             coating_stiffness=input_data.coating_stiffness,
             smoothing_delta=input_data.smoothing_delta,
+            huber_delta_h=input_data.huber_delta_h,
         )
         manager = _ContactManagerInput(config=config)
 
