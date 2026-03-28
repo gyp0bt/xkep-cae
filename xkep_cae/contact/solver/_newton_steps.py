@@ -710,15 +710,28 @@ class TangentFDDiagnosticProcess(
         directional_ratio = 1.0
         if inp.compute_residual is not None:
             eps = inp.eps
+            # 一貫性のため R(u) も compute_residual で再計算（status-257）
+            # NRループ内のリラクゼーション有無に関わらず正確なFD比較を保証
+            R_base = inp.compute_residual(inp.u)
+            R_base_norm = float(np.linalg.norm(R_base))
             u_pert = inp.u + eps * inp.du
             R_pert = inp.compute_residual(u_pert)
             R_pert_norm = float(np.linalg.norm(R_pert))
-            directional_ratio = R_pert_norm / R_norm if R_norm > 1e-30 else 1.0
+            directional_ratio = R_pert_norm / R_base_norm if R_base_norm > 1e-30 else 1.0
 
-            # FD方向微分
-            dR = (R_pert - inp.R_u) / eps
+            # FD方向微分（一貫した基準点）
+            dR = (R_pert - R_base) / eps
             fd_dd = float(np.dot(dR, inp.du)) / du_norm
 
+            # R_u（NR残差）と compute_residual(u) の乖離を報告
+            _R_gap = float(np.linalg.norm(R_base - inp.R_u))
+            if _R_gap > 1e-10 * max(R_norm, R_base_norm, 1e-30):
+                lines.append(
+                    f"  ⚠ R_u vs compute_residual(u) 乖離: {_R_gap:.4e}"
+                    f" (リラクゼーション/動的項の差異)"
+                )
+
+            lines.append(f"  ||R_base|| = {R_base_norm:.4e}")
             lines.append(f"  ||R(u+eps*du)|| = {R_pert_norm:.4e}")
             lines.append(f"  方向有効性: ||R(u+eps*du)||/||R(u)|| = {directional_ratio:.6f}")
             if directional_ratio >= 1.0:
@@ -728,6 +741,34 @@ class TangentFDDiagnosticProcess(
 
             lines.append(f"  FD方向微分 = {fd_dd:.4e}")
             lines.append(f"  解析方向微分 = {analytical_dd:.4e}")
+
+            # 全体系でのFD vs 解析比較（MPC変換前）
+            dR_arr = np.asarray(dR).ravel()
+            K_du_arr = np.asarray(K_du).ravel()
+            _full_diff = dR_arr - K_du_arr
+            _full_diff_norm = float(np.linalg.norm(_full_diff))
+            _full_ref = max(
+                float(np.linalg.norm(dR_arr)),
+                float(np.linalg.norm(K_du_arr)),
+                1e-30,
+            )
+            _full_rel_err = _full_diff_norm / _full_ref
+            lines.append(f"  全体系 K@du: FD vs 解析 相対誤差 = {_full_rel_err:.4e}")
+            if _full_rel_err > 0.1:
+                lines.append("  ⚠ 全体系で接線剛性不整合 — K_c自体が不正確")
+                # 全体系DOF別エラートップ5
+                _full_abs_diff = np.abs(_full_diff)
+                _top5_full = np.argsort(_full_abs_diff)[::-1][:5]
+                lines.append("  全体系不整合DOF上位5件:")
+                for idx in _top5_full:
+                    if _full_abs_diff[idx] > 1e-30:
+                        lines.append(
+                            f"    dof={idx} (node={idx // 6}, "
+                            f"comp={idx % 6}): "
+                            f"FD={dR_arr[idx]:.4e}, "
+                            f"analytical={K_du_arr[idx]:.4e}, "
+                            f"diff={_full_diff[idx]:.4e}"
+                        )
 
             # MPC系でのFD検証
             if inp.mpc_transform is not None:
@@ -748,16 +789,19 @@ class TangentFDDiagnosticProcess(
                     lines.append("  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)")
 
                     # DOF別エラーランキング（上位5件）
-                    abs_diff = np.abs(diff)
+                    abs_diff = np.abs(np.asarray(diff).ravel())
                     top5 = np.argsort(abs_diff)[::-1][:5]
                     lines.append("  不整合DOF上位5件（縮退系index）:")
                     for idx in top5:
-                        if abs_diff[idx] > 1e-30:
+                        _fd_v = float(np.asarray(fd_K_red_du).ravel()[idx])
+                        _an_v = float(np.asarray(K_red_du_analytical).ravel()[idx])
+                        _df_v = float(abs_diff[idx])
+                        if _df_v > 1e-30:
                             lines.append(
                                 f"    red_dof={idx}: "
-                                f"FD={fd_K_red_du[idx]:.4e}, "
-                                f"analytical={K_red_du_analytical[idx]:.4e}, "
-                                f"diff={diff[idx]:.4e}"
+                                f"FD={_fd_v:.4e}, "
+                                f"analytical={_an_v:.4e}, "
+                                f"diff={_df_v:.4e}"
                             )
         else:
             lines.append("  (compute_residual未提供 — FD検証スキップ)")

@@ -136,6 +136,7 @@ class StrandBendingOscillationConfig:
     max_increments: int = 10000
     lumped_mass: bool = True
     exclude_same_strand: bool = True
+    tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
 
 
 @dataclass(frozen=True)
@@ -440,6 +441,7 @@ class StrandBendingOscillationProcess(
             max_nr_attempts=cfg.max_nr_attempts,
             tol_force=cfg.tol_force,
             max_increments=cfg.max_increments,
+            tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
