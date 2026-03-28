@@ -170,5 +170,79 @@ class TestTangentFDDiagnosticProcessAPI:
         # FD と解析の不整合が検出される
         assert out.deriv_agreement > 0.1  # 10%以上の不整合
 
+    def test_active_contact_dofs_consistent(self):
+        """活性DOFフィルタリング: 線形系では整合（status-260）."""
+        ndof = 6
+        K = sp.diags([5.0, 10.0, 5.0, 10.0, 5.0, 10.0], format="csr")
+        R_u = np.array([1.0, -1.0, 0.5, -0.5, 0.3, -0.3])
+        du = np.array([-0.2, 0.1, -0.1, 0.05, -0.05, 0.02])
+
+        def compute_residual(u_pert):
+            return K @ u_pert + R_u
+
+        proc = TangentFDDiagnosticProcess()
+        out = proc.process(
+            TangentFDDiagnosticInput(
+                u=np.zeros(ndof),
+                du=du,
+                R_u=R_u,
+                K_T=K,
+                compute_residual=compute_residual,
+                active_contact_dofs=np.array([0, 1, 2, 3]),
+            )
+        )
+        assert out.active_dof_rel_err >= 0.0
+        assert out.active_dof_rel_err < 0.01
+        assert "活性DOF" in out.report
+
+    def test_active_contact_dofs_detects_mismatch(self):
+        """活性DOFで不整合検出（status-260）."""
+        ndof = 4
+        K_true = sp.diags([5.0, 10.0, 5.0, 10.0], format="csr")
+        K_wrong = sp.diags([50.0, 10.0, 5.0, 10.0], format="csr")
+        R_u = np.array([1.0, -1.0, 0.5, -0.5])
+        du = np.array([-0.2, 0.1, -0.1, 0.05])
+
+        def compute_residual(u_pert):
+            return K_true @ u_pert + R_u
+
+        proc = TangentFDDiagnosticProcess()
+        # DOF 0（不整合あり）を含む
+        out = proc.process(
+            TangentFDDiagnosticInput(
+                u=np.zeros(ndof),
+                du=du,
+                R_u=R_u,
+                K_T=K_wrong,
+                compute_residual=compute_residual,
+                active_contact_dofs=np.array([0, 1]),
+            )
+        )
+        assert out.active_dof_rel_err > 0.1
+
+    def test_active_contact_dofs_none_skipped(self):
+        """active_contact_dofs=None の場合は活性DOF診断スキップ（status-260）."""
+        ndof = 4
+        K = sp.diags([5.0, 10.0, 5.0, 10.0], format="csr")
+        R_u = np.array([1.0, -1.0, 0.5, -0.5])
+        du = np.array([-0.2, 0.1, -0.1, 0.05])
+
+        def compute_residual(u_pert):
+            return K @ u_pert + R_u
+
+        proc = TangentFDDiagnosticProcess()
+        out = proc.process(
+            TangentFDDiagnosticInput(
+                u=np.zeros(ndof),
+                du=du,
+                R_u=R_u,
+                K_T=K,
+                compute_residual=compute_residual,
+                active_contact_dofs=None,
+            )
+        )
+        assert out.active_dof_rel_err == -1.0
+        assert "活性DOF" not in out.report
+
     def test_meta(self):
         assert TangentFDDiagnosticProcess.meta.name == "TangentFDDiagnostic"

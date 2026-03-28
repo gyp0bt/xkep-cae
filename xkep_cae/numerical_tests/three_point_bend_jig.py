@@ -710,7 +710,7 @@ class ThreePointBendContactJigProcess(
             k_beam_global = 48.0 * cfg.E * sec["Iy"] / cfg.wire_length**3
             k_pen = 0.5 * k_beam_global
 
-        # smoothing_delta 自動推定: δ = α / r_min（status-221）
+        # smoothing_delta 自動推定: δ = 5000 / r_min（three_point_bend用、status-221）
         _smoothing_delta = 5000.0 / wire_radius
 
         contact_config = _ContactConfigInput(
@@ -1131,7 +1131,7 @@ class DynamicThreePointBendContactJigProcess(
         )
 
         # 9. 接触パラメータ自動推定
-        # smoothing_delta 自動推定: δ = 5000 / r_min（status-221）
+        # smoothing_delta 自動推定: δ = 5000 / r_min（three_point_bend用、status-221）
         _smoothing_delta = 5000.0 / wire_radius
 
         # k_pen: 動的解析では c0*M スケールに合わせる（status-218）

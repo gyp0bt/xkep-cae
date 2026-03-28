@@ -79,7 +79,6 @@ class TestStrandBendingConvergence:
                 )
 
         # 収束判定
-        # 現状: frac≈0.35で接触チャタリングにより不収束（status-254 TODO）
-        # MPC + 接触の力残差整合性改善が必要
+        # status-260: smoothing_delta=1000/r でfrac≈0.59達成（0.35→0.59改善）
         assert u_max > 0.0, "変位がゼロ — MPCが機能していない可能性"
-        assert frac >= 0.25, f"frac={frac} < 0.25 — 接触開始前に停止"
+        assert frac >= 0.50, f"frac={frac} < 0.50 — smoothing_delta改善後の期待値未達"
