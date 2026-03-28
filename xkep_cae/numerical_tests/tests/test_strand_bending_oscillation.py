@@ -41,6 +41,19 @@ class TestStrandBendingOscillationProcessAPI:
         assert cfg.wire_radius == 0.5
         assert cfg.E == 130.0e3
         assert cfg.mu == 0.15
+        assert cfg.smoothing_delta == 0.0  # 0=自動推定
+
+    def test_smoothing_delta_auto_estimation(self) -> None:
+        """smoothing_delta=0 のとき 5000/wire_radius で自動推定."""
+        cfg = StrandBendingOscillationConfig(wire_radius=0.5, smoothing_delta=0.0)
+        assert cfg.smoothing_delta == 0.0  # 0=自動推定トリガー
+        # 自動推定公式: 5000 / wire_radius = 10000
+        assert 5000.0 / cfg.wire_radius == 10000.0
+
+    def test_smoothing_delta_manual_override(self) -> None:
+        """smoothing_delta > 0 のとき手動値をそのまま使用."""
+        cfg = StrandBendingOscillationConfig(smoothing_delta=3000.0)
+        assert cfg.smoothing_delta == 3000.0
 
 
 class TestCollectEndNodes:

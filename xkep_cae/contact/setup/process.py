@@ -26,6 +26,7 @@ class ContactSetupConfig:
     n_gauss: int = 2
     use_mortar: bool = False
     coating_stiffness: float = 0.0
+    smoothing_delta: float = 0.0
 
 
 class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
@@ -61,6 +62,7 @@ class ContactSetupProcess(PreProcess[ContactSetupConfig, ContactSetupData]):
             n_gauss=input_data.n_gauss,
             use_mortar=input_data.use_mortar,
             coating_stiffness=input_data.coating_stiffness,
+            smoothing_delta=input_data.smoothing_delta,
         )
         manager = _ContactManagerInput(config=config)
 

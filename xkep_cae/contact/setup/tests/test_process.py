@@ -77,3 +77,16 @@ class TestContactSetupProcess:
         proc = ContactSetupProcess()
         result = proc.process(config)
         assert result.manager is not None
+
+    def test_smoothing_delta_default_zero(self):
+        mesh = _make_simple_mesh()
+        config = ContactSetupConfig(mesh=mesh)
+        assert config.smoothing_delta == 0.0
+
+    def test_smoothing_delta_passthrough(self):
+        """smoothing_delta が _ContactConfigInput まで貫通すること."""
+        mesh = _make_simple_mesh()
+        config = ContactSetupConfig(mesh=mesh, smoothing_delta=5000.0)
+        proc = ContactSetupProcess()
+        result = proc.process(config)
+        assert result.manager.config.smoothing_delta == 5000.0
