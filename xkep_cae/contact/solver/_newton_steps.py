@@ -610,3 +610,170 @@ class LineSearchUpdateProcess(
 
 
 # UzawaUpdateProcess は status-222 で削除。復元手順は status-222.md 参照。
+
+
+# ================================================================
+# 6. TangentFDDiagnosticProcess（接線剛性FD方向診断: status-256）
+# ================================================================
+
+
+@dataclass(frozen=True)
+class TangentFDDiagnosticInput:
+    """接線剛性FD方向診断の入力."""
+
+    u: np.ndarray
+    du: np.ndarray
+    R_u: np.ndarray
+    K_T: sp.spmatrix
+    mpc_transform: sp.spmatrix | None = None
+    fixed_dofs: np.ndarray | None = None
+    eps: float = 1e-7
+    compute_residual: object | None = None  # u → R_u を計算する callable
+
+
+@dataclass(frozen=True)
+class TangentFDDiagnosticOutput:
+    """接線剛性FD方向診断の出力."""
+
+    directional_ratio: float  # ||R(u+eps*du)||/||R(u)||: <1なら方向有効
+    fd_directional_deriv: float  # (R(u+eps*du) - R(u))/eps · du/||du||
+    analytical_directional_deriv: float  # K_T @ du · du / ||du||
+    deriv_agreement: float  # |fd - analytical| / max(|fd|, |analytical|)
+    report: str  # 診断レポート文字列
+
+
+class TangentFDDiagnosticProcess(
+    SolverProcess[TangentFDDiagnosticInput, TangentFDDiagnosticOutput],
+):
+    """接線剛性の方向有効性を有限差分で検証する診断 Process.
+
+    status-256: MPC+接触でNR方向が残差を減少させない問題を診断。
+
+    1. 方向有効性: ||R(u + eps*du)|| vs ||R(u)||
+       → <1 なら du 方向に残差が減少（Newton方向として有効）
+    2. 方向微分整合性: K_T @ du vs (R(u+eps*du) - R(u)) / eps
+       → 解析的接線と実際の残差変化の整合性を検証
+    3. MPC系での検証: T^T K T @ du_red vs T^T (R(u+eps*du) - R(u)) / eps
+    """
+
+    meta = ProcessMeta(
+        name="TangentFDDiagnostic",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/newton_solver.md",
+    )
+
+    def process(self, inp: TangentFDDiagnosticInput) -> TangentFDDiagnosticOutput:
+        lines: list[str] = []
+        lines.append("=" * 60)
+        lines.append("接線剛性FD方向診断（status-256）")
+        lines.append("=" * 60)
+
+        du_norm = float(np.linalg.norm(inp.du))
+        R_norm = float(np.linalg.norm(inp.R_u))
+        lines.append(f"  ||du|| = {du_norm:.4e}")
+        lines.append(f"  ||R_u|| = {R_norm:.4e}")
+
+        if du_norm < 1e-30 or R_norm < 1e-30:
+            return TangentFDDiagnosticOutput(
+                directional_ratio=1.0,
+                fd_directional_deriv=0.0,
+                analytical_directional_deriv=0.0,
+                deriv_agreement=0.0,
+                report="\n".join(lines) + "\n  du or R_u is zero — skip",
+            )
+
+        # 解析的方向微分: dR/du @ du ≈ K_T @ du（符号注意: R = f_int - f_ext, K_T = dR/du）
+        K_du = inp.K_T @ inp.du
+        analytical_dd = float(np.dot(K_du, inp.du)) / du_norm
+
+        # MPC系での検証
+        if inp.mpc_transform is not None:
+            T = inp.mpc_transform
+            R_red = T.T @ inp.R_u
+            K_red_du = T.T @ K_du
+            lines.append(f"  ||R_red|| = {float(np.linalg.norm(R_red)):.4e}")
+            lines.append(f"  ||K_red @ du|| = {float(np.linalg.norm(K_red_du)):.4e}")
+
+            # R_red と K_red_du の方向整合性
+            R_red_norm = float(np.linalg.norm(R_red))
+            K_red_du_norm = float(np.linalg.norm(K_red_du))
+            if R_red_norm > 1e-30 and K_red_du_norm > 1e-30:
+                cos_angle = float(np.dot(R_red, K_red_du)) / (R_red_norm * K_red_du_norm)
+                lines.append(f"  cos(R_red, K_red@du) = {cos_angle:.4f}")
+                # NR では K_T du = -R_u なので cos ≈ -1 が期待値
+                if cos_angle > -0.5:
+                    lines.append(f"  ⚠ 方向不整合: cos={cos_angle:.4f} (期待: ≈-1.0)")
+
+        # FD方向検証（compute_residual がある場合）
+        fd_dd = 0.0
+        directional_ratio = 1.0
+        if inp.compute_residual is not None:
+            eps = inp.eps
+            u_pert = inp.u + eps * inp.du
+            R_pert = inp.compute_residual(u_pert)
+            R_pert_norm = float(np.linalg.norm(R_pert))
+            directional_ratio = R_pert_norm / R_norm if R_norm > 1e-30 else 1.0
+
+            # FD方向微分
+            dR = (R_pert - inp.R_u) / eps
+            fd_dd = float(np.dot(dR, inp.du)) / du_norm
+
+            lines.append(f"  ||R(u+eps*du)|| = {R_pert_norm:.4e}")
+            lines.append(f"  方向有効性: ||R(u+eps*du)||/||R(u)|| = {directional_ratio:.6f}")
+            if directional_ratio >= 1.0:
+                lines.append("  ⚠ du方向で残差が増加 — Newton方向が無効")
+            else:
+                lines.append("  ✓ du方向で残差が減少 — Newton方向は有効")
+
+            lines.append(f"  FD方向微分 = {fd_dd:.4e}")
+            lines.append(f"  解析方向微分 = {analytical_dd:.4e}")
+
+            # MPC系でのFD検証
+            if inp.mpc_transform is not None:
+                T = inp.mpc_transform
+                dR_red = T.T @ dR
+                fd_K_red_du = dR_red  # ≈ K_red @ du （eps除算済み）
+                K_red_du_analytical = T.T @ K_du
+                diff = fd_K_red_du - K_red_du_analytical
+                diff_norm = float(np.linalg.norm(diff))
+                ref_norm = max(
+                    float(np.linalg.norm(fd_K_red_du)),
+                    float(np.linalg.norm(K_red_du_analytical)),
+                    1e-30,
+                )
+                rel_err = diff_norm / ref_norm
+                lines.append(f"  MPC縮退系 K_red@du: FD vs 解析 相対誤差 = {rel_err:.4e}")
+                if rel_err > 0.1:
+                    lines.append("  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)")
+
+                    # DOF別エラーランキング（上位5件）
+                    abs_diff = np.abs(diff)
+                    top5 = np.argsort(abs_diff)[::-1][:5]
+                    lines.append("  不整合DOF上位5件（縮退系index）:")
+                    for idx in top5:
+                        if abs_diff[idx] > 1e-30:
+                            lines.append(
+                                f"    red_dof={idx}: "
+                                f"FD={fd_K_red_du[idx]:.4e}, "
+                                f"analytical={K_red_du_analytical[idx]:.4e}, "
+                                f"diff={diff[idx]:.4e}"
+                            )
+        else:
+            lines.append("  (compute_residual未提供 — FD検証スキップ)")
+            lines.append(f"  解析方向微分 = {analytical_dd:.4e}")
+
+        # 整合度
+        max_dd = max(abs(fd_dd), abs(analytical_dd), 1e-30)
+        deriv_agreement = abs(fd_dd - analytical_dd) / max_dd
+
+        lines.append(f"  方向微分整合度: |FD-解析|/max = {deriv_agreement:.4e}")
+        lines.append("=" * 60)
+
+        return TangentFDDiagnosticOutput(
+            directional_ratio=directional_ratio,
+            fd_directional_deriv=fd_dd,
+            analytical_directional_deriv=analytical_dd,
+            deriv_agreement=deriv_agreement,
+            report="\n".join(lines),
+        )
