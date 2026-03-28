@@ -181,6 +181,7 @@ class ConvergenceCheckInput:
     manager: object
     ndof_per_node: int = 6
     char_length: float = 0.0  # 代表長さ [mm]（回転残差の正規化用、status-241）
+    mpc_transform: object | None = None  # MPCEliminationResult（status-255: 縮退系残差判定）
 
 
 @dataclass(frozen=True)
@@ -213,11 +214,31 @@ class ConvergenceCheckProcess(
     )
 
     def process(self, inp: ConvergenceCheckInput) -> ConvergenceCheckOutput:
-        res_u_norm = float(np.linalg.norm(inp.R_u))
+        # MPC縮退系での残差判定（status-255）:
+        # R_red = T^T R_u とすればslave DOFの制約反力が消去され、
+        # 独立DOFのみの残差で収束判定できる。
+        _mpc = inp.mpc_transform
+        if _mpc is not None:
+            _R_red = _mpc.T.T @ inp.R_u
+            # _R_red は縮退系（ndof_reduced次元）
+            # 独立DOFのndof_per_nodeは元と同じだが、
+            # slave DOFが除外された不均一配列なので全体ノルムで評価
+            R_eval = np.asarray(_R_red).ravel()
+        else:
+            R_eval = inp.R_u
+
+        res_u_norm = float(np.linalg.norm(R_eval))
 
         # 力/モーメント分離: 並進 DOF と回転 DOF のノルムを個別計算
         ndpn = inp.ndof_per_node
-        if ndpn >= 6 and len(inp.R_u) >= ndpn:
+        if _mpc is not None:
+            # MPC縮退系: independent_dofs から並進/回転を分離
+            _indep = _mpc.independent_dofs
+            _trans_mask = (_indep % ndpn) < 3
+            _rot_mask = (_indep % ndpn) >= 3
+            res_trans_norm = float(np.linalg.norm(R_eval[_trans_mask]))
+            res_rot_norm = float(np.linalg.norm(R_eval[_rot_mask]))
+        elif ndpn >= 6 and len(inp.R_u) >= ndpn:
             n_nodes = len(inp.R_u) // ndpn
             # 並進 DOF: 各節点の先頭3成分
             trans_idx = np.array(

@@ -244,6 +244,7 @@ class NewtonDynamicProcess(
                     manager=manager,
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
+                    mpc_transform=input_data.mpc_transform,
                 )
             )
             # 初回反復で参照残差を保存
@@ -301,20 +302,25 @@ class NewtonDynamicProcess(
             else:
                 _consecutive_increase = 0
 
-            # ストール検知: 残差変化 < 5% AND active set 振動（status-247）
+            # ストール検知（status-247 + status-255 拡張）:
+            # (a) active set 振動 + 残差停滞 → チャタリング
+            # (b) active set 安定 + 残差停滞 → 接線剛性不整合（MPC+接触）
+            # どちらも早期打切り → dt cutback で通過を試みる
             _active_changed = n_active != _prev_n_active
             if att > 0 and _cur_ratio > 0.5:
                 _ratio_change = abs(_cur_ratio - _prev_res_ratio) / max(_prev_res_ratio, 1e-30)
-                if _ratio_change < 0.05 and _active_changed:
+                # 残差停滞 < 5%: active set 振動の有無に関わらず検知
+                if _ratio_change < 0.05:
                     _consecutive_stall += 1
                 else:
                     _consecutive_stall = max(0, _consecutive_stall - 1)
                 if _consecutive_stall >= cfg.stall_window and not _relax_active:
                     _relax_active = True
+                    _stall_type = "チャタリング" if _active_changed else "残差停滞"
                     if cfg.show_progress:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                            f"接触チャタリング検知 → リラクゼーション有効化 "
+                            f"接触{_stall_type}検知 → リラクゼーション有効化 "
                             f"(ω={cfg.contact_relax_omega})"
                         )
             # リラクゼーション早期打切り（status-248: 無駄な反復を削減）
@@ -479,6 +485,7 @@ class NewtonDynamicProcess(
                     manager=manager,
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
+                    mpc_transform=input_data.mpc_transform,
                 )
             )
 
