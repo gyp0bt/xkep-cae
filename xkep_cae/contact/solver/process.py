@@ -420,6 +420,15 @@ class ContactFrictionProcess(
                 if hasattr(_u_proj, "toarray"):
                     _u_proj = _u_proj.toarray().ravel()
                 state.u[:] = np.asarray(_u_proj).ravel()
+                # time integrator の予測子もMPC射影（status-255）:
+                # correct() で acc = c0*(u - u_pred) を計算するため、
+                # u_pred もMPC整合でないと slave DOF の加速度が不正になる。
+                if hasattr(_time_strategy, "_u_pred"):
+                    _up_red = _time_strategy._u_pred[_mpc.independent_dofs]
+                    _up_proj = _mpc.T @ _up_red
+                    if hasattr(_up_proj, "toarray"):
+                        _up_proj = _up_proj.toarray().ravel()
+                    _time_strategy._u_pred[:] = np.asarray(_up_proj).ravel()
 
             # 候補検出
             _dc_out = DeformedCoordsProcess().process(

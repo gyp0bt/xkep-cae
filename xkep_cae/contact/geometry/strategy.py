@@ -215,9 +215,6 @@ def _batch_update_geometry(
     Hermite 中心線補間有効時は線形初期推定を Newton 精密化する。
     """
     from xkep_cae.contact.geometry._compute import (
-        _build_contact_frame_batch as build_contact_frame_batch,
-    )
-    from xkep_cae.contact.geometry._compute import (
         _closest_point_segments_batch as closest_point_segments_batch,
     )
 
@@ -332,19 +329,22 @@ def _batch_update_geometry(
         radii_b = np.array([p.radius_b for p in pairs])
         gap_all = dist_all - (radii_a + radii_b)
 
-    # --- バッチ接触フレーム計算 ---
+    # --- バッチ接触フレーム計算（C3 Process 経由） ---
     prev_t1_all = np.array([p.state.tangent1 for p in pairs])
     prev_n_all = np.array([p.state.normal for p in pairs])
     has_prev = np.sqrt(np.einsum("ij,ij->i", prev_t1_all, prev_t1_all)) > 1e-10
     has_prev_n = np.sqrt(np.einsum("ij,ij->i", prev_n_all, prev_n_all)) > 1e-10
 
-    n_all, t1_all, t2_all = build_contact_frame_batch(
-        normal_all,
-        prev_tangent1s=prev_t1_all,
-        prev_normals=prev_n_all,
-        has_prev_mask=has_prev,
-        has_prev_n_mask=has_prev_n,
+    _frame_out = ContactFrameProcess().process(
+        ContactFrameInput(
+            normals=normal_all,
+            prev_tangent1s=prev_t1_all,
+            prev_normals=prev_n_all,
+            has_prev_mask=has_prev,
+            has_prev_n_mask=has_prev_n,
+        )
     )
+    n_all, t1_all, t2_all = _frame_out.n, _frame_out.t1, _frame_out.t2
 
     # --- 結果を各ペアに書き戻し ---
     g_on = 0.0
@@ -379,6 +379,111 @@ def _batch_update_geometry(
         pairs[i] = _evolve_pair(pair, state=new_state)
 
 
+# ── C3: ContactFrameProcess ─────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ContactFrameInput:
+    """接触フレーム構築の入力."""
+
+    normals: np.ndarray  # (N, 3) 法線ベクトル
+    prev_tangent1s: np.ndarray | None = None  # (N, 3) 前ステップの接線基底1
+    prev_normals: np.ndarray | None = None  # (N, 3) 前ステップの法線
+    has_prev_mask: np.ndarray | None = None  # (N,) bool 前ステップ接線が有効
+    has_prev_n_mask: np.ndarray | None = None  # (N,) bool 前ステップ法線が有効
+
+
+@dataclass(frozen=True)
+class ContactFrameOutput:
+    """接触フレーム構築の出力."""
+
+    n: np.ndarray  # (N, 3) 正規化法線
+    t1: np.ndarray  # (N, 3) 接線基底1
+    t2: np.ndarray  # (N, 3) 接線基底2
+
+
+class ContactFrameProcess(
+    SolverProcess[ContactFrameInput, ContactFrameOutput],
+):
+    """バッチ接触フレーム構築（Rodrigues 平行輸送 + Gram-Schmidt）.
+
+    status-255 C3: _build_contact_frame_batch を Process 化。
+    各接触ペアの法線から正規直交基底 (n, t1, t2) を構築する。
+    前ステップの接線が存在する場合は Rodrigues 平行輸送で連続性を保つ。
+    """
+
+    meta = ProcessMeta(
+        name="ContactFrame",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_geometry.md",
+    )
+
+    def process(self, inp: ContactFrameInput) -> ContactFrameOutput:
+        from xkep_cae.contact.geometry._compute import (
+            _build_contact_frame_batch,
+        )
+
+        n, t1, t2 = _build_contact_frame_batch(
+            inp.normals,
+            prev_tangent1s=inp.prev_tangent1s,
+            prev_normals=inp.prev_normals,
+            has_prev_mask=inp.has_prev_mask,
+            has_prev_n_mask=inp.has_prev_n_mask,
+        )
+        return ContactFrameOutput(n=n, t1=t1, t2=t2)
+
+
+# ── C2: BatchUpdateGeometryProcess ──────────────────────────
+
+
+@dataclass(frozen=True)
+class BatchUpdateGeometryInput:
+    """バッチ幾何更新の入力."""
+
+    pairs: list
+    node_coords: np.ndarray
+    config: object | None = None
+    connectivity: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class BatchUpdateGeometryOutput:
+    """バッチ幾何更新の出力."""
+
+    pairs: list
+
+
+class BatchUpdateGeometryProcess(
+    SolverProcess[BatchUpdateGeometryInput, BatchUpdateGeometryOutput],
+):
+    """全ペアの幾何情報をバッチ計算で更新する Process.
+
+    status-255 C2: _batch_update_geometry を Process 化。
+    PointToPoint, LineToLineGauss, MortarSegment で共通の幾何更新ロジック。
+    最近接点計算 → Hermite 精密化 → 剛体表面 → ギャップ → 接触フレーム
+    → active-set ヒステリシス更新 の全パイプライン���担う。
+    """
+
+    meta = ProcessMeta(
+        name="BatchUpdateGeometry",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_geometry.md",
+    )
+    uses = [ContactFrameProcess]
+
+    def process(self, inp: BatchUpdateGeometryInput) -> BatchUpdateGeometryOutput:
+        pairs = list(inp.pairs)
+        _batch_update_geometry(
+            pairs,
+            inp.node_coords,
+            config=inp.config,
+            connectivity=inp.connectivity,
+        )
+        return BatchUpdateGeometryOutput(pairs=pairs)
+
+
 # ── 具象 Process ──────────────────────────────────────────
 
 
@@ -397,6 +502,7 @@ class PointToPointProcess(
         version="1.0.0",
         document_path="docs/contact_geometry.md",
     )
+    uses = [BatchUpdateGeometryProcess]
 
     def __init__(self, *, exclude_same_strand: bool = True) -> None:
         self._exclude_same_strand = exclude_same_strand
@@ -464,6 +570,7 @@ class LineToLineGaussProcess(
         version="1.0.0",
         document_path="docs/contact_geometry.md",
     )
+    uses = [BatchUpdateGeometryProcess]
 
     def __init__(
         self,
@@ -553,6 +660,7 @@ class MortarSegmentProcess(
         version="1.0.0",
         document_path="docs/contact_geometry.md",
     )
+    uses = [BatchUpdateGeometryProcess]
 
     def __init__(
         self,
