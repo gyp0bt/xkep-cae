@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-28）
 
-**200+10s+16+3+23+1+6+18+2 テスト**（FD診断compute_residual実装+K_c不整合特定 — status-257） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2 テスト**（K_c不整合再解析+consistent_st_tangent=TrueデフォルトON — status-258） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -27,7 +27,8 @@
 | MPC収束 | **MPC u伝搬修正 + NR内再射影 + 縮退系残差判定**: frac=0.35到達（接線不整合で壁） — status-255 |
 | FD診断 | **TangentFDDiagnosticProcess**: MPC+接触の接線方向有効性をFDで検証 — status-256 |
 | K_c特定 | **FD診断でK_c不整合を決定的に特定**: 全体系94-100%誤差、MPC変換は原因でない — status-257 |
-| **壁** | **接触接線剛性K_cの幾何学的接線項欠如**（中間スパン接触DOFでFDの50-1000倍過小） / 61本以上 / 1000本6時間 |
+| K_c再解析 | **K_c不整合は活性集合変化が原因**: consistent_st_tangent=TrueでK_c自体は完全一致(4.4e-10) — status-258 |
+| **壁** | **NR収束のactive set変化**（smoothing_delta=0でgap=0不連続→接触ON/OFF振動） / 61本以上 / 1000本6時間 |
 
 ---
 
