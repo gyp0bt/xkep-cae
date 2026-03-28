@@ -51,6 +51,42 @@ from xkep_cae.mesh.process import StrandMeshConfig, StrandMeshProcess
 from xkep_cae.numerical_tests.three_point_bend_jig import _circle_section
 
 # ====================================================================
+# 拡張系 UL アセンブララッパー
+# ====================================================================
+
+
+class _ExtendedULAssemblerWrapper:
+    """ULアセンブラを拡張DOF系にラップする.
+
+    ul_assembler は梁ノードのみ (ndof_beam) を扱うが、
+    MPC参照点ノードを含む拡張系 (ndof_total) との整合性が必要。
+    u_total_accum / coords_ref をゼロパディングで拡張し、
+    checkpoint / rollback を委譲する。
+    """
+
+    def __init__(self, assembler: object, ndof_beam: int, ndof_total: int) -> None:
+        self._asm = assembler
+        self._ndof_beam = ndof_beam
+        self._ndof_total = ndof_total
+
+    @property
+    def u_total_accum(self) -> np.ndarray:
+        u = np.zeros(self._ndof_total)
+        u[: self._ndof_beam] = self._asm.u_total_accum
+        return u
+
+    @property
+    def coords_ref(self) -> np.ndarray:
+        return self._asm.coords_ref
+
+    def checkpoint(self) -> None:
+        self._asm.checkpoint()
+
+    def rollback(self) -> None:
+        self._asm.rollback()
+
+
+# ====================================================================
 # 入出力データ
 # ====================================================================
 
@@ -386,6 +422,9 @@ class StrandBendingOscillationProcess(
         )
 
         # ── 8. ソルバー実行 ──
+        # ULアセンブラを拡張DOF系にラップ（参照点DOFのゼロパディング）
+        extended_assembler = _ExtendedULAssemblerWrapper(assembler, ndof_beam, ndof)
+
         solver_input = ContactFrictionInputData(
             mesh=extended_mesh,
             boundary=boundary,
@@ -393,7 +432,7 @@ class StrandBendingOscillationProcess(
             callbacks=AssembleCallbacks(
                 assemble_tangent=_assemble_tangent_extended,
                 assemble_internal_force=_assemble_internal_force_extended,
-                ul_assembler=assembler,
+                ul_assembler=extended_assembler,
             ),
             mass_matrix=M_ext,
             dt_physical=t_total,

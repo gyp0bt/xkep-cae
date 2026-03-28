@@ -454,6 +454,15 @@ class NewtonDynamicProcess(
             du = ls_out.du_scaled
             u += du
 
+            # MPC制約をNR更新後のuに再射影（slave DOFの整合性維持）
+            _mpc_nr = input_data.mpc_transform
+            if _mpc_nr is not None:
+                _u_red_nr = u[_mpc_nr.independent_dofs]
+                _u_proj_nr = _mpc_nr.T @ _u_red_nr
+                if hasattr(_u_proj_nr, "toarray"):
+                    _u_proj_nr = _u_proj_nr.toarray().ravel()
+                u[:] = np.asarray(_u_proj_nr).ravel()
+
             # ── 変位・エネルギー収束判定 ──
             _eff_ref2 = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
             conv_out2 = _conv_proc.process(

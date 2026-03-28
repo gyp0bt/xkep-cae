@@ -412,6 +412,15 @@ class ContactFrictionProcess(
             if has_prescribed:
                 state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
 
+            # MPC制約をuに伝搬: u_full = T @ u_red（slave DOFをmaster値から再計算）
+            _mpc = input_data.boundary.mpc_transform
+            if _mpc is not None:
+                _u_red = state.u[_mpc.independent_dofs]
+                _u_proj = _mpc.T @ _u_red
+                if hasattr(_u_proj, "toarray"):
+                    _u_proj = _u_proj.toarray().ravel()
+                state.u[:] = np.asarray(_u_proj).ravel()
+
             # 候補検出
             _dc_out = DeformedCoordsProcess().process(
                 DeformedCoordsInput(
