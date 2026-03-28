@@ -104,6 +104,7 @@
   - ~~Huber smoothing_deltaパイプライン貫通 + 自動推定有効化~~ ← status-259で完了
   - ~~smoothing_deltaチューニング（1000/rで frac 0.35→0.59）~~ ← status-260で完了
   - smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合
+  - delta_h直接指定API検討（smoothing_deltaはk_penスケール依存で系ごとに最適値が異なる。delta_h指定なら一貫性あり — status-260設計メモ参照）
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了

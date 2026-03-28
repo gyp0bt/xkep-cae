@@ -130,3 +130,21 @@ ruff format --check xkep_cae/ tests/
 
 1. **動的テスト不安定性**: `TestDynamicThreePointBendContactJigProcessAPI::test_process_runs` が変更前から失敗。smoothing_delta の値に依存しない別の問題の可能性
 2. **手動 vs 自動推定**: delta=1000（手動）で完走できるが、自動推定 1000/r=2000 では0.59止まり。ユーザーが問題に応じて手動調整する設計は妥当だが、自動推定のデフォルト値についてはさらなる検討が必要
+
+### smoothing_delta の最適値が系で異なる根本原因
+
+smoothing_delta の最適値が three_point_bend（5000/r）と strand_bending（1000/r）で異なる原因は、**k_pen のスケールが桁違い**であること。
+
+Huber遷移幅 `delta_h = k_pen / smoothing_delta` が実際の平滑化を制御するパラメータであり、同じ smoothing_delta でも k_pen が異なれば delta_h は全く異なる。
+
+| 系 | k_pen推定式 | k_pen値 | delta_h (δ=5000/r) | delta_h (δ=1000/r) |
+|---|---|---|---|---|
+| 梁-梁 (strand bending) | `0.1 × 12EI/L_elem³` | ~31 N/mm | 3.1e-3 | **1.6e-2** |
+| 静的剛体-梁 (3pt bend) | `0.5 × 48EI/L³` | ~0.15 N/mm | 1.5e-5 | 7.7e-5 |
+| 動的剛体-梁 (dynamic 3pt) | `0.2 × c₀·m_ii` | ~6e-6 N/mm | 6e-10 | 3e-9 |
+
+- **梁-梁**: k_pen が大きい（要素長ベース、L_elem=6.25mm）→ delta_h を確保するにはδを小さくする必要がある
+- **剛体-梁**: k_pen が小さい（全長ベース、L=100mm、3乗で効く）→ δ=5000/r で既に十分平滑。δを下げると delta_h が大きすぎてペナルティ力の立ち上がりが鈍り不収束
+- **動的系**: k_pen が微小（c₀·m_ii ベース、dt⁻²依存）→ smoothing_delta の影響はほぼゼロ
+
+**設計改善案**: smoothing_delta（間接パラメータ）ではなく delta_h（Huber遷移幅そのもの）を直接指定するAPIに変更すれば、k_pen スケールに依存しない一貫した設定が可能になる。例: `huber_transition_width = 0.01` とすれば、k_pen に関わらず接触力の遷移幅が物理的に同じ意味を持つ。
