@@ -85,7 +85,8 @@
 - ~~smoothing_deltaチューニング + FD診断活性DOFフィルタ~~ ← status-260で完了（δ=1000/rで frac 0.35→0.59改善）
 - ~~δ=1000完走テスト + active_contact_dofs NR結合 + delta_h直接指定API~~ ← status-261で完了
 - ~~delta_h最適値の問題非依存探索~~ ← status-262で完了（delta_h=0.025最速、非単調性あり）
-- **次**: delta_hデフォルト値検討（0.030非完走の非単調性対策）+ Hermite非局所∂g/∂u対応
+- ~~delta_hデフォルト値検討（three_point_bend検証）~~ ← status-263で完了（0.0維持、問題依存性高くグローバルデフォルト時期尚早）
+- **次**: Hermite非局所∂g/∂u対応 + NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -108,7 +109,7 @@
   - ~~smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合~~ ← status-261で完了
   - ~~delta_h直接指定API実装（huber_delta_h パイプライン貫通）~~ ← status-261で完了
   - ~~delta_h最適値探索 + three_point_bend huber_delta_h貫通~~ ← status-262で完了（delta_h=0.025最速、非単調性あり）
-  - delta_hデフォルト値検討（0.030非完走の非単調性対策 + 剛体-梁での検証）
+  - ~~delta_hデフォルト値検討（three_point_bend検証 + 剛体-梁での検証）~~ ← status-263で完了（0.0維持、問題依存性高い）
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了
