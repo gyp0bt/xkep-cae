@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18 テスト** — 2026-03-28時点 | B1-B4 Process化+FD接線診断（status-256） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**200+10s+16+3+23+1+6+18+2 テスト** — 2026-03-28時点 | FD診断compute_residual実装+K_c不整合特定（status-257） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
