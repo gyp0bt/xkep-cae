@@ -15,8 +15,17 @@ from xkep_cae.contact.friction.law_friction import (
 )
 from xkep_cae.contact.friction.strategy import (
     CoulombReturnMappingProcess,
+    FrictionGeometricStiffnessInput,
+    FrictionGeometricStiffnessOutput,
+    FrictionGeometricStiffnessProcess,
     FrictionInput,
     FrictionOutput,
+    FrictionStStiffnessInput,
+    FrictionStStiffnessOutput,
+    FrictionStStiffnessProcess,
+    FrictionTangentStiffnessInput,
+    FrictionTangentStiffnessOutput,
+    FrictionTangentStiffnessProcess,
 )
 
 __all__ = [
@@ -24,6 +33,18 @@ __all__ = [
     "CoulombReturnMappingProcess",
     "FrictionInput",
     "FrictionOutput",
+    # B4: 摩擦接線剛性（材料項）
+    "FrictionTangentStiffnessProcess",
+    "FrictionTangentStiffnessInput",
+    "FrictionTangentStiffnessOutput",
+    # B2: 摩擦接線幾何剛性
+    "FrictionGeometricStiffnessProcess",
+    "FrictionGeometricStiffnessInput",
+    "FrictionGeometricStiffnessOutput",
+    # B3: 摩擦K_st
+    "FrictionStStiffnessProcess",
+    "FrictionStStiffnessInput",
+    "FrictionStStiffnessOutput",
     # Law Friction
     "ReturnMappingProcess",
     "FrictionTangentProcess",

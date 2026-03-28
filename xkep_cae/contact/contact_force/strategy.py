@@ -10,6 +10,9 @@ status-230: Hermite 幾何対応
 - 形状関数係数を Hermite 基底 H00(s)/H01(s) に切替
 - ∂n/∂s を Hermite 接線 dpA/ds で計算
 - K_st に Hermite 版 StJacobian を使用
+
+status-256 B1: ContactForceStStiffnessProcess
+- 接触力 K_st（接触点滑り剛性）を Process 化
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import scipy.sparse as sp
 
 from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
 
 # ── Input / Output ─────────────────────────────────────────
@@ -187,6 +191,275 @@ def _contact_shape_vector(
     return g_shape
 
 
+def _huber_deriv_scalar(x: float, delta: float) -> float:
+    """Huber 導関数（モジュールレベル版）: C0 連続."""
+    if delta <= 0.0:
+        return 1.0 if x > 0.0 else 0.0
+    if x < -delta:
+        return 0.0
+    if x > delta:
+        return 1.0
+    return (x + delta) / (2.0 * delta)
+
+
+# ── B1: _add_kst_contact_to_coo（モジュールレベルヘルパー） ──
+
+
+def _add_kst_contact_to_coo(
+    pair: object,
+    p_n: float,
+    normal: np.ndarray,
+    dofs: np.ndarray,
+    st_proc: object,
+    StJacobianInput: type,
+    rows: list[int],
+    cols: list[int],
+    vals: list[float],
+    node_coords: np.ndarray,
+    ndof_per_node: int,
+    *,
+    use_hermite: bool = False,
+    node_tangents: np.ndarray | None = None,
+    node_counts: np.ndarray | None = None,
+    h_deriv: float = 0.0,
+    k_pen: float = 0.0,
+) -> None:
+    """接触力の K_st（接触点滑り剛性）を COO に追加.
+
+    f_c_raw = p_n(s,t) * Σ_k c_k(s,t) * n(s,t) の s,t 依存の完全微分。
+
+    ∂f_raw/∂s = (∂p_n/∂s) * Σ c_k * n                  ← status-242 追加
+              + p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)       ← 既存
+
+    ∂p_n/∂s = h'(x) * k_pen * (-∂gap/∂s)
+    ∂gap/∂s = (delta · dpA/ds) / dist
+
+    線形: ∂n/∂s = (1/dist)(I - n⊗n) · dA
+    Hermite: ∂n/∂s = (1/dist)(I - n⊗n) · dpA/ds（status-230）
+    """
+    st = pair.state
+    xA0 = node_coords[pair.nodes_a[0]]
+    xA1 = node_coords[pair.nodes_a[1]]
+    xB0 = node_coords[pair.nodes_b[0]]
+    xB1 = node_coords[pair.nodes_b[1]]
+
+    # dm 係数の計算（frozen-m 解消: status-243）
+    _dm_A = None
+    _dm_B = None
+    if use_hermite and node_counts is not None:
+        from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
+
+        _dm_A = _compute_dm_coeffs(
+            node_counts[pair.nodes_a[0]],
+            node_counts[pair.nodes_a[1]],
+        )
+        _dm_B = _compute_dm_coeffs(
+            node_counts[pair.nodes_b[0]],
+            node_counts[pair.nodes_b[1]],
+        )
+
+    # StJacobian 入力の構築
+    st_kw: dict = {
+        "xA0": xA0,
+        "xA1": xA1,
+        "xB0": xB0,
+        "xB1": xB1,
+        "s": st.s,
+        "t": st.t,
+    }
+    if use_hermite and node_tangents is not None:
+        st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
+        st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
+        st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
+        st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
+        st_kw["use_hermite"] = True
+        if _dm_A is not None:
+            st_kw["dm_A"] = _dm_A
+            st_kw["dm_B"] = _dm_B
+
+    out = st_proc.process(StJacobianInput(**st_kw))
+    if not out.valid:
+        return
+
+    s = st.s
+    t = st.t
+    dist = st.gap + pair.radius_a + pair.radius_b
+    if dist < 1e-15:
+        return
+
+    # 形状関数係数とその微分
+    if use_hermite:
+        if _dm_A is not None:
+            coeffs, dc_ds, dc_dt = _hermite_corrected_coeffs(s, t, _dm_A, _dm_B)
+        else:
+            coeffs = _hermite_shape_coeffs(s, t)
+            dc_ds = _hermite_dc_ds(s)
+            dc_dt = _hermite_dc_dt(t)
+    else:
+        coeffs = [(1.0 - s), s, -(1.0 - t), -t]
+        dc_ds = [-1.0, 1.0, 0.0, 0.0]
+        dc_dt = [0.0, 0.0, 1.0, -1.0]
+
+    # ∂n/∂s, ∂n/∂t
+    P_perp = np.eye(3) - np.outer(normal, normal)
+    if use_hermite and node_tangents is not None:
+        from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_scalar
+
+        dpA = _hermite_deriv_scalar(
+            s, xA0, xA1, node_tangents[pair.nodes_a[0]], node_tangents[pair.nodes_a[1]]
+        )
+        dpB = _hermite_deriv_scalar(
+            t, xB0, xB1, node_tangents[pair.nodes_b[0]], node_tangents[pair.nodes_b[1]]
+        )
+        dn_ds = (1.0 / dist) * P_perp @ dpA
+        dn_dt = -(1.0 / dist) * P_perp @ dpB
+    else:
+        dA = xA1 - xA0
+        dB = xB1 - xB0
+        dn_ds = (1.0 / dist) * P_perp @ dA
+        dn_dt = -(1.0 / dist) * P_perp @ dB
+
+    # ∂p_n/∂s, ∂p_n/∂t（ペナルティ力の滑り微分、status-242）
+    dpn_ds = 0.0
+    dpn_dt = 0.0
+    if h_deriv > 1e-30 and k_pen > 0.0:
+        if use_hermite and node_tangents is not None:
+            dgap_ds = float(np.dot(normal, dpA))
+            dgap_dt = -float(np.dot(normal, dpB))
+        else:
+            dA = xA1 - xA0
+            dB = xB1 - xB0
+            dgap_ds = float(np.dot(normal, dA))
+            dgap_dt = -float(np.dot(normal, dB))
+        dpn_ds = h_deriv * k_pen * (-dgap_ds)
+        dpn_dt = h_deriv * k_pen * (-dgap_dt)
+
+    # g_shape = Σ c_k * n (12,)
+    g_shape = np.zeros(12)
+    for k in range(4):
+        for i in range(3):
+            g_shape[k * 3 + i] = coeffs[k] * normal[i]
+
+    # ∂f_raw/∂s (12,): (∂p_n/∂s) * g_shape + p_n * (dc_k/ds·n + c_k·∂n/∂s)
+    df_ds = np.zeros(12)
+    df_dt = np.zeros(12)
+    for k in range(4):
+        for i in range(3):
+            li = k * 3 + i
+            df_ds[li] = dpn_ds * g_shape[li] + p_n * (dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i])
+            df_dt[li] = dpn_dt * g_shape[li] + p_n * (dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i])
+
+    # K_st = -(df_ds ⊗ ds_du + df_dt ⊗ dt_du)
+    K_st_local = -(np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du))
+
+    for ki in range(4):
+        for di in range(3):
+            li = ki * 3 + di
+            gi = dofs[ki * ndof_per_node + di]
+            for kj in range(4):
+                for dj in range(3):
+                    lj = kj * 3 + dj
+                    gj = dofs[kj * ndof_per_node + dj]
+                    val = K_st_local[li, lj]
+                    if abs(val) > 1e-30:
+                        rows.append(gi)
+                        cols.append(gj)
+                        vals.append(val)
+
+
+# ── B1: ContactForceStStiffnessProcess ─────────────────────
+
+
+@dataclass(frozen=True)
+class ContactForceStStiffnessInput:
+    """接触力 K_st（接触点滑り剛性）の入力."""
+
+    pairs: list
+    node_coords: np.ndarray
+    k_pen: float
+    delta_h: float
+    ndof_total: int
+    ndof_per_node: int = 6
+    use_hermite: bool = False
+    node_tangents: np.ndarray | None = None
+    node_counts: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class ContactForceStStiffnessOutput:
+    """接触力 K_st（接触点滑り剛性）の出力."""
+
+    K_st: sp.csr_matrix
+
+
+class ContactForceStStiffnessProcess(
+    SolverProcess[ContactForceStStiffnessInput, ContactForceStStiffnessOutput],
+):
+    """接触力の K_st（接触点滑り剛性）を計算する Process.
+
+    status-256 B1: _add_kst_contact を Process 化。
+    f_c_raw = p_n(s,t) * Σ_k c_k(s,t) * n(s,t) の s,t 依存の完全微分。
+    """
+
+    meta = ProcessMeta(
+        name="ContactForceStStiffness",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_force.md",
+    )
+    uses = [ComputeStJacobianProcess]
+
+    def process(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
+        from xkep_cae.contact.geometry._st_jacobian import (
+            StJacobianInput,
+        )
+
+        st_proc = ComputeStJacobianProcess()
+        rows: list[int] = []
+        cols: list[int] = []
+        vals: list[float] = []
+
+        for pair in inp.pairs:
+            if not hasattr(pair, "state"):
+                continue
+            p_n = pair.state.p_n
+            if p_n <= 1e-30:
+                continue
+            g_i = pair.state.gap
+            x_p = inp.k_pen * (-g_i)
+            h_d = _huber_deriv_scalar(x_p, inp.delta_h)
+            dofs = _contact_dofs(pair, inp.ndof_per_node)
+            _add_kst_contact_to_coo(
+                pair,
+                p_n,
+                pair.state.normal,
+                dofs,
+                st_proc,
+                StJacobianInput,
+                rows,
+                cols,
+                vals,
+                inp.node_coords,
+                inp.ndof_per_node,
+                use_hermite=inp.use_hermite,
+                node_tangents=inp.node_tangents,
+                node_counts=inp.node_counts,
+                h_deriv=h_d,
+                k_pen=inp.k_pen,
+            )
+
+        if not rows:
+            return ContactForceStStiffnessOutput(
+                K_st=sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+            )
+        return ContactForceStStiffnessOutput(
+            K_st=sp.coo_matrix(
+                (vals, (rows, cols)),
+                shape=(inp.ndof_total, inp.ndof_total),
+            ).tocsr()
+        )
+
+
 # ── 具象 Process ──────────────────────────────────────────
 
 
@@ -213,6 +486,7 @@ class HuberContactForceProcess(
         version="3.0.0",
         document_path="docs/contact_force.md",
     )
+    uses = [ContactForceStStiffnessProcess]
 
     def __init__(
         self,
@@ -653,50 +927,28 @@ class HuberContactForceProcess(
             cols_np = np.array([], dtype=int)
             vals_np = np.array([], dtype=float)
 
-        # ── K_st（ペアごとループ: StJacobian プロセス呼び出しのため） ──
-        st_rows: list[int] = []
-        st_cols: list[int] = []
-        st_vals: list[float] = []
+        # ── K_st（ContactForceStStiffnessProcess 経由: status-256 B1） ──
         if _use_st and node_coords is not None:
-            from xkep_cae.contact.geometry._st_jacobian import (
-                ComputeStJacobianProcess,
-                StJacobianInput,
-            )
-
-            _st_proc = ComputeStJacobianProcess()
-            for pair in manager.pairs:
-                if not hasattr(pair, "state"):
-                    continue
-                p_n = pair.state.p_n
-                if p_n <= 1e-30:
-                    continue
-                g_i = pair.state.gap
-                x_p = k_pen * (-g_i)
-                h_d = self._huber_deriv(x_p, delta_h)
-                dofs = _contact_dofs(pair, self._ndof_per_node)
-                self._add_kst_contact(
-                    pair,
-                    p_n,
-                    pair.state.normal,
-                    dofs,
-                    _st_proc,
-                    StJacobianInput,
-                    st_rows,
-                    st_cols,
-                    st_vals,
-                    node_coords,
+            b1 = ContactForceStStiffnessProcess()
+            K_st = b1.process(
+                ContactForceStStiffnessInput(
+                    pairs=manager.pairs,
+                    node_coords=node_coords,
+                    k_pen=k_pen,
+                    delta_h=delta_h,
+                    ndof_total=self._ndof,
+                    ndof_per_node=self._ndof_per_node,
                     use_hermite=_use_hermite,
                     node_tangents=_node_tangents,
                     node_counts=_node_counts,
-                    h_deriv=h_d,
-                    k_pen=k_pen,
                 )
-
-        # 結合
-        if st_rows:
-            rows_np = np.concatenate([rows_np, np.array(st_rows, dtype=int)])
-            cols_np = np.concatenate([cols_np, np.array(st_cols, dtype=int)])
-            vals_np = np.concatenate([vals_np, np.array(st_vals)])
+            ).K_st
+            # K_st の COO を結合
+            K_st_coo = K_st.tocoo()
+            if K_st_coo.nnz > 0:
+                rows_np = np.concatenate([rows_np, K_st_coo.row])
+                cols_np = np.concatenate([cols_np, K_st_coo.col])
+                vals_np = np.concatenate([vals_np, K_st_coo.data])
 
         if len(vals_np) > 0:
             return sp.coo_matrix(
@@ -704,177 +956,6 @@ class HuberContactForceProcess(
                 shape=(self._ndof, self._ndof),
             ).tocsr()
         return sp.csr_matrix((self._ndof, self._ndof))
-
-    def _add_kst_contact(
-        self,
-        pair: object,
-        p_n: float,
-        normal: np.ndarray,
-        dofs: np.ndarray,
-        st_proc: object,
-        StJacobianInput: type,
-        rows: list[int],
-        cols: list[int],
-        vals: list[float],
-        node_coords: np.ndarray,
-        *,
-        use_hermite: bool = False,
-        node_tangents: np.ndarray | None = None,
-        node_counts: np.ndarray | None = None,
-        h_deriv: float = 0.0,
-        k_pen: float = 0.0,
-    ) -> None:
-        """接触力の K_st（接触点滑り剛性）を COO に追加.
-
-        f_c_raw = p_n(s,t) * Σ_k c_k(s,t) * n(s,t) の s,t 依存の完全微分。
-
-        ∂f_raw/∂s = (∂p_n/∂s) * Σ c_k * n                  ← status-242 追加
-                  + p_n * (∂c_k/∂s · n + c_k · ∂n/∂s)       ← 既存
-
-        ∂p_n/∂s = h'(x) * k_pen * (-∂gap/∂s)
-        ∂gap/∂s = (delta · dpA/ds) / dist
-
-        線形: ∂n/∂s = (1/dist)(I - n⊗n) · dA
-        Hermite: ∂n/∂s = (1/dist)(I - n⊗n) · dpA/ds（status-230）
-        """
-        st = pair.state
-        xA0 = node_coords[pair.nodes_a[0]]
-        xA1 = node_coords[pair.nodes_a[1]]
-        xB0 = node_coords[pair.nodes_b[0]]
-        xB1 = node_coords[pair.nodes_b[1]]
-
-        # dm 係数の計算（frozen-m 解消: status-243）
-        _dm_A = None
-        _dm_B = None
-        if use_hermite and node_counts is not None:
-            from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
-
-            _dm_A = _compute_dm_coeffs(
-                node_counts[pair.nodes_a[0]],
-                node_counts[pair.nodes_a[1]],
-            )
-            _dm_B = _compute_dm_coeffs(
-                node_counts[pair.nodes_b[0]],
-                node_counts[pair.nodes_b[1]],
-            )
-
-        # StJacobian 入力の構築
-        st_kw: dict = {
-            "xA0": xA0,
-            "xA1": xA1,
-            "xB0": xB0,
-            "xB1": xB1,
-            "s": st.s,
-            "t": st.t,
-        }
-        if use_hermite and node_tangents is not None:
-            st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
-            st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
-            st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
-            st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
-            st_kw["use_hermite"] = True
-            if _dm_A is not None:
-                st_kw["dm_A"] = _dm_A
-                st_kw["dm_B"] = _dm_B
-
-        out = st_proc.process(StJacobianInput(**st_kw))
-        if not out.valid:
-            return
-
-        s = st.s
-        t = st.t
-        dist = st.gap + pair.radius_a + pair.radius_b
-        if dist < 1e-15:
-            return
-
-        # 形状関数係数とその微分
-        if use_hermite:
-            if _dm_A is not None:
-                coeffs, dc_ds, dc_dt = _hermite_corrected_coeffs(s, t, _dm_A, _dm_B)
-            else:
-                coeffs = _hermite_shape_coeffs(s, t)
-                dc_ds = _hermite_dc_ds(s)
-                dc_dt = _hermite_dc_dt(t)
-        else:
-            coeffs = [(1.0 - s), s, -(1.0 - t), -t]
-            dc_ds = [-1.0, 1.0, 0.0, 0.0]
-            dc_dt = [0.0, 0.0, 1.0, -1.0]
-
-        # ∂n/∂s, ∂n/∂t
-        P_perp = np.eye(3) - np.outer(normal, normal)
-        if use_hermite and node_tangents is not None:
-            from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_scalar
-
-            dpA = _hermite_deriv_scalar(
-                s, xA0, xA1, node_tangents[pair.nodes_a[0]], node_tangents[pair.nodes_a[1]]
-            )
-            dpB = _hermite_deriv_scalar(
-                t, xB0, xB1, node_tangents[pair.nodes_b[0]], node_tangents[pair.nodes_b[1]]
-            )
-            dn_ds = (1.0 / dist) * P_perp @ dpA
-            dn_dt = -(1.0 / dist) * P_perp @ dpB
-        else:
-            dA = xA1 - xA0
-            dB = xB1 - xB0
-            dn_ds = (1.0 / dist) * P_perp @ dA
-            dn_dt = -(1.0 / dist) * P_perp @ dB
-
-        # ∂p_n/∂s, ∂p_n/∂t（ペナルティ力の滑り微分、status-242）
-        # gap(s,t) = dist - R_A - R_B, dist = ||pA(s) - pB(t)||
-        # delta = pA(s) - pB(t) (normal 方向に dist を掛けたもの)
-        # ∂gap/∂s = (delta · dpA/ds) / dist = normal · dpA/ds
-        # ∂gap/∂t = -(delta · dpB/dt) / dist = -normal · dpB/dt
-        # ∂p_n/∂s = h'(x) * k_pen * (-∂gap/∂s)  (x = k_pen * (-gap))
-        dpn_ds = 0.0
-        dpn_dt = 0.0
-        if h_deriv > 1e-30 and k_pen > 0.0:
-            if use_hermite and node_tangents is not None:
-                dgap_ds = float(np.dot(normal, dpA))
-                dgap_dt = -float(np.dot(normal, dpB))
-            else:
-                dA = xA1 - xA0
-                dB = xB1 - xB0
-                dgap_ds = float(np.dot(normal, dA))
-                dgap_dt = -float(np.dot(normal, dB))
-            dpn_ds = h_deriv * k_pen * (-dgap_ds)
-            dpn_dt = h_deriv * k_pen * (-dgap_dt)
-
-        # g_shape = Σ c_k * n (12,)
-        g_shape = np.zeros(12)
-        for k in range(4):
-            for i in range(3):
-                g_shape[k * 3 + i] = coeffs[k] * normal[i]
-
-        # ∂f_raw/∂s (12,): (∂p_n/∂s) * g_shape + p_n * (dc_k/ds·n + c_k·∂n/∂s)
-        df_ds = np.zeros(12)
-        df_dt = np.zeros(12)
-        for k in range(4):
-            for i in range(3):
-                li = k * 3 + i
-                df_ds[li] = dpn_ds * g_shape[li] + p_n * (
-                    dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i]
-                )
-                df_dt[li] = dpn_dt * g_shape[li] + p_n * (
-                    dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i]
-                )
-
-        # K_st = -(df_ds ⊗ ds_du + df_dt ⊗ dt_du)
-        K_st_local = -(np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du))
-
-        ndpn = self._ndof_per_node
-        for ki in range(4):
-            for di in range(3):
-                li = ki * 3 + di
-                gi = dofs[ki * ndpn + di]
-                for kj in range(4):
-                    for dj in range(3):
-                        lj = kj * 3 + dj
-                        gj = dofs[kj * ndpn + dj]
-                        val = K_st_local[li, lj]
-                        if abs(val) > 1e-30:
-                            rows.append(gi)
-                            cols.append(gj)
-                            vals.append(val)
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:
         f, _ = self.evaluate(

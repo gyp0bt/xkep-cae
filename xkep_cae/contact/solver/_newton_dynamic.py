@@ -28,6 +28,8 @@ from xkep_cae.contact.solver._newton_steps import (
     LineSearchUpdateProcess,
     TangentAssemblyInput,
     TangentAssemblyProcess,
+    TangentFDDiagnosticInput,
+    TangentFDDiagnosticProcess,
 )
 from xkep_cae.core import ProcessMeta, SolverProcess
 
@@ -64,6 +66,7 @@ class NewtonDynamicInput:
     contact_relax_omega: float = 0.5  # リラクゼーション係数（0.5 = 半分ブレンド）
     stall_window: int = 4  # 残差プラトーをストールと判定するまでの反復数
     relax_max_iter: int = 25  # リラクゼーション有効後の最大反復数（超過で早期打切り）
+    tangent_fd_diagnostic: bool = False  # ストール時にFD接線診断を実行（status-256）
 
 
 @dataclass(frozen=True)
@@ -119,6 +122,7 @@ class NewtonDynamicProcess(
         TangentAssemblyProcess,
         LinearSolveProcess,
         LineSearchUpdateProcess,
+        TangentFDDiagnosticProcess,
     ]
 
     def process(  # noqa: C901, PLR0912, PLR0915
@@ -433,6 +437,25 @@ class NewtonDynamicProcess(
                 break
 
             du = solve_out.du
+
+            # ── FD接線診断（ストール検知時 + tangent_fd_diagnostic=True） ──
+            if cfg.tangent_fd_diagnostic and _relax_active and _relax_iter == 0:
+                _fd_diag_proc = TangentFDDiagnosticProcess()
+                _mpc_T = None
+                if input_data.mpc_transform is not None:
+                    _mpc_T = input_data.mpc_transform.T
+                _fd_out = _fd_diag_proc.process(
+                    TangentFDDiagnosticInput(
+                        u=u,
+                        du=du,
+                        R_u=R_u,
+                        K_T=K_T,
+                        mpc_transform=_mpc_T,
+                        fixed_dofs=input_data.fixed_dofs,
+                    )
+                )
+                if cfg.show_progress:
+                    print(_fd_out.report)
 
             # ── DOF スケーリング: 回転 DOF の更新を減衰（status-241） ──
             _sr = cfg.dof_scale_rot
