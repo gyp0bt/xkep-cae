@@ -192,6 +192,7 @@ class ContactFrictionInputData:
     # 接触力リラクゼーション（status-247: NR 2-サイクル対策）
     contact_relax_omega: float = 0.5  # リラクゼーション係数
     stall_window: int = 4  # ストール検知窓
+    tangent_fd_diagnostic: bool = False  # ストール時にFD接線診断を実行（status-257）
 
     @property
     def is_dynamic(self) -> bool:

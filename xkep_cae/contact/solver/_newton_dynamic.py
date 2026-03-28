@@ -444,6 +444,39 @@ class NewtonDynamicProcess(
                 _mpc_T = None
                 if input_data.mpc_transform is not None:
                     _mpc_T = input_data.mpc_transform.T
+
+                # compute_residual クロージャ: 任意の u_eval で残差 R(u_eval) を再計算
+                # FD方向検証に必要（status-257）
+                def _compute_residual_at(u_eval: np.ndarray) -> np.ndarray:
+                    _fr_out = _force_proc.process(
+                        ContactForceAssemblyInput(
+                            u=u_eval,
+                            f_ext=f_ext,
+                            fixed_dofs=input_data.fixed_dofs,
+                            manager=manager,
+                            node_coords_ref=input_data.node_coords_ref,
+                            contact_force_strategy=_contact_force_strategy,
+                            friction_strategy=_friction_strategy,
+                            coating_strategy=_coating_strategy,
+                            k_pen=k_pen,
+                            mu=mu,
+                            u_ref=u_ref,
+                            load_frac=load_frac,
+                            load_frac_prev=load_frac_prev,
+                            increment_display=increment_display,
+                            ndof_per_node=cfg.ndof_per_node,
+                            use_coating=input_data.use_coating,
+                            assemble_internal_force=input_data.assemble_internal_force,
+                            connectivity=input_data.connectivity,
+                        )
+                    )
+                    _R_eval = _fr_out.R_u
+                    # 動的項を加算（慣性力・減衰力）
+                    if dt_sub > 1e-30:
+                        _R_eval = _time_strategy.effective_residual(_R_eval, dt_sub)
+                        _R_eval[input_data.fixed_dofs] = 0.0
+                    return _R_eval
+
                 _fd_out = _fd_diag_proc.process(
                     TangentFDDiagnosticInput(
                         u=u,
@@ -452,6 +485,7 @@ class NewtonDynamicProcess(
                         K_T=K_T,
                         mpc_transform=_mpc_T,
                         fixed_dofs=input_data.fixed_dofs,
+                        compute_residual=_compute_residual_at,
                     )
                 )
                 if cfg.show_progress:
