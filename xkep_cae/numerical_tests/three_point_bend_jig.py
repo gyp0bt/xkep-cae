@@ -412,6 +412,7 @@ class ThreePointBendContactJigConfig:
     initial_gap: float = 0.0  # mm（初期ギャップ、0=接触面一致）
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
+    huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-262）
     # n_uzawa_max は status-222 で削除。
 
 
@@ -715,6 +716,7 @@ class ThreePointBendContactJigProcess(
 
         contact_config = _ContactConfigInput(
             smoothing_delta=_smoothing_delta,
+            huber_delta_h=cfg.huber_delta_h,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
@@ -882,6 +884,7 @@ class DynamicThreePointBendContactJigConfig:
     # 接触パラメータ
     k_pen: float = 0.0  # ペナルティ剛性（0=自動推定）
     # smoothing_delta は内部で自動推定（δ = 5000 / r_min）。手動指定不可。
+    huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-262）
     mu: float = 0.15  # Coulomb 摩擦係数
     # 被膜パラメータ（0=被膜なし）
     coating_stiffness: float = 0.0  # 被膜剛性 [N/mm]
@@ -1169,6 +1172,7 @@ class DynamicThreePointBendContactJigProcess(
 
         contact_config = _ContactConfigInput(
             smoothing_delta=_smoothing_delta,
+            huber_delta_h=cfg.huber_delta_h,
             beam_E=cfg.E,
             beam_I=sec["Iy"],
             beam_A=sec["A"],
