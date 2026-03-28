@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23 テスト** — 2026-03-27 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,12 +73,13 @@
 
 ### 次の課題
 
-**7本撚線曲げ揺動の収束完走** — status-253:
-- DOF消去MPC実装完了（MPCEliminationProcess + LinearSolveProcess統合）
-- StrandBendingOscillationProcess 実装完了（端部参照点 + MPC + 曲げ処方変位）
-- **次**: 7本撚線曲げ揺動の実行収束テスト（teeログ必須）
-  - MPC + 動的ソルバーの力残差整合性確認
-  - M1-M2 幾何Process化（MPC収束確認後）
+**MPC+接触のNR収束改善** — status-254:
+- MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー（status-254で完了）
+- frac=0.35到達（接触チャタリングで壁）
+- **次**: MPC+接触のNR収束改善
+  - 候補A: 接触力をMPC縮退系で評価
+  - 候補B: time integrator のMPC対応（M_red = T^T M T）
+  - M1-M2 幾何Process化
 **並行**: 幾何計算Process化（C2-C3）、摩擦アセンブリProcess化（B1-B4）
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
@@ -88,11 +89,12 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **7本撚線曲げ揺動の収束完走テスト**（E=130MPa, ρ=8.96e-9, R=0.5mm, pitch=100mm）
+- **MPC+接触のNR収束改善**（frac=0.35→1.0）
   - ~~DOF消去MPC実装（端部剛体結合）~~ ← status-253で完了
   - ~~StrandBendingOscillationProcess 実装~~ ← status-253で完了
-  - 実行収束テスト（teeログ必須）
-  - MPC + 動的ソルバーの力残差整合性確認
+  - ~~MPC u伝搬修正 + 収束実行テスト~~ ← status-254で完了（frac=0.35到達）
+  - ~~MPC + 動的ソルバーの力残差整合性確認~~ ← status-254で確認（slave残差問題特定）
+  - MPC縮退系での接触力評価/time integrator MPC対応
 - プロセス脱法修正（Phase D〜E、status-249 参照）
   - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
   - C2-C3: 幾何計算Process化
