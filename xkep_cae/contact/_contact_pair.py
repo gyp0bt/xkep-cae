@@ -128,7 +128,7 @@ class _ContactConfigInput:
     line_contact: bool = False
     n_gauss: int = 3
     n_gauss_auto: bool = False
-    consistent_st_tangent: bool = False
+    consistent_st_tangent: bool = True  # status-258: デフォルトON（K_st欠落が94-100%不整合の主因）
     use_ncp: bool = False
     ncp_type: str = "fb"
     ncp_reg: float = 1e-12

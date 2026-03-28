@@ -98,11 +98,12 @@ class TestBeamOscillationAPI:
 
     def test_strain_computation_parabolic_deflection(self):
         """二次放物線変位で一定曲率 → 一定ひずみ."""
-        n_nodes = 21
+        n_elems = 40
+        n_nodes = n_elems + 1
         L = 20.0
         x = np.linspace(0, L, n_nodes)
         coords = np.column_stack([x, np.zeros(n_nodes), np.zeros(n_nodes)])
-        conn = np.column_stack([np.arange(20), np.arange(1, 21)])
+        conn = np.column_stack([np.arange(n_elems), np.arange(1, n_elems + 1)])
 
         # 放物線: y = -a*x*(L-x) → κ = 2a
         a = 0.01
@@ -123,11 +124,8 @@ class TestBeamOscillationAPI:
         expected_strain = 2.0 * a * R  # κ * R = 2a * R
         # 端部以外は一定
         interior = result.element_strain[2:-2]
-        # NOTE(STA2): rtol=0.05 は梁要素離散化誤差（要素数依存）による。
-        # 解析解 κ*R と要素歪みの差は要素長/曲率半径比で O(h²) 収束。
-        # 現在の要素数(20要素)では 5% が妥当な上界。
-        # TODO(STA2): 要素数増加時（≥40要素）に rtol=0.02 へ厳格化
-        assert np.allclose(interior, expected_strain, rtol=0.05)
+        # NOTE(STA2): O(h²) 収束。40要素で rtol=0.02 が妥当な上界。
+        assert np.allclose(interior, expected_strain, rtol=0.02)
 
 
 @pytest.mark.slow
