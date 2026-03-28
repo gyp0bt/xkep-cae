@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-28）
 
-**200+10s+16+3+23+1+6+18+2 テスト**（K_c不整合再解析+consistent_st_tangent=TrueデフォルトON — status-258） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4 テスト**（Huber smoothing_deltaパイプライン貫通+自動推定有効化 — status-259） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -28,6 +28,7 @@
 | FD診断 | **TangentFDDiagnosticProcess**: MPC+接触の接線方向有効性をFDで検証 — status-256 |
 | K_c特定 | **FD診断でK_c不整合を決定的に特定**: 全体系94-100%誤差、MPC変換は原因でない — status-257 |
 | K_c再解析 | **K_c不整合は活性集合変化が原因**: consistent_st_tangent=TrueでK_c自体は完全一致(4.4e-10) — status-258 |
+| smoothing_delta | **Huber smoothing_deltaパイプライン貫通**: ContactSetupConfig→HuberProcess全経路で設定可能、自動推定(5000/r)有効化 — status-259 |
 | **壁** | **NR収束のactive set変化**（smoothing_delta=0でgap=0不連続→接触ON/OFF振動） / 61本以上 / 1000本6時間 |
 
 ---
