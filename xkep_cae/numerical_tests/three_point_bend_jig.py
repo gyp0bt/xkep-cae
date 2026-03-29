@@ -864,7 +864,7 @@ class DynamicThreePointBendContactJigConfig:
 
     wire_length: float = 100.0  # mm（支点間距離）
     wire_diameter: float = 17.0  # mm（φ17）
-    n_elems_wire: int = 8  # status-264: 4→8（E=25低剛性で要素粗すぎ回帰、20→8の妥協点）
+    n_elems_wire: int = 20  # status-270: 8→20復元（E=25 frac=1.0回帰の主因、status-234実績値）
     E: float = 200e3  # MPa（ワイヤ）
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
