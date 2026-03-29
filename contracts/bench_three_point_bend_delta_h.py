@@ -1,16 +1,11 @@
 """three_point_bend_jig huber_delta_h スイープ（剛体-梁接触での最適値探索）.
 
-status-262 TODO #2: 剛体-梁接触で delta_h=0.025 が有効か検証。
-梁-梁接触（strand_bending, wire_radius=0.5mm）では delta_h=0.025 が最速完走だが、
-three_point_bend_jig（wire_radius=8.5mm）は k_pen スケールが異なるため有効範囲が変わる。
+status-262 TODO #2: 剛体-梁接触で delta_h の効果を検証。
+条件: E=25MPa, n_periods=30, jig_push=30mm, wire_diameter=17mm。
+ベースライン(status-234): frac=1.0, incr=1592, cutback=2477。
 
-スケーリング考察:
-  strand_bending: wire_radius=0.5mm, delta_h/r=0.05 (最適)
-  three_point_bend: wire_radius=8.5mm → delta_h ≈ 0.05*8.5 = 0.425 が期待値
-  → delta_h=0.1〜1.0 の広い範囲でスイープ
-
-第1ラウンド結果: delta_h=0.0, 0.005, 0.010 は全て同一結果(frac=0.87, 500incr)
-→ 小さい delta_h は効果なし。ワイヤ径スケールに合わせた広範囲スイープに変更。
+注意: status-263 で E=25 n_periods=30 の回帰バグが発見されている（frac=0.0003）。
+回帰原因コミット: cc6f465。回帰修正後に本スクリプトを再実行すること。
 
 Usage:
     python contracts/bench_three_point_bend_delta_h.py 2>&1 | tee /tmp/log-tpb-delta-h.log
@@ -73,35 +68,36 @@ def _run_case(label: str, cfg: DynamicThreePointBendContactJigConfig) -> dict:
 
 def main() -> None:
     # DynamicThreePointBendContactJig: 剛体円柱ジグ + 梁ワイヤ接触
-    # n_periods=3 で高速テスト（準静的版は遅いため）
+    # E=25MPa, n_periods=30（status-234 ベースライン条件）
     base_cfg = dict(
-        E=25.0,  # 低い E で梁変形大
-        n_periods=3.0,
+        E=25.0,
+        n_periods=30.0,
         jig_push=30.0,
-        max_increments=200,
+        max_increments=10000,
         tol_force=1e-6,
         tol_disp=1e-8,
         max_nr_attempts=30,
     )
 
-    # delta_h スイープ: wire_radius=8.5mm スケール
-    # strand_bending（r=0.5mm）最適 delta_h/r=0.05 → ここでは delta_h≈0.425 が期待値
-    # auto δ=5000/8.5≈588 → delta_h_auto = k_pen/588
-    # 小さい値(0.005-0.010)は効果なし（第1ラウンド確認済み）→ 広範囲スイープ
+    # delta_h スイープ: ベースライン + 代表的な値
+    # wire_radius=8.5mm, auto δ=5000/8.5≈588
     cases = [
         (
-            "delta_h=0 (auto δ)",
+            "baseline (auto δ)",
             DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.0),
         ),
-        ("delta_h=0.025", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.025)),
-        ("delta_h=0.050", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.050)),
-        ("delta_h=0.100", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.100)),
-        ("delta_h=0.200", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.200)),
-        ("delta_h=0.300", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.300)),
-        ("delta_h=0.425", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.425)),
-        ("delta_h=0.500", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.500)),
-        ("delta_h=0.750", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.750)),
-        ("delta_h=1.000", DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=1.000)),
+        (
+            "delta_h=0.025",
+            DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.025),
+        ),
+        (
+            "delta_h=0.100",
+            DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.100),
+        ),
+        (
+            "delta_h=0.425",
+            DynamicThreePointBendContactJigConfig(**base_cfg, huber_delta_h=0.425),
+        ),
     ]
 
     results = []
@@ -115,6 +111,8 @@ def main() -> None:
 
     print("\n\n" + "=" * 80)
     print("  huber_delta_h スイープ結果（three_point_bend_jig, 剛体円柱-梁接触）")
+    print("  条件: E=25MPa, n_periods=30, jig_push=30mm, wire_diameter=17mm")
+    print("  ベースライン (status-234): frac=1.0 incr=1592 cutback=2477")
     print("=" * 80)
     header = (
         f"{'label':25s} {'delta_h':>10s} {'frac':>8s} {'incr':>6s} "

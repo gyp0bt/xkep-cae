@@ -1,8 +1,8 @@
-# status-263: three_point_bend_jig delta_h スイープ検証 + デフォルト値検討
+# status-263: delta_hデフォルト値検討 + three_point_bend E=25回帰発見
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
-- **日時**: 2026-03-28
+- **日時**: 2026-03-29
 - **ブランチ**: `claude/process-todo-items-ZJCFK`
 - **テスト数**: 200+10s+16+3+23+1+6+18+2+4+3+9+4（変更なし）→ **合計574 passed**
 - **契約違反**: **0件**
@@ -12,78 +12,64 @@
 
 ## 実施内容
 
-### 1. three_point_bend_jig huber_delta_h スイープ（status-262 TODO #2）
+### 1. delta_h デフォルト値の検討（status-262 TODO #1）
 
-`contracts/bench_three_point_bend_delta_h.py` を作成し、剛体円柱-梁接触（DynamicThreePointBendContactJigProcess）で delta_h をスイープ。
+**結論: huber_delta_h = 0.0（現状維持）**
 
-#### スケーリング考察
+- 梁-梁（strand_bending）: delta_h=0.025 が最速完走。ただし 0.030 で非完走の非単調性あり
+- 問題依存性が高く、グローバルデフォルト設定は時期尚早
 
-| 問題 | wire_radius | auto δ | auto delta_h推定 |
-|------|------------|--------|-----------------|
-| strand_bending | 0.5mm | 1000/r=2000 | ≈0.015 |
-| three_point_bend | 8.5mm | 5000/r≈588 | ≈0.39 |
+### 2. three_point_bend_jig delta_h スイープ（status-262 TODO #2）
 
-strand_bending の最適値 delta_h/r=0.05 → three_point_bend では delta_h≈0.425 が期待値。
+`contracts/bench_three_point_bend_delta_h.py` を作成。
 
-#### 第1ラウンド結果（delta_h=0.0, 0.005, 0.010）
+#### STA2 教訓
 
-小さい delta_h（0.005-0.010）は全て同一結果（frac=0.42, max_increments=500）。
-→ ワイヤ径スケールに対して微小すぎて効果なし。
+最初のベンチマークは **E=25.0, n_periods=3, max_increments=200** で実行し、frac=0.42 を「壁」と誤報告した。
+ユーザーから「E=25MPa で完走していた」と指摘を受け、**ベースライン未確認のまま結論を出した STA2 違反** を認識。
 
-#### 第2ラウンド結果（広範囲スイープ, max_increments=200）
+#### 回帰バグの発見
 
-| delta_h | frac | incr | cutback | NR_avg | NR_max | time |
-|---------|------|------|---------|--------|--------|------|
-| 0.0 (auto δ=588) | **0.418** | 200 | 125 | 3.5 | 30 | 219s |
-| 0.025 | 0.418 | 200 | 124 | 3.6 | 30 | 196s |
-| 0.050 | 0.418 | 200 | 125 | 3.5 | 30 | 206s |
-| 0.100 | 0.288 | 200 | 117 | 2.5 | 29 | 186s |
-| 0.200 | 0.281 | 200 | 114 | 2.7 | 30 | 248s |
-| 0.300 | 0.301 | 200 | 113 | 2.6 | 30 | 228s |
-| 0.425 | 0.411 | 200 | 115 | 3.4 | 28 | 255s |
-| 0.500 | 0.406 | 200 | 117 | 3.4 | 30 | 222s |
-| 0.750 | 0.380 | 200 | 131 | 3.0 | 29 | 254s |
-| 1.000 | 0.002 | 7 | 8 | 4.7 | 18 | 18s |
+正しい条件（E=25, n_periods=30, max_increments=10000）でテストしたところ **frac=0.0003** で破綻。
+status-234 では frac=1.0 で完走していた条件が回帰していた。
 
-#### 分析
+#### git bisect による原因特定
 
-- **delta_h=0〜0.050**: ほぼ同一結果（frac=0.42）。小さい delta_h は効果なし
-- **delta_h=0.1〜0.3**: 悪化（frac=0.28-0.30）。strand_bending と同じ非単調性パターン
-- **delta_h=0.425**: 回復（frac=0.41）。auto delta_h≈0.39 に近い値
-- **delta_h=1.0**: 完全崩壊（frac=0.002）。遷移幅が大きすぎて接触力が不正確に
-- **最良値は auto (δ=5000/r)** で frac=0.42。huber_delta_h 直接指定による改善なし
+| コミット | 内容 | 結果 |
+|---------|------|------|
+| ef06ba0 (status-234) | SDI排除効果検証 | **GOOD** (frac=1.0 記録) |
+| 049ffe9 (cc6f465直前) | Merge PR #200 | frac=0.0128 (100incr中、進行中) |
+| **cc6f465** | **LM正則化の実装** | **BAD** (frac=0.0018) |
+| 7500fdf (HEAD) | — | frac=0.0003 |
 
-### 2. delta_h デフォルト値の検討結果（status-262 TODO #1）
+**原因コミット**: `cc6f465 feat: Levenberg-Marquardt正則化の実装 — K_st安全有効化基盤`
 
-#### 結論: **グローバルデフォルトの設定は時期尚早**
+#### 回帰メカニズム（暫定分析）
 
-| 項目 | 判断 | 根拠 |
-|------|------|------|
-| グローバルデフォルト変更 | **見送り** | 問題依存性が高い |
-| 問題固有デフォルト | **見送り** | 非単調性があり安全な万能値がない |
-| 現行 huber_delta_h=0.0 | **維持** | auto smoothing_delta パスが最善 |
+cc6f465 で追加された LM 関連コードは後のコミットで削除済み。しかし以下の変更が残存:
+- `consistent_st_tangent=False` が three_point_bend_jig の contact_config に明示的に渡されるようになった
+- `consistent_st_tangent=True` でテストしても改善なし（frac=0.0002）
 
-#### 根拠
+cc6f465 の直前（049ffe9）でも frac=0.0128 と status-234 の frac=1.0 からは劣化済み。
+049ffe9 と status-234 の間のコミット（status-235〜238: 梁メッシュ粗化、解析的剛体表面など）が元々の劣化を引き起こし、cc6f465 がさらに悪化させた可能性がある。
 
-1. **問題依存性**: 梁-梁（delta_h=0.025最適）と剛体-梁（delta_h直接指定は改善なし）でスケールが完全に異なる
-2. **非単調性**: 両問題で delta_h の中間値域に「谷」が存在。安全マージンが取れない
-3. **auto smoothing_delta の優位性**: 剛体-梁では auto (5000/r) が最良結果。直接指定で超える値は見つからず
-4. **ユーザー確認**: 7本撚線は貫入なし（status-262 で確認済み、ユーザーからも追認）
+**修正は次セッションに引き継ぎ。** 根本原因の特定にはさらなる調査が必要。
 
-### 3. ベンチマークスクリプト
+### 3. デフォルト設定（E=200e3）での完走確認
 
-| ファイル | 内容 |
-|---------|------|
-| `contracts/bench_three_point_bend_delta_h.py` | 剛体円柱-梁接触 delta_h スイープ |
+| 条件 | frac | incr | cutback | time |
+|------|------|------|---------|------|
+| E=200e3, n_periods=3（デフォルト） | **1.000** | 555 | 336 | 345s |
+| E=25, n_periods=3 | 0.868 | 500 | 303 | 266s |
+| E=25, n_periods=30 | **0.0003** | 7 | 10 | 9s |
 
 ---
 
 ## テスト結果
 
-- 新規テスト: なし（ベンチマーク結果の記録のみ）
+- 新規テスト: なし
 - 既存テスト: 574 passed, 20 skipped, 1 xfailed（回帰なし）
 - 契約違反: 0件
-- 条例違反: 0件
 - lint: 全合格
 
 ---
@@ -93,37 +79,46 @@ strand_bending の最適値 delta_h/r=0.05 → three_point_bend では delta_h�
 ```bash
 git checkout claude/process-todo-items-ZJCFK
 pip install -e .
-# three_point_bend delta_h スイープ（~30分）
-python contracts/bench_three_point_bend_delta_h.py 2>&1 | tee /tmp/log-tpb-delta-h.log
+# E=25 n_periods=30 回帰確認（~9s、frac=0.0003 で即停止）
+python contracts/check_rigid_surface_effect.py 2>&1 | tee /tmp/log-regression.log
+# E=200e3 デフォルト完走確認（~345s）
+python3 -c "
+from xkep_cae.numerical_tests.three_point_bend_jig import *
+cfg = DynamicThreePointBendContactJigConfig()
+r = DynamicThreePointBendContactJigProcess().process(cfg)
+print(f'frac={r.solver_result.load_history[-1]:.4f}')
+"
 # 全テスト
 python -m pytest xkep_cae/ tests/ -q --timeout=120 --ignore=tests/contact/test_st_jacobian.py -k "not slow and not stress_contour"
 # 契約検証
 python contracts/validate_process_contracts.py
-# lint
-ruff check xkep_cae/ tests/
-ruff format --check xkep_cae/ tests/
 ```
 
 ---
 
 ## 次セッションへの引き継ぎ
 
+### 最優先: three_point_bend E=25 n_periods=30 回帰修正
+
+1. **cc6f465 以降の変更を精査**: LMコードは削除済みだが、cc6f465 で導入された他の変更（LinearSolveProcess の `lm_lambda` フィールド追加、three_point_bend_jig の `consistent_st_tangent` パススルーなど）が残存
+2. **049ffe9 時点で既に frac=0.0128**: status-234 (frac=1.0) → 049ffe9 (frac=0.0128) の劣化も別途調査が必要。status-235〜238 の梁メッシュ粗化・解析的剛体表面変更が影響している可能性
+3. **bisect 再実施**: ef06ba0 → 049ffe9 の範囲でより精密な bisect を推奨
+
 ### 残課題（優先度順）
 
-1. **auto smoothing_delta の問題固有最適化**: three_point_bend_jig の auto δ=5000/r は frac=0.42 で壁。delta_h 直接指定では改善不可。NR力収束改善（tol_force の壁）が本質的課題
-2. **Hermite 非局所 ∂g/∂u 対応**: 4ノードペア外の DOF 結合（status-258 から継続）。大規模設計タスク
-3. **NR力収束改善**: 中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態
+1. **three_point_bend E=25 回帰修正**（上記）
+2. **Hermite 非局所 ∂g/∂u 対応**（status-262 から継続）
+3. **NR 力収束改善**（status-262 から継続）
 
-### 設計メモ
+### STA2 教訓
 
-- delta_h 直接指定は梁-梁（strand_bending）専用の最適化。剛体-梁では効果なし
-- 剛体-梁の frac=0.42 の壁は delta_h ではなく NR 力収束自体の問題（disp 収束で抜ける）
-- delta_h の非単調性は両問題で共通するが、谷の位置はスケール依存（梁-梁: 0.030, 剛体-梁: 0.1-0.3）
-- `huber_delta_h` API は問題固有の手動チューニング用として有用。デフォルト値は 0.0（auto smoothing_delta 使用）が正しい設計
+- ベンチマーク実施前に **必ず既知の完走条件でベースライン確認** すること
+- 「壁」と報告する前に、過去の完走実績と条件を照合すること
+- E=25 の三点曲げは以前は完走していたので、「完走しない」は回帰バグ
 
 ---
 
 ## 懸念・設計メモ
 
-1. **delta_h 問題依存性が確認された**: 梁-梁と剛体-梁で最適レンジが完全に異なる。今後の新しい問題タイプ（例: 61本撚線）でも再スイープが必要
-2. **three_point_bend_jig の frac=0.42 壁**: 200 incr/125 cutback のうち、力収束に失敗して disp 収束で抜けるインクリメントが多い。これは delta_h ではなく NR ソルバー自体の改善が必要
+1. **E=25 回帰の深刻度**: E=25 は低剛性テスト条件で、E=200e3（デフォルト）は正常。実用上の影響は限定的だが、以前動いていたものが壊れているのは品質問題
+2. **delta_h デフォルト値**: 回帰修正後に改めて E=25 条件で delta_h スイープを実施すべき
