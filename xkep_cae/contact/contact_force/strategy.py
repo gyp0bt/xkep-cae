@@ -842,25 +842,19 @@ class HuberContactForceProcess(
             and manager.config.consistent_st_tangent
         )
 
-        # Hermite 用 node_tangents + node_counts（status-264: frozen制御追加）
-        _frozen_hm = (
-            hasattr(manager, "config")
-            and hasattr(manager.config, "frozen_hermite_tangent")
-            and manager.config.frozen_hermite_tangent
-        )
+        # Hermite 用 node_tangents + node_counts
+        # status-266: tangent() では常に dm 凍結（修正ニュートン法）
+        # dm 補正は evaluate() のみ適用し、Jacobian の安定性を確保
         _node_tangents = None
         _node_counts = None
         if _use_hermite and node_coords is not None:
             _conn = getattr(manager, "connectivity", None)
             if _conn is not None:
                 from xkep_cae.contact.geometry._compute import (
-                    _compute_node_counts,
                     _compute_node_tangents,
                 )
 
                 _node_tangents = _compute_node_tangents(node_coords, _conn)
-                if not _frozen_hm:
-                    _node_counts = _compute_node_counts(len(node_coords), _conn)
 
         # バッチ配列抽出
         extracted = self._extract_pair_arrays(manager.pairs)
