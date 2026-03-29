@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-28）
+## 現在地（2026-03-29）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト**（delta_hデフォルト値検討+three_point_bend検証 — status-263） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト**（E=25回帰修正: frozen_hermite_tangent+_cur_ratio統一 — status-264） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -33,6 +33,7 @@
 | delta_h API | **huber_delta_h直接指定API**: k_penスケール非依存の遷移幅指定。active_contact_dofs NRソルバー結合。δ=1000完走テスト追加 — status-261 |
 | delta_h探索 | **delta_h=0.025が最速完走（132s）**: 梁-梁で有効範囲[0.020,0.025]∪{0.040}、非単調性あり。three_point_bend貫通。3Dパイプ貫入なし — status-262 |
 | delta_h検討 | **delta_hデフォルト値は0.0維持**: 剛体-梁では直接指定改善なし、問題依存性高くグローバルデフォルト時期尚早 — status-263 |
+| E=25回帰修正 | **frozen_hermite_tangent + _cur_ratio統一 + n_elems=8**: E=25 frac=0.0003→0.67回復 — status-264 |
 | **壁** | Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---

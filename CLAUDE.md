@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト** — 2026-03-28 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト** — 2026-03-29 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -73,7 +73,7 @@
 
 ### 次の課題
 
-**NR収束改善（活性集合変化対策）** — status-261:
+**NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
 - ~~MPC縮退系残差判定 + u_pred MPC射影 + ストール検知拡張~~ ← status-255で完了
 - ~~B1-B4 摩擦アセンブリProcess化~~ ← status-256で完了
@@ -86,7 +86,8 @@
 - ~~δ=1000完走テスト + active_contact_dofs NR結合 + delta_h直接指定API~~ ← status-261で完了
 - ~~delta_h最適値の問題非依存探索~~ ← status-262で完了（delta_h=0.025最速、非単調性あり）
 - ~~delta_hデフォルト値検討（three_point_bend検証）~~ ← status-263で完了（0.0維持、問題依存性高くグローバルデフォルト時期尚早）
-- **次**: Hermite非局所∂g/∂u対応 + NR力収束改善
+- ~~E=25回帰修正（frozen_hermite_tangent + _cur_ratio統一 + n_elems=8）~~ ← status-264で完了（frac=0.0003→0.67）
+- **次**: frozen_hermite_tangent=False安定化 + Hermite非局所∂g/∂u対応 + NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 

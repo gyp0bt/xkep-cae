@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト** — 2026-03-28時点 | delta_hデフォルト値検討+three_point_bend検証（status-263） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト** — 2026-03-29時点 | E=25回帰修正: frozen_hermite_tangent+_cur_ratio統一（status-264） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

@@ -301,7 +301,9 @@ class NewtonDynamicProcess(
                 break
 
             # ── 発散早期検知 ──
-            _cur_ratio = conv_out.res_u_norm / conv_out.f_ref
+            # status-264: 力収束判定と同じ res_trans_norm ベースに統一。
+            # res_u_norm は回転残差を含むが f_ref は並進のみで不整合だった。
+            _cur_ratio = conv_out.res_trans_norm / conv_out.f_ref
             if att > 0 and _cur_ratio > _prev_res_ratio * 1.01:
                 _consecutive_increase += 1
             else:
