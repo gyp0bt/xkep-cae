@@ -103,8 +103,8 @@ python -m pytest xkep_cae/ tests/ -q --timeout=120 --ignore=tests/contact/test_s
 # 契約検証
 python contracts/validate_process_contracts.py
 
-# BenchmarkRunner 統合例（重い: 三点曲げジグ実行）
-# python contracts/bench_with_manifest.py 2>&1 | tee /tmp/log-bench-manifest.log
+# 契約スクリプト残存確認
+ls contracts/
 ```
 
 ---
@@ -118,11 +118,38 @@ python contracts/validate_process_contracts.py
 3. **Hermite 非局所 ∂g/∂u 対応**（status-262 から継続）
 4. **NR 力収束改善**（status-262 から継続）
 
+### contracts/ クリーンアップ
+
+完了済みの一時調査スクリプト13件を削除。残存6件は再利用可能なツール:
+
+| 削除 | 理由 |
+|------|------|
+| bench_huber_delta_h.py | status-261/262 delta_h探索完了 |
+| bench_smoothing_delta.py | status-259/260 δチューニング完了 |
+| bench_smoothing_delta2.py | status-260 δ微調整完了 |
+| bench_three_point_bend_delta_h.py | status-262/263 delta_h検証完了 |
+| check_dof_scale_rot_sweep.py | status-241 パラメータスイープ完了 |
+| check_reproduce_224.py | status-224 再現テスト完了 |
+| check_rigid_surface_6elem.py | status-238 境界条件検証完了 |
+| check_rigid_surface_effect.py | status-237 剛体面検証完了 |
+| check_rigid_surface_quick.py | status-237 煙テスト完了 |
+| check_spectral_freeze.py | status-258/264 スペクトル解析完了 |
+| check_st_relaxation.py | status-262+ 緩和検証完了 |
+| check_tangent_consistency.py | status-238/258 FD整合性検証完了 |
+| check_wall_cause.py | status-264 壁原因特定完了 |
+
+残存ツール（6件）:
+- `validate_process_contracts.py` — 契約/条例チェッカー（インフラ）
+- `check_dynamic_contact.py` — 動的接触煙テスト
+- `check_strand_mesh_7wire.py` — 7本メッシュ生成+貫入検査
+- `generate_oscillation_images.py` — 揺動可視化
+- `visualize_bending_3d.py` — 三点曲げ3D可視化
+- `visualize_strand_bending_3d.py` — 撚線曲げ3D可視化
+
 ### BenchmarkRunner 拡張TODO
 
-1. **既存ベンチマークスクリプトの BenchmarkRunner 移行**: `contracts/bench_*.py` を順次 BenchmarkRunner 経由に移行
-2. **マニフェスト比較ツール**: 2つのマニフェストを比較して差分を表示するユーティリティ
-3. **status ファイルテンプレート自動生成**: マニフェストから status ファイルの「再現手順」セクションを自動生成
+1. **マニフェスト比較ツール**: 2つのマニフェストを比較して差分を表示するユーティリティ
+2. **status ファイルテンプレート自動生成**: マニフェストから status ファイルの「再現手順」セクションを自動生成
 
 ---
 
