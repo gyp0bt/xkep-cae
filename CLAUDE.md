@@ -90,7 +90,8 @@
 - ~~frozen_hermite_tangent=False安定化（修正NR法: evaluate()のみdm補正）~~ ← status-266で完了（frac=0.0003→0.47）
 - ~~チャタリング分析 + リラクゼーション diverged フラグ修正~~ ← status-267で完了（frac=0.4837→0.4950）
 - ~~チャタリング対策 delta_hブースト + NR反復動的拡張~~ ← status-268で完了（frac=0.4950→0.4978、**ボトルネック確定: frozen tangent線形収束率0.97/iter**）
-- **次**: frozen_hermite_tangent=False NR安定化（過修正防止） + Hermite非局所∂g/∂u対応 + NR力収束改善
+- ~~NR残差最小値リストア（過修正防止）~~ ← status-269で完了（frozen=True 0.4978→0.5341、frozen=False 0.4732→0.5408）
+- **次**: frozen_hermite_tangent=FalseデフォルトON検討 + リストアしきい値チューニング + Hermite非局所∂g/∂u対応 + NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
