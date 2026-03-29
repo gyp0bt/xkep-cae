@@ -35,3 +35,4 @@ examples/output/
 output/
 scripts/results/
 docs/generated/
+.claude/
