@@ -68,6 +68,11 @@ class NewtonDynamicInput:
     stall_window: int = 4  # 残差プラトーをストールと判定するまでの反復数
     relax_max_iter: int = 25  # リラクゼーション有効後の最大反復数（超過で早期打切り）
     tangent_fd_diagnostic: bool = False  # ストール時にFD接線診断を実行（status-256）
+    # チャタリング時 Huber delta_h ブースト（status-268）
+    # チャタリング検知時に delta_h を boost 倍に拡大し、ペナルティ関数を平滑化。
+    # 力ブレンド（残差-Jacobian不整合）を回避し、NR二次収束を維持。
+    chattering_delta_h_boost: float = 4.0
+    chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
 
 
 @dataclass(frozen=True)
@@ -178,8 +183,12 @@ class NewtonDynamicProcess(
         _relax_iter = 0  # リラクゼーション有効化後の反復数
         _current_omega = 1.0  # 現在のリラクゼーション係数
         _prev_n_active = -1
+        _delta_h_boosted = False  # status-268: delta_hブースト適用中フラグ
+        _effective_max = cfg.max_attempts  # チャタリング時に動的拡張（status-268）
 
-        for att in range(cfg.max_attempts):
+        att = -1
+        while att + 1 < _effective_max:
+            att += 1
             total_attempts += 1
 
             # ── ステップ 2〜5: 接触力アセンブリ + 残差 ──
@@ -208,20 +217,25 @@ class NewtonDynamicProcess(
             f_c = force_out.f_c
             R_u = force_out.R_u
 
-            # ── 接触力リラクゼーション（status-247: NR 2-サイクル対策） ──
-            # 残差プラトー + active set 振動を検知し、接触力をブレンドして安定化。
-            # 収束時は f_c ≈ f_c_prev なので収束解は不変。
-            # omega は漸進的に低下: ω₀ * 0.7^(iter//2)、下限 0.05
-            if att > 0 and _relax_active and cfg.contact_relax_omega < 1.0:
+            # ── 接触チャタリング対策（status-268: delta_hブースト優先） ──
+            # チャタリング検知後:
+            #   delta_h_boost > 1: Huber遷移幅を拡大（残差-Jacobian整合維持）
+            #   delta_h_boost <= 1: フォールバックとして力ブレンド（status-247）
+            if att > 0 and _relax_active:
                 _relax_iter += 1
-                _current_omega = max(
-                    0.05,
-                    cfg.contact_relax_omega * (0.7 ** (_relax_iter // 2)),
-                )
-                f_c_blend = _current_omega * f_c + (1.0 - _current_omega) * _f_c_prev
-                R_u = R_u - f_c + f_c_blend
-                R_u[input_data.fixed_dofs] = 0.0
-                f_c = f_c_blend
+                if _delta_h_boosted:
+                    # delta_hブースト適用中: 通常NR（力ブレンド不要）
+                    pass
+                elif cfg.contact_relax_omega < 1.0:
+                    # フォールバック: 力ブレンド（delta_hブースト無効時のみ）
+                    _current_omega = max(
+                        0.05,
+                        cfg.contact_relax_omega * (0.7 ** (_relax_iter // 2)),
+                    )
+                    f_c_blend = _current_omega * f_c + (1.0 - _current_omega) * _f_c_prev
+                    R_u = R_u - f_c + f_c_blend
+                    R_u[input_data.fixed_dofs] = 0.0
+                    f_c = f_c_blend
             _f_c_prev = f_c.copy()
 
             # 動的: 慣性力・減衰力を残差に加算
@@ -324,7 +338,22 @@ class NewtonDynamicProcess(
                 if _consecutive_stall >= cfg.stall_window and not _relax_active:
                     _relax_active = True
                     _stall_type = "チャタリング" if _active_changed else "残差停滞"
-                    if cfg.show_progress:
+                    # status-268: delta_hブースト（力ブレンドより優先）
+                    if cfg.chattering_delta_h_boost > 1.0 and hasattr(
+                        _contact_force_strategy, "set_delta_h_boost"
+                    ):
+                        _delta_h_boosted = True
+                        _contact_force_strategy.set_delta_h_boost(cfg.chattering_delta_h_boost)
+                        # NR反復上限を動的拡張（変位収束到達のための余裕）
+                        _effective_max = cfg.max_attempts + cfg.chattering_extra_attempts
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"接触{_stall_type}検知 → delta_hブースト "
+                                f"(×{cfg.chattering_delta_h_boost}, "
+                                f"max_att={_effective_max})"
+                            )
+                    elif cfg.show_progress:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
                             f"接触{_stall_type}検知 → リラクゼーション有効化 "
@@ -334,7 +363,10 @@ class NewtonDynamicProcess(
             # status-267: _diverged=False に修正。リラクゼーション abort は発散ではなく
             # 活性集合振動の停滞。diverged=True だと dt が shrink²=0.25 で過度に縮小され
             # （91/91全失敗と相まって）チャタリング帯域でdt枯渇を引き起こしていた。
-            if _relax_active and _relax_iter >= cfg.relax_max_iter:
+            # status-268: delta_hブースト時は早期打切りをバイパス。
+            # ブーストは力ブレンド不要のため max_attempts まで NR 継続し
+            # 変位収束に到達するための時間を確保する。
+            if _relax_active and _relax_iter >= cfg.relax_max_iter and not _delta_h_boosted:
                 _diverged = False
                 if cfg.show_progress:
                     print(
@@ -592,6 +624,10 @@ class NewtonDynamicProcess(
                             f"energy = {conv_out2.energy:.3e} (energy converged)"
                         )
                 break
+
+        # status-268: delta_hブーストを解除（次インクリメントに影響させない）
+        if _delta_h_boosted and hasattr(_contact_force_strategy, "set_delta_h_boost"):
+            _contact_force_strategy.set_delta_h_boost(1.0)
 
         return DynamicStepOutput(
             converged=step_converged,
