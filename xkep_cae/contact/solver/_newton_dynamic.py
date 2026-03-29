@@ -73,6 +73,11 @@ class NewtonDynamicInput:
     # 力ブレンド（残差-Jacobian不整合）を回避し、NR二次収束を維持。
     chattering_delta_h_boost: float = 4.0
     chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
+    # NR残差最小値リストア（status-269: 過修正防止）
+    # NR反復中の残差最小値を追跡し、発散検知時に最小残差の状態にリストアして
+    # インクリメント成功とする。frozen_hermite_tangent=False の過修正発散を回避。
+    nr_min_restore: bool = True  # 残差最小値リストア有効化
+    nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
 
 
 @dataclass(frozen=True)
@@ -185,6 +190,12 @@ class NewtonDynamicProcess(
         _prev_n_active = -1
         _delta_h_boosted = False  # status-268: delta_hブースト適用中フラグ
         _effective_max = cfg.max_attempts  # チャタリング時に動的拡張（status-268）
+        # NR残差最小値リストア用トラッキング（status-269）
+        _min_res_ratio = float("inf")
+        _min_res_u: np.ndarray | None = None
+        _min_res_f_c: np.ndarray | None = None
+        _min_res_att = 0
+        _min_res_increase_count = 0  # 最小値からの連続増加カウント
 
         att = -1
         while att + 1 < _effective_max:
@@ -318,6 +329,17 @@ class NewtonDynamicProcess(
             # status-264: 力収束判定と同じ res_trans_norm ベースに統一。
             # res_u_norm は回転残差を含むが f_ref は並進のみで不整合だった。
             _cur_ratio = conv_out.res_trans_norm / conv_out.f_ref
+
+            # ── NR残差最小値追跡（status-269） ──
+            if cfg.nr_min_restore and att >= 1 and _cur_ratio < _min_res_ratio:
+                _min_res_ratio = _cur_ratio
+                _min_res_u = u.copy()
+                _min_res_f_c = f_c.copy()
+                _min_res_att = att
+                _min_res_increase_count = 0
+            elif cfg.nr_min_restore and att >= 1 and _cur_ratio > _min_res_ratio:
+                _min_res_increase_count += 1
+
             if att > 0 and _cur_ratio > _prev_res_ratio * 1.01:
                 _consecutive_increase += 1
             else:
@@ -387,6 +409,32 @@ class NewtonDynamicProcess(
                 _diverge_detected = True
                 _reason = f"残差爆発 (||R||/||f|| = {_cur_ratio:.1e} > 100)"
             if _diverge_detected:
+                # status-269: 残差最小値リストア（過修正防止）
+                # 発散検知時に、NR反復中に到達した最小残差の状態にリストアして
+                # インクリメント成功とする。条件:
+                #  - nr_min_restore 有効
+                #  - 最小残差が十分小さい（< nr_min_restore_threshold）
+                #  - 最小値到達後に nr_min_restore_window 回以上増加
+                #    （一時的な振動ではなく本当の過修正であることを確認）
+                _can_restore = (
+                    cfg.nr_min_restore
+                    and _min_res_u is not None
+                    and _min_res_ratio < 0.1
+                    and _min_res_increase_count >= cfg.nr_min_restore_window
+                )
+                if _can_restore:
+                    u[:] = _min_res_u
+                    f_c = _min_res_f_c
+                    step_converged = True
+                    _diverged = False
+                    if cfg.show_progress:
+                        print(
+                            f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                            f"発散検知 ({_reason}) → "
+                            f"最小残差リストア (att={_min_res_att}, "
+                            f"||R||/||f||={_min_res_ratio:.3e})"
+                        )
+                    break
                 _diverged = True
                 if cfg.show_progress:
                     print(
