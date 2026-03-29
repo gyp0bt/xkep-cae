@@ -500,14 +500,24 @@ class HuberContactForceProcess(
         self._ndof_per_node = ndof_per_node
         self._smoothing_delta = smoothing_delta
         self._huber_delta_h = huber_delta_h  # >0: delta_h直接指定（status-261）
+        self._delta_h_boost: float = 1.0  # チャタリング時ブースト倍率（status-268）
+
+    def set_delta_h_boost(self, factor: float) -> None:
+        """Huber遷移幅のブースト倍率を設定（status-268: チャタリング対策）.
+
+        NRソルバーからチャタリング検知時に呼ばれ、delta_hを一時的に拡大する。
+        evaluate() と assemble_tangent() 両方に一貫して適用される。
+        """
+        self._delta_h_boost = max(1.0, factor)
 
     def _resolve_delta_h(self, k_pen: float) -> float:
         """Huber遷移幅を解決: huber_delta_h直接指定 > smoothing_delta間接指定 > 0."""
+        base = 0.0
         if self._huber_delta_h > 0.0:
-            return self._huber_delta_h
-        if self._smoothing_delta > 0.0:
-            return k_pen / self._smoothing_delta
-        return 0.0
+            base = self._huber_delta_h
+        elif self._smoothing_delta > 0.0:
+            base = k_pen / self._smoothing_delta
+        return base * self._delta_h_boost
 
     @staticmethod
     def _huber(x: float, delta: float) -> float:

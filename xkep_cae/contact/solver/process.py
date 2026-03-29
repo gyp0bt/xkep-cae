@@ -369,6 +369,8 @@ class ContactFrictionProcess(
             contact_relax_omega=getattr(input_data, "contact_relax_omega", 0.5),
             stall_window=getattr(input_data, "stall_window", 4),
             tangent_fd_diagnostic=getattr(input_data, "tangent_fd_diagnostic", False),
+            chattering_delta_h_boost=getattr(input_data, "chattering_delta_h_boost", 4.0),
+            chattering_extra_attempts=getattr(input_data, "chattering_extra_attempts", 20),
         )
         nr_process_dyn = NewtonDynamicProcess()
 
