@@ -864,7 +864,7 @@ class DynamicThreePointBendContactJigConfig:
 
     wire_length: float = 100.0  # mm（支点間距離）
     wire_diameter: float = 17.0  # mm（φ17）
-    n_elems_wire: int = 4  # status-237: L_elem > wire_diameter（25mm > 17mm）で梁面連続化
+    n_elems_wire: int = 8  # status-264: 4→8（E=25低剛性で要素粗すぎ回帰、20→8の妥協点）
     E: float = 200e3  # MPa（ワイヤ）
     nu: float = 0.3
     rho: float = 7.85e-9  # ton/mm³ (鉄鋼)
@@ -901,6 +901,7 @@ class DynamicThreePointBendContactJigConfig:
     du_norm_cap: float = 0.0  # 減衰ニュートンなし（フルニュートンステップ）
     use_hermite_centerline: bool = True  # status-230: Hermite 幾何対応完了により ON
     freeze_geometry_in_nr: bool = True  # status-230: Hermite ON 時は NR 内 s,t 凍結で安定化
+    frozen_hermite_tangent: bool = True  # status-264: ∂m/∂u凍結近似（低剛性で安定化）
     consistent_st_tangent: bool = False  # K_st 整合接線（status-239: LM 正則化と併用）
     dof_scale_rot: float = 1.0  # 回転 DOF の NR 更新スケーリング（status-241）
 
@@ -1191,6 +1192,7 @@ class DynamicThreePointBendContactJigProcess(
             coating_mu=cfg.coating_mu,
             use_hermite_centerline=cfg.use_hermite_centerline,
             freeze_geometry_in_nr=cfg.freeze_geometry_in_nr,
+            frozen_hermite_tangent=cfg.frozen_hermite_tangent,
             consistent_st_tangent=cfg.consistent_st_tangent,
             **_rigid_kw,
         )

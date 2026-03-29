@@ -736,9 +736,14 @@ class HuberContactForceProcess(
             return f_c, np.zeros(0)
         has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
 
-        # Hermite dm 補正用 node_counts（status-243）
+        # Hermite dm 補正用 node_counts（status-243, status-264: frozen制御追加）
+        _frozen_hm = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "frozen_hermite_tangent")
+            and manager.config.frozen_hermite_tangent
+        )
         _eval_node_counts = None
-        if _use_hermite:
+        if _use_hermite and not _frozen_hm:
             _conn = getattr(manager, "connectivity", None)
             if _conn is not None:
                 from xkep_cae.contact.geometry._compute import _compute_node_counts
@@ -837,7 +842,12 @@ class HuberContactForceProcess(
             and manager.config.consistent_st_tangent
         )
 
-        # Hermite 用 node_tangents + node_counts
+        # Hermite 用 node_tangents + node_counts（status-264: frozen制御追加）
+        _frozen_hm = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "frozen_hermite_tangent")
+            and manager.config.frozen_hermite_tangent
+        )
         _node_tangents = None
         _node_counts = None
         if _use_hermite and node_coords is not None:
@@ -849,7 +859,8 @@ class HuberContactForceProcess(
                 )
 
                 _node_tangents = _compute_node_tangents(node_coords, _conn)
-                _node_counts = _compute_node_counts(len(node_coords), _conn)
+                if not _frozen_hm:
+                    _node_counts = _compute_node_counts(len(node_coords), _conn)
 
         # バッチ配列抽出
         extracted = self._extract_pair_arrays(manager.pairs)
