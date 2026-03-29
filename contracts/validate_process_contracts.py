@@ -78,9 +78,12 @@ def _import_all_modules() -> None:
     xkep_cae/ 配下の全サブパッケージの .py ファイルを
     ファイルシステム走査で自動検出する。
     """
-    # 走査対象ルート: xkep_cae/ 配下の全サブパッケージ
+    # 走査対象ルート: xkep_cae/ 配下の全サブパッケージ + トップレベル tests/
     xkep_root = _project_root / "xkep_cae"
     scan_roots = [d for d in sorted(xkep_root.iterdir()) if d.is_dir() and d.name != "__pycache__"]
+    top_tests = _project_root / "tests"
+    if top_tests.exists():
+        scan_roots.append(top_tests)
 
     # 除外対象: テストファイル、__init__.py、基盤モジュール
     _SKIP_NAMES = {"__init__", "base", "categories", "data", "slots", "tree", "runner"}
@@ -386,8 +389,12 @@ def check_c12_batch_order(registry: dict[str, type]) -> list[str]:
             "（process-architecture.md §6 で StrandBendingBatchProcess が必要）"
         )
 
+    # 汎用ラッパー（実行対象を入力で受け取る BatchProcess）は
+    # 静的 uses 宣言が不可能なため除外
+    _GENERIC_WRAPPERS = {"BenchmarkRunnerProcess"}
+
     for name, cls in batch_classes:
-        if not cls.uses:
+        if not cls.uses and name not in _GENERIC_WRAPPERS:
             errors.append(f"C12: {name} の uses が空（順序依存検証不可）")
 
     return errors

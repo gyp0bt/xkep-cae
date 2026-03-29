@@ -24,6 +24,7 @@ from xkep_cae.core.benchmark import (
     serialize_config,
 )
 from xkep_cae.core.categories import PreProcess
+from xkep_cae.core.testing import binds_to
 
 # --- テスト用ダミープロセス ---
 
@@ -205,6 +206,7 @@ class TestRunManifestAPI:
 # --- BenchmarkRunnerProcess テスト ---
 
 
+@binds_to(BenchmarkRunnerProcess)
 class TestBenchmarkRunnerProcessAPI:
     """BenchmarkRunnerProcess の API テスト."""
 
