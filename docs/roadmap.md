@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-29）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト**（チャタリング対策分析 + divergedフラグ修正 — status-267） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト**（チャタリング対策delta_hブースト+NR反復動的拡張 — status-268） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -37,7 +37,8 @@
 | STA2自動記録 | **BenchmarkRunnerProcess**: 実行マニフェスト自動記録（git+Config+結果）で担当者間再現性を保証 — status-265 |
 | frozen_hm安定化 | **frozen_hermite_tangent=False安定化**: tangent()はdm凍結、evaluate()のみdm補正（修正NR法）。E=25 frac=0.0003→0.47 — status-266 |
 | chattering分析 | **チャタリング詳細分析 + divergedフラグ修正**: リラクゼーション91/91全失敗の原因特定。abort時diverged=False化でE=25 frac 0.4837→0.4950 — status-267 |
-| **壁** | チャタリング帯域根本対策（frozen active set等） / Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
+| delta_hブースト | **チャタリング時delta_hブースト + NR反復動的拡張**: ボトルネック確定=frozen_hermite_tangent線形収束率(0.97/iter)。delta_hは深い貫入に無効。frac 0.4950→0.4978 — status-268 |
+| **壁** | **frozen tangent線形収束率が根本ボトルネック** / Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---
 
