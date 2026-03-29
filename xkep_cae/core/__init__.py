@@ -4,6 +4,14 @@ AbstractProcess + Strategy Protocol によるソルバー契約化フレーム�
 """
 
 from xkep_cae.core.base import AbstractProcess, ProcessMeta, ProcessMetaclass
+from xkep_cae.core.benchmark import (
+    BenchmarkRunInput,
+    BenchmarkRunnerProcess,
+    BenchmarkRunResult,
+    RunManifest,
+    capture_environment,
+    serialize_config,
+)
 from xkep_cae.core.categories import (
     BatchProcess,
     CompatibilityProcess,
@@ -62,6 +70,12 @@ __all__ = [
     "ProcessRegistry",
     "ProcessRunner",
     "ExecutionContext",
+    "BenchmarkRunnerProcess",
+    "BenchmarkRunInput",
+    "BenchmarkRunResult",
+    "RunManifest",
+    "capture_environment",
+    "serialize_config",
     "StrategySlot",
     "collect_strategy_slots",
     "collect_strategy_types",
