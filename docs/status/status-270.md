@@ -79,10 +79,18 @@ n_elems=20, rigid=True, use_hermite_centerline=False, max_increments=2000
 
 status-234 とほぼ同等の結果。n_elems_wire=20 復元で**リグレッション完全修正を確認**。
 
-#### Hermite ON フルテスト（実行中）
+#### Hermite ON フルテスト（完走確認）
 
 n_elems=20, rigid=True, frozen_hermite_tangent=True, max_increments=2000
-→ 実行中（Hermite ONの追加カットバックのため、Hermite OFFより遅い進行）
+→ **frac=1.0000 到達（incr=929, cutback=682）**
+
+| 条件 | frac | incr | cutback |
+|------|------|------|---------|
+| status-234 (Hermite OFF, 旧コード) | 1.0000 | 870 | 655 |
+| **status-270 Hermite OFF** | **1.0000** | 919 | 727 |
+| **status-270 Hermite ON (frozen=True)** | **1.0000** | 929 | 682 |
+
+Hermite ON/OFF 両方で frac=1.0 完走を確認。**リグレッション完全修正。**
 
 ---
 
