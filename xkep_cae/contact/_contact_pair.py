@@ -171,9 +171,10 @@ class _ContactConfigInput:
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（status-261, k_penスケール非依存）
     exact_tangent: bool = False  # 厳密接線（動的 c0*M 正則化時に有効）
     freeze_geometry_in_nr: bool = False  # NR 反復内で s,t を凍結（ステップ間のみ更新）
-    frozen_hermite_tangent: bool = (
-        True  # status-264: ∂m/∂u=0凍結近似（Trueで安定、Falseで正確だがNR不安定）
-    )
+    frozen_hermite_tangent: bool = True
+    # status-264: ∂m/∂u=0凍結近似
+    # True: evaluate()/tangent() 両方で dm=None（完全凍結）
+    # False: evaluate() のみ dm 補正適用、tangent() は常に凍結（status-266: 修正NR法）
     st_relaxation: float = 1.0  # NR 反復内 s,t 更新の緩和係数（1.0=フル、<1.0=under-relax）
     # 解析的剛体表面（status-237）
     rigid_surface_type: str = ""  # "cylinder" or ""
