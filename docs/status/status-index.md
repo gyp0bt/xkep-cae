@@ -98,6 +98,7 @@
 | [262](status-262.md) | 2026-03-28 | delta_h最適値探索 + three_point_bend huber_delta_h貫通 + 3Dパイプ | 200+10s+16+3+23+1+6+18+2+4+3+9+4(新) |
 | [263](status-263.md) | 2026-03-29 | delta_hデフォルト値検���（0.0維持）+ three_point_bend E=25回帰���見 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
 | [264](status-264.md) | 2026-03-29 | E=25回帰修正: frozen_hermite_tangent + _cur_ratio統一 + n_elems=8 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
+| [265](status-265.md) | 2026-03-29 | BenchmarkRunnerProcess — STA2自動記録基盤 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -235,6 +236,7 @@ smoothing_delta:       200+10s+16+3+23+1+6+18+2+4(新) (2026-03-28) ← status-2
 delta_h API:           200+10s+16+3+23+1+6+18+2+4+3+9(新) (2026-03-28) ← status-261（δ=1000完走テスト+active_contact_dofs NR結合+delta_h直接指定API）
 delta_h探索:           200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-28) ← status-262（delta_h=0.025最適+three_point_bend貫通+3Dパイプ貫入なし）
 E=25回帰修正:          200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-29) ← status-264（frozen_hermite_tangent+_cur_ratio統一+n_elems=8）
+STA2自動記録:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) (2026-03-29) ← status-265（BenchmarkRunnerProcess+RunManifest+serialize_config）
 ```
 
 ## 備考

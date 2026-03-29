@@ -18,14 +18,14 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4 テスト** — 2026-03-29時点 | E=25回帰修正: frozen_hermite_tangent+_cur_ratio統一（status-264） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト** — 2026-03-29時点 | BenchmarkRunnerProcess実装: STA2自動記録（status-265） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
 | FEM基盤 | 梁（EB/Timo/CR/Cosserat）+ 非線形 + 動的解析 |
 | 接触 | NCP + Line contact + smooth penalty Coulomb摩擦 |
 | 撚線 | 7本摩擦曲げ+揺動収束、被膜+シース |
-| アーキテクチャ | Process Architecture + Strategy Protocol |
+| アーキテクチャ | Process Architecture + Strategy Protocol + BenchmarkRunner |
 
 **推奨ソルバー構成**: `contact_mode="smooth_penalty"` + NCP + 同層除外（[詳細](docs/roadmap.md#推奨ソルバー構成)）
 
