@@ -66,12 +66,23 @@ n_elems=20, rigid=True, max_increments=500 → frac=0.1831 (cutback=458)
 初期接触確立フェーズ（frac<0.06）はカットバックが集中するが、
 status-234 の dt 区間分析では frac=0.06 以降で加速し、frac=1.0 に到達。
 
-#### 2000incr フルテスト（実行中）
+#### Hermite OFF フルテスト（完走確認）
+
+n_elems=20, rigid=True, use_hermite_centerline=False, max_increments=2000
+→ **frac=1.0000 到達（incr=919, cutback=727）**
+
+| 指標 | status-234 (ef06ba0) | status-270 (現コード) |
+|------|---------------------|----------------------|
+| frac | 1.0000 | **1.0000** |
+| incr | 870 | 919 |
+| cutback | 655 | 727 |
+
+status-234 とほぼ同等の結果。n_elems_wire=20 復元で**リグレッション完全修正を確認**。
+
+#### Hermite ON フルテスト（実行中）
 
 n_elems=20, rigid=True, frozen_hermite_tangent=True, max_increments=2000
-→ **実行中（status-234 は 1592 incr で frac=1.0、2000 は余裕あり）**
-
-結果は追記予定。
+→ 実行中（Hermite ONの追加カットバックのため、Hermite OFFより遅い進行）
 
 ---
 
@@ -131,13 +142,13 @@ print(f'frac={sr.load_history[-1]:.4f} incr={sr.n_increments} cutback={sr.n_cutb
 
 ### 残課題（優先度順）
 
-1. **2000incr フルテスト結果の確認**
-   - 実行中。frac=1.0 到達を期待（status-234 は 1592 incr で到達）
-   - frac<1.0 の場合は max_increments 延長 or 追加パラメータ調整
+1. **Hermite ON でのフルテスト確認**
+   - Hermite OFF で frac=1.0 確認済み
+   - Hermite ON（frozen_hermite_tangent=True）でも到達可能か検証
+   - NR min restore + delta_h boost の相乗効果が n_elems=20 でどう作用するか
 
-2. **status-266-269 の NR 改善との組み合わせ効果確認**
-   - n_elems=20 復元 + NR min restore + delta_h boost の相乗効果
-   - frozen_hermite_tangent=False での検証
+2. **frozen_hermite_tangent=False での検証**
+   - n_elems=20 + frozen=False の組み合わせ効果
 
 3. **NR 力収束改善**（status-269 から継続）
    - 力収束は依然 0/incr（全変位収束）
