@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-29）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト**（frozen_hermite_tangent=False安定化 + 契約修正 — status-266） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト**（チャタリング対策分析 + divergedフラグ修正 — status-267） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -36,7 +36,8 @@
 | E=25回帰修正 | **frozen_hermite_tangent + _cur_ratio統一 + n_elems=8**: E=25 frac=0.0003→0.67回復 — status-264 |
 | STA2自動記録 | **BenchmarkRunnerProcess**: 実行マニフェスト自動記録（git+Config+結果）で担当者間再現性を保証 — status-265 |
 | frozen_hm安定化 | **frozen_hermite_tangent=False安定化**: tangent()はdm凍結、evaluate()のみdm補正（修正NR法）。E=25 frac=0.0003→0.47 — status-266 |
-| **壁** | Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
+| chattering分析 | **チャタリング詳細分析 + divergedフラグ修正**: リラクゼーション91/91全失敗の原因特定。abort時diverged=False化でE=25 frac 0.4837→0.4950 — status-267 |
+| **壁** | チャタリング帯域根本対策（frozen active set等） / Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---
 

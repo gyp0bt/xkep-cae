@@ -331,8 +331,11 @@ class NewtonDynamicProcess(
                             f"(ω={cfg.contact_relax_omega})"
                         )
             # リラクゼーション早期打切り（status-248: 無駄な反復を削減）
+            # status-267: _diverged=False に修正。リラクゼーション abort は発散ではなく
+            # 活性集合振動の停滞。diverged=True だと dt が shrink²=0.25 で過度に縮小され
+            # （91/91全失敗と相まって）チャタリング帯域でdt枯渇を引き起こしていた。
             if _relax_active and _relax_iter >= cfg.relax_max_iter:
-                _diverged = True
+                _diverged = False
                 if cfg.show_progress:
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -391,7 +394,11 @@ class NewtonDynamicProcess(
                     load_frac=load_frac,
                     load_frac_prev=load_frac_prev,
                     use_coating=input_data.use_coating,
-                    contact_tangent_scale=_current_omega if _relax_active else 1.0,
+                    # status-267: 接線剛性は常にフルスケール維持。
+                    # 残差のみ減衰し接線はフルで正しいNR方向を保つ。
+                    # 旧: _current_omega if _relax_active else 1.0
+                    # 接線スケーリングは残差減衰と不整合（91/91回リラクゼーション失敗の一因）。
+                    contact_tangent_scale=1.0,
                 )
             )
             K_T = tangent_out.K_T
