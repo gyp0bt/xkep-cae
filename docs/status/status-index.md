@@ -99,6 +99,7 @@
 | [263](status-263.md) | 2026-03-29 | delta_hデフォルト値検���（0.0維持）+ three_point_bend E=25回帰���見 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
 | [264](status-264.md) | 2026-03-29 | E=25回帰修正: frozen_hermite_tangent + _cur_ratio統一 + n_elems=8 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
 | [265](status-265.md) | 2026-03-29 | BenchmarkRunnerProcess — STA2自動記録基盤 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) |
+| [266](status-266.md) | 2026-03-29 | frozen_hermite_tangent=False安定化 + 契約違反修正 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -237,6 +238,7 @@ delta_h API:           200+10s+16+3+23+1+6+18+2+4+3+9(新) (2026-03-28) ← stat
 delta_h探索:           200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-28) ← status-262（delta_h=0.025最適+three_point_bend貫通+3Dパイプ貫入なし）
 E=25回帰修正:          200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-29) ← status-264（frozen_hermite_tangent+_cur_ratio統一+n_elems=8）
 STA2自動記録:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) (2026-03-29) ← status-265（BenchmarkRunnerProcess+RunManifest+serialize_config）
+frozen_hm安定化:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-266（frozen_hermite_tangent=False安定化+契約修正）
 ```
 
 ## 備考
