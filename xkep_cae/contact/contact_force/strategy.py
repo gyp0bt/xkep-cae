@@ -223,6 +223,7 @@ def _add_kst_contact_to_coo(
     node_counts: np.ndarray | None = None,
     h_deriv: float = 0.0,
     k_pen: float = 0.0,
+    adj_node_map: dict | None = None,
 ) -> None:
     """接触力の K_st（接触点滑り剛性）を COO に追加.
 
@@ -246,8 +247,13 @@ def _add_kst_contact_to_coo(
     # dm 係数の計算（frozen-m 解消: status-243）
     _dm_A = None
     _dm_B = None
+    _dm_ext_A = None
+    _dm_ext_B = None
     if use_hermite and node_counts is not None:
-        from xkep_cae.contact.geometry._compute import _compute_dm_coeffs
+        from xkep_cae.contact.geometry._compute import (
+            _compute_dm_coeffs,
+            _compute_dm_ext_coeffs,
+        )
 
         _dm_A = _compute_dm_coeffs(
             node_counts[pair.nodes_a[0]],
@@ -257,6 +263,16 @@ def _add_kst_contact_to_coo(
             node_counts[pair.nodes_b[0]],
             node_counts[pair.nodes_b[1]],
         )
+        # 非局所 dm 係数（status-272: K_st拡張）
+        if adj_node_map is not None:
+            _dm_ext_A = _compute_dm_ext_coeffs(
+                node_counts[pair.nodes_a[0]],
+                node_counts[pair.nodes_a[1]],
+            )
+            _dm_ext_B = _compute_dm_ext_coeffs(
+                node_counts[pair.nodes_b[0]],
+                node_counts[pair.nodes_b[1]],
+            )
 
     # StJacobian 入力の構築
     st_kw: dict = {
@@ -276,6 +292,9 @@ def _add_kst_contact_to_coo(
         if _dm_A is not None:
             st_kw["dm_A"] = _dm_A
             st_kw["dm_B"] = _dm_B
+        if _dm_ext_A is not None:
+            st_kw["dm_ext_A"] = _dm_ext_A
+            st_kw["dm_ext_B"] = _dm_ext_B
 
     out = st_proc.process(StJacobianInput(**st_kw))
     if not out.valid:
@@ -366,6 +385,33 @@ def _add_kst_contact_to_coo(
                         cols.append(gj)
                         vals.append(val)
 
+    # K_st 隣接ノードDOF拡張（status-272: Hermite非局所∂g/∂u Step2）
+    if out.ds_du_adj is not None and adj_node_map is not None:
+        # 隣接ノードのグローバルインデックス取得
+        # ds_du_adj レイアウト: [A-1_xyz(3), A+2_xyz(3), B-1_xyz(3), B+2_xyz(3)]
+        adj_a = adj_node_map.get(pair.elem_a, (-1, -1))
+        adj_b = adj_node_map.get(pair.elem_b, (-1, -1))
+        adj_global_nodes = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+
+        K_st_adj = -(np.outer(df_ds, out.ds_du_adj) + np.outer(df_dt, out.dt_du_adj))
+
+        for ki in range(4):
+            for di in range(3):
+                li = ki * 3 + di
+                gi = dofs[ki * ndof_per_node + di]
+                for adj_idx in range(4):
+                    adj_node = adj_global_nodes[adj_idx]
+                    if adj_node < 0:
+                        continue
+                    for dj in range(3):
+                        adj_lj = adj_idx * 3 + dj
+                        gj = adj_node * ndof_per_node + dj
+                        val = K_st_adj[li, adj_lj]
+                        if abs(val) > 1e-30:
+                            rows.append(gi)
+                            cols.append(gj)
+                            vals.append(val)
+
 
 # ── B1: ContactForceStStiffnessProcess ─────────────────────
 
@@ -383,6 +429,7 @@ class ContactForceStStiffnessInput:
     use_hermite: bool = False
     node_tangents: np.ndarray | None = None
     node_counts: np.ndarray | None = None
+    adj_node_map: dict | None = None  # status-272: 隣接ノードマップ
 
 
 @dataclass(frozen=True)
@@ -446,6 +493,7 @@ class ContactForceStStiffnessProcess(
                 node_counts=inp.node_counts,
                 h_deriv=h_d,
                 k_pen=inp.k_pen,
+                adj_node_map=inp.adj_node_map,
             )
 
         if not rows:
@@ -857,6 +905,7 @@ class HuberContactForceProcess(
         # dm 補正は evaluate() のみ適用し、Jacobian の安定性を確保
         _node_tangents = None
         _node_counts = None
+        _conn = None
         if _use_hermite and node_coords is not None:
             _conn = getattr(manager, "connectivity", None)
             if _conn is not None:
@@ -954,6 +1003,13 @@ class HuberContactForceProcess(
 
         # ── K_st（ContactForceStStiffnessProcess 経由: status-256 B1） ──
         if _use_st and node_coords is not None:
+            # 隣接ノードマップ（status-272: K_st非局所拡張）
+            _adj_node_map = None
+            if _use_hermite and _conn is not None:
+                from xkep_cae.contact.geometry._compute import _compute_adj_node_map
+
+                _adj_node_map = _compute_adj_node_map(_conn)
+
             b1 = ContactForceStStiffnessProcess()
             K_st = b1.process(
                 ContactForceStStiffnessInput(
@@ -966,6 +1022,7 @@ class HuberContactForceProcess(
                     use_hermite=_use_hermite,
                     node_tangents=_node_tangents,
                     node_counts=_node_counts,
+                    adj_node_map=_adj_node_map,
                 )
             ).K_st
             # K_st の COO を結合

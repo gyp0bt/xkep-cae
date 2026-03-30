@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2 テスト** — 2026-03-30 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2 テスト** — 2026-03-30 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -94,7 +94,8 @@
 - ~~E=25 frac=1.0回帰修正（n_elems_wire=20復元）~~ ← status-270で完了（n_elems 8→20が唯一の原因、frac進行率9x改善）
 - ~~frozen=False + n_elems=20検証~~ ← status-271で完了（frac=1.0, incr=607, cutback=389。frozen=True比35%高速）
 - ~~Hermite非局所∂g/∂u Step1（StJacobian隣接ノード微分）~~ ← status-271で完了（FD検証atol=1e-5合格）
-- **次**: Hermite非局所∂g/∂u Step2-3（K_st/K_c拡張 + パイプライン統合）→ NR力収束改善
+- ~~Hermite非局所∂g/∂u Step2（K_st隣接ノードDOF拡張）~~ ← status-272で完了（FD検証atol=1e-4合格）
+- **次**: Hermite非局所∂g/∂u Step3（K_c拡張）→ NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -125,7 +126,7 @@
 - NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
 - Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
   - ~~Step1: StJacobian隣接ノード微分（ds_du_adj/dt_du_adj）~~ ← status-271で完了
-  - Step2: K_st拡張（隣接ノードDOFへの接線剛性エントリ追加）
+  - ~~Step2: K_st拡張（隣接ノードDOFへの接線剛性エントリ追加）~~ ← status-272で完了
   - Step3: K_c拡張（Hermite形状関数の隣接ノード依存性）
 
 ## やってはいけないこと
