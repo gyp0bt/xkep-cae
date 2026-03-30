@@ -4,6 +4,7 @@
 
 - **日時**: 2026-03-29
 - **ブランチ**: `claude/fix-frac1-regression-2lmER`
+- **コミット**: `9866976` (最終)、`78e679a` (修正コミット)
 - **テスト数**: 200+10s+16+3+23+1+6+18+2+4+3+9+4+18（変更なし）→ **合計592 passed**
 - **契約違反**: **0件**
 - **条例違反**: 0件
@@ -150,18 +151,14 @@ print(f'frac={sr.load_history[-1]:.4f} incr={sr.n_increments} cutback={sr.n_cutb
 
 ### 残課題（優先度順）
 
-1. **Hermite ON でのフルテスト確認**
-   - Hermite OFF で frac=1.0 確認済み
-   - Hermite ON（frozen_hermite_tangent=True）でも到達可能か検証
-   - NR min restore + delta_h boost の相乗効果が n_elems=20 でどう作用するか
+1. **frozen_hermite_tangent=False での検証**
+   - Hermite ON/OFF + frozen=True は両方 frac=1.0 確認済み
+   - n_elems=20 + frozen=False の組み合わせ効果は未検証
 
-2. **frozen_hermite_tangent=False での検証**
-   - n_elems=20 + frozen=False の組み合わせ効果
-
-3. **NR 力収束改善**（status-269 から継続）
+2. **NR 力収束改善**（status-269 から継続）
    - 力収束は依然 0/incr（全変位収束）
 
-4. **Hermite 非局所 ∂g/∂u 対応**（status-262 から継続）
+3. **Hermite 非局所 ∂g/∂u 対応**（status-262 から継続）
 
 ### 設計メモ
 
@@ -174,5 +171,46 @@ print(f'frac={sr.load_history[-1]:.4f} incr={sr.n_increments} cutback={sr.n_cutb
 - **回帰分析の鉄則**: まず「以前の成功条件を現コードで再現」する。コード変更とパラメータ変更を分離して原因切り分け。
 - **短縮テスト（50incr）の活用**: frac 進行率の比較で十分な情報が得られる。フルテスト前にスクリーニングすべき。
 - **n_elems_wire=8 の教訓**: 「妥協点」で中途半端に修正すると、以降のセッションが本質的でない NR 改善に注力してしまう。元の実績値に戻すべきだった。
+
+---
+
+## STA2 準拠チェック
+
+### ベンチマーク条件記録
+
+| 項目 | 値 |
+|------|------|
+| テスト名 | DynamicThreePointBendContactJigProcess (E=25, n_periods=30, jig_push=30) |
+| ブランチ | `claude/fix-frac1-regression-2lmER` |
+| 修正コミット | `78e679a` (n_elems_wire=20復元) |
+| 最終コミット | `9866976` (Hermite ON/OFF両方確認) |
+| ベースライン比較元 | status-234 commit `ef06ba0` (frac=1.0, incr=870, cutback=655) |
+
+### tee ログファイル
+
+| ログ | パス | 内容 |
+|------|------|------|
+| bisect テストA | `/tmp/log-step1-testA.log` | n_elems=20, rigid=False, 50incr |
+| bisect テストB | `/tmp/log-step1-testB.log` | n_elems=8, rigid=True, 50incr |
+| bisect テストC | `/tmp/log-step1-testC.log` | n_elems=20, rigid=True, 50incr |
+| bisect テストD | `/tmp/log-step1-testD.log` | n_elems=8, rigid=False, 50incr |
+| bisect テストE | `/tmp/log-step1-testE.log` | n_elems=16, rigid=True, 50incr |
+| 500incr テスト | `/tmp/log-step1-testF.log` | n_elems=20, rigid=True, 500incr |
+| Hermite OFF フル | `/tmp/log-step4-hermite-off.log` | frac=1.0000, incr=919, cutback=727 |
+| Hermite ON フル | `/tmp/log-step4-2000incr.log` | frac=1.0000, incr=929, cutback=682 |
+
+### 変更前ベースライン
+
+修正前のベースラインをテストB（n_elems=8, rigid=True）で取得し、修正後のテストC（n_elems=20, rigid=True）と直接比較。同一セッション内で pip install 前後の差分を確認。
+
+### STA2 チェック項目
+
+- [x] **increment 定義遵守**: incr は成功ステップのみカウント、cutback は別計上
+- [x] **tee ログ保存**: 全ベンチマーク実行を tee でファイル出力
+- [x] **ベースライン先行取得**: 修正前 n_elems=8 のベースライン（テストB: frac=0.0065/50incr）を先に取得
+- [x] **再現手順記載**: 全コマンドを status に記載
+- [x] **数値の捏造なし**: frac=1.0 は Hermite OFF/ON 両方で実際に到達を確認
+- [x] **コミットハッシュ記録**: 修正コミット(`78e679a`)と最終コミット(`9866976`)を記録
+- [x] **結果の整合性**: 引き継ぎセクションの残課題と実施内容が整合（Hermite ON 完了反映済み）
 
 ---
