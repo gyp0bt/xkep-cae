@@ -393,6 +393,41 @@ def _compute_dm_coeffs(count_left: float, count_right: float) -> np.ndarray:
     return dm
 
 
+def _compute_dm_ext_coeffs(count_left: float, count_right: float) -> np.ndarray:
+    """隣接ノード（要素外）の ∂m/∂x 係数を計算（Hermite 非局所寄与）.
+
+    要素 (n0, n1) に対して、隣接ノード n_{-1}（n0 の反対側）と
+    n_{+2}（n1 の反対側）からの接線ベクトル微分を計算。
+
+    dm_ext[0] = ∂m_{n0}/∂x_{n_{-1}}（スカラー係数、× I₃）
+    dm_ext[1] = ∂m_{n1}/∂x_{n_{+2}}（スカラー係数、× I₃）
+
+    内部ノード (count>=2):
+        m_i = Σ(隣接要素方向) / count
+        → ∂m_{n0}/∂x_{n_{-1}} = -1/count（前要素で x_{-1} → n0 方向）
+        → ∂m_{n1}/∂x_{n_{+2}} = +1/count（次要素で n1 → x_{+2} 方向）
+    端点 (count=1):
+        隣接要素なし → 係数 = 0
+
+    Returns:
+        (2,) array: [dm_ext_left, dm_ext_right]
+    """
+    dm_ext = np.zeros(2)
+    c0 = max(count_left, 1.0)
+    c1 = max(count_right, 1.0)
+
+    # 内部ノード（count >= 2）のみ非ゼロ
+    if c0 >= 1.5:
+        dm_ext[0] = -1.0 / c0
+    # 端点 (c0=1): 隣接要素なし → 0
+
+    if c1 >= 1.5:
+        dm_ext[1] = 1.0 / c1
+    # 端点 (c1=1): 隣接要素なし → 0
+
+    return dm_ext
+
+
 def _hermite_eval(
     s: np.ndarray,
     x0: np.ndarray,

@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-29）
+## 現在地（2026-03-30）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18 テスト**（NR残差最小値リストア — status-269） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2 テスト**（frozen=False検証 + Hermite非局所Step1 — status-271） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -40,7 +40,9 @@
 | delta_hブースト | **チャタリング時delta_hブースト + NR反復動的拡張**: ボトルネック確定=frozen_hermite_tangent線形収束率(0.97/iter)。delta_hは深い貫入に無効。frac 0.4950→0.4978 — status-268 |
 | NRリストア | **NR残差最小値リストア**: 発散検知時に最小残差状態にロールバック。過修正防止でfrozen=True 0.4978→0.5341、frozen=False 0.4732→0.5408 — status-269 |
 | frac1回帰修正 | **n_elems_wire=20復元**: パラメータbisectで主因特定（n_elems 20→8が唯一の原因、use_rigid_surface無影響）。frac進行率9x改善 — status-270 |
-| **壁** | Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
+| frozen=False検証 | **frozen_hermite_tangent=False + n_elems=20**: frac=1.0, incr=607, cutback=389。frozen=True比**35%高速、43%カットバック減** — status-271 |
+| Hermite非局所Step1 | **StJacobian隣接ノード微分**: ds_du_adj/dt_du_adj計算実装。FD検証atol=1e-5合格（2テスト追加） — status-271 |
+| **壁** | Hermite非局所Step2-3(K_st/K_c拡張) / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---
 
