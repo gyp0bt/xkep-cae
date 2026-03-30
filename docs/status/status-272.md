@@ -92,7 +92,12 @@ python contracts/validate_process_contracts.py
    - s,t固定でも f_c が隣接ノード位置に依存: ∂f_c/∂x_adj |_{s,t=const}
    - Step2と独立に追加可能（K_st_adjと同様にCOOアセンブリ）
 
-2. **NR力収束改善**
+2. **摩擦K_stの同等拡張**
+   - `friction/_assembly.py` の `_assemble_friction_st_stiffness()` にも同じ隣接ノード拡張パターンを適用
+   - `FrictionStStiffnessInput` に connectivity/adj_node_map 追加
+   - Step3またはNR力収束改善と合わせて実施
+
+3. **NR力収束改善**
    - Step2-3完了後にFD検証で接線精度を定量評価
    - 力収束達成率の変化を計測
 
