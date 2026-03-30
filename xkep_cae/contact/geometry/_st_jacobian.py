@@ -165,6 +165,9 @@ class StJacobianInput:
     # frozen-m 解消用: ∂m/∂x のローカル係数（status-243）
     dm_A: np.ndarray | None = None  # (2,2) [[∂mA0/∂xA0, ∂mA0/∂xA1], [∂mA1/∂xA0, ∂mA1/∂xA1]]
     dm_B: np.ndarray | None = None  # (2,2) [[∂mB0/∂xB0, ∂mB0/∂xB1], [∂mB1/∂xB0, ∂mB1/∂xB1]]
+    # Hermite 非局所: 隣接ノードの ∂m/∂x 係数（status-271）
+    dm_ext_A: np.ndarray | None = None  # (2,) [∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}]
+    dm_ext_B: np.ndarray | None = None  # (2,) [∂mB0/∂x_{B-1}, ∂mB1/∂x_{B+2}]
 
 
 @dataclass(frozen=True)
@@ -174,6 +177,10 @@ class StJacobianOutput:
     ds_du: np.ndarray  # (12,) ds/du（4ノード × 3次元）
     dt_du: np.ndarray  # (12,) dt/du（4ノード × 3次元）
     valid: bool  # 計算が有効か（平行特異でなければ True）
+    # Hermite 非局所: 隣接ノードの ∂(s,t)/∂u（status-271）
+    # レイアウト: [A-1_xyz(3), A+2_xyz(3), B-1_xyz(3), B+2_xyz(3)]
+    ds_du_adj: np.ndarray | None = None  # (12,) or None
+    dt_du_adj: np.ndarray | None = None  # (12,) or None
 
 
 class ComputeStJacobianProcess(
@@ -381,7 +388,37 @@ class ComputeStJacobianProcess(
         ds_du *= w_s
         dt_du *= w_t
 
-        return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+        # Hermite 非局所: 隣接ノード微分（status-271）
+        ds_du_adj = None
+        dt_du_adj = None
+        if inp.dm_ext_A is not None and inp.dm_ext_B is not None:
+            ds_du_adj = np.zeros(12)
+            dt_du_adj = np.zeros(12)
+            # 4隣接ノード: [A-1, A+2, B-1, B+2]
+            for adj_idx, (dm_coeff, side, m_slot) in enumerate(
+                [
+                    (inp.dm_ext_A[0], "A", 0),  # A-1 → ∂mA0/∂x_{A-1}
+                    (inp.dm_ext_A[1], "A", 1),  # A+2 → ∂mA1/∂x_{A+2}
+                    (inp.dm_ext_B[0], "B", 0),  # B-1 → ∂mB0/∂x_{B-1}
+                    (inp.dm_ext_B[1], "B", 1),  # B+2 → ∂mB1/∂x_{B+2}
+                ]
+            ):
+                if abs(dm_coeff) < 1e-30:
+                    continue
+                rhs = self._compute_rhs_hermite_neighbor(
+                    delta, dpA, dpB, s, t, side, m_slot, dm_coeff
+                )
+                st_deriv = -J_inv @ rhs
+                ds_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = st_deriv[0] * w_s
+                dt_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = st_deriv[1] * w_t
+
+        return StJacobianOutput(
+            ds_du=ds_du,
+            dt_du=dt_du,
+            valid=True,
+            ds_du_adj=ds_du_adj,
+            dt_du_adj=dt_du_adj,
+        )
 
     @staticmethod
     def _compute_rhs(
@@ -490,6 +527,63 @@ class ComputeStJacobianProcess(
             if dm_B is not None:
                 h += _hermite_h10(t) * dm_B[0, 1] + _hermite_h11(t) * dm_B[1, 1]
                 dh += _hermite_dh10(t) * dm_B[0, 1] + _hermite_dh11(t) * dm_B[1, 1]
+            rhs[0] = -h * dpA
+            rhs[1] = h * dpB - dh * delta
+
+        return rhs
+
+    @staticmethod
+    def _compute_rhs_hermite_neighbor(
+        delta: np.ndarray,
+        dpA: np.ndarray,
+        dpB: np.ndarray,
+        s: float,
+        t: float,
+        side: str,
+        m_slot: int,
+        dm_coeff: float,
+    ) -> np.ndarray:
+        """Hermite 非局所: 隣接ノードの [∂F₁/∂u_d, ∂F₂/∂u_d] を計算.
+
+        隣接ノード x_adj は m_{side}[m_slot] にのみ影響する。
+        ∂m/∂x_adj = dm_coeff * I₃ なので:
+
+        A 側 (side="A"):
+            ∂pA/∂x_adj = H1{m_slot}(s) * dm_coeff * I
+            ∂(dpA/ds)/∂x_adj = H1{m_slot}'(s) * dm_coeff * I
+            → h_eff = H1{m_slot}(s) * dm_coeff
+            → dh_eff = H1{m_slot}'(s) * dm_coeff
+            rhs[0] = h_eff * dpA + dh_eff * delta
+            rhs[1] = -h_eff * dpB
+
+        B 側 (side="B"):
+            ∂pB/∂x_adj = H1{m_slot}(t) * dm_coeff * I
+            rhs[0] = -h_eff * dpA
+            rhs[1] = h_eff * dpB - dh_eff * delta
+
+        Parameters:
+            side: "A" or "B"
+            m_slot: 0 (始点接線 m0) or 1 (終点接線 m1)
+            dm_coeff: ∂m/∂x_adj のスカラー係数
+        """
+        rhs = np.zeros((2, 3))
+
+        if side == "A":
+            if m_slot == 0:
+                h = _hermite_h10(s) * dm_coeff
+                dh = _hermite_dh10(s) * dm_coeff
+            else:
+                h = _hermite_h11(s) * dm_coeff
+                dh = _hermite_dh11(s) * dm_coeff
+            rhs[0] = h * dpA + dh * delta
+            rhs[1] = -h * dpB
+        else:  # side == "B"
+            if m_slot == 0:
+                h = _hermite_h10(t) * dm_coeff
+                dh = _hermite_dh10(t) * dm_coeff
+            else:
+                h = _hermite_h11(t) * dm_coeff
+                dh = _hermite_dh11(t) * dm_coeff
             rhs[0] = -h * dpA
             rhs[1] = h * dpB - dh * delta
 
