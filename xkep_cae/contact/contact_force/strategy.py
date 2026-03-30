@@ -915,6 +915,19 @@ class HuberContactForceProcess(
 
                 _node_tangents = _compute_node_tangents(node_coords, _conn)
 
+        # 隣接ノードマップ + node_counts（status-273: K_c/K_st非局所拡張で共用）
+        _adj_node_map = None
+        _adj_node_counts = None
+        if _use_hermite and _conn is not None:
+            from xkep_cae.contact.geometry._compute import (
+                _compute_adj_node_map,
+                _compute_node_counts,
+            )
+
+            _adj_node_map = _compute_adj_node_map(_conn)
+            _max_node = int(np.max(_conn)) + 1 if len(_conn) > 0 else 0
+            _adj_node_counts = _compute_node_counts(_max_node, _conn)
+
         # バッチ配列抽出
         extracted = self._extract_pair_arrays(manager.pairs)
         if extracted is None:
@@ -996,6 +1009,78 @@ class HuberContactForceProcess(
             rows_np = row_idx[mask]
             cols_np = col_idx[mask]
             vals_np = val_arr[mask]
+
+            # ── K_c_adj: 隣接ノードへの K_mat+K_geo 拡張（status-273: Step3） ──
+            if _adj_node_map is not None and _adj_node_counts is not None:
+                # elem_a, elem_b 抽出
+                active_idx = np.where(active)[0]
+                elem_a_act = np.array([manager.pairs[int(idx)].elem_a for idx in active_idx])
+                elem_b_act = np.array([manager.pairs[int(idx)].elem_b for idx in active_idx])
+
+                # dm_ext 係数のバッチ計算
+                c_a0 = np.maximum(_adj_node_counts[nodes_act[:, 0]], 1.0)
+                c_a1 = np.maximum(_adj_node_counts[nodes_act[:, 1]], 1.0)
+                c_b0 = np.maximum(_adj_node_counts[nodes_act[:, 2]], 1.0)
+                c_b1 = np.maximum(_adj_node_counts[nodes_act[:, 3]], 1.0)
+                dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
+                dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
+                dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
+                dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+
+                # Hermite tangent basis H10, H11
+                s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
+                t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
+                h10_s = s3_h - 2.0 * s2_h + s_act
+                h11_s = s3_h - s2_h
+                h10_t = t3_h - 2.0 * t2_h + t_act
+                h11_t = t3_h - t2_h
+
+                # alpha_adj (N, 4): 隣接ノードの有効係数
+                alpha_adj = np.column_stack(
+                    [
+                        h10_s * dm_ext_a0,
+                        h11_s * dm_ext_a1,
+                        -h10_t * dm_ext_b0,
+                        -h11_t * dm_ext_b1,
+                    ]
+                )
+
+                # adj global node indices (N, 4)
+                adj_gnodes = np.full((n_act, 4), -1, dtype=int)
+                for i in range(n_act):
+                    adj_a = _adj_node_map.get(int(elem_a_act[i]), (-1, -1))
+                    adj_b = _adj_node_map.get(int(elem_b_act[i]), (-1, -1))
+                    adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+
+                # c_alpha (N, 4, 4) = coeffs[ki] * alpha_adj[aj]
+                c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
+                K_c_adj = np.zeros((n_act, 12, 12))
+                for ki in range(4):
+                    for aj in range(4):
+                        K_c_adj[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
+                            c_alpha[:, ki, aj][:, None, None] * K_3x3
+                        )
+
+                # adj DOF indices (N, 12) + validity mask
+                ndpn = self._ndof_per_node
+                adj_gdofs = np.zeros((n_act, 12), dtype=int)
+                adj_valid = np.zeros((n_act, 12), dtype=bool)
+                for aj in range(4):
+                    valid = adj_gnodes[:, aj] >= 0
+                    for d in range(3):
+                        adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
+                        adj_valid[:, aj * 3 + d] = valid
+
+                # COO 構築
+                row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+                col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
+                val_adj = K_c_adj.ravel()
+                valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
+                mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
+                if mask_adj.any():
+                    rows_np = np.concatenate([rows_np, row_adj[mask_adj]])
+                    cols_np = np.concatenate([cols_np, col_adj[mask_adj]])
+                    vals_np = np.concatenate([vals_np, val_adj[mask_adj]])
         else:
             rows_np = np.array([], dtype=int)
             cols_np = np.array([], dtype=int)
@@ -1003,13 +1088,6 @@ class HuberContactForceProcess(
 
         # ── K_st（ContactForceStStiffnessProcess 経由: status-256 B1） ──
         if _use_st and node_coords is not None:
-            # 隣接ノードマップ（status-272: K_st非局所拡張）
-            _adj_node_map = None
-            if _use_hermite and _conn is not None:
-                from xkep_cae.contact.geometry._compute import _compute_adj_node_map
-
-                _adj_node_map = _compute_adj_node_map(_conn)
-
             b1 = ContactForceStStiffnessProcess()
             K_st = b1.process(
                 ContactForceStStiffnessInput(

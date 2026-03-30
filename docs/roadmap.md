@@ -43,7 +43,8 @@
 | frozen=False検証 | **frozen_hermite_tangent=False + n_elems=20**: frac=1.0, incr=607, cutback=389。frozen=True比**35%高速、43%カットバック減** — status-271 |
 | Hermite非局所Step1 | **StJacobian隣接ノード微分**: ds_du_adj/dt_du_adj計算実装。FD検証atol=1e-5合格（2テスト追加） — status-271 |
 | Hermite非局所Step2 | **K_st隣接ノードDOF拡張**: adj_node_map計算、ds_du_adj/dt_du_adjをK_stアセンブリに結合。FD検証atol=1e-4合格（2テスト追加） — status-272 |
-| **壁** | Hermite非局所Step3(K_c拡張) / NR力収束改善 / 61本以上 / 1000本6時間 |
+| Hermite非局所Step3 | **K_c隣接ノードDOF拡張**: K_mat+K_geoにalpha_adjベースの隣接ノード寄与追加。FD検証atol=1e-2合格（2テスト追加） — status-273 |
+| **壁** | 摩擦K_st隣接ノード拡張 / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---
 

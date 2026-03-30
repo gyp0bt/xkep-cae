@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2 テスト** — 2026-03-30 | 契約違反 **0件** | 条例違反 **0件**
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2 テスト** — 2026-03-30 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -95,7 +95,8 @@
 - ~~frozen=False + n_elems=20検証~~ ← status-271で完了（frac=1.0, incr=607, cutback=389。frozen=True比35%高速）
 - ~~Hermite非局所∂g/∂u Step1（StJacobian隣接ノード微分）~~ ← status-271で完了（FD検証atol=1e-5合格）
 - ~~Hermite非局所∂g/∂u Step2（K_st隣接ノードDOF拡張）~~ ← status-272で完了（FD検証atol=1e-4合格）
-- **次**: Hermite非局所∂g/∂u Step3（K_c拡張）→ NR力収束改善
+- ~~Hermite非局所∂g/∂u Step3（K_c拡張）~~ ← status-273で完了（K_mat+K_geo隣接ノードDOF拡張+FD検証）
+- **次**: 摩擦K_st隣接ノード拡張 → NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
@@ -127,7 +128,7 @@
 - Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
   - ~~Step1: StJacobian隣接ノード微分（ds_du_adj/dt_du_adj）~~ ← status-271で完了
   - ~~Step2: K_st拡張（隣接ノードDOFへの接線剛性エントリ追加）~~ ← status-272で完了
-  - Step3: K_c拡張（Hermite形状関数の隣接ノード依存性）
+  - ~~Step3: K_c拡張（Hermite形状関数の隣接ノード依存性）~~ ← status-273で完了
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
