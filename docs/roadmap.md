@@ -39,7 +39,8 @@
 | chattering分析 | **チャタリング詳細分析 + divergedフラグ修正**: リラクゼーション91/91全失敗の原因特定。abort時diverged=False化でE=25 frac 0.4837→0.4950 — status-267 |
 | delta_hブースト | **チャタリング時delta_hブースト + NR反復動的拡張**: ボトルネック確定=frozen_hermite_tangent線形収束率(0.97/iter)。delta_hは深い貫入に無効。frac 0.4950→0.4978 — status-268 |
 | NRリストア | **NR残差最小値リストア**: 発散検知時に最小残差状態にロールバック。過修正防止でfrozen=True 0.4978→0.5341、frozen=False 0.4732→0.5408 — status-269 |
-| **壁** | **frac=0.54で壁** / Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
+| frac1回帰修正 | **n_elems_wire=20復元**: パラメータbisectで主因特定（n_elems 20→8が唯一の原因、use_rigid_surface無影響）。frac進行率9x改善 — status-270 |
+| **壁** | Hermite非局所∂g/∂u / NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---
 

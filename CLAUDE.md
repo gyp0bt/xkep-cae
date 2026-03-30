@@ -91,7 +91,8 @@
 - ~~チャタリング分析 + リラクゼーション diverged フラグ修正~~ ← status-267で完了（frac=0.4837→0.4950）
 - ~~チャタリング対策 delta_hブースト + NR反復動的拡張~~ ← status-268で完了（frac=0.4950→0.4978、**ボトルネック確定: frozen tangent線形収束率0.97/iter**）
 - ~~NR残差最小値リストア（過修正防止）~~ ← status-269で完了（frozen=True 0.4978→0.5341、frozen=False 0.4732→0.5408）
-- **次**: frozen_hermite_tangent=FalseデフォルトON検討 + リストアしきい値チューニング + Hermite非局所∂g/∂u対応 + NR力収束改善
+- ~~E=25 frac=1.0回帰修正（n_elems_wire=20復元）~~ ← status-270で完了（n_elems 8→20が唯一の原因、frac進行率9x改善）
+- **次**: 2000incrフルテストでfrac=1.0確認 + NR改善との組み合わせ効果検証 + Hermite非局所∂g/∂u対応 + NR力収束改善
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
