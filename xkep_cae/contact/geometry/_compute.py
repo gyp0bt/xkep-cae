@@ -428,6 +428,54 @@ def _compute_dm_ext_coeffs(count_left: float, count_right: float) -> np.ndarray:
     return dm_ext
 
 
+def _compute_adj_node_map(
+    connectivity: np.ndarray,
+) -> dict[int, tuple[int, int]]:
+    """各要素ノードの隣接ノード（要素外）のインデックスを計算.
+
+    要素 e = (n0, n1) に対して:
+    - adj_left  (n_{-1}): n0 を共有する別の要素の反対側ノード
+    - adj_right (n_{+2}): n1 を共有する別の要素の反対側ノード
+
+    端点ノード（count=1）は隣接要素がないため -1。
+
+    Returns:
+        dict[elem_idx, (adj_left, adj_right)]
+    """
+    # ノード → 接続要素リスト
+    node_to_elems: dict[int, list[int]] = {}
+    for ei in range(len(connectivity)):
+        n0, n1 = int(connectivity[ei, 0]), int(connectivity[ei, 1])
+        node_to_elems.setdefault(n0, []).append(ei)
+        node_to_elems.setdefault(n1, []).append(ei)
+
+    result: dict[int, tuple[int, int]] = {}
+    for ei in range(len(connectivity)):
+        n0, n1 = int(connectivity[ei, 0]), int(connectivity[ei, 1])
+
+        # adj_left: n0 を共有する他の要素で n0 でないノード
+        adj_left = -1
+        for ej in node_to_elems.get(n0, []):
+            if ej == ei:
+                continue
+            ej_n0, ej_n1 = int(connectivity[ej, 0]), int(connectivity[ej, 1])
+            adj_left = ej_n1 if ej_n0 == n0 else ej_n0
+            break
+
+        # adj_right: n1 を共有する他の要素で n1 でないノード
+        adj_right = -1
+        for ej in node_to_elems.get(n1, []):
+            if ej == ei:
+                continue
+            ej_n0, ej_n1 = int(connectivity[ej, 0]), int(connectivity[ej, 1])
+            adj_right = ej_n1 if ej_n0 == n1 else ej_n0
+            break
+
+        result[ei] = (adj_left, adj_right)
+
+    return result
+
+
 def _hermite_eval(
     s: np.ndarray,
     x0: np.ndarray,
