@@ -134,6 +134,10 @@ class _ContactConfigInput:
     ncp_reg: float = 1e-12
     ncp_block_preconditioner: bool = False
     exclude_same_strand: bool = False
+    # 要素レベルサーフェスペアフィルタ（status-276: 候補数削減）
+    # >0: 重心距離が閾値以下の異素線要素ペアを「種」とし、
+    # 各種ペアの隣接±n要素を候補に追加。長手方向の過剰候補を排除。
+    surface_pair_n_neighbor: int = 0  # 0=無効、1-2 推奨
     use_mortar: bool = False
     midpoint_prescreening: bool = True
     prescreening_margin: float = 0.0
