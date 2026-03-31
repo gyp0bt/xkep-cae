@@ -78,6 +78,11 @@ class NewtonDynamicInput:
     # インクリメント成功とする。frozen_hermite_tangent=False の過修正発散を回避。
     nr_min_restore: bool = True  # 残差最小値リストア有効化
     nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
+    # NRインナー活性ペア凍結（status-276: 大量同時活性化対策）
+    # att=0 で p_n > 0 のペアDOFを記録し、以降の反復で新規活性化ペアの
+    # 接触力をゼロマスクする。活性集合変動による正のフィードバックを遮断。
+    # 注: ベンチマーク検証で逆効果（物理的不整合誘発）のためデフォルトFalse
+    freeze_contact_dofs_in_nr: bool = False
 
 
 @dataclass(frozen=True)
@@ -196,6 +201,8 @@ class NewtonDynamicProcess(
         _min_res_f_c: np.ndarray | None = None
         _min_res_att = 0
         _min_res_increase_count = 0  # 最小値からの連続増加カウント
+        # NRインナー活性ペア凍結（status-276）
+        _frozen_contact_dofs: np.ndarray | None = None  # att=0で記録
 
         att = -1
         while att + 1 < _effective_max:
@@ -227,6 +234,22 @@ class NewtonDynamicProcess(
             )
             f_c = force_out.f_c
             R_u = force_out.R_u
+
+            # ── NRインナー活性ペア凍結（status-276） ──
+            # att=0 で p_n > 0 のペアDOFを記録。
+            # att > 0 では、初回になかった接触力をマスクして正のフィードバックを遮断。
+            if cfg.freeze_contact_dofs_in_nr:
+                if att == 0:
+                    _frozen_contact_dofs = np.abs(f_c) > 1e-30
+                elif _frozen_contact_dofs is not None:
+                    _new_contact = (np.abs(f_c) > 1e-30) & ~_frozen_contact_dofs
+                    if _new_contact.any():
+                        f_c_orig = f_c.copy()
+                        f_c = f_c.copy()
+                        f_c[_new_contact] = 0.0
+                        # R_u は f_c を含む形で計算済み → 差し替え
+                        R_u = R_u - f_c_orig + f_c
+                        R_u[input_data.fixed_dofs] = 0.0
 
             # ── 接触チャタリング対策（status-268: delta_hブースト優先） ──
             # チャタリング検知後:
