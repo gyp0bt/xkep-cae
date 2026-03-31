@@ -285,3 +285,246 @@ class TestKstNonlocalFD:
                 col = n * ndpn + d
                 col_vals = K_st[:, col].toarray().ravel() if sp.issparse(K_st) else K_st[:, col]
                 assert np.allclose(col_vals, 0.0), f"Node {n} d={d} should have zero K_st column"
+
+
+class TestKcAdjFD:
+    """K_c_adj（K_mat+K_geo 隣接ノード拡張）のFD検証（status-273: Step3）.
+
+    3要素チェーン×2本。Hermite補間で隣接ノード位置が接触力に影響。
+    consistent_st_tangent=False で K_st を除外し、K_mat+K_geo+K_c_adj のみを検証。
+    """
+
+    def _make_chain_coords(self):
+        """2本の3要素チェーン（y方向に近接）."""
+        return np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [2.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [0.0, 0.12, 0.0],
+                [1.0, 0.12, 0.0],
+                [2.0, 0.12, 0.0],
+                [3.0, 0.12, 0.0],
+            ]
+        )
+
+    def _make_connectivity(self):
+        return np.array([[0, 1], [1, 2], [2, 3], [4, 5], [5, 6], [6, 7]])
+
+    def _hermite_interp(self, s, x0, x1, m0, m1):
+        """Hermite 補間点を計算."""
+        s2, s3 = s * s, s * s * s
+        h00 = 2.0 * s3 - 3.0 * s2 + 1.0
+        h01 = -2.0 * s3 + 3.0 * s2
+        h10 = s3 - 2.0 * s2 + s
+        h11 = s3 - s2
+        return h00 * x0 + h01 * x1 + h10 * m0 + h11 * m1
+
+    def _compute_force_with_geom(self, coords):
+        """座標から gap/normal を再計算して接触力を返す (12,)."""
+        from xkep_cae.contact.contact_force.strategy import (
+            _hermite_corrected_coeffs,
+        )
+        from xkep_cae.contact.geometry._compute import (
+            _compute_dm_coeffs,
+            _compute_node_counts,
+            _compute_node_tangents,
+        )
+
+        conn = self._make_connectivity()
+        node_tangents = _compute_node_tangents(coords, conn)
+        node_counts = _compute_node_counts(len(coords), conn)
+
+        s, t = 0.4, 0.6
+        k_pen = 1e4
+        rA, rB = 0.05, 0.05
+        nodes_a = (0, 1)
+        nodes_b = (6, 7)
+
+        # Hermite 補間点
+        pA = self._hermite_interp(
+            s,
+            coords[nodes_a[0]],
+            coords[nodes_a[1]],
+            node_tangents[nodes_a[0]],
+            node_tangents[nodes_a[1]],
+        )
+        pB = self._hermite_interp(
+            t,
+            coords[nodes_b[0]],
+            coords[nodes_b[1]],
+            node_tangents[nodes_b[0]],
+            node_tangents[nodes_b[1]],
+        )
+
+        # gap, normal
+        d = pA - pB
+        dist = np.linalg.norm(d)
+        normal = d / dist if dist > 1e-15 else np.array([0.0, 1.0, 0.0])
+        gap = dist - rA - rB
+
+        # Huber p_n
+        delta_h = 100.0
+        x_p = k_pen * (-gap)
+        if delta_h <= 0.0:
+            p_n = max(0.0, x_p)
+        elif x_p < -delta_h:
+            p_n = 0.0
+        elif x_p > delta_h:
+            p_n = x_p
+        else:
+            p_n = (x_p + delta_h) ** 2 / (4.0 * delta_h)
+
+        # 形状関数係数
+        dm_A = _compute_dm_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
+        dm_B = _compute_dm_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
+        coeffs, _, _ = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
+
+        # f_c = p_n * c_k * n
+        f_local = np.zeros(12)
+        for k in range(4):
+            for i in range(3):
+                f_local[k * 3 + i] = p_n * coeffs[k] * normal[i]
+        return f_local
+
+    def _compute_tangent(self, coords):
+        """座標から full tangent（K_mat+K_geo+K_c_adj、K_st除外）を計算."""
+        from xkep_cae.contact.contact_force.strategy import (
+            HuberContactForceProcess,
+        )
+        from xkep_cae.contact.geometry._compute import (
+            _compute_node_tangents,
+        )
+
+        conn = self._make_connectivity()
+        node_tangents = _compute_node_tangents(coords, conn)
+
+        s, t = 0.4, 0.6
+        k_pen = 1e4
+        rA, rB = 0.05, 0.05
+
+        # Hermite 補間で gap/normal 計算
+        pA = self._hermite_interp(
+            s,
+            coords[0],
+            coords[1],
+            node_tangents[0],
+            node_tangents[1],
+        )
+        pB = self._hermite_interp(
+            t,
+            coords[6],
+            coords[7],
+            node_tangents[6],
+            node_tangents[7],
+        )
+        d = pA - pB
+        dist = np.linalg.norm(d)
+        normal = d / dist if dist > 1e-15 else np.array([0.0, 1.0, 0.0])
+        gap = dist - rA - rB
+
+        # Huber p_n
+        delta_h = 100.0
+        x_p = k_pen * (-gap)
+        if delta_h <= 0.0:
+            p_n = max(0.0, x_p)
+        elif x_p < -delta_h:
+            p_n = 0.0
+        elif x_p > delta_h:
+            p_n = x_p
+        else:
+            p_n = (x_p + delta_h) ** 2 / (4.0 * delta_h)
+
+        pair = SimpleNamespace(
+            state=SimpleNamespace(
+                s=s,
+                t=t,
+                gap=gap,
+                p_n=p_n,
+                normal=normal,
+            ),
+            nodes_a=(0, 1),
+            nodes_b=(6, 7),
+            radius_a=rA,
+            radius_b=rB,
+            elem_a=0,
+            elem_b=5,
+        )
+
+        manager = SimpleNamespace(
+            pairs=[pair],
+            connectivity=conn,
+            config=SimpleNamespace(
+                use_hermite_centerline=True,
+                consistent_st_tangent=False,  # K_st 除外
+            ),
+        )
+
+        ndof = len(coords) * 6
+        proc = HuberContactForceProcess(
+            ndof=ndof,
+            ndof_per_node=6,
+            smoothing_delta=5000.0,
+            huber_delta_h=delta_h,
+        )
+        return proc.tangent(np.zeros(ndof), manager, k_pen, node_coords=coords)
+
+    def test_kc_adj_fd(self):
+        """K_c_adj の隣接ノードDOF列がFDと一致."""
+        coords = self._make_chain_coords()
+        K = self._compute_tangent(coords)
+
+        ndpn = 6
+        # 4接触ノード (0,1,6,7) の translational DOF
+        row_nodes = [0, 1, 6, 7]
+        row_dofs = []
+        for n in row_nodes:
+            for d in range(3):
+                row_dofs.append(n * ndpn + d)
+
+        # 隣接ノード: adj_node_map[0]=(-1,2), adj_node_map[5]=(5,-1)
+        adj_nodes = [2, 5]
+
+        eps = 1e-6
+        for adj_node in adj_nodes:
+            for d in range(3):
+                col_dof = adj_node * ndpn + d
+
+                k_col = np.array(
+                    [K[ri, col_dof] if sp.issparse(K) else K[ri, col_dof] for ri in row_dofs]
+                )
+
+                # FD
+                coords_p = coords.copy()
+                coords_p[adj_node, d] += eps
+                f_p = self._compute_force_with_geom(coords_p)
+
+                coords_m = coords.copy()
+                coords_m[adj_node, d] -= eps
+                f_m = self._compute_force_with_geom(coords_m)
+
+                fd_col = -(f_p - f_m) / (2.0 * eps)
+
+                np.testing.assert_allclose(
+                    k_col,
+                    fd_col,
+                    atol=1e-2,
+                    err_msg=(f"K_c_adj FD mismatch: adj_node={adj_node}, d={d}"),
+                )
+
+    def test_kc_adj_endpoint_zero(self):
+        """端点ノードに隣接ノードなし → K_c_adj列がゼロ."""
+        coords = self._make_chain_coords()
+        K = self._compute_tangent(coords)
+
+        ndpn = 6
+        # ノード3,4: 接触ノードでも隣接ノードでもない → 列がゼロ
+        for n in [3, 4]:
+            for d in range(3):
+                col = n * ndpn + d
+                if sp.issparse(K):
+                    col_vals = K[:, col].toarray().ravel()
+                else:
+                    col_vals = K[:, col]
+                assert np.allclose(col_vals, 0.0), f"Node {n} d={d} should have zero K_c column"
