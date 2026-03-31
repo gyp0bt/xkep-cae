@@ -100,9 +100,12 @@ python contracts/validate_process_contracts.py
 
 1. **NR力収束改善 — 非局所拡張の効果測定**
    - 現状ベンチマーク: **frac=0.375** (75.87s) — auto-estimated delta (status-260の0.59から悪化)
-   - status-264以降のfrozen_hermite_tangent/NRリストア等の変更が影響している可能性
-   - frozen=False + 非局所拡張の組み合わせ効果が未計測
-   - `pytest tests/numerical_tests/test_strand_bending_convergence.py -v -s -k slow` で再現
+   - **停止原因**: Incr 29 (frac≈0.376) で NR チャタリング発生
+     - `active=6 → active=18` の遷移で残差が周期的振動（||R_t||/||f|| ≈ 1.24 ↔ 1.35）
+     - delta_hブースト（×4.0）も無効。カットバック4回後も同じ場所で停止
+   - **初期貫入は原因ではない**（Hermite曲線レベルで最小gap=0.020mm > 0）
+   - status-264以降のNR動作変更（_cur_ratio統一/NR残差リストア/Hermite非局所拡張）が活性集合遷移パターンを変えた可能性
+   - **bisect推奨**: status-260のコミット（`f7db2ae`）から現在の差分を二分探索して回帰コミットを特定
 
 2. **_closest_point_hermite_refine の収束精度改善**
    - curved/skew配置でNewton残差が~6e-4残る
