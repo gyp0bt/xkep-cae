@@ -396,12 +396,37 @@ class TangentAssemblyProcess(
                 and hasattr(inp.manager.config, "consistent_st_tangent")
                 and inp.manager.config.consistent_st_tangent
             )
+            # Hermite隣接ノード拡張パラメータ（status-274）
+            _fric_kw: dict = {}
+            if _use_st:
+                _fric_use_hermite = (
+                    hasattr(inp.manager, "config")
+                    and hasattr(inp.manager.config, "use_hermite_centerline")
+                    and inp.manager.config.use_hermite_centerline
+                )
+                if _fric_use_hermite:
+                    _fric_conn = getattr(inp.manager, "connectivity", None)
+                    if _fric_conn is not None:
+                        from xkep_cae.contact.geometry._compute import (
+                            _compute_adj_node_map,
+                            _compute_node_counts,
+                            _compute_node_tangents,
+                        )
+
+                        _fric_kw["use_hermite"] = True
+                        _fric_kw["node_tangents"] = _compute_node_tangents(
+                            inp.coords_def, _fric_conn
+                        )
+                        _max_node = int(np.max(_fric_conn)) + 1
+                        _fric_kw["node_counts"] = _compute_node_counts(_max_node, _fric_conn)
+                        _fric_kw["adj_node_map"] = _compute_adj_node_map(_fric_conn)
             K_fric = inp.friction_strategy.tangent(
                 inp.u,
                 inp.manager.pairs,
                 inp.mu,
                 node_coords=inp.coords_def if _use_st else None,
                 consistent_st_tangent=_use_st,
+                **_fric_kw,
             )
             K_T = K_T - K_fric
 
