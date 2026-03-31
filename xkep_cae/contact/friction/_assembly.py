@@ -340,6 +340,11 @@ def _assemble_friction_st_stiffness(
     ndof_total: int,
     node_coords: np.ndarray,
     ndof_per_node: int = 6,
+    *,
+    use_hermite: bool = False,
+    node_tangents: np.ndarray | None = None,
+    node_counts: np.ndarray | None = None,
+    adj_node_map: dict | None = None,
 ) -> sp.csr_matrix:
     """摩擦の K_st（接触点滑り剛性）を組み立て.
 
@@ -349,6 +354,9 @@ def _assemble_friction_st_stiffness(
 
     ∂G_tα/∂s の係数変化項: [-tα, tα, 0, 0]
     ∂G_tα/∂t の係数変化項: [0, 0, tα, -tα]
+
+    status-274: Hermite隣接ノードDOF拡張（adj_node_map非None時に
+    ds_du_adj/dt_du_adjによる非局所寄与を追加）。
     """
     from xkep_cae.contact.geometry._st_jacobian import (
         ComputeStJacobianProcess,
@@ -378,7 +386,52 @@ def _assemble_friction_st_stiffness(
         xB0 = node_coords[pair.nodes_b[0]]
         xB1 = node_coords[pair.nodes_b[1]]
 
-        out = st_proc.process(StJacobianInput(xA0=xA0, xA1=xA1, xB0=xB0, xB1=xB1, s=st.s, t=st.t))
+        # StJacobian 入力構築（Hermite隣接ノード対応）
+        st_kw: dict = {
+            "xA0": xA0,
+            "xA1": xA1,
+            "xB0": xB0,
+            "xB1": xB1,
+            "s": st.s,
+            "t": st.t,
+        }
+        _dm_ext_A = None
+        _dm_ext_B = None
+        if use_hermite and node_tangents is not None:
+            st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
+            st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
+            st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
+            st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
+            st_kw["use_hermite"] = True
+            if node_counts is not None:
+                from xkep_cae.contact.geometry._compute import (
+                    _compute_dm_coeffs,
+                    _compute_dm_ext_coeffs,
+                )
+
+                _dm_A = _compute_dm_coeffs(
+                    node_counts[pair.nodes_a[0]],
+                    node_counts[pair.nodes_a[1]],
+                )
+                _dm_B = _compute_dm_coeffs(
+                    node_counts[pair.nodes_b[0]],
+                    node_counts[pair.nodes_b[1]],
+                )
+                st_kw["dm_A"] = _dm_A
+                st_kw["dm_B"] = _dm_B
+                if adj_node_map is not None:
+                    _dm_ext_A = _compute_dm_ext_coeffs(
+                        node_counts[pair.nodes_a[0]],
+                        node_counts[pair.nodes_a[1]],
+                    )
+                    _dm_ext_B = _compute_dm_ext_coeffs(
+                        node_counts[pair.nodes_b[0]],
+                        node_counts[pair.nodes_b[1]],
+                    )
+                    st_kw["dm_ext_A"] = _dm_ext_A
+                    st_kw["dm_ext_B"] = _dm_ext_B
+
+        out = st_proc.process(StJacobianInput(**st_kw))
         if not out.valid:
             continue
 
@@ -421,6 +474,29 @@ def _assemble_friction_st_stiffness(
                     rows.append(gi)
                     cols.append(gj)
                     data.append(val)
+
+        # K_st 隣接ノードDOF拡張（status-274: Hermite非局所∂g/∂u）
+        if out.ds_du_adj is not None and adj_node_map is not None:
+            adj_a = adj_node_map.get(pair.elem_a if hasattr(pair, "elem_a") else -1, (-1, -1))
+            adj_b = adj_node_map.get(pair.elem_b if hasattr(pair, "elem_b") else -1, (-1, -1))
+            adj_global_nodes = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+
+            K_fric_adj = np.outer(df_ds, out.ds_du_adj) + np.outer(df_dt, out.dt_du_adj)
+
+            for li in range(12):
+                gi = gdofs[li]
+                for adj_idx in range(4):
+                    adj_node = adj_global_nodes[adj_idx]
+                    if adj_node < 0:
+                        continue
+                    for dj in range(3):
+                        adj_lj = adj_idx * 3 + dj
+                        gj = adj_node * ndof_per_node + dj
+                        val = K_fric_adj[li, adj_lj]
+                        if abs(val) > 1e-30:
+                            rows.append(gi)
+                            cols.append(gj)
+                            data.append(val)
 
     if len(data) == 0:
         return sp.csr_matrix((ndof_total, ndof_total))

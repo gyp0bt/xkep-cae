@@ -157,6 +157,10 @@ class FrictionStStiffnessInput:
     ndof_total: int
     node_coords: np.ndarray
     ndof_per_node: int = 6
+    use_hermite: bool = False
+    node_tangents: np.ndarray | None = None
+    node_counts: np.ndarray | None = None
+    adj_node_map: dict | None = None  # status-274: 隣接ノードマップ
 
 
 @dataclass(frozen=True)
@@ -190,6 +194,10 @@ class FrictionStStiffnessProcess(
             inp.ndof_total,
             inp.node_coords,
             inp.ndof_per_node,
+            use_hermite=inp.use_hermite,
+            node_tangents=inp.node_tangents,
+            node_counts=inp.node_counts,
+            adj_node_map=inp.adj_node_map,
         )
         return FrictionStStiffnessOutput(K_st=K_st)
 
@@ -344,6 +352,10 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
                     ndof_total=self._ndof,
                     node_coords=node_coords,
                     ndof_per_node=self._ndof_per_node,
+                    use_hermite=bool(kwargs.get("use_hermite", False)),
+                    node_tangents=kwargs.get("node_tangents"),
+                    node_counts=kwargs.get("node_counts"),
+                    adj_node_map=kwargs.get("adj_node_map"),
                 )
             ).K_st
             K = K + K_st
