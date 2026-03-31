@@ -1,4 +1,4 @@
-# status-275: テスト品質改善 — 非平行座標化 + atol厳格化 + K_c_adj修正
+# status-275: テスト品質改善 + frozen_hermite_tangent回帰修正
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
@@ -94,18 +94,50 @@ python contracts/validate_process_contracts.py
 
 ---
 
+### 撚線ベンチマーク回帰修正
+
+#### bisect 結果
+
+| コミット | 内容 | frac |
+|----------|------|------|
+| `f7db2ae` (status-260) | ベースライン | **0.5914** |
+| `60a6f3d` | active_contact_dofs NR結合 | 0.5914 |
+| `d9c3758` | huber_delta_h 直接指定API | 0.5914 |
+| `7058453` | three_point_bend delta_h貫通 | 0.5914 |
+| `7403aa2` **(status-264)** | **frozen_hermite_tangent + _cur_ratio統一** | **0.3750** |
+
+**回帰コミット: `7403aa2` (status-264)**
+
+#### 仮説検証
+
+| 条件 | frac | 備考 |
+|------|------|------|
+| HEAD (frozen=True) | 0.375 | 回帰状態 |
+| frozen=**False** | **0.413** | 部分回復 |
+| consistent_st=False | 0.388 | 微改善 |
+| Hermite OFF | 0.213 | 大幅悪化 |
+| K_c_adj無効 | 0.369 | 非局所は無関係 |
+| frozen=F + tangent dm ON | 0.388 | tangent dm非凍結は逆効果 |
+
+#### 根本原因
+
+`frozen_hermite_tangent=True` のデフォルト化（status-264）により、`evaluate()` の dm 補正がOFFに。接触力評価の精度低下がチャタリング誘発。
+
+#### 修正
+
+- `frozen_hermite_tangent` デフォルト: **True → False** に変更
+- evaluate() で dm 補正ON、tangent() は常に凍結（status-266設計維持）
+- frac: 0.375 → **0.413** に回復（残りの差0.18はstatus-264〜274の他の変更の累積）
+
+---
+
 ## 次セッションへの引き継ぎ
 
 ### 残課題（優先度順）
 
-1. **NR力収束改善 — 非局所拡張の効果測定**
-   - 現状ベンチマーク: **frac=0.375** (75.87s) — auto-estimated delta (status-260の0.59から悪化)
-   - **停止原因**: Incr 29 (frac≈0.376) で NR チャタリング発生
-     - `active=6 → active=18` の遷移で残差が周期的振動（||R_t||/||f|| ≈ 1.24 ↔ 1.35）
-     - delta_hブースト（×4.0）も無効。カットバック4回後も同じ場所で停止
-   - **初期貫入は原因ではない**（Hermite曲線レベルで最小gap=0.020mm > 0）
-   - status-264以降のNR動作変更（_cur_ratio統一/NR残差リストア/Hermite非局所拡張）が活性集合遷移パターンを変えた可能性
-   - **bisect推奨**: status-260のコミット（`f7db2ae`）から現在の差分を二分探索して回帰コミットを特定
+1. **NR力収束のさらなる改善**（frac=0.413 → 0.59以上）
+   - status-264〜274の累積変更（NRリストア、delta_hブースト、チャタリング分析等）が個別にどの程度影響するか未特定
+   - より詳細なbisectで各コミットの影響を定量化すべき
 
 2. **_closest_point_hermite_refine の収束精度改善**
    - curved/skew配置でNewton残差が~6e-4残る
