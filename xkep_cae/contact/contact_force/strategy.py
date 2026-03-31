@@ -903,7 +903,6 @@ class HuberContactForceProcess(
         # Hermite 用 node_tangents + node_counts
         # status-266: tangent() では常に dm 凍結（修正ニュートン法）
         # dm 補正は evaluate() のみ適用し、Jacobian の安定性を確保
-        # status-276: 両方dm ONを試みたが悪化(0.413→0.388)。凍結設計を維持。
         _node_tangents = None
         _node_counts = None
         _conn = None

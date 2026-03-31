@@ -371,7 +371,7 @@ class ContactFrictionProcess(
             tangent_fd_diagnostic=getattr(input_data, "tangent_fd_diagnostic", False),
             chattering_delta_h_boost=getattr(input_data, "chattering_delta_h_boost", 4.0),
             chattering_extra_attempts=getattr(input_data, "chattering_extra_attempts", 20),
-            nr_min_restore=getattr(input_data, "nr_min_restore", True),
+            nr_min_restore=getattr(input_data, "nr_min_restore", False),
             nr_min_restore_window=getattr(input_data, "nr_min_restore_window", 3),
         )
         nr_process_dyn = NewtonDynamicProcess()

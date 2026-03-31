@@ -98,10 +98,11 @@
 - ~~Hermite非局所∂g/∂u Step3（K_c拡張）~~ ← status-273で完了（K_mat+K_geo隣接ノードDOF拡張+FD検証）
 - ~~摩擦K_st隣接ノード拡張（Step4）~~ ← status-274で完了（_assemble_friction_st_stiffness + ソルバーパイプライン貫通）
 - ~~frozen_hermite_tangent=True回帰修正~~ ← status-275で完了（デフォルトFalse化、frac 0.38→0.41）
-- **次**: NR力収束の根本改善（frac=0.41→1.0）— status-276 参照
-  - 現状: frac=0.41 で NR 振動発散（active 0→54→24→36→78→84 の振動）
-  - Huber C1連続なのに NR 二次収束しない → 接線剛性不整合が疑われる
-  - **推奨手順**: (1) FD接線診断で不整合項特定 (2) 準静的での検証 (3) 不整合修正
+- ~~NR壁根本原因特定~~ ← status-277で完了（evaluate/tangent dm不整合 + NR制御複合回帰）
+- **次**: evaluate/tangent dm整合性回復 + NR制御再設計 — status-277 参照
+  - 根本原因: evaluate()はdm補正ON、tangent()はdm補正OFF（status-266「修正NR法」が原因）
+  - 複合回帰: NRソルバー変更+接触コード変更の相互作用で、個別リバートでは回復不可
+  - **推奨手順**: (1) evaluate dm OFFで一貫化テスト (2) 接触力リラクゼーション戦略再設計 (3) dm Jacobian ∂(corrected_coeffs)/∂u の実装
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
