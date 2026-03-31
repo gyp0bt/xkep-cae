@@ -14,7 +14,7 @@
 
 ## 現在地（2026-03-31）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 テスト**（摩擦K_st隣接ノード拡張 — status-274） | 契約違反**0件** | [最新status](status/status-index.md)
+**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 テスト**（テスト品質改善 — status-275） | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -44,7 +44,8 @@
 | Hermite非局所Step1 | **StJacobian隣接ノード微分**: ds_du_adj/dt_du_adj計算実装。FD検証atol=1e-5合格（2テスト追加） — status-271 |
 | Hermite非局所Step2 | **K_st隣接ノードDOF拡張**: adj_node_map計算、ds_du_adj/dt_du_adjをK_stアセンブリに結合。FD検証atol=1e-4合格（2テスト追加） — status-272 |
 | Hermite非局所Step3 | **K_c隣接ノードDOF拡張**: K_mat+K_geoにalpha_adjベースの隣接ノード寄与追加。FD検証atol=1e-2合格（2テスト追加） — status-273 |
-| 摩擦K_st非局所Step4 | **摩擦K_st隣接ノードDOF拡張**: _assemble_friction_st_stiffnessにHermite非局所寄与追加。ソルバーパイプライ��貫通。3テスト追加 — status-274 |
+| 摩擦K_st非局所Step4 | **摩擦K_st隣接ノードDOF拡張**: _assemble_friction_st_stiffnessにHermite非局所寄与追加。ソルバーパイプライン貫通。3テスト追加 — status-274 |
+| テスト品質改善 | **非平行座標化 + atol厳格化**: TestKstNonlocalFD/TestKcAdjFDのtrivially passing問題修正。asymmetric atol 1e-2→1e-5 — status-275 |
 | **壁** | NR力収束改善 / 61本以上 / 1000本6時間 |
 
 ---

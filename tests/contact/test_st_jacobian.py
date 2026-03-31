@@ -339,12 +339,13 @@ class TestComputeStJacobianHermite:
         np.testing.assert_allclose(out.ds_du, ds_fd, atol=1e-5)
         np.testing.assert_allclose(out.dt_du, dt_fd, atol=1e-5)
 
-    # NOTE(STA2): 以下3テスト (curved/skew/asymmetric) は atol=1e-2。
-    # 理由: Hermite ∂(s,t)/∂u は frozen-tangent 近似（接線ベクトル m を u の
-    # 関数としない）で計算しており、FD との系統的不整合が ~33% 存在する
-    # (status-239)。非局所 DOF 結合（∂m/∂u 4ノードペア外）解消後に
-    # atol=1e-5 へ厳格化すること。
-    # TODO(STA2): frozen-m 解消後に atol=1e-5 へ戻す（roadmap 参照）
+    # NOTE(STA2): curved/skew は atol=1e-2。
+    # 原因（status-275 で更新）: frozen-m は status-271〜274 で解消済みだが、
+    # _closest_point_hermite_refine の収束精度が不十分（skew: 残差~6e-4,
+    # orthogonal: 残差~5e-7）。FD は収束済み s,t を基準にするため、
+    # 解析式（F1=F2=0 前提）との差が生じる。
+    # asymmetric は完全収束（残差~1e-16）のため atol=1e-5 に厳格化。
+    # TODO(STA2): _closest_point_hermite_refine の収束精度改善後に全て atol=1e-5 へ
 
     def test_curved_hermite_orthogonal(self):
         """曲がった Hermite 曲線（直交配置）."""
@@ -411,7 +412,7 @@ class TestComputeStJacobianHermite:
         np.testing.assert_allclose(out.dt_du, dt_fd, atol=1e-2)
 
     def test_hermite_asymmetric(self):
-        """非対称 Hermite 配置."""
+        """非対称 Hermite 配置（完全収束 → atol=1e-5, status-275）."""
         xA0 = np.array([0.1, 0.2, 0.8])
         xA1 = np.array([1.3, -0.4, 0.9])
         xB0 = np.array([0.7, 0.1, -0.2])
@@ -439,8 +440,8 @@ class TestComputeStJacobianHermite:
             )
         )
         assert out.valid
-        np.testing.assert_allclose(out.ds_du, ds_fd, atol=1e-2)
-        np.testing.assert_allclose(out.dt_du, dt_fd, atol=1e-2)
+        np.testing.assert_allclose(out.ds_du, ds_fd, atol=1e-5)
+        np.testing.assert_allclose(out.dt_du, dt_fd, atol=1e-5)
 
 
 # ── Hermite 非局所 ∂(s,t)/∂u FD テスト（status-271）──────────────

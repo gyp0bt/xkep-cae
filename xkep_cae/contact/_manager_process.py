@@ -153,6 +153,103 @@ class DetectCandidatesInput:
     core_radii: np.ndarray | float | None = None
 
 
+def _build_surface_pair_whitelist(
+    conn: np.ndarray,
+    coords: np.ndarray,
+    radii: np.ndarray,
+    elem_strand_map: dict[int, int] | None,
+    n_neighbor: int,
+) -> set[tuple[int, int]]:
+    """要素レベルサーフェスペアのホワイトリストを構築（status-276）.
+
+    1. 異素線要素ペアの重心間距離を計算
+    2. 距離 < 閾値（2r_max + 要素長平均）のペアを「種ペア」に
+    3. 各種ペアの隣接±n要素まで展開してホワイトリストに
+
+    Args:
+        conn: (n_elems, 2) 要素-ノード接続
+        coords: (n_nodes, 3) 節点座標
+        radii: (n_elems,) 要素半径
+        elem_strand_map: 要素ID → 素線ID
+        n_neighbor: 隣接要素数（1 or 2 推奨）
+
+    Returns:
+        ホワイトリスト set[(i,j)] (i < j)
+    """
+    n_elems = len(conn)
+    if elem_strand_map is None or n_elems < 2:
+        return set()
+
+    # 要素重心
+    centroids = 0.5 * (coords[conn[:, 0]] + coords[conn[:, 1]])
+    # 要素長平均
+    elem_lens = np.linalg.norm(coords[conn[:, 1]] - coords[conn[:, 0]], axis=1)
+    avg_elem_len = float(np.mean(elem_lens))
+    r_max = float(np.max(radii))
+    # 閾値: 要素重心間距離。接触は重心が近い要素間で発生。
+    # 隣接n要素の展開で端部カバレッジを確保するため、種ペア閾値は厳しくてよい。
+    threshold = 2.0 * r_max + avg_elem_len * 0.1
+
+    # 素線ごとの要素リスト + 要素隣接マップ
+    strand_elems: dict[int, list[int]] = {}
+    for e in range(n_elems):
+        sid = elem_strand_map.get(e, -1)
+        if sid >= 0:
+            strand_elems.setdefault(sid, []).append(e)
+
+    # 同一素線内の隣接要素マップ（共有ノードで接続）
+    node_to_elems: dict[int, list[int]] = {}
+    for e in range(n_elems):
+        for n in conn[e]:
+            node_to_elems.setdefault(int(n), []).append(e)
+
+    def _get_neighbors(elem: int, n: int) -> set[int]:
+        """elem の同素線内隣接±n要素を返す."""
+        sid = elem_strand_map.get(elem, -1)
+        result = {elem}
+        frontier = {elem}
+        for _ in range(n):
+            next_frontier: set[int] = set()
+            for e in frontier:
+                for nd in conn[e]:
+                    for ne in node_to_elems.get(int(nd), []):
+                        if ne not in result and elem_strand_map.get(ne, -2) == sid:
+                            next_frontier.add(ne)
+            result |= next_frontier
+            frontier = next_frontier
+        return result
+
+    # 種ペアを検出: 異素線要素ペアで重心距離 < 閾値
+    strand_ids = sorted(strand_elems.keys())
+    seed_pairs: set[tuple[int, int]] = set()
+    for si_idx in range(len(strand_ids)):
+        for sj_idx in range(si_idx + 1, len(strand_ids)):
+            si, sj = strand_ids[si_idx], strand_ids[sj_idx]
+            elems_i = strand_elems[si]
+            elems_j = strand_elems[sj]
+            ci = centroids[elems_i]  # (ni, 3)
+            cj = centroids[elems_j]  # (nj, 3)
+            # 全ペア距離（ni × nj）
+            diff = ci[:, None, :] - cj[None, :, :]  # (ni, nj, 3)
+            dists = np.sqrt(np.einsum("ijk,ijk->ij", diff, diff))  # (ni, nj)
+            close = np.argwhere(dists < threshold)
+            for ii, jj in close:
+                ea, eb = elems_i[ii], elems_j[jj]
+                seed_pairs.add((min(ea, eb), max(ea, eb)))
+
+    # 種ペアを隣接n要素に展開
+    whitelist: set[tuple[int, int]] = set()
+    for ea, eb in seed_pairs:
+        nbrs_a = _get_neighbors(ea, n_neighbor)
+        nbrs_b = _get_neighbors(eb, n_neighbor)
+        for na in nbrs_a:
+            for nb in nbrs_b:
+                if elem_strand_map.get(na, -1) != elem_strand_map.get(nb, -2):
+                    whitelist.add((min(na, nb), max(na, nb)))
+
+    return whitelist
+
+
 @dataclass(frozen=True)
 class DetectCandidatesOutput:
     """Broadphase 候補検出の出力."""
@@ -219,6 +316,13 @@ class DetectCandidatesProcess(
                 if strand_i == strand_j and strand_i >= 0:
                     continue
             candidates.append((i, j))
+
+        # 要素レベルサーフェスペアフィルタ（status-276）
+        _n_nbr = getattr(config, "surface_pair_n_neighbor", 0)
+        if _n_nbr > 0 and sm is not None and candidates:
+            _whitelist = _build_surface_pair_whitelist(conn, coords, r_arr, sm, _n_nbr)
+            if _whitelist:
+                candidates = [(i, j) for i, j in candidates if (min(i, j), max(i, j)) in _whitelist]
 
         # 中点距離プリスクリーニング
         if config.midpoint_prescreening and candidates:
