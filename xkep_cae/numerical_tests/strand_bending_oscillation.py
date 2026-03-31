@@ -139,6 +139,7 @@ class StrandBendingOscillationConfig:
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
+    du_norm_cap: float = 0.0  # NR更新キャップ（0=制限なし）
 
 
 @dataclass(frozen=True)
@@ -450,6 +451,7 @@ class StrandBendingOscillationProcess(
             tol_force=cfg.tol_force,
             max_increments=cfg.max_increments,
             tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+            du_norm_cap=cfg.du_norm_cap,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)

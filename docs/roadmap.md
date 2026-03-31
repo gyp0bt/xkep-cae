@@ -46,7 +46,8 @@
 | Hermite非局所Step3 | **K_c隣接ノードDOF拡張**: K_mat+K_geoにalpha_adjベースの隣接ノード寄与追加。FD検証atol=1e-2合格（2テスト追加） — status-273 |
 | 摩擦K_st非局所Step4 | **摩擦K_st隣接ノードDOF拡張**: _assemble_friction_st_stiffnessにHermite非局所寄与追加。ソルバーパイプライン貫通。3テスト追加 — status-274 |
 | テスト品質改善 | **非平行座標化 + atol厳格化**: TestKstNonlocalFD/TestKcAdjFDのtrivially passing問題修正。asymmetric atol 1e-2→1e-5 — status-275 |
-| **壁** | NR力収束改善 / 61本以上 / 1000本6時間 |
+| NR壁根本原因 | **evaluate/tangent dm不整合を特定**: 複合回帰（NR+接触コード相互作用）、NR min restore OFF + diverged=True + tangent scaling復元 — status-277 |
+| **壁** | dm整合性回復 + NR制御再設計 / 61本以上 / 1000本6時間 |
 
 ---
 

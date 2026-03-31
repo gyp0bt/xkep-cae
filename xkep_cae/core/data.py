@@ -197,7 +197,7 @@ class ContactFrictionInputData:
     tangent_fd_diagnostic: bool = False  # ストール時にFD接線診断を実行（status-257）
     chattering_delta_h_boost: float = 4.0  # チャタリング時Huber delta_hブースト倍率（status-268）
     chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
-    nr_min_restore: bool = True  # NR残差最小値リストア（status-269: 過修正防止）
+    nr_min_restore: bool = False  # status-277: OFF（不正確な状態の持ち越し防止）
     nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
 
     @property

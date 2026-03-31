@@ -76,7 +76,9 @@ class NewtonDynamicInput:
     # NR残差最小値リストア（status-269: 過修正防止）
     # NR反復中の残差最小値を追跡し、発散検知時に最小残差の状態にリストアして
     # インクリメント成功とする。frozen_hermite_tangent=False の過修正発散を回避。
-    nr_min_restore: bool = True  # 残差最小値リストア有効化
+    nr_min_restore: bool = (
+        False  # status-277: 残差最小値リストアOFF（不正確な状態を次incrに持ち越す問題）
+    )
     nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
     # NRインナー活性ペア凍結（status-276: 大量同時活性化対策）
     # att=0 で p_n > 0 のペアDOFを記録し、以降の反復で新規活性化ペアの
@@ -412,7 +414,7 @@ class NewtonDynamicProcess(
             # ブーストは力ブレンド不要のため max_attempts まで NR 継続し
             # 変位収束に到達するための時間を確保する。
             if _relax_active and _relax_iter >= cfg.relax_max_iter and not _delta_h_boosted:
-                _diverged = False
+                _diverged = True  # status-277: 積極的dt縮小で小dt回復を促進
                 if cfg.show_progress:
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -497,11 +499,9 @@ class NewtonDynamicProcess(
                     load_frac=load_frac,
                     load_frac_prev=load_frac_prev,
                     use_coating=input_data.use_coating,
-                    # status-267: 接線剛性は常にフルスケール維持。
-                    # 残差のみ減衰し接線はフルで正しいNR方向を保つ。
-                    # 旧: _current_omega if _relax_active else 1.0
-                    # 接線スケーリングは残差減衰と不整合（91/91回リラクゼーション失敗の一因）。
-                    contact_tangent_scale=1.0,
+                    # status-277: チャタリング時は接線スケーリングで安定化。
+                    # status-260でfrac=0.59達成の要因（リラクゼーションとの整合）。
+                    contact_tangent_scale=_current_omega if _relax_active else 1.0,
                 )
             )
             K_T = tangent_out.K_T
