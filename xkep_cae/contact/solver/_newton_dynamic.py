@@ -197,6 +197,9 @@ class NewtonDynamicProcess(
         _prev_n_active = -1
         _delta_h_boosted = False  # status-268: delta_hブースト適用中フラグ
         _effective_max = cfg.max_attempts  # チャタリング時に動的拡張（status-268）
+        # NR 2サイクル振動検知用（status-278）
+        _u_prev2: np.ndarray | None = None  # 2反復前のu
+        _u_prev1: np.ndarray | None = None  # 1反復前のu
         # NR残差最小値リストア用トラッキング（status-269）
         _min_res_ratio = float("inf")
         _min_res_u: np.ndarray | None = None
@@ -651,6 +654,48 @@ class NewtonDynamicProcess(
                 if hasattr(_u_proj_nr, "toarray"):
                     _u_proj_nr = _u_proj_nr.toarray().ravel()
                 u[:] = np.asarray(_u_proj_nr).ravel()
+
+            # ── NR 2サイクル振動検知 + 微小接触力フィルタ収束（status-278） ──
+            # 接触活性/非活性の微小変動で du が完全な2サイクル振動に入り、
+            # かつ接触力が構造残差に対して十分小さい場合、
+            # 「微小接触は物理的に無意味」として現在の状態を収束と判定する。
+            # 条件: (1) att>=4, (2) 2サイクル振動検知, (3) ||f_c||/||R|| < threshold
+            _cycle_converged = False
+            _tol_cycle = 1e-6  # 2サイクル振動の判定閾値
+            _contact_filter_threshold = 0.05  # 接触力が残差の5%以下なら微小
+            if att >= 4 and _u_prev2 is not None:
+                _cycle_diff = float(np.linalg.norm(u - _u_prev2))
+                _u_norm_ref = max(float(np.linalg.norm(u)), 1e-30)
+                if _cycle_diff / _u_norm_ref < _tol_cycle:
+                    # 2サイクル振動確定
+                    _fc_norm = float(np.linalg.norm(f_c))
+                    _R_norm = float(np.linalg.norm(R_u))
+                    _fc_ratio = _fc_norm / max(_R_norm, 1e-30)
+                    if _fc_ratio < _contact_filter_threshold:
+                        # 微小接触力: 中間状態を採用
+                        u[:] = 0.5 * (u + _u_prev1)
+                        _mpc_avg = input_data.mpc_transform
+                        if _mpc_avg is not None:
+                            _u_red_avg = u[_mpc_avg.independent_dofs]
+                            _u_proj_avg = _mpc_avg.T @ _u_red_avg
+                            if hasattr(_u_proj_avg, "toarray"):
+                                _u_proj_avg = _u_proj_avg.toarray().ravel()
+                            u[:] = np.asarray(_u_proj_avg).ravel()
+                        _cycle_converged = True
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"微小接触2サイクル検知 "
+                                f"(||f_c||/||R||={_fc_ratio:.2e}) → 平均化収束"
+                            )
+            # u履歴を更新
+            _u_prev2 = _u_prev1
+            _u_prev1 = u.copy()
+
+            if _cycle_converged:
+                step_converged = True
+                break
 
             # ── 変位・エネルギー収束判定 ──
             _eff_ref2 = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
