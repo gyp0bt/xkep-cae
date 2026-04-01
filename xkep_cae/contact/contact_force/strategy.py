@@ -794,20 +794,12 @@ class HuberContactForceProcess(
             return f_c, np.zeros(0)
         has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
 
-        # Hermite dm 補正用 node_counts（status-243, status-264: frozen制御追加）
-        _frozen_hm = (
-            hasattr(manager, "config")
-            and hasattr(manager.config, "frozen_hermite_tangent")
-            and manager.config.frozen_hermite_tangent
-        )
+        # Hermite dm 補正用 node_counts
+        # status-278: evaluate() でも dm 補正を無効化し、tangent() と一貫化。
+        # status-266 で tangent() の dm を OFF にして「修正NR法」としたが、
+        # evaluate/tangent の不整合が NR 停滞を悪化させていた（status-277）。
+        # dm 補正の効果は端部ノードの重み修正のみで影響は限定的。
         _eval_node_counts = None
-        if _use_hermite and not _frozen_hm:
-            _conn = getattr(manager, "connectivity", None)
-            if _conn is not None:
-                from xkep_cae.contact.geometry._compute import _compute_node_counts
-
-                _max_node = int(nodes[has_state].max()) if has_state.any() else 0
-                _eval_node_counts = _compute_node_counts(_max_node + 1, _conn)
 
         # バッチ Huber 計算
         x_pen = k_pen * (-gaps)
