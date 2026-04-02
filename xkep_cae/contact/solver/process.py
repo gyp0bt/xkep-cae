@@ -634,6 +634,49 @@ class ContactFrictionProcess(
                 ul_assembler.checkpoint()
             _time_strategy.checkpoint()
 
+            # ── 外部チェックポイント保存（status-278: 中盤からの対策効果検証用） ──
+            # XKEP_CHECKPOINT_FRAC=0.50 XKEP_CHECKPOINT_PATH=/tmp/ckpt.pkl で
+            # 指定fracに到達したらソルバーの全状態をpickle保存。
+            import os as _os
+
+            _ckpt_frac_str = _os.environ.get("XKEP_CHECKPOINT_FRAC", "")
+            _ckpt_path = _os.environ.get("XKEP_CHECKPOINT_PATH", "")
+            if _ckpt_frac_str and _ckpt_path:
+                _ckpt_frac = float(_ckpt_frac_str)
+                if load_frac >= _ckpt_frac and not hasattr(self, "_ckpt_saved"):
+                    import pickle as _pickle
+
+                    _ckpt_data = {
+                        "state": state,
+                        "time_vel": _time_strategy.vel.copy(),
+                        "time_acc": _time_strategy.acc.copy(),
+                        "time_vel_old": _time_strategy._vel_old.copy()
+                        if hasattr(_time_strategy, "_vel_old")
+                        else None,
+                        "time_acc_old": _time_strategy._acc_old.copy()
+                        if hasattr(_time_strategy, "_acc_old")
+                        else None,
+                        "time_u_pred": _time_strategy._u_pred.copy()
+                        if hasattr(_time_strategy, "_u_pred")
+                        else None,
+                        "manager_pairs": manager.pairs[:],
+                        "manager_config": manager.config,
+                        "load_frac": load_frac,
+                        "k_pen": k_pen,
+                        "stepping_state": stepping._state if hasattr(stepping, "_state") else None,
+                        "dt_sub": dt_sub,
+                        "incr_count": _incr_count,
+                        "cutback_count": _n_cutbacks,
+                    }
+                    if hasattr(manager, "connectivity"):
+                        _ckpt_data["connectivity"] = manager.connectivity
+                    with open(_ckpt_path, "wb") as _f:
+                        _pickle.dump(_ckpt_data, _f)
+                    self._ckpt_saved = True
+                    print(
+                        f"  [CHECKPOINT] frac={load_frac:.4f} → {_ckpt_path} (incr={_incr_count})"
+                    )
+
             # インクリメント診断生成
             _fc_norm = float(np.linalg.norm(step_result.f_c))
             _diag = last_diag

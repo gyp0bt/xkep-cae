@@ -140,6 +140,10 @@ class StrandBendingOscillationConfig:
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
     du_norm_cap: float = 0.0  # NR更新キャップ（0=制限なし）
+    # チェックポイント復元（status-278: 中盤からの対策効果検証用）
+    # pickle ファイルパスを指定すると、保存された u0/vel/acc から再開。
+    # load_frac_start 以降の荷重増分のみ実行される。
+    resume_checkpoint: str = ""  # チェックポイントファイルパス（空=通常実行）
 
 
 @dataclass(frozen=True)
@@ -362,6 +366,49 @@ class StrandBendingOscillationProcess(
         M_beam = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
         M_ext = sp.lil_matrix((ndof, ndof))
         M_ext[:ndof_beam, :ndof_beam] = M_beam
+
+        # MPC参照点の質量補強（status-278: 回転慣性NR収束不良修正）
+        # lumped質量行列では参照点ノードの質量がゼロ。MPC変換 T^T M T で
+        # slave ノードの質量が参照点に集約されるが、回転慣性が ~10^-7 と
+        # 極めて小さく、effective_stiffness の回転対角項がほぼゼロになる。
+        # → NRの回転DOF更新が発散し、残差が収束しない。
+        # 対策: 参照点に slave ノードの質量を直接加算し、
+        # 平行軸定理で回転慣性を計算する。
+        for ref_node, end_nodes in [(ref_left_node, left_nodes), (ref_right_node, right_nodes)]:
+            ref_coord = (
+                strand_coords[ref_node]
+                if ref_node < len(strand_coords)
+                else np.mean(strand_coords[end_nodes], axis=0)
+            )
+            m_total = 0.0  # 並進質量の和
+            I_xx, I_yy, I_zz = 0.0, 0.0, 0.0  # 回転慣性（平行軸定理）
+            for en in end_nodes:
+                m_n = float(M_beam[en * 6, en * 6])  # ノード並進質量
+                m_total += m_n
+                # 平行軸定理: I += m * r²
+                if en < len(strand_coords):
+                    dr = strand_coords[en] - ref_coord
+                    I_xx += m_n * (dr[1] ** 2 + dr[2] ** 2)
+                    I_yy += m_n * (dr[0] ** 2 + dr[2] ** 2)
+                    I_zz += m_n * (dr[0] ** 2 + dr[1] ** 2)
+                # ノード自身の回転慣性も加算
+                for d in range(3):
+                    rot_dof = en * 6 + 3 + d
+                    if rot_dof < M_beam.shape[0]:
+                        i_n = float(M_beam[rot_dof, rot_dof])
+                        if d == 0:
+                            I_xx += i_n
+                        elif d == 1:
+                            I_yy += i_n
+                        else:
+                            I_zz += i_n
+            # 参照点に質量を設定
+            for d in range(3):
+                M_ext[ref_node * 6 + d, ref_node * 6 + d] = m_total
+            M_ext[ref_node * 6 + 3, ref_node * 6 + 3] = I_xx
+            M_ext[ref_node * 6 + 4, ref_node * 6 + 4] = I_yy
+            M_ext[ref_node * 6 + 5, ref_node * 6 + 5] = I_zz
+
         M_ext = M_ext.tocsr()
 
         # ── 6. 境界条件 ──
@@ -370,8 +417,11 @@ class StrandBendingOscillationProcess(
         for k in range(6):
             fixed_dofs.add(ref_left_node * 6 + k)
 
-        # 右端参照点: xyz固定、回転は処方変位
-        for k in range(3):
+        # 右端参照点: xyz固定 + θ_x,θ_y固定、θ_z のみ処方変位
+        # status-278: θ_x,θ_y を自由にすると、lumped質量行列の回転慣性が
+        # 極めて小さく（~10^-7）、動的残差がNRで収束しない。
+        # 撚線曲げ試験では θ_x,θ_y は物理的に不要（曲げ面内回転のみ）。
+        for k in range(5):  # x,y,z,θ_x,θ_y を固定
             fixed_dofs.add(ref_right_node * 6 + k)
 
         # 曲げ角度 = κ * L
@@ -435,6 +485,20 @@ class StrandBendingOscillationProcess(
         # ULアセンブラを拡張DOF系にラップ（参照点DOFのゼロパディング）
         extended_assembler = _ExtendedULAssemblerWrapper(assembler, ndof_beam, ndof)
 
+        # チェックポイント復元（status-278）
+        _u0 = None
+        _vel0 = None
+        _acc0 = None
+        if cfg.resume_checkpoint:
+            import pickle as _pickle
+
+            with open(cfg.resume_checkpoint, "rb") as _f:
+                _ckpt = _pickle.load(_f)
+            _u0 = _ckpt["state"].u.copy()
+            _vel0 = _ckpt["time_vel"]
+            _acc0 = _ckpt["time_acc"]
+            print(f"  [RESUME] frac={_ckpt['load_frac']:.4f}, ||u||={np.linalg.norm(_u0):.4e}")
+
         solver_input = ContactFrictionInputData(
             mesh=extended_mesh,
             boundary=boundary,
@@ -444,9 +508,12 @@ class StrandBendingOscillationProcess(
                 assemble_internal_force=_assemble_internal_force_extended,
                 ul_assembler=extended_assembler,
             ),
+            u0=_u0,
             mass_matrix=M_ext,
             dt_physical=t_total,
             rho_inf=cfg.rho_inf,
+            velocity=_vel0,
+            acceleration=_acc0,
             max_nr_attempts=cfg.max_nr_attempts,
             tol_force=cfg.tol_force,
             max_increments=cfg.max_increments,

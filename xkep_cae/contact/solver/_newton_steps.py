@@ -295,7 +295,23 @@ class ConvergenceCheckProcess(
             du_norm = float(np.linalg.norm(inp.du))
             u_norm = float(np.linalg.norm(inp.u))
 
-            if u_norm > 1e-30 and du_norm / u_norm < inp.tol_disp:
+            # status-278: 変位収束を並進DOFのみで判定。
+            # lumped質量行列の回転慣性が極小（~10^-8）のため、
+            # 動的残差の回転成分がNRで解消されず du の回転成分が支配的になる。
+            # 並進DOFのみで判定すれば、回転残差に引きずられず収束を達成できる。
+            ndpn = inp.ndof_per_node
+            if ndpn >= 6 and len(inp.du) >= ndpn:
+                _n_nd = len(inp.du) // ndpn
+                _trans_idx = np.array(
+                    [i * ndpn + d for i in range(_n_nd) for d in range(3)], dtype=int
+                )
+                _du_trans = float(np.linalg.norm(inp.du[_trans_idx]))
+                _u_trans = float(np.linalg.norm(inp.u[_trans_idx]))
+            else:
+                _du_trans = du_norm
+                _u_trans = u_norm
+
+            if _u_trans > 1e-30 and _du_trans / _u_trans < inp.tol_disp:
                 conv_type = ConvergenceType.DISPLACEMENT
             else:
                 energy = abs(float(np.dot(inp.du, inp.R_u)))
