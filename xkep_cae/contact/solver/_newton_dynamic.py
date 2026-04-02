@@ -680,21 +680,25 @@ class NewtonDynamicProcess(
                 _R_norm = float(np.linalg.norm(R_u))
                 _fc_ratio = _fc_norm / max(_R_norm, 1e-30)
 
-                # 周期2〜_limit_cycle_windowを検査
+                # 周期2〜を検査: u[att] ≈ u[att-period] は
+                # _u_history_ring[-1] ≈ _u_history_ring[-(period+1)]
                 _detected_period = 0
-                for _period in range(2, min(len(_u_history_ring), _limit_cycle_window) + 1):
-                    _cycle_diff = float(
-                        np.linalg.norm(_u_history_ring[-1] - _u_history_ring[-_period])
-                    )
+                for _period in range(2, len(_u_history_ring)):
+                    _idx = -(_period + 1)
+                    if abs(_idx) > len(_u_history_ring):
+                        break
+                    _cycle_diff = float(np.linalg.norm(_u_history_ring[-1] - _u_history_ring[_idx]))
                     if _cycle_diff / _u_norm_ref < _tol_cycle:
                         _detected_period = _period
                         break
 
                 if _detected_period > 0:
-                    # 条件A: 微小接触力（早期、周期2のみ）
+                    # 条件A: 微小接触力（周期2のみ、status-278互換）
+                    # status-279検証: 周期3以上を許可すると不正確な状態が蓄積し悪化
                     _early_ok = _detected_period == 2 and _fc_ratio < _contact_filter_threshold
-                    # 条件B: 後期リミットサイクル（任意周期、残差制限内）
-                    _late_ok = att >= _late_cycle_att and _cur_ratio < _late_cycle_res_max
+                    # 条件B: 後期リミットサイクル（status-279で検証→逆効果で無効化）
+                    # 残差の大きい状態を収束判定すると次インクリメントで発散する
+                    _late_ok = False
 
                     if _early_ok or _late_ok:
                         # 直近_detected_period個の平均状態を採用
