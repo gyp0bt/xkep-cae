@@ -14,6 +14,7 @@ from xkep_cae.core import binds_to
 from xkep_cae.numerical_tests.strand_bending_oscillation import (
     StrandBendingOscillationConfig,
     StrandBendingOscillationProcess,
+    _collect_adjacent_nodes,
     _collect_end_nodes,
 )
 
@@ -96,3 +97,45 @@ class TestCollectEndNodes:
         left, right = _collect_end_nodes(conn, 2, strand_ids)
         assert sorted(left) == [0, 3]
         assert sorted(right) == [2, 5]
+
+
+class TestCollectAdjacentNodes:
+    """隣接ノード収集のテスト."""
+
+    def test_adjacent_of_end(self) -> None:
+        """端部ノードの隣接ノードが正しい."""
+        conn = np.array([[0, 1], [1, 2], [2, 3]])
+        strand_ids = np.array([0, 0, 0])
+        adj = _collect_adjacent_nodes(conn, strand_ids, [3])
+        assert adj == [2]
+
+    def test_adjacent_of_left_end(self) -> None:
+        """左端ノードの隣接ノードが正しい."""
+        conn = np.array([[0, 1], [1, 2], [2, 3]])
+        strand_ids = np.array([0, 0, 0])
+        adj = _collect_adjacent_nodes(conn, strand_ids, [0])
+        assert adj == [1]
+
+
+class TestStaticSolverConfig:
+    """static_solver / loading_mode 構成テスト."""
+
+    def test_static_solver_default_false(self) -> None:
+        """static_solver デフォルトは False."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.static_solver is False
+
+    def test_loading_mode_default_rotation(self) -> None:
+        """loading_mode デフォルトは 'rotation'."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.loading_mode == "rotation"
+
+    def test_loading_mode_moment(self) -> None:
+        """loading_mode='moment' で構成可能."""
+        cfg = StrandBendingOscillationConfig(loading_mode="moment")
+        assert cfg.loading_mode == "moment"
+
+    def test_static_solver_true(self) -> None:
+        """static_solver=True で構成可能."""
+        cfg = StrandBendingOscillationConfig(static_solver=True)
+        assert cfg.static_solver is True
