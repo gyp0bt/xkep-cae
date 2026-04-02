@@ -57,7 +57,6 @@ from xkep_cae.contact.solver._newton_dynamic import (
 )
 from xkep_cae.contact.solver._solver_state import (
     SolverStateOutput,
-    _build_u_output,
     _restore_checkpoint,
     _save_checkpoint,
     _state_set,
@@ -262,6 +261,30 @@ class ContactFrictionProcess(
         # --- UL ---
         _ul = ul_assembler is not None
 
+        # --- UL参照配置更新（status-281） ---
+        # CR梁は大変形を処理できるが、90°超のヘリカル素線曲げでは
+        # 全累積変位からの接線剛性精度が低下する。
+        # update_reference()で参照配置を更新し、各ステップの増分変位を
+        # 小さく保つことで二次収束を維持する。
+        _ul_ref_base = np.zeros(ndof) if _ul else None  # 参照配置更新基準変位
+        _ul_ref_base_ckpt: np.ndarray | None = None  # チェックポイント用
+
+        def _ul_tangent_wrapper(u_total: np.ndarray) -> object:
+            """ULアセンブラに増分変位を渡すラッパー."""
+            u_incr = u_total - _ul_ref_base
+            return input_data.callbacks.assemble_tangent(u_incr)
+
+        def _ul_internal_force_wrapper(u_total: np.ndarray) -> np.ndarray:
+            """ULアセンブラに増分変位を渡すラッパー."""
+            u_incr = u_total - _ul_ref_base
+            return input_data.callbacks.assemble_internal_force(u_incr)
+
+        # ULありの場合はラッパー経由、なしの場合は直接コールバック
+        _asm_tangent = _ul_tangent_wrapper if _ul else input_data.callbacks.assemble_tangent
+        _asm_internal_force = (
+            _ul_internal_force_wrapper if _ul else input_data.callbacks.assemble_internal_force
+        )
+
         # --- 初期貫入チェック ---
         broadphase_margin = 0.0
         broadphase_cell_size = None
@@ -337,6 +360,7 @@ class ContactFrictionProcess(
         _save_checkpoint(state)
         if _ul:
             ul_assembler.checkpoint()
+            _ul_ref_base_ckpt = _ul_ref_base.copy()
         _time_strategy.checkpoint()
 
         # --- 適応荷重増分コントローラ ---
@@ -490,8 +514,8 @@ class ContactFrictionProcess(
                 f_ext=f_ext,
                 f_ext_ref_norm=f_ext_ref_norm,
                 fixed_dofs=fixed_dofs,
-                assemble_tangent=input_data.callbacks.assemble_tangent,
-                assemble_internal_force=input_data.callbacks.assemble_internal_force,
+                assemble_tangent=_asm_tangent,
+                assemble_internal_force=_asm_internal_force,
                 manager=manager,
                 node_coords_ref=state.node_coords_ref,
                 strategies=strategies,
@@ -530,6 +554,8 @@ class ContactFrictionProcess(
                     if _ul:
                         ul_assembler.rollback()
                         _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
+                        if _ul_ref_base_ckpt is not None:
+                            _ul_ref_base[:] = _ul_ref_base_ckpt
                     _time_strategy.restore_checkpoint()
                     _state_set(state, "increment_display", state.increment_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
@@ -543,7 +569,7 @@ class ContactFrictionProcess(
                         DiagnosticsInput(diagnostics=last_diag)
                     )
                     print(_diag_report.report)
-                    _u_out = _build_u_output(state, ul_assembler)
+                    _u_out = state.u.copy()  # state.uは初期配置からの全累積変位
                     elapsed = time.perf_counter() - t0
                     return SolverResultData(
                         u=_u_out,
@@ -565,7 +591,7 @@ class ContactFrictionProcess(
                 # ==============================================================
 
                 # エネルギー診断
-                _f_int = input_data.callbacks.assemble_internal_force(state.u)
+                _f_int = _asm_internal_force(state.u)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
                         u=state.u,
@@ -607,8 +633,12 @@ class ContactFrictionProcess(
             if dt_sub > 1e-30:
                 _time_strategy.correct(state.u, np.zeros_like(state.u), dt_sub)
 
-            # 動的解析では UL 更新をスキップ — CR 梁の corotational 分解が
-            # 大変形を処理するため、参照配置リセットは不要。
+            # UL参照配置更新（status-281: 大変形ヘリカル素線対応）
+            # 各収束後にupdate_reference()で参照配置を更新し、増分変位を小さく保つ。
+            if _ul and hasattr(ul_assembler, "update_reference"):
+                _u_incr_ul = state.u - _ul_ref_base
+                ul_assembler.update_reference(_u_incr_ul)
+                _ul_ref_base[:] = state.u
 
             # 適応時間増分: 次ステップ幅決定（力ベース SDI 判定, status-233）
             _fc_norm = float(np.linalg.norm(step_result.f_c))
@@ -649,6 +679,7 @@ class ContactFrictionProcess(
             _save_checkpoint(state)
             if _ul:
                 ul_assembler.checkpoint()
+                _ul_ref_base_ckpt = _ul_ref_base.copy()
             _time_strategy.checkpoint()
 
             # ── 外部チェックポイント保存（status-278: 中盤からの対策効果検証用） ──
@@ -758,7 +789,7 @@ class ContactFrictionProcess(
         # ================================================================
         # 正常終了
         # ================================================================
-        _u_out = _build_u_output(state, ul_assembler)
+        _u_out = state.u.copy()  # state.uは初期配置からの全累積変位
         elapsed = time.perf_counter() - t0
 
         # エネルギー診断サマリ出力
