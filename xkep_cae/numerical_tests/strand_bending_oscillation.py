@@ -436,20 +436,18 @@ class StrandBendingOscillationProcess(
         for k in range(6):
             fixed_dofs.add(ref_left_node * 6 + k)
 
-        # 右端参照点: xyz固定 + θ_x,θ_y固定、θ_z のみ処方変位
-        # status-278: θ_x,θ_y を自由にすると、lumped質量行列の回転慣性が
-        # 極めて小さく（~10^-7）、動的残差がNRで収束しない。
-        # 撚線曲げ試験では θ_x,θ_y は物理的に不要（曲げ面内回転のみ）。
-        for k in range(5):  # x,y,z,θ_x,θ_y を固定
+        # 右端参照点: xyz固定 + θ_x,θ_z固定、θ_y のみ処方変位
+        # status-280: θ_z処方はねじり（トーション）。x-z面曲げにはθ_yを処方する。
+        # θ_x,θ_z を固定（曲げ面外の回転を拘束）。
+        for k in [0, 1, 2, 3, 5]:  # x,y,z,θ_x,θ_z を固定
             fixed_dofs.add(ref_right_node * 6 + k)
 
         # 曲げ角度 = κ * L
         strand_length = cfg.pitch_length * cfg.n_pitches
         bending_angle = cfg.bending_curvature * strand_length
 
-        # 処方変位: 右端参照点の θ_z （曲げ回転）
-        # 揺動: 0 → +θ → 0 → -θ → 0 を n_cycles 回
-        prescribed_dof = ref_right_node * 6 + 5  # θ_z
+        # 処方変位: 右端参照点の θ_y （x-z面曲げ回転）
+        prescribed_dof = ref_right_node * 6 + 4  # θ_y
         prescribed_dofs = np.array([prescribed_dof], dtype=int)
         prescribed_values = np.array([bending_angle])
 
@@ -610,20 +608,19 @@ class StrandBendingOscillationProcess(
             for k in range(6):
                 fixed_dofs.add(n * 6 + k)
 
-        # 右端: θ_y処方（x-z面曲げ）, θ_x/θ_z固定, u_x/u_y/u_z自由
+        # 右端: θ_y処方（x-z面曲げ）, θ_x/θ_z自由, u_x/u_y/u_z自由
         # status-280: θ_z処方はねじり（トーション）であって曲げではない。
         # z軸沿い梁のx-z面曲げにはθ_y（y軸周り回転）を処方する。
+        # θ_x/θ_zは自由: ヘリカル素線の曲げ-ねじり連成を許容。
+        # 固定すると外層素線のNR収束が劣化する（status-280で確認済み）。
         strand_length = cfg.pitch_length * cfg.n_pitches
         bending_angle = cfg.bending_curvature * strand_length
 
         for n in right_nodes:
-            # θ_x, θ_z を固定（曲げ面外の回転を拘束）
-            fixed_dofs.add(n * 6 + 3)  # θ_x
-            fixed_dofs.add(n * 6 + 5)  # θ_z
-            # θ_y を処方（x-z面曲げ）
+            # θ_y を処方（x-z面曲げ）、θ_x/θ_z は自由（連成許容）
             prescribed_dofs_list.append(n * 6 + 4)
             prescribed_values_list.append(bending_angle)
-            # u_x, u_y, u_z は自由 → 断面が自然に変位
+            # u_x, u_y, u_z, θ_x, θ_z は自由 → 断面が自然に変位+回転
 
         fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
         prescribed_dofs_arr = np.array(prescribed_dofs_list, dtype=int)
