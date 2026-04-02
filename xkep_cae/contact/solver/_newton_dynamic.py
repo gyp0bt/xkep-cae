@@ -667,7 +667,7 @@ class NewtonDynamicProcess(
             _tol_cycle = 1e-6  # リミットサイクルの判定閾値
             _contact_filter_threshold = 0.05  # 接触力が残差の5%以下なら微小
             _late_cycle_att = 15  # 後期判定の最小反復数
-            _late_cycle_res_max = 2.0  # 後期判定の残差上限
+            _late_cycle_res_max = 3.0  # 後期判定の残差上限
 
             # u履歴を更新（最大_limit_cycle_window個保持）
             _u_history_ring.append(u.copy())

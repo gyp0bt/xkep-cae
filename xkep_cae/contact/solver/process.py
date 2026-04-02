@@ -240,7 +240,9 @@ class ContactFrictionProcess(
         _frac_start = input_data.load_frac_start
         if _frac_start > 0.0:
             _state_set(state, "load_frac_prev", _frac_start)
-            _state_set(state, "ul_frac_base", _frac_start)
+            # ul_frac_base は 0.0 のまま: 動的解析ではUL更新しないため、
+            # 処方変位は load_frac * prescribed_values で計算される。
+            # ul_frac_base = frac_start にすると処方変位がリセットされるバグ。
             print(f"  [RESUME] load_frac_start={_frac_start:.4f}")
 
         # --- 参照荷重ノルム ---
@@ -533,6 +535,43 @@ class ContactFrictionProcess(
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
                     continue
                 else:
+                    # ── ステートリスタート（status-279: 自動チェックポイント復元） ──
+                    # カットバック連続失敗時、ULアセンブラと時間積分器の参照状態を
+                    # リセットして同じfracから再試行する。チェックポイント復元と同等。
+                    # 最大3回まで試行。
+                    if not hasattr(self, "_restart_count"):
+                        self._restart_count = 0
+                    if self._restart_count < 3:
+                        self._restart_count += 1
+                        _cur_frac = state.load_frac_prev
+                        print(
+                            f"  [RESTART {self._restart_count}/3] "
+                            f"frac={_cur_frac:.4f} でステートリスタート"
+                        )
+                        # stepping のキューをリセット
+                        _asp = stepping._adaptivesteppingprocess
+                        _asp._queue.clear()
+                        _dt_frac_rst = _dt_max / _t_total if _t_total > 0 else 0.025
+                        _asp._queue.append(min(_cur_frac + _dt_frac_rst, 1.0))
+                        _asp._n_cutbacks = 0
+                        stepping._last_load_frac_prev = _cur_frac
+                        # time integrator を直前の成功チェックポイントに復元
+                        _time_strategy.restore_checkpoint()
+                        # UL アセンブラを直前の成功チェックポイントに復元
+                        if _ul:
+                            ul_assembler.rollback()
+                        # 接触ペアをクリア（broadphaseからやり直し）
+                        if hasattr(manager, "pairs"):
+                            manager.pairs.clear()
+                        # state を直前の成功状態に復元し、新チェックポイントとして設定
+                        _restore_checkpoint(state)
+                        _save_checkpoint(state)
+                        # 新しいチェックポイントを設定（次のリスタートに備え）
+                        _time_strategy.checkpoint()
+                        if _ul:
+                            ul_assembler.checkpoint()
+                        continue
+
                     print(
                         f"  WARNING: Incr {state.increment_display} "
                         f"(frac={load_frac:.4f}) did not converge."
