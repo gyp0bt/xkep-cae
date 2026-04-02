@@ -436,10 +436,11 @@ class StrandBendingOscillationProcess(
         for k in range(6):
             fixed_dofs.add(ref_left_node * 6 + k)
 
-        # 右端参照点: xyz固定 + θ_x,θ_z固定、θ_y のみ処方変位
-        # status-280: θ_z処方はねじり（トーション）。x-z面曲げにはθ_yを処方する。
-        # θ_x,θ_z を固定（曲げ面外の回転を拘束）。
-        for k in [0, 1, 2, 3, 5]:  # x,y,z,θ_x,θ_z を固定
+        # 右端参照点: u_y固定 + θ_x,θ_z固定、θ_y のみ処方変位
+        # status-280: x-z面カンチレバー曲げ。
+        # u_x, u_z は自由（梁端の横移動+軸短縮を許容）。
+        # u_y を固定（面外変位を拘束）。
+        for k in [1, 3, 5]:  # u_y, θ_x, θ_z を固定
             fixed_dofs.add(ref_right_node * 6 + k)
 
         # 曲げ角度 = κ * L
