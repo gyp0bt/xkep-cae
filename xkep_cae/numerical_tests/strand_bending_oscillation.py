@@ -485,10 +485,11 @@ class StrandBendingOscillationProcess(
         # ULアセンブラを拡張DOF系にラップ（参照点DOFのゼロパディング）
         extended_assembler = _ExtendedULAssemblerWrapper(assembler, ndof_beam, ndof)
 
-        # チェックポイント復元（status-278）
+        # チェックポイント復元（status-278, status-279で途中再開対応）
         _u0 = None
         _vel0 = None
         _acc0 = None
+        _frac_start = 0.0
         if cfg.resume_checkpoint:
             import pickle as _pickle
 
@@ -497,7 +498,11 @@ class StrandBendingOscillationProcess(
             _u0 = _ckpt["state"].u.copy()
             _vel0 = _ckpt["time_vel"]
             _acc0 = _ckpt["time_acc"]
-            print(f"  [RESUME] frac={_ckpt['load_frac']:.4f}, ||u||={np.linalg.norm(_u0):.4e}")
+            _frac_start = _ckpt["load_frac"]
+            # ULアセンブラの累積変位を復元
+            if hasattr(extended_assembler._asm, "_u_total_accum"):
+                extended_assembler._asm._u_total_accum[:] = _u0[:ndof_beam]
+            print(f"  [RESUME] frac={_frac_start:.4f}, ||u||={np.linalg.norm(_u0):.4e}")
 
         solver_input = ContactFrictionInputData(
             mesh=extended_mesh,
@@ -519,6 +524,7 @@ class StrandBendingOscillationProcess(
             max_increments=cfg.max_increments,
             tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
             du_norm_cap=cfg.du_norm_cap,
+            load_frac_start=_frac_start,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)

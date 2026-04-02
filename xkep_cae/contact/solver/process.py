@@ -236,6 +236,13 @@ class ContactFrictionProcess(
             u_prev_converged=u0.copy(),
         )
 
+        # チェックポイント途中再開（status-279）
+        _frac_start = input_data.load_frac_start
+        if _frac_start > 0.0:
+            _state_set(state, "load_frac_prev", _frac_start)
+            _state_set(state, "ul_frac_base", _frac_start)
+            print(f"  [RESUME] load_frac_start={_frac_start:.4f}")
+
         # --- 参照荷重ノルム ---
         f_ext_ref_norm = float(np.linalg.norm(f_ext_total))
         dynamic_ref = f_ext_ref_norm < 1e-30
@@ -353,6 +360,14 @@ class ContactFrictionProcess(
                 dt_contact_change_threshold=manager.config.dt_contact_change_threshold,
             )
         )
+
+        # チェックポイント途中再開: steppingのキューをfrac_start以降に設定
+        if _frac_start > 0.0:
+            _asp = stepping._adaptivesteppingprocess
+            _asp._queue.clear()
+            _dt_frac = _dt_max / _t_total if _t_total > 0 else 0.025
+            _asp._queue.append(min(_frac_start + _dt_frac, 1.0))
+            stepping._last_load_frac_prev = _frac_start
 
         # --- Newton プロセス（動的のみ） ---
         _compute_cond = getattr(input_data, "compute_condition_number", False)
