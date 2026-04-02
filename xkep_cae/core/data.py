@@ -199,6 +199,8 @@ class ContactFrictionInputData:
     chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
     nr_min_restore: bool = False  # status-277: OFF（不正確な状態の持ち越し防止）
     nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
+    # チェックポイント復元: frac途中再開（status-279）
+    load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
 
     @property
     def is_dynamic(self) -> bool:

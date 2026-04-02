@@ -200,6 +200,9 @@ class NewtonDynamicProcess(
         # NR 2サイクル振動検知用（status-278）
         _u_prev2: np.ndarray | None = None  # 2反復前のu
         _u_prev1: np.ndarray | None = None  # 1反復前のu
+        # NRリミットサイクル検知用（status-279: 汎用N-サイクル対応）
+        _u_history_ring: list[np.ndarray] = []  # 直近の u 履歴（最大6個保持）
+        _limit_cycle_window = 6  # 検査窓サイズ
         # NR残差最小値リストア用トラッキング（status-269）
         _min_res_ratio = float("inf")
         _min_res_u: np.ndarray | None = None
@@ -655,25 +658,52 @@ class NewtonDynamicProcess(
                     _u_proj_nr = _u_proj_nr.toarray().ravel()
                 u[:] = np.asarray(_u_proj_nr).ravel()
 
-            # ── NR 2サイクル振動検知 + 微小接触力フィルタ収束（status-278） ──
-            # 接触活性/非活性の微小変動で du が完全な2サイクル振動に入り、
-            # かつ接触力が構造残差に対して十分小さい場合、
-            # 「微小接触は物理的に無意味」として現在の状態を収束と判定する。
-            # 条件: (1) att>=4, (2) 2サイクル振動検知, (3) ||f_c||/||R|| < threshold
+            # ── NR リミットサイクル検知 + 平均化収束（status-278, status-279拡張） ──
+            # NRがリミットサイクル（周期2〜6の振動）に入った場合、
+            # 直近N個の平均状態を採用して収束とする。
+            # 条件A（早期, status-278）: att>=4, 2サイクル, ||f_c||/||R||<5%
+            # 条件B（後期, status-279）: att>=15, N-サイクル, ||R_t||/||f||<2.0
             _cycle_converged = False
-            _tol_cycle = 1e-6  # 2サイクル振動の判定閾値
+            _tol_cycle = 1e-6  # リミットサイクルの判定閾値
             _contact_filter_threshold = 0.05  # 接触力が残差の5%以下なら微小
-            if att >= 4 and _u_prev2 is not None:
-                _cycle_diff = float(np.linalg.norm(u - _u_prev2))
+            _late_cycle_att = 15  # 後期判定の最小反復数
+            _late_cycle_res_max = 3.0  # 後期判定の残差上限
+
+            # u履歴を更新（最大_limit_cycle_window個保持）
+            _u_history_ring.append(u.copy())
+            if len(_u_history_ring) > _limit_cycle_window:
+                _u_history_ring.pop(0)
+
+            if att >= 4 and len(_u_history_ring) >= 3:
                 _u_norm_ref = max(float(np.linalg.norm(u)), 1e-30)
-                if _cycle_diff / _u_norm_ref < _tol_cycle:
-                    # 2サイクル振動確定
-                    _fc_norm = float(np.linalg.norm(f_c))
-                    _R_norm = float(np.linalg.norm(R_u))
-                    _fc_ratio = _fc_norm / max(_R_norm, 1e-30)
-                    if _fc_ratio < _contact_filter_threshold:
-                        # 微小接触力: 中間状態を採用
-                        u[:] = 0.5 * (u + _u_prev1)
+                _fc_norm = float(np.linalg.norm(f_c))
+                _R_norm = float(np.linalg.norm(R_u))
+                _fc_ratio = _fc_norm / max(_R_norm, 1e-30)
+
+                # 周期2〜を検査: u[att] ≈ u[att-period] は
+                # _u_history_ring[-1] ≈ _u_history_ring[-(period+1)]
+                _detected_period = 0
+                for _period in range(2, len(_u_history_ring)):
+                    _idx = -(_period + 1)
+                    if abs(_idx) > len(_u_history_ring):
+                        break
+                    _cycle_diff = float(np.linalg.norm(_u_history_ring[-1] - _u_history_ring[_idx]))
+                    if _cycle_diff / _u_norm_ref < _tol_cycle:
+                        _detected_period = _period
+                        break
+
+                if _detected_period > 0:
+                    # 条件A: 微小接触力（周期2のみ、status-278互換）
+                    # status-279検証: 周期3以上を許可すると不正確な状態が蓄積し悪化
+                    _early_ok = _detected_period == 2 and _fc_ratio < _contact_filter_threshold
+                    # 条件B: 後期リミットサイクル（status-279で検証→逆効果で無効化）
+                    # 残差の大きい状態を収束判定すると次インクリメントで発散する
+                    _late_ok = False
+
+                    if _early_ok or _late_ok:
+                        # 直近_detected_period個の平均状態を採用
+                        _avg_u = np.mean(_u_history_ring[-_detected_period:], axis=0)
+                        u[:] = _avg_u
                         _mpc_avg = input_data.mpc_transform
                         if _mpc_avg is not None:
                             _u_red_avg = u[_mpc_avg.independent_dofs]
@@ -682,14 +712,18 @@ class NewtonDynamicProcess(
                                 _u_proj_avg = _u_proj_avg.toarray().ravel()
                             u[:] = np.asarray(_u_proj_avg).ravel()
                         _cycle_converged = True
+                        _reason_tag = (
+                            "微小接触" if _early_ok else f"後期リミットサイクル(R={_cur_ratio:.2f})"
+                        )
                         if cfg.show_progress:
                             print(
                                 f"  Incr {increment_display} (frac={load_frac:.4f}), "
                                 f"attempt {att}, "
-                                f"微小接触2サイクル検知 "
+                                f"{_reason_tag}{_detected_period}サイクル検知 "
                                 f"(||f_c||/||R||={_fc_ratio:.2e}) → 平均化収束"
                             )
-            # u履歴を更新
+
+            # 旧2サイクル用変数も更新（後方互換）
             _u_prev2 = _u_prev1
             _u_prev1 = u.copy()
 
