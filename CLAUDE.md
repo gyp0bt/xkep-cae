@@ -65,7 +65,7 @@
 
 ## 現在の状態
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 テスト** — 2026-03-31 | 契約違反 **0件** | 条例違反 **0件**
+**608 テスト** — 2026-04-02 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -99,10 +99,10 @@
 - ~~摩擦K_st隣接ノード拡張（Step4）~~ ← status-274で完了（_assemble_friction_st_stiffness + ソルバーパイプライン貫通）
 - ~~frozen_hermite_tangent=True回帰修正~~ ← status-275で完了（デフォルトFalse化、frac 0.38→0.41）
 - ~~NR壁根本原因特定~~ ← status-277で完了（evaluate/tangent dm不整合 + NR制御複合回帰）
-- **次**: evaluate/tangent dm整合性回復 + NR制御再設計 — status-277 参照
-  - 根本原因: evaluate()はdm補正ON、tangent()はdm補正OFF（status-266「修正NR法」が原因）
-  - 複合回帰: NRソルバー変更+接触コード変更の相互作用で、個別リバートでは回復不可
-  - **推奨手順**: (1) evaluate dm OFFで一貫化テスト (2) 接触力リラクゼーション戦略再設計 (3) dm Jacobian ∂(corrected_coeffs)/∂u の実装
+- ~~ContactFrictionProcess UL参照配置更新~~ ← status-281で完了（動的ソルバーで7本90度曲げ frac=0.065→1.0）
+- **次**: 接触あり90度曲げの試行 — status-281 参照
+  - UL参照配置更新で接触なし完走。接触力が加わった場合の収束を検証
+  - evaluate/tangent dm整合性（status-278で解消済み、再検証不要の可能性）
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
