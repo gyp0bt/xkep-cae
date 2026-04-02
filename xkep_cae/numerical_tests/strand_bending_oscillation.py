@@ -610,16 +610,18 @@ class StrandBendingOscillationProcess(
             for k in range(6):
                 fixed_dofs.add(n * 6 + k)
 
-        # 右端: θ_z処方, θ_x/θ_y固定, u_x/u_y/u_z自由
+        # 右端: θ_y処方（x-z面曲げ）, θ_x/θ_z固定, u_x/u_y/u_z自由
+        # status-280: θ_z処方はねじり（トーション）であって曲げではない。
+        # z軸沿い梁のx-z面曲げにはθ_y（y軸周り回転）を処方する。
         strand_length = cfg.pitch_length * cfg.n_pitches
         bending_angle = cfg.bending_curvature * strand_length
 
         for n in right_nodes:
-            # θ_x, θ_y を固定（曲げ面内回転のみ許可）
+            # θ_x, θ_z を固定（曲げ面外の回転を拘束）
             fixed_dofs.add(n * 6 + 3)  # θ_x
-            fixed_dofs.add(n * 6 + 4)  # θ_y
-            # θ_z を処方
-            prescribed_dofs_list.append(n * 6 + 5)
+            fixed_dofs.add(n * 6 + 5)  # θ_z
+            # θ_y を処方（x-z面曲げ）
+            prescribed_dofs_list.append(n * 6 + 4)
             prescribed_values_list.append(bending_angle)
             # u_x, u_y, u_z は自由 → 断面が自然に変位
 
