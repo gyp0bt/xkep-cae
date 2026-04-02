@@ -144,6 +144,9 @@ class StrandBendingOscillationConfig:
     # pickle ファイルパスを指定すると、保存された u0/vel/acc から再開。
     # load_frac_start 以降の荷重増分のみ実行される。
     resume_checkpoint: str = ""  # チェックポイントファイルパス（空=通常実行）
+    # free_end_mode: MPC端部剛体結合を使わず、各素線端部ノードに直接
+    # 処方変位（θ_z）を与えるモード。並進DOFは自由。(status-280)
+    free_end_mode: bool = False
 
 
 @dataclass(frozen=True)
@@ -267,7 +270,12 @@ class StrandBendingOscillationProcess(
         # ── 2. 端部節点の収集 ──
         left_nodes, right_nodes = _collect_end_nodes(strand_conn, cfg.n_strands, mesh.strand_ids)
 
-        # ── 3. 参照点ノードの追加 ──
+        if cfg.free_end_mode:
+            return self._process_free_end(
+                cfg, mesh, strand_coords, strand_conn, n_strand_nodes, left_nodes, right_nodes
+            )
+
+        # ── 3. 参照点ノードの追加（MPCモード） ──
         # 左端参照点 = 左端節点群の重心
         left_coords = strand_coords[left_nodes]
         left_ref_coord = np.mean(left_coords, axis=0)
@@ -533,6 +541,147 @@ class StrandBendingOscillationProcess(
             solver_result=solver_result,
             mesh=extended_mesh,
             n_ref_nodes=n_ref_nodes,
+            n_strand_nodes=n_strand_nodes,
+            total_ndof=ndof,
+            bending_angle=bending_angle,
+        )
+
+    def _process_free_end(  # noqa: PLR0912, PLR0915
+        self,
+        cfg: StrandBendingOscillationConfig,
+        mesh: MeshData,
+        strand_coords: np.ndarray,
+        strand_conn: np.ndarray,
+        n_strand_nodes: int,
+        left_nodes: list[int],
+        right_nodes: list[int],
+    ) -> StrandBendingOscillationResult:
+        """MPC不使用・端部直接処方モードで撚線曲げ揺動を実行.
+
+        status-280: MPC端部剛体結合の代わりに、各素線端部ノードの
+        θ_z を直接処方し、並進DOFは自由にする。
+        - 左端: 全素線端部ノードの全6DOF固定
+        - 右端: θ_z処方、θ_x/θ_y固定、u_x/u_y/u_z自由
+        - 参照点ノード不要 → 拡張系不要 → MPC不要
+        """
+        ndof = n_strand_nodes * 6
+
+        # ── アセンブラ構築 ──
+        sec = _circle_section(cfg.wire_radius * 2.0, cfg.nu)
+        G = cfg.E / (2.0 * (1.0 + cfg.nu))
+
+        beam_result = ULCRBeamAssemblerProcess().process(
+            ULCRBeamAssemblerInput(
+                node_coords=strand_coords,
+                connectivity=strand_conn,
+                E=cfg.E,
+                G=G,
+                A=sec["A"],
+                Iy=sec["Iy"],
+                Iz=sec["Iz"],
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
+        )
+        assembler = beam_result.assembler
+
+        # 質量行列（直接使用、拡張不要）
+        M = assembler.assemble_mass(cfg.rho, lumped=cfg.lumped_mass)
+
+        # ── 境界条件 ──
+        fixed_dofs: set[int] = set()
+        prescribed_dofs_list: list[int] = []
+        prescribed_values_list: list[float] = []
+
+        # 左端: 全素線端部ノードの全6DOF固定
+        for n in left_nodes:
+            for k in range(6):
+                fixed_dofs.add(n * 6 + k)
+
+        # 右端: θ_z処方, θ_x/θ_y固定, u_x/u_y/u_z自由
+        strand_length = cfg.pitch_length * cfg.n_pitches
+        bending_angle = cfg.bending_curvature * strand_length
+
+        for n in right_nodes:
+            # θ_x, θ_y を固定（曲げ面内回転のみ許可）
+            fixed_dofs.add(n * 6 + 3)  # θ_x
+            fixed_dofs.add(n * 6 + 4)  # θ_y
+            # θ_z を処方
+            prescribed_dofs_list.append(n * 6 + 5)
+            prescribed_values_list.append(bending_angle)
+            # u_x, u_y, u_z は自由 → 断面が自然に変位
+
+        fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
+        prescribed_dofs_arr = np.array(prescribed_dofs_list, dtype=int)
+        prescribed_values_arr = np.array(prescribed_values_list)
+
+        # ── 時間パラメータ ──
+        sec_Iy = sec["Iy"]
+        sec_A = sec["A"]
+        f1 = (math.pi / (2.0 * strand_length**2)) * math.sqrt(
+            cfg.E * sec_Iy * cfg.n_strands / (cfg.rho * sec_A * cfg.n_strands)
+        )
+        T1 = 1.0 / f1 if f1 > 1e-30 else 1.0
+        t_cycle = max(10.0 * T1, 1.0)
+        t_total = t_cycle * cfg.n_cycles
+        dt_initial = t_total / (cfg.n_increments_per_cycle * cfg.n_cycles)
+
+        boundary = BoundaryData(
+            fixed_dofs=fixed_dofs_arr,
+            prescribed_dofs=prescribed_dofs_arr,
+            prescribed_values=prescribed_values_arr,
+            f_ext_total=np.zeros(ndof),
+            mpc_transform=None,  # MPC不使用
+        )
+
+        # ── 接触設定 ──
+        _smoothing_delta = (
+            cfg.smoothing_delta if cfg.smoothing_delta > 0.0 else 1000.0 / cfg.wire_radius
+        )
+        contact_config = _ContactConfigInput(
+            beam_E=cfg.E,
+            beam_I=sec_Iy,
+            mu=cfg.mu,
+            adaptive_timestepping=True,
+            dt_min_fraction=dt_initial / (t_total * 64.0),
+            dt_max_fraction=dt_initial / t_total,
+            exclude_same_strand=cfg.exclude_same_strand,
+            smoothing_delta=_smoothing_delta,
+            huber_delta_h=cfg.huber_delta_h,
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact_setup = ContactSetupData(
+            manager=manager,
+            k_pen=cfg.k_pen,
+            mu=cfg.mu,
+        )
+
+        # ── ソルバー実行 ──
+        solver_input = ContactFrictionInputData(
+            mesh=mesh,  # 元のメッシュ（参照点なし）
+            boundary=boundary,
+            contact=contact_setup,
+            callbacks=AssembleCallbacks(
+                assemble_tangent=assembler.assemble_tangent,
+                assemble_internal_force=assembler.assemble_internal_force,
+                ul_assembler=assembler,
+            ),
+            mass_matrix=M,
+            dt_physical=t_total,
+            rho_inf=cfg.rho_inf,
+            max_nr_attempts=cfg.max_nr_attempts,
+            tol_force=cfg.tol_force,
+            max_increments=cfg.max_increments,
+            tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+            du_norm_cap=cfg.du_norm_cap,
+        )
+        solver_result = ContactFrictionProcess().process(solver_input)
+
+        return StrandBendingOscillationResult(
+            solver_result=solver_result,
+            mesh=mesh,
+            n_ref_nodes=0,
             n_strand_nodes=n_strand_nodes,
             total_ndof=ndof,
             bending_angle=bending_angle,
