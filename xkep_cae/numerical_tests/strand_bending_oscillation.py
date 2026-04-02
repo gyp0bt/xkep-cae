@@ -140,6 +140,10 @@ class StrandBendingOscillationConfig:
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
     du_norm_cap: float = 0.0  # NR更新キャップ（0=制限なし）
+    # チェックポイント復元（status-278: 中盤からの対策効果検証用）
+    # pickle ファイルパスを指定すると、保存された u0/vel/acc から再開。
+    # load_frac_start 以降の荷重増分のみ実行される。
+    resume_checkpoint: str = ""  # チェックポイントファイルパス（空=通常実行）
 
 
 @dataclass(frozen=True)
@@ -481,6 +485,20 @@ class StrandBendingOscillationProcess(
         # ULアセンブラを拡張DOF系にラップ（参照点DOFのゼロパディング）
         extended_assembler = _ExtendedULAssemblerWrapper(assembler, ndof_beam, ndof)
 
+        # チェックポイント復元（status-278）
+        _u0 = None
+        _vel0 = None
+        _acc0 = None
+        if cfg.resume_checkpoint:
+            import pickle as _pickle
+
+            with open(cfg.resume_checkpoint, "rb") as _f:
+                _ckpt = _pickle.load(_f)
+            _u0 = _ckpt["state"].u.copy()
+            _vel0 = _ckpt["time_vel"]
+            _acc0 = _ckpt["time_acc"]
+            print(f"  [RESUME] frac={_ckpt['load_frac']:.4f}, ||u||={np.linalg.norm(_u0):.4e}")
+
         solver_input = ContactFrictionInputData(
             mesh=extended_mesh,
             boundary=boundary,
@@ -490,9 +508,12 @@ class StrandBendingOscillationProcess(
                 assemble_internal_force=_assemble_internal_force_extended,
                 ul_assembler=extended_assembler,
             ),
+            u0=_u0,
             mass_matrix=M_ext,
             dt_physical=t_total,
             rho_inf=cfg.rho_inf,
+            velocity=_vel0,
+            acceleration=_acc0,
             max_nr_attempts=cfg.max_nr_attempts,
             tol_force=cfg.tol_force,
             max_increments=cfg.max_increments,
