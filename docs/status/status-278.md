@@ -204,6 +204,7 @@ NR停滞時の回転残差の91-97%は**θ_z（曲げ面内回転）**。端部�
 - [ ] **frac>0.55の本格接触NR収束**: active=104, p_n最大15で||f_c||/||R||>5%→フィルタ不発動。K_cの精度改善が必要
 - [ ] 回転残差θ_z単調増加の原因: CR梁の曲げ内力 f_int のθ_z成分が平衡しない理由を調査
 - [ ] consistent質量行列への切替検証: lumped→consistentで回転慣性が改善するか
+- [ ] `ContactFrictionProcess` に `frac_start` 追加でチェックポイント中盤再開を実現
 - [ ] smoothing_deltaの自動推定改善
 
 ---
