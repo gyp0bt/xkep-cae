@@ -147,6 +147,8 @@ class StrandBendingOscillationConfig:
     # free_end_mode: MPC端部剛体結合を使わず、各素線端部ノードに直接
     # 処方変位（θ_z）を与えるモード。並進DOFは自由。(status-280)
     free_end_mode: bool = False
+    # contact_enabled: Falseで接触計算を無効化（radii=0で検出スキップ）
+    contact_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -263,6 +265,15 @@ class StrandBendingOscillationProcess(
             )
         )
         mesh = mesh_result.mesh
+        # 接触無効時: radii=0 で接触ペア検出をスキップ（status-280）
+        if not cfg.contact_enabled:
+            mesh = MeshData(
+                node_coords=mesh.node_coords,
+                connectivity=mesh.connectivity,
+                radii=0.0,
+                n_strands=mesh.n_strands,
+                strand_ids=mesh.strand_ids,
+            )
         strand_coords = mesh.node_coords
         strand_conn = mesh.connectivity
         n_strand_nodes = len(strand_coords)

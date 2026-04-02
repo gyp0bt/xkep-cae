@@ -124,9 +124,43 @@ python contracts/validate_process_contracts.py
 
 ---
 
+## 追加実験: 接触無効化（contact_enabled=False）による段階的検証
+
+### contact_enabled フラグ
+
+`StrandBendingOscillationConfig` に `contact_enabled: bool = True` を追加。
+False時、メッシュの `radii=0.0` にして接触ペア検出をスキップ。
+
+### 90度曲げ 全構成比較（NR=200）
+
+| 構成 | frac | 実角度 | incr | NR挙動 |
+|------|------|--------|------|--------|
+| 1本 + free_end + 接触なし | **1.0** | **90°** | 40 | **全ステップ attempt 0 力収束** |
+| 7本 + free_end + 接触なし | ~0.37 | ~33° | ~393 | 12反復→2サイクル検知（||R_t||=3e-2） |
+| 7本 + free_end + 接触あり | 0.245 | 22° | 263 | active変化でNR急増 |
+| 7本 + MPC + 接触なし | ~0.48 | ~43° | ~415 | ||R_t||=0.97停滞→2サイクル検知 |
+| 7本 + MPC + 接触あり | 0.55(κ=0.001) | 3° | 485 | frac=0.55停滞 |
+
+### 核心的発見
+
+**1本素線は90度完走（1反復で力収束）。CR梁定式化自体は問題ない。**
+
+7本になると接触なしでも線形収束（12反復）。各素線は独立（ブロック対角系）のはず
+だが、動的項の累積でNR初期残差が増大し、収束が遅くなる。
+
+### 段階的な壁
+
+1. **~15°（frac=0.17）**: 7本でenergy収束→2サイクル検知に遷移
+2. **~27°（frac=0.30）**: 2サイクル検知時の||R_t||が3e-2まで劣化
+3. **~33°（frac=0.37）**: NR=50では不収束（NR=200では2サイクル検知で突破）
+4. **~43°（frac=0.48）**: MPC版の限界（接触なしでも）
+
+---
+
 ## STA2 準拠チェック
 
-- [x] **tee ログ保存**: `/tmp/log-free-end-small-*.log`, `/tmp/log-free-end-90deg-*.log`
+- [x] **tee ログ保存**: `/tmp/log-free-end-small-*.log`, `/tmp/log-free-end-90deg-*.log`,
+  `/tmp/log-free-end-nocontact-*.log`, `/tmp/log-mpc-nocontact-*.log`, `/tmp/log-1strand-*.log`
 - [x] **再現手順記載**: 全コマンドをstatusに記載
 - [x] **数値の捏造なし**: MPC版ベースラインfrac≈0.55と比較して改善を報告
 - [x] **ベースライン先行取得**: status-279のfrac=0.5543がベースライン
@@ -136,9 +170,12 @@ python contracts/validate_process_contracts.py
 ## TODO
 
 - [x] 90度曲げテスト完了 → frac=0.2451（22°）で停止
+- [x] 接触無効化テスト → 7本でもNR線形収束、1本は完走
+- [ ] **7本接触なしでもNR線形収束になる原因調査**
+  - 動的項の正規化問題？ 各素線独立なのに累積でNR残差増大
+  - Generalized-αの予測子u_predが7本で不正確？
 - [ ] free_end_mode + MPC版の変形形状比較（2D投影スナップショット）
-- [ ] free_end_mode のNR力収束率評価（現在disp convergenceで抜けている）
-- [ ] evaluate/tangent dm整合性回復（status-277 推奨手順） — free_end_modeで不要かもしれない
+- [ ] evaluate/tangent dm整合性回復（status-277 推奨手順）
 - [ ] 回転残差θ_z単調増加の原因調査（status-278 TODO継続）
 
 ---
