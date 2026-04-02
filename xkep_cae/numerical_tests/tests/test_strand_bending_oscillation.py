@@ -65,6 +65,16 @@ class TestStrandBendingOscillationProcessAPI:
         cfg = StrandBendingOscillationConfig(huber_delta_h=0.01)
         assert cfg.huber_delta_h == 0.01
 
+    def test_free_end_mode_default_false(self) -> None:
+        """free_end_mode デフォルトは False."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.free_end_mode is False
+
+    def test_free_end_mode_true(self) -> None:
+        """free_end_mode=True で構成可能."""
+        cfg = StrandBendingOscillationConfig(free_end_mode=True)
+        assert cfg.free_end_mode is True
+
 
 class TestCollectEndNodes:
     """端部節点収集のテスト."""
