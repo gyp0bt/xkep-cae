@@ -51,6 +51,7 @@
 | free_end_mode | **MPC不使用端部直接処方**: 各素線θ_z直接処方。MPC frac=0.55→free_end frac=1.0完走 — status-280 |
 | UL参照配置更新 | **接触なし90度曲げ完走**: ContactFrictionProcess UL増分変位+update_reference()。理論値0.02%一致 — status-281 |
 | 接触ありベースライン | **接触あり90度曲げfrac=0.40**: active=8-9で2サイクルチャタリング停滞。接触なし比で60%低下 — status-282 |
+| MPC T動的再構築 | **MPC接触なし90度曲げ完走**: T行列をUL更新時に変形座標で再構築。frac 0.14→1.0 — status-283 |
 | **壁** | 接触チャタリング対策 / 61本以上 / 1000本6時間 |
 
 ---
