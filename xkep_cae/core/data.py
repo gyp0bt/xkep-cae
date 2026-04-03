@@ -98,6 +98,7 @@ def default_strategies(
     n_gauss: int = 2,
     smoothing_delta: float = 0.0,
     huber_delta_h: float = 0.0,
+    penalty_exponent: float = 1.0,
     coating_stiffness: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
@@ -144,6 +145,7 @@ def default_strategies(
             ndof_per_node=ndof_per_node,
             smoothing_delta=smoothing_delta,
             huber_delta_h=huber_delta_h,
+            penalty_exponent=penalty_exponent,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,
@@ -204,7 +206,9 @@ class ContactFrictionInputData:
     chattering_freeze_enabled: bool = True  # 接触凍結モード有効化
     chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サ��クル数
     chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
-    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判��緩和倍率
+    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
+    # Hertz型非線形ペナルティ（status-285）
+    penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
     # チェックポイント復元: frac途中再開（status-279）
     load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
 
