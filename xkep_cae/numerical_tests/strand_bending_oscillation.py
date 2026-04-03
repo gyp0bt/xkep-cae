@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
+import scipy.sparse.linalg as spla
 
 from xkep_cae.constraints.mpc_elimination import (
     MPCEliminationConfig,
@@ -149,6 +150,10 @@ class StrandBendingOscillationConfig:
     free_end_mode: bool = False
     # contact_enabled: Falseで接触計算を無効化（radii=0で検出スキップ）
     contact_enabled: bool = True
+    # loading_mode: "rotation"=端部θ_y処方（従来）, "moment"=端部M_y荷重（status-281）
+    # moment モードでは EI*θ/L の曲げモーメントを各素線右端に印加。
+    # エラスティカ理論により大変形でも M-θ 線形 → NR安定。
+    loading_mode: str = "rotation"
 
 
 @dataclass(frozen=True)
@@ -212,6 +217,167 @@ def _collect_end_nodes(
             left_nodes.append(end_nodes[0])
 
     return left_nodes, right_nodes
+
+
+def _collect_adjacent_nodes(
+    connectivity: np.ndarray,
+    strand_ids: np.ndarray,
+    end_nodes: list[int],
+) -> list[int]:
+    """各端部節点の隣接ノード（1要素内側）を返す.
+
+    力カップル方式でモーメント荷重を生成するために使用。
+    """
+    adj_nodes = []
+    for end_node in end_nodes:
+        found = False
+        for _i, e in enumerate(connectivity):
+            if end_node in e:
+                # 端部ノードと同じ要素の他方のノード
+                other = int(e[1]) if int(e[0]) == end_node else int(e[0])
+                adj_nodes.append(other)
+                found = True
+                break
+        if not found:
+            adj_nodes.append(end_node)  # fallback
+    return adj_nodes
+
+
+# ====================================================================
+# 静的 Newton-Raphson ソルバー（接触なし問題用）
+# ====================================================================
+
+
+def _static_nr_solve(  # noqa: PLR0912, PLR0915
+    assembler: object,
+    ndof: int,
+    fixed_dofs: np.ndarray,
+    prescribed_dofs: np.ndarray,
+    prescribed_values: np.ndarray,
+    f_ext_total: np.ndarray,
+    n_increments: int,
+    max_nr: int = 50,
+    tol: float = 1e-8,
+    show_progress: bool = True,
+) -> SolverResultData:
+    """接触なし問題用の静的NRソルバー（UL増分形）.
+
+    status-281: 動的ソルバー（Generalized-α）は慣性項による残差連成で
+    ヘリカル複数素線の曲げ収束が困難。接触なし問題では純粋な
+    静的NR法で直接求解する。
+
+    UL（Updated Lagrangian）フォーマレーション:
+    - 各収束ステップ後に参照配置を更新（update_reference）
+    - NR反復中は増分変位 u_incr をアセンブラに渡す
+    - 累積変位 u_total は出力用に追跡
+
+    Returns:
+        SolverResultData: ソルバー結果
+    """
+    import time
+
+    t0 = time.time()
+    load_history: list[float] = []
+    n_cutbacks = 0
+    total_attempts = 0
+
+    # BC用マスク
+    all_constrained = set(fixed_dofs.tolist()) | set(prescribed_dofs.tolist())
+    free_mask = np.ones(ndof, dtype=bool)
+    for d in all_constrained:
+        free_mask[d] = False
+
+    frac = 0.0
+    frac_prev = 0.0  # 前回収束時のfrac
+    dt_frac = 1.0 / n_increments
+    dt_min = dt_frac / 64.0
+    incr = 0
+
+    while frac < 1.0 - 1e-12:
+        dt_try = min(dt_frac, 1.0 - frac)
+        frac_target = frac + dt_try
+
+        # UL増分: 前回収束状態からの増分変位
+        u_incr = np.zeros(ndof)
+        converged = False
+
+        # 処方変位の増分（前回収束からの差分）
+        delta_presc = (frac_target - frac_prev) * prescribed_values
+        u_incr[prescribed_dofs] = delta_presc
+        f_ref = 1.0  # 初期値（att==0で更新される）
+
+        for att in range(max_nr):
+            total_attempts += 1
+            f_int = assembler.assemble_internal_force(u_incr)
+            R = f_int - f_ext_total * frac_target
+            R[fixed_dofs] = 0.0
+            R[prescribed_dofs] = 0.0
+
+            res_norm = float(np.linalg.norm(R[free_mask]))
+            # 参照ノルム: 外力があればその大きさ、なければ初回残差
+            f_ext_norm = float(np.linalg.norm(f_ext_total * frac_target))
+            if f_ext_norm > 1e-30:
+                f_ref = f_ext_norm
+            elif att == 0:
+                f_ref = max(res_norm, 1.0)
+            # else: f_ref は前回の値を維持
+
+            if show_progress and att % 5 == 0:
+                print(
+                    f"  Static Incr {incr + 1} (frac={frac_target:.4f}), "
+                    f"att {att}, ||R||/||f||={res_norm / f_ref:.3e}"
+                )
+
+            if res_norm / f_ref < tol:
+                converged = True
+                break
+            if att > 3 and res_norm / f_ref > 1e6:
+                break  # 発散
+
+            K = assembler.assemble_tangent(u_incr)
+            # BC適用: 拘束DOFの行/列をゼロ化、対角=1
+            K_lil = K.tolil()
+            for d in all_constrained:
+                K_lil[d, :] = 0.0
+                K_lil[:, d] = 0.0
+                K_lil[d, d] = 1.0
+            K_csr = K_lil.tocsr()
+
+            du = spla.spsolve(K_csr, -R)
+            u_incr += du
+
+        if converged:
+            # UL参照配置を更新
+            assembler.update_reference(u_incr)
+            assembler.checkpoint()
+            frac_prev = frac_target
+            incr += 1
+            frac = frac_target
+            load_history.append(frac)
+            # dt成長
+            dt_frac = min(dt_frac * 1.5, 1.0 / n_increments)
+        else:
+            # カットバック
+            n_cutbacks += 1
+            assembler.rollback()
+            dt_frac *= 0.5
+            if dt_frac < dt_min:
+                if show_progress:
+                    print(f"  Static solver: dt_min到達 (frac={frac:.4f})")
+                break
+
+    elapsed = time.time() - t0
+    # 累積変位を取得
+    u_total = assembler.u_total_accum
+    return SolverResultData(
+        u=u_total,
+        converged=frac >= 1.0 - 1e-10,
+        n_increments=incr,
+        total_attempts=total_attempts,
+        load_history=tuple(load_history),
+        elapsed_seconds=elapsed,
+        n_cutbacks=n_cutbacks,
+    )
 
 
 # ====================================================================
@@ -603,25 +769,43 @@ class StrandBendingOscillationProcess(
         fixed_dofs: set[int] = set()
         prescribed_dofs_list: list[int] = []
         prescribed_values_list: list[float] = []
+        f_ext = np.zeros(ndof)
 
         # 左端: 全素線端部ノードの全6DOF固定
         for n in left_nodes:
             for k in range(6):
                 fixed_dofs.add(n * 6 + k)
 
-        # 右端: θ_y処方（x-z面曲げ）, θ_x/θ_z自由, u_x/u_y/u_z自由
-        # status-280: θ_z処方はねじり（トーション）であって曲げではない。
-        # z軸沿い梁のx-z面曲げにはθ_y（y軸周り回転）を処方する。
-        # θ_x/θ_zは自由: ヘリカル素線の曲げ-ねじり連成を許容。
-        # 固定すると外層素線のNR収束が劣化する（status-280で確認済み）。
         strand_length = cfg.pitch_length * cfg.n_pitches
         bending_angle = cfg.bending_curvature * strand_length
 
-        for n in right_nodes:
-            # θ_y を処方（x-z面曲げ）、θ_x/θ_z は自由（連成許容）
-            prescribed_dofs_list.append(n * 6 + 4)
-            prescribed_values_list.append(bending_angle)
-            # u_x, u_y, u_z, θ_x, θ_z は自由 → 断面が自然に変位+回転
+        if cfg.loading_mode == "moment":
+            # status-281: 力カップル方式モーメント荷重
+            # エラスティカ理論: M = EI * θ / L（大変形でも M-θ 線形）
+            # NR収束判定は並進残差のみ使用するため、純モーメントは偽収束する。
+            # 対策: 端部2ノードに逆向き力 (F, -F) で力カップルを構成。
+            # M_y = F_x * Δz → F_x = M_y / Δz
+            sec_Iy = sec["Iy"]
+            m_target = cfg.E * sec_Iy * bending_angle / strand_length
+            adj_nodes = _collect_adjacent_nodes(strand_conn, mesh.strand_ids, right_nodes)
+            for n_end, n_adj in zip(right_nodes, adj_nodes, strict=True):
+                # 端部ノードと隣接ノードの距離（z方向投影）
+                dz = abs(strand_coords[n_end][2] - strand_coords[n_adj][2])
+                if dz < 1e-10:
+                    dz = np.linalg.norm(strand_coords[n_end] - strand_coords[n_adj])
+                f_couple = m_target / dz
+                # x方向の力カップルで y軸周りモーメントを生成
+                # M_y = F_x * Δz (右手系: +x力 × +z位置 = +y回転)
+                f_ext[n_end * 6 + 0] = f_couple  # +F_x at tip
+                f_ext[n_adj * 6 + 0] = -f_couple  # -F_x at adjacent
+                # u_y を固定（面外変位を拘束）
+                fixed_dofs.add(n_end * 6 + 1)
+                # u_x, u_z, θ_x, θ_y, θ_z は全て自由
+        else:
+            # 従来: θ_y処方（x-z面曲げ）, θ_x/θ_z自由, u自由
+            for n in right_nodes:
+                prescribed_dofs_list.append(n * 6 + 4)
+                prescribed_values_list.append(bending_angle)
 
         fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
         prescribed_dofs_arr = np.array(prescribed_dofs_list, dtype=int)
@@ -642,7 +826,7 @@ class StrandBendingOscillationProcess(
             fixed_dofs=fixed_dofs_arr,
             prescribed_dofs=prescribed_dofs_arr,
             prescribed_values=prescribed_values_arr,
-            f_ext_total=np.zeros(ndof),
+            f_ext_total=f_ext,
             mpc_transform=None,  # MPC不使用
         )
 
@@ -670,7 +854,7 @@ class StrandBendingOscillationProcess(
 
         # ── ソルバー実行 ──
         solver_input = ContactFrictionInputData(
-            mesh=mesh,  # 元のメッシュ（参照点なし）
+            mesh=mesh,
             boundary=boundary,
             contact=contact_setup,
             callbacks=AssembleCallbacks(
