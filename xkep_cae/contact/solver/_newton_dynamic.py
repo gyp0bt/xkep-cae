@@ -85,6 +85,14 @@ class NewtonDynamicInput:
     # 接触力をゼロマスクする。活性集合変動による正のフィードバックを遮断。
     # 注: ベンチマーク検証で逆効果（物理的不整合誘発）のためデフォルトFalse
     freeze_contact_dofs_in_nr: bool = False
+    # チャタリング検知→接触凍結モード（status-284: 陽解法スイッチ）
+    # チャタリング検知後、接触力を凍結（外力扱い）+ K_c除外で構造系のみ収束させ、
+    # 収束後に接触を再評価。活性集合が安定するまで凍結→再評価サイクルを繰り返す。
+    # delta_hブーストより優先（チャタリングの根本原因=活性集合振動を直接抑制）。
+    chattering_freeze_enabled: bool = True  # 接触凍結モード有効化
+    chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サイクル数
+    chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
+    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
 
 
 @dataclass(frozen=True)
@@ -209,6 +217,11 @@ class NewtonDynamicProcess(
         _min_res_f_c: np.ndarray | None = None
         _min_res_att = 0
         _min_res_increase_count = 0  # 最小値からの連続増加カウント
+        # チャタリング接触凍結モード（status-284）
+        _freeze_active = False  # 凍結モード有効中フラグ
+        _freeze_f_c: np.ndarray | None = None  # 凍結接触力ベクトル
+        _freeze_cycle = 0  # 凍結→再評価サイクルカウント
+        _freeze_n_active_prev = -1  # 前回凍結時のactive数
         # NRインナー活性ペア凍結（status-276）
         _frozen_contact_dofs: np.ndarray | None = None  # att=0で記録
 
@@ -259,17 +272,21 @@ class NewtonDynamicProcess(
                         R_u = R_u - f_c_orig + f_c
                         R_u[input_data.fixed_dofs] = 0.0
 
-            # ── 接触チャタリング対策（status-268: delta_hブースト優先） ──
-            # チャタリング検知後:
-            #   delta_h_boost > 1: Huber遷移幅を拡大（残差-Jacobian整合維持）
-            #   delta_h_boost <= 1: フォールバックとして力ブレンド（status-247）
-            if att > 0 and _relax_active:
+            # ── 接触凍結モード（status-284: 陽解法スイッチ） ──
+            # 凍結中: 実際の接触力 f_c を凍結値 _freeze_f_c で差し替え。
+            # 接触力を外力として固定し、構造系のみでNR収束を求める。
+            if _freeze_active and _freeze_f_c is not None:
+                R_u = R_u - f_c + _freeze_f_c
+                R_u[input_data.fixed_dofs] = 0.0
+                f_c = _freeze_f_c.copy()
+                _current_omega = 0.0  # K_c除外のため接線スケール=0
+            # ── 接触チャタリング対策（status-268: delta_hブースト） ──
+            # 凍結モードでない場合のフォールバック
+            elif att > 0 and _relax_active:
                 _relax_iter += 1
                 if _delta_h_boosted:
-                    # delta_hブースト適用中: 通常NR（力ブレンド不要）
                     pass
                 elif cfg.contact_relax_omega < 1.0:
-                    # フォールバック: 力ブレンド（delta_hブースト無効時のみ）
                     _current_omega = max(
                         0.05,
                         cfg.contact_relax_omega * (0.7 ** (_relax_iter // 2)),
@@ -345,6 +362,107 @@ class NewtonDynamicProcess(
             diag.pair_snapshots.append(_pair_snap)
 
             if conv_out.converged:
+                # ── 凍結モード中の再評価（status-284） ──
+                # 凍結中に構造系が収束した場合、凍結を解除して接触を再評価。
+                # 新しい残差が tol_force * freeze_tol_factor 以下なら成功。
+                # そうでなければ、新しい接触力で再凍結してNR継続。
+                if _freeze_active and _freeze_f_c is not None:
+                    # 実際の接触力で残差を再計算
+                    _reeval_out = _force_proc.process(
+                        ContactForceAssemblyInput(
+                            u=u,
+                            f_ext=f_ext,
+                            fixed_dofs=input_data.fixed_dofs,
+                            manager=manager,
+                            node_coords_ref=input_data.node_coords_ref,
+                            contact_force_strategy=_contact_force_strategy,
+                            friction_strategy=_friction_strategy,
+                            coating_strategy=_coating_strategy,
+                            k_pen=k_pen,
+                            mu=mu,
+                            u_ref=u_ref,
+                            load_frac=load_frac,
+                            load_frac_prev=load_frac_prev,
+                            increment_display=increment_display,
+                            ndof_per_node=cfg.ndof_per_node,
+                            use_coating=input_data.use_coating,
+                            assemble_internal_force=input_data.assemble_internal_force,
+                            connectivity=input_data.connectivity,
+                        )
+                    )
+                    _reeval_R = _reeval_out.R_u
+                    if dt_sub > 1e-30:
+                        _reeval_R = _time_strategy.effective_residual(_reeval_R, dt_sub)
+                        _reeval_R[input_data.fixed_dofs] = 0.0
+                    _reeval_f_c = _reeval_out.f_c
+                    _reeval_n_active = sum(
+                        1 for _p in manager.pairs if hasattr(_p, "state") and _p.state.gap < 0.0
+                    )
+                    # 並進残差で判定
+                    _reeval_trans = float(
+                        np.linalg.norm(_reeval_R.reshape(-1, cfg.ndof_per_node)[:, :3].ravel())
+                    )
+                    _reeval_ratio = _reeval_trans / max(conv_out.f_ref, 1e-30)
+                    _freeze_tol = cfg.tol_force * cfg.chattering_freeze_tol_factor
+
+                    if _reeval_ratio < _freeze_tol:
+                        # 再評価成功: 凍結解除して収束
+                        _freeze_active = False
+                        _current_omega = 1.0
+                        f_c = _reeval_f_c
+                        n_active = _reeval_n_active
+                        step_converged = True
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"凍結解除→再評価成功 "
+                                f"||R_t||/||f||={_reeval_ratio:.3e} < {_freeze_tol:.1e} "
+                                f"({_reeval_n_active} active)"
+                            )
+                        break
+                    elif _freeze_cycle < cfg.chattering_freeze_max_cycles:
+                        # 再凍結: 新しい接触力で凍結を更新してNR継続
+                        _freeze_f_c = _reeval_f_c.copy()
+                        _freeze_cycle += 1
+                        _consecutive_stall = 0
+                        _relax_active = True  # 凍結モード維持
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"再評価||R_t||/||f||={_reeval_ratio:.3e} > {_freeze_tol:.1e} "
+                                f"→ 再凍結 (cycle={_freeze_cycle}, "
+                                f"active={_reeval_n_active})"
+                            )
+                        continue
+                    else:
+                        # 凍結サイクル上限: 緩和判定で最終チェック
+                        if _reeval_ratio < _freeze_tol * 10.0:
+                            _freeze_active = False
+                            _current_omega = 1.0
+                            f_c = _reeval_f_c
+                            n_active = _reeval_n_active
+                            step_converged = True
+                            if cfg.show_progress:
+                                print(
+                                    f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                    f"attempt {att}, "
+                                    f"凍結サイクル上限→緩和判定で収束 "
+                                    f"||R_t||/||f||={_reeval_ratio:.3e}"
+                                )
+                            break
+                        # 凍結失敗: 通常NRに戻す
+                        _freeze_active = False
+                        _current_omega = 1.0
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"凍結サイクル上限超過→通常NR復帰 "
+                                f"(||R_t||/||f||={_reeval_ratio:.3e})"
+                            )
+                        continue
                 step_converged = True
                 if cfg.show_progress:
                     print(
@@ -376,14 +494,51 @@ class NewtonDynamicProcess(
             else:
                 _consecutive_increase = 0
 
-            # ストール検知（status-247 + status-255 拡張）:
-            # (a) active set 振動 + 残差停滞 → チャタリング
-            # (b) active set 安定 + 残差停滞 → 接線剛性不整合（MPC+接触）
-            # どちらも早期打切り → dt cutback で通過を試みる
+            # ストール検知（status-247 + status-255 拡張 + status-284 凍結モード）:
+            # (a) 高残差ストール (_cur_ratio > 0.5): delta_hブースト or リラクゼーション
+            # (b) 低残差チャタリング (tol未満に収束せず多反復): 接触凍結モード
             _active_changed = n_active != _prev_n_active
+
+            # --- 低残差チャタリング検知（status-284） ---
+            # 残差が tol に到達せず多反復で振動/停滞するパターンを直接検知。
+            # 典型: ||R||/||f|| ≈ 3.5e-4 ↔ 8.1e-4 で2サイクル（active数一定でも発生）。
+            # active set の数ではなく残差の振動パターンで判定する。
+            if (
+                att >= 15
+                and not _relax_active
+                and not _freeze_active
+                and cfg.chattering_freeze_enabled
+                and _freeze_cycle < cfg.chattering_freeze_max_cycles
+                and _cur_ratio > cfg.tol_force
+                and n_active > 0
+                and len(diag.res_history) >= 6
+            ):
+                # 直近6反復の残差で振動/停滞を検知
+                _recent6 = diag.res_history[-6:]
+                _r_max6 = max(_recent6)
+                _r_min6 = min(_recent6)
+                _r_mean6 = sum(_recent6) / 6.0
+                # 条件: 平均残差 > tol かつ max/min 比が小さい（振動域が狭い）
+                _ratio_spread = _r_max6 / max(_r_min6, 1e-30)
+                if _r_mean6 > cfg.tol_force * 10.0 and _ratio_spread < 100.0:
+                    _relax_active = True
+                    _freeze_active = True
+                    _freeze_f_c = f_c.copy()
+                    _freeze_n_active_prev = n_active
+                    _freeze_cycle += 1
+                    _effective_max = att + cfg.chattering_freeze_nr_max + 5
+                    if cfg.show_progress:
+                        print(
+                            f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                            f"低残差チャタリング検知 → 接触凍結モード "
+                            f"(att={att}, ||R||/||f||={_cur_ratio:.3e}, "
+                            f"cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
+                            f"active={n_active})"
+                        )
+
+            # --- 高残差ストール検知（従来） ---
             if att > 0 and _cur_ratio > 0.5:
                 _ratio_change = abs(_cur_ratio - _prev_res_ratio) / max(_prev_res_ratio, 1e-30)
-                # 残差停滞 < 5%: active set 振動の有無に関わらず検知
                 if _ratio_change < 0.05:
                     _consecutive_stall += 1
                 else:
@@ -391,13 +546,30 @@ class NewtonDynamicProcess(
                 if _consecutive_stall >= cfg.stall_window and not _relax_active:
                     _relax_active = True
                     _stall_type = "チャタリング" if _active_changed else "残差停滞"
-                    # status-268: delta_hブースト（力ブレンドより優先）
-                    if cfg.chattering_delta_h_boost > 1.0 and hasattr(
+                    # status-284: 接触凍結モード（最優先）
+                    if (
+                        cfg.chattering_freeze_enabled
+                        and _active_changed
+                        and _freeze_cycle < cfg.chattering_freeze_max_cycles
+                    ):
+                        _freeze_active = True
+                        _freeze_f_c = f_c.copy()
+                        _freeze_n_active_prev = n_active
+                        _freeze_cycle += 1
+                        _effective_max = att + cfg.chattering_freeze_nr_max + 5
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"接触{_stall_type}検知 → 接触凍結モード "
+                                f"(cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
+                                f"active={n_active})"
+                            )
+                    # status-268: delta_hブースト（凍結モード無効時のフォールバック）
+                    elif cfg.chattering_delta_h_boost > 1.0 and hasattr(
                         _contact_force_strategy, "set_delta_h_boost"
                     ):
                         _delta_h_boosted = True
                         _contact_force_strategy.set_delta_h_boost(cfg.chattering_delta_h_boost)
-                        # NR反復上限を動的拡張（変位収束到達のための余裕）
                         _effective_max = cfg.max_attempts + cfg.chattering_extra_attempts
                         if cfg.show_progress:
                             print(
@@ -413,13 +585,13 @@ class NewtonDynamicProcess(
                             f"(ω={cfg.contact_relax_omega})"
                         )
             # リラクゼーション早期打切り（status-248: 無駄な反復を削減）
-            # status-267: _diverged=False に修正。リラクゼーション abort は発散ではなく
-            # 活性集合振動の停滞。diverged=True だと dt が shrink²=0.25 で過度に縮小され
-            # （91/91全失敗と相まって）チャタリング帯域でdt枯渇を引き起こしていた。
-            # status-268: delta_hブースト時は早期打切りをバイパス。
-            # ブーストは力ブレンド不要のため max_attempts まで NR 継続し
-            # 変位収束に到達するための時間を確保する。
-            if _relax_active and _relax_iter >= cfg.relax_max_iter and not _delta_h_boosted:
+            # status-268: delta_hブースト時・凍結モード時は早期打切りをバイパス。
+            if (
+                _relax_active
+                and _relax_iter >= cfg.relax_max_iter
+                and not _delta_h_boosted
+                and not _freeze_active
+            ):
                 _diverged = True  # status-277: 積極的dt縮小で小dt回復を促進
                 if cfg.show_progress:
                     print(
@@ -757,6 +929,90 @@ class NewtonDynamicProcess(
             energy_ref = conv_out2.energy_ref
 
             if conv_out2.converged:
+                # 凍結モード中の変位収束→再評価（力収束と同じロジック）
+                if _freeze_active and _freeze_f_c is not None:
+                    _reeval_out2 = _force_proc.process(
+                        ContactForceAssemblyInput(
+                            u=u,
+                            f_ext=f_ext,
+                            fixed_dofs=input_data.fixed_dofs,
+                            manager=manager,
+                            node_coords_ref=input_data.node_coords_ref,
+                            contact_force_strategy=_contact_force_strategy,
+                            friction_strategy=_friction_strategy,
+                            coating_strategy=_coating_strategy,
+                            k_pen=k_pen,
+                            mu=mu,
+                            u_ref=u_ref,
+                            load_frac=load_frac,
+                            load_frac_prev=load_frac_prev,
+                            increment_display=increment_display,
+                            ndof_per_node=cfg.ndof_per_node,
+                            use_coating=input_data.use_coating,
+                            assemble_internal_force=input_data.assemble_internal_force,
+                            connectivity=input_data.connectivity,
+                        )
+                    )
+                    _re_R2 = _reeval_out2.R_u
+                    if dt_sub > 1e-30:
+                        _re_R2 = _time_strategy.effective_residual(_re_R2, dt_sub)
+                        _re_R2[input_data.fixed_dofs] = 0.0
+                    _re_trans2 = float(
+                        np.linalg.norm(_re_R2.reshape(-1, cfg.ndof_per_node)[:, :3].ravel())
+                    )
+                    _re_ratio2 = _re_trans2 / max(conv_out.f_ref, 1e-30)
+                    _freeze_tol2 = cfg.tol_force * cfg.chattering_freeze_tol_factor
+
+                    if _re_ratio2 < _freeze_tol2:
+                        _freeze_active = False
+                        _current_omega = 1.0
+                        f_c = _reeval_out2.f_c
+                        step_converged = True
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"凍結解除(disp)→再評価成功 "
+                                f"||R_t||/||f||={_re_ratio2:.3e}"
+                            )
+                        break
+                    elif _freeze_cycle < cfg.chattering_freeze_max_cycles:
+                        _freeze_f_c = _reeval_out2.f_c.copy()
+                        _freeze_cycle += 1
+                        _consecutive_stall = 0
+                        _relax_active = True
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"凍結解除(disp)→再凍結 "
+                                f"||R_t||/||f||={_re_ratio2:.3e} "
+                                f"(cycle={_freeze_cycle})"
+                            )
+                        continue
+                    else:
+                        _freeze_active = False
+                        _current_omega = 1.0
+                        # サイクル上限→緩和判定
+                        if _re_ratio2 < _freeze_tol2 * 10.0:
+                            f_c = _reeval_out2.f_c
+                            step_converged = True
+                            if cfg.show_progress:
+                                print(
+                                    f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                    f"attempt {att}, "
+                                    f"凍結上限→緩和収束(disp) "
+                                    f"||R_t||/||f||={_re_ratio2:.3e}"
+                                )
+                            break
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"attempt {att}, "
+                                f"凍結上限超過(disp)→通常NR復帰 "
+                                f"||R_t||/||f||={_re_ratio2:.3e}"
+                            )
+                        continue
                 step_converged = True
                 if cfg.show_progress:
                     ctype = conv_out2.convergence_type

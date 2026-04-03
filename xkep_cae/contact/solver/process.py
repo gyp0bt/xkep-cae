@@ -414,6 +414,10 @@ class ContactFrictionProcess(
             chattering_extra_attempts=getattr(input_data, "chattering_extra_attempts", 20),
             nr_min_restore=getattr(input_data, "nr_min_restore", False),
             nr_min_restore_window=getattr(input_data, "nr_min_restore_window", 3),
+            chattering_freeze_enabled=getattr(input_data, "chattering_freeze_enabled", True),
+            chattering_freeze_max_cycles=getattr(input_data, "chattering_freeze_max_cycles", 5),
+            chattering_freeze_nr_max=getattr(input_data, "chattering_freeze_nr_max", 15),
+            chattering_freeze_tol_factor=getattr(input_data, "chattering_freeze_tol_factor", 10.0),
         )
         nr_process_dyn = NewtonDynamicProcess()
 
