@@ -63,12 +63,23 @@ class _ExtendedULAssemblerWrapper:
     MPC参照点ノードを含む拡張系 (ndof_total) との整合性が必要。
     u_total_accum / coords_ref をゼロパディングで拡張し、
     checkpoint / rollback を委譲する。
+
+    status-283: update_reference / coords_ref を拡張系でサポート。
     """
 
-    def __init__(self, assembler: object, ndof_beam: int, ndof_total: int) -> None:
+    def __init__(
+        self,
+        assembler: object,
+        ndof_beam: int,
+        ndof_total: int,
+        ref_node_coords: np.ndarray | None = None,
+    ) -> None:
         self._asm = assembler
         self._ndof_beam = ndof_beam
         self._ndof_total = ndof_total
+        # 参照点ノードの座標（梁ノード以降の追加ノード）
+        self._ref_node_coords = ref_node_coords.copy() if ref_node_coords is not None else None
+        self._ref_node_coords_ckpt = ref_node_coords.copy() if ref_node_coords is not None else None
 
     @property
     def u_total_accum(self) -> np.ndarray:
@@ -78,13 +89,31 @@ class _ExtendedULAssemblerWrapper:
 
     @property
     def coords_ref(self) -> np.ndarray:
-        return self._asm.coords_ref
+        beam_coords = self._asm.coords_ref
+        if self._ref_node_coords is not None:
+            return np.vstack([beam_coords, self._ref_node_coords])
+        return beam_coords
 
     def checkpoint(self) -> None:
         self._asm.checkpoint()
+        if self._ref_node_coords is not None:
+            self._ref_node_coords_ckpt = self._ref_node_coords.copy()
 
     def rollback(self) -> None:
         self._asm.rollback()
+        if self._ref_node_coords_ckpt is not None:
+            self._ref_node_coords = self._ref_node_coords_ckpt.copy()
+
+    def update_reference(self, u_incr: np.ndarray) -> None:
+        """参照配置を増分変位で更新する."""
+        self._asm.update_reference(u_incr[: self._ndof_beam])
+        # 参照点ノードの座標も並進変位で更新
+        if self._ref_node_coords is not None:
+            n_beam_nodes = self._ndof_beam // 6
+            n_ref = len(self._ref_node_coords)
+            for i in range(n_ref):
+                node_idx = n_beam_nodes + i
+                self._ref_node_coords[i] += u_incr[node_idx * 6 : node_idx * 6 + 3]
 
 
 # ====================================================================
@@ -640,6 +669,7 @@ class StrandBendingOscillationProcess(
             prescribed_values=prescribed_values,
             f_ext_total=np.zeros(ndof),
             mpc_transform=mpc_result,
+            mpc_groups=mpc_groups,  # UL更新時のT再構築用（status-283）
         )
 
         # ── 7. 接触設定 ──
@@ -667,7 +697,11 @@ class StrandBendingOscillationProcess(
 
         # ── 8. ソルバー実行 ──
         # ULアセンブラを拡張DOF系にラップ（参照点DOFのゼロパディング）
-        extended_assembler = _ExtendedULAssemblerWrapper(assembler, ndof_beam, ndof)
+        # 参照点ノード座標（梁ノード以降の追加ノード）
+        _ref_coords = extended_coords[n_strand_nodes:]
+        extended_assembler = _ExtendedULAssemblerWrapper(
+            assembler, ndof_beam, ndof, ref_node_coords=_ref_coords
+        )
 
         # チェックポイント復元（status-278, status-279で途中再開対応）
         _u0 = None
