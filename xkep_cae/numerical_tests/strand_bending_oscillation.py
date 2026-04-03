@@ -183,6 +183,9 @@ class StrandBendingOscillationConfig:
     # moment モードでは EI*θ/L の曲げモーメントを各素線右端に印加。
     # エラスティカ理論により大変形でも M-θ 線形 → NR安定。
     loading_mode: str = "rotation"
+    # Hertz型非線形ペナルティ（status-285）
+    # 1.0=線形ペナルティ（従来）, 1.5=Hertz型（p_n ∝ δ^1.5）
+    penalty_exponent: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -743,6 +746,7 @@ class StrandBendingOscillationProcess(
             tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
             du_norm_cap=cfg.du_norm_cap,
             load_frac_start=_frac_start,
+            penalty_exponent=cfg.penalty_exponent,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -904,6 +908,7 @@ class StrandBendingOscillationProcess(
             max_increments=cfg.max_increments,
             tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
             du_norm_cap=cfg.du_norm_cap,
+            penalty_exponent=cfg.penalty_exponent,
         )
         solver_result = ContactFrictionProcess().process(solver_input)
 
