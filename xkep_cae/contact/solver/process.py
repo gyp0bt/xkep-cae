@@ -21,6 +21,10 @@ import warnings
 
 import numpy as np
 
+from xkep_cae.constraints.mpc_elimination import (
+    RebuildMPCTransformInput,
+    RebuildMPCTransformProcess,
+)
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._manager_process import (
     DetectCandidatesInput,
@@ -104,6 +108,7 @@ class ContactFrictionProcess(
         DeformedCoordsProcess,
         DetectCandidatesProcess,
         UpdateGeometryProcess,
+        RebuildMPCTransformProcess,
     ]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
@@ -171,6 +176,7 @@ class ContactFrictionProcess(
             line_contact=True,
             smoothing_delta=manager.config.smoothing_delta,
             huber_delta_h=manager.config.huber_delta_h,
+            penalty_exponent=input_data.penalty_exponent,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -652,15 +658,18 @@ class ContactFrictionProcess(
                 # MPC変換行列T再構築（status-283: 大回転時の線形化破綻対策）
                 # UL参照配置更新後、変形後座標でMPCの相対位置ベクトルrを再計算。
                 if _mpc_current is not None and _mpc_groups is not None:
-                    from xkep_cae.constraints.mpc_elimination import (
-                        rebuild_mpc_transform,
-                    )
-
                     _n_nodes = len(state.node_coords_ref)
                     _coords_current = state.node_coords_ref.copy()
                     for _i_n in range(_n_nodes):
                         _coords_current[_i_n] += state.u[_i_n * 6 : _i_n * 6 + 3]
-                    _mpc_current = rebuild_mpc_transform(_mpc_groups, _coords_current, ndof, 6)
+                    _mpc_current = RebuildMPCTransformProcess().process(
+                        RebuildMPCTransformInput(
+                            mpc_groups=_mpc_groups,
+                            node_coords=_coords_current,
+                            ndof_total=ndof,
+                            ndof_per_node=6,
+                        )
+                    )
 
             # 適応時間増分: 次ステップ幅決定（力ベース SDI 判定, status-233）
             _fc_norm = float(np.linalg.norm(step_result.f_c))

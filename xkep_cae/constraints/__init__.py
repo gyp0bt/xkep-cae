@@ -10,6 +10,8 @@ from xkep_cae.constraints.mpc_elimination import (
     MPCEliminationProcess,
     MPCEliminationResult,
     MPCGroup,
+    RebuildMPCTransformInput,
+    RebuildMPCTransformProcess,
 )
 from xkep_cae.constraints.rigid_assembler import (
     RigidEdgeAssemblerConfig,
@@ -22,6 +24,8 @@ __all__ = [
     "MPCEliminationProcess",
     "MPCEliminationResult",
     "MPCGroup",
+    "RebuildMPCTransformInput",
+    "RebuildMPCTransformProcess",
     "RigidEdgeAssemblerConfig",
     "RigidEdgeAssemblerResult",
     "RigidEdgeAssemblerProcess",

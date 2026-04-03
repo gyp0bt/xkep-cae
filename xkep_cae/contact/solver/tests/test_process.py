@@ -38,7 +38,7 @@ from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationOutput,
     InitialPenetrationProcess,
 )
-from xkep_cae.contact.solver._newton_dynamic import NewtonDynamicProcess
+from xkep_cae.contact.solver._newton_dynamic import NewtonDynamicInput, NewtonDynamicProcess
 from xkep_cae.contact.solver._newton_steps import (
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
@@ -705,3 +705,47 @@ class TestInitializePenaltyProcessAPI:
 
     def test_protocol_conformance(self):
         assert issubclass(InitializePenaltyProcess, SolverProcess)
+
+
+class TestChatteringFreezeConfig:
+    """接触凍結モード（status-284）のパラメータ設定テスト."""
+
+    def test_default_parameters(self):
+        """凍結モードのデフォルト値が正しい."""
+        cfg = NewtonDynamicInput()
+        assert cfg.chattering_freeze_enabled is True
+        assert cfg.chattering_freeze_max_cycles == 5
+        assert cfg.chattering_freeze_nr_max == 15
+        assert cfg.chattering_freeze_tol_factor == 10.0
+
+    def test_custom_parameters(self):
+        """凍結モードパラメータをカスタマイズできる."""
+        cfg = NewtonDynamicInput(
+            chattering_freeze_enabled=False,
+            chattering_freeze_max_cycles=10,
+            chattering_freeze_nr_max=20,
+            chattering_freeze_tol_factor=50.0,
+        )
+        assert cfg.chattering_freeze_enabled is False
+        assert cfg.chattering_freeze_max_cycles == 10
+        assert cfg.chattering_freeze_nr_max == 20
+        assert cfg.chattering_freeze_tol_factor == 50.0
+
+    def test_freeze_disabled_does_not_affect_other_params(self):
+        """凍結モード無効でも他のNRパラメータは影響しない."""
+        cfg = NewtonDynamicInput(chattering_freeze_enabled=False)
+        assert cfg.max_attempts == 50
+        assert cfg.tol_force == 1e-8
+        assert cfg.stall_window == 4
+
+    def test_contact_friction_input_has_freeze_params(self):
+        """ContactFrictionInputData に凍結パラメータが定義されている."""
+        import dataclasses
+
+        from xkep_cae.core import ContactFrictionInputData
+
+        field_names = {f.name for f in dataclasses.fields(ContactFrictionInputData)}
+        assert "chattering_freeze_enabled" in field_names
+        assert "chattering_freeze_max_cycles" in field_names
+        assert "chattering_freeze_nr_max" in field_names
+        assert "chattering_freeze_tol_factor" in field_names
