@@ -154,9 +154,6 @@ class StrandBendingOscillationConfig:
     # moment モードでは EI*θ/L の曲げモーメントを各素線右端に印加。
     # エラスティカ理論により大変形でも M-θ 線形 → NR安定。
     loading_mode: str = "rotation"
-    # static_solver: 接触なし問題用の静的NRソルバーを使用（status-281）
-    # 動的ソルバーの慣性項による回転残差連成を排除。
-    static_solver: bool = False
 
 
 @dataclass(frozen=True)
@@ -856,39 +853,25 @@ class StrandBendingOscillationProcess(
         )
 
         # ── ソルバー実行 ──
-        if cfg.static_solver:
-            # status-281: 接触なし問題用静的NRソルバー
-            solver_result = _static_nr_solve(
-                assembler=assembler,
-                ndof=ndof,
-                fixed_dofs=fixed_dofs_arr,
-                prescribed_dofs=prescribed_dofs_arr,
-                prescribed_values=prescribed_values_arr,
-                f_ext_total=f_ext,
-                n_increments=cfg.n_increments_per_cycle * cfg.n_cycles,
-                max_nr=cfg.max_nr_attempts,
-                tol=cfg.tol_force,
-            )
-        else:
-            solver_input = ContactFrictionInputData(
-                mesh=mesh,
-                boundary=boundary,
-                contact=contact_setup,
-                callbacks=AssembleCallbacks(
-                    assemble_tangent=assembler.assemble_tangent,
-                    assemble_internal_force=assembler.assemble_internal_force,
-                    ul_assembler=assembler,
-                ),
-                mass_matrix=M,
-                dt_physical=t_total,
-                rho_inf=cfg.rho_inf,
-                max_nr_attempts=cfg.max_nr_attempts,
-                tol_force=cfg.tol_force,
-                max_increments=cfg.max_increments,
-                tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
-                du_norm_cap=cfg.du_norm_cap,
-            )
-            solver_result = ContactFrictionProcess().process(solver_input)
+        solver_input = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact_setup,
+            callbacks=AssembleCallbacks(
+                assemble_tangent=assembler.assemble_tangent,
+                assemble_internal_force=assembler.assemble_internal_force,
+                ul_assembler=assembler,
+            ),
+            mass_matrix=M,
+            dt_physical=t_total,
+            rho_inf=cfg.rho_inf,
+            max_nr_attempts=cfg.max_nr_attempts,
+            tol_force=cfg.tol_force,
+            max_increments=cfg.max_increments,
+            tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+            du_norm_cap=cfg.du_norm_cap,
+        )
+        solver_result = ContactFrictionProcess().process(solver_input)
 
         return StrandBendingOscillationResult(
             solver_result=solver_result,

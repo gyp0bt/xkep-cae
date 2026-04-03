@@ -120,13 +120,8 @@ class TestCollectAdjacentNodes:
         assert adj == [1]
 
 
-class TestStaticSolverConfig:
-    """static_solver / loading_mode 構成テスト."""
-
-    def test_static_solver_default_false(self) -> None:
-        """static_solver デフォルトは False."""
-        cfg = StrandBendingOscillationConfig()
-        assert cfg.static_solver is False
+class TestLoadingModeConfig:
+    """loading_mode 構成テスト."""
 
     def test_loading_mode_default_rotation(self) -> None:
         """loading_mode デフォルトは 'rotation'."""
@@ -137,11 +132,6 @@ class TestStaticSolverConfig:
         """loading_mode='moment' で構成可能."""
         cfg = StrandBendingOscillationConfig(loading_mode="moment")
         assert cfg.loading_mode == "moment"
-
-    def test_static_solver_true(self) -> None:
-        """static_solver=True で構成可能."""
-        cfg = StrandBendingOscillationConfig(static_solver=True)
-        assert cfg.static_solver is True
 
 
 # ====================================================================

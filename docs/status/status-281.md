@@ -4,7 +4,7 @@
 
 - **日時**: 2026-04-02
 - **ブランチ**: `claude/helical-wire-90-bend-aljSm`
-- **テスト数**: 608 passed（+6: _collect_adjacent_nodes + static_solver config テスト）
+- **テスト数**: 606 passed（+4: _collect_adjacent_nodes + loading_mode config テスト）
 - **契約違反**: **0件**
 - **条例違反**: 0件
 
@@ -127,13 +127,54 @@ print(f'frac={frac:.4f}, incr={sr.n_increments}, cutback={sr.n_cutbacks}')
 " 2>&1 | tee /tmp/log-7strand-dynamic-90deg.log
 # 期待値: frac=1.0000, incr≈102, cutback≈6
 
-# 全テスト
-python -m pytest xkep_cae/ tests/ -q --timeout=120 --ignore=tests/contact/test_st_jacobian.py -k "not slow and not stress_contour"
+# 収束テスト + 物理検証テスト（slow, ~3分）
+python -m pytest xkep_cae/numerical_tests/tests/test_strand_bending_oscillation.py -v -k slow --timeout=300 2>&1 | tee /tmp/log-slow-tests.log
+# 期待値: 2 passed (test_7strand_90deg_dynamic_completes, test_center_strand_tip_displacement)
+
+# パイプレンダリング（物理妥当性の目視確認, ~2分）
+python contracts/visualize_7strand_bending_90deg.py 2>&1 | tee /tmp/log-pipe-render.log
+# 出力: docs/verification/7strand_90deg_bending_pipe.png
+
+# 全テスト（回帰確認）
+python -m pytest xkep_cae/ tests/ -q --timeout=120 --ignore=tests/contact/test_st_jacobian.py -k "not slow and not stress_contour" 2>&1 | tee /tmp/log-regression.log
 # 期待値: 608 passed
 
 # 契約検証
 python contracts/validate_process_contracts.py
 ```
+
+---
+
+## 修正の技術的要点（次の担当者向け）
+
+### 何を変えたか
+
+`xkep_cae/contact/solver/process.py` の収束ループ内で、ULアセンブラへの変位受け渡しを修正。
+
+**修正前**: `assemble_tangent(state.u)` — state.uは初期配置からの全累積変位。
+update_reference()は呼ばれない。CR梁は累積90°回転を一度に分解する。
+
+**修正後**: `assemble_tangent(state.u - _ul_ref_base)` — 最後のupdate_reference()からの増分のみ渡す。
+各収束後にupdate_reference()を呼び、_ul_ref_baseをstate.uに更新。
+
+### なぜ効くか
+
+CR梁要素のcorotational分解は、**小回転増分**では二次精度の接線剛性を生成する。
+全累積90°回転を渡すと、回転ベクトルの抽出精度が低下し、NRが二次→線形収束に劣化する。
+update_reference()で参照配置を逐次更新すると、各NR反復の回転増分が~2°に制限され、二次収束が維持される。
+
+### 注意点
+
+- `_build_u_output()` は使わなくなった（`state.u` を直接出力）。
+  以前は `u_total_accum + state.u` だったが、update_reference()が
+  u_total_accumに加算するため二重カウントになる。
+- checkpoint/rollback時に `_ul_ref_base` も保存/復元する。
+- この修正は全既存テスト（608件）に影響なし（小変形問題では差異ゼロ）。
+
+### 次のステップ
+
+1. **接触あり90度曲げ**: `contact_enabled=True` で試行。接触力のNR収束が課題になる可能性。
+2. **dm整合性**: status-278で解消済み（evaluate/tangent共にdm OFF）。再検証は不要の可能性。
 
 ---
 
