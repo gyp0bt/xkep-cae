@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-03-31）
+## 現在地（2026-04-03）
 
-**200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 テスト**（テスト品質改善 — status-275） | 契約違反**0件** | [最新status](status/status-index.md)
+**606 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -48,7 +48,10 @@
 | テスト品質改善 | **非平行座標化 + atol厳格化**: TestKstNonlocalFD/TestKcAdjFDのtrivially passing問題修正。asymmetric atol 1e-2→1e-5 — status-275 |
 | NR壁根本原因 | **evaluate/tangent dm不整合を特定**: 複合回帰（NR+接触コード相互作用）、NR min restore OFF + diverged=True + tangent scaling復元 — status-277 |
 | チェックポイント再開 | **チェックポイント途中再開パイプライン実装**: load_frac_start + stepping/state初期化。N-サイクル検知/リスタートは逆効果で無効化。ul_frac_base処方変位バグ修正。ベースライン frac=0.5543 維持 — status-279 |
-| **壁** | dm整合性回復 + NR制御再設計 / 61本以上 / 1000本6時間 |
+| free_end_mode | **MPC不使用端部直接処方**: 各素線θ_z直接処方。MPC frac=0.55→free_end frac=1.0完走 — status-280 |
+| UL参照配置更新 | **接触なし90度曲げ完走**: ContactFrictionProcess UL増分変位+update_reference()。理論値0.02%一致 — status-281 |
+| 接触ありベースライン | **接触あり90度曲げfrac=0.40**: active=8-9で2サイクルチャタリング停滞。接触なし比で60%低下 — status-282 |
+| **壁** | 接触チャタリング対策 / 61本以上 / 1000本6時間 |
 
 ---
 

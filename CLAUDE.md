@@ -73,6 +73,11 @@
 
 ### 次の課題
 
+**接触あり90度曲げ収束改善** — status-282:
+- 接触あり90度曲げ: frac=0.40停滞（active=8-9で2サイクルチャタリング）
+- 接触なし90度曲げ: frac=1.0完走済み（status-281）
+- チャタリング対策（huber_delta_h調整 or リラクゼーション強化 or 収束判定緩和）
+
 **NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
 - ~~MPC縮退系残差判定 + u_pred MPC射影 + ストール検知拡張~~ ← status-255で完了
@@ -100,9 +105,9 @@
 - ~~frozen_hermite_tangent=True回帰修正~~ ← status-275で完了（デフォルトFalse化、frac 0.38→0.41）
 - ~~NR壁根本原因特定~~ ← status-277で完了（evaluate/tangent dm不整合 + NR制御複合回帰）
 - ~~ContactFrictionProcess UL参照配置更新~~ ← status-281で完了（動的ソルバーで7本90度曲げ frac=0.065→1.0）
-- **次**: 接触あり90度曲げの試行 — status-281 参照
-  - UL参照配置更新で接触なし完走。接触力が加わった場合の収束を検証
-  - evaluate/tangent dm整合性（status-278で解消済み、再検証不要の可能性）
+- **次**: 接触あり90度曲げのチャタリング対策 — status-282 参照
+  - ベースライン取得済み: frac=0.40（active=8-9で2サイクル残差振動）
+  - 対策候補: huber_delta_h調整、接触力リラクゼーション強化、チャタリング検知→収束判定緩和
 
 詳細は `docs/roadmap.md` および `docs/status/status-index.md` を参照。
 
