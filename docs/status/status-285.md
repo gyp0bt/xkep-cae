@@ -1,4 +1,4 @@
-# status-285: C16修正 + 凍結テスト + Hertz型非線形ペナルティ実装
+# status-285: C16修正 + 凍結テスト + Hertz型非線形ペナルティ — frac 0.70→0.998
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
@@ -95,17 +95,34 @@ cfg = StrandBendingOscillationConfig(
 
 または `ContactFrictionInputData(penalty_exponent=1.5)` で設定。
 
-### 期待される効果
+### ベンチマーク結果
 
-- 接触ON/OFF境界で `p_n ∝ δ^{1.5}` → 力の立ち上がりが緩やか
-- 活性集合の離散的切替が物理的に平滑化 → チャタリング低減
-- ただし gap=0 付近の接線剛性がゼロ → NR初期収束が遅い可能性
+#### 7本ヘリカル撚線90度曲げ（κ=π/200, θ=π/2, contact_enabled=True）
+
+| 構成 | frac | incr | cutback | 備考 |
+|------|------|------|---------|------|
+| ベースライン（status-284, α=1.0） | **0.7050** | 570 | 66 | チャタリング凍結停滞 |
+| **Hertz型（α=1.5）** | **0.9981** | 551 | 60 | **事実上完走（42%改善）** |
+| 接触なし（参考, status-281） | 1.0000 | 102 | 6 | — |
+
+**Hertz型ペナルティで接触あり90度曲げが事実上完走。**
+
+- incr=551 はベースライン（570）より少ない → 効率的
+- cutback=60 もベースライン（66）より少ない → チャタリング低減
+- frac=0.9981（99.8%）は θ ≈ 89.8° に相当
+
+#### なぜ効果的か
+
+1. Hertz型 `p_n ∝ δ^{1.5}` により、接触ON/OFF境界で力が連続的に立ち上がる
+2. 活性集合のON/OFF離散切替が物理的に平滑化 → NR内チャタリングが大幅減
+3. 凍結モードとの組み合わせで、残存するチャタリングも対処
+4. gap=0付近の接線剛性ゼロの懸念は、Huber C1平滑化で相殺
 
 ### 次のステップ
 
-- **ベンチマーク**: `penalty_exponent=1.5` で90度曲げテストを実行し、frac改善を確認
-- **パラメータチューニング**: α=1.5 vs α=1.2 vs α=1.0 + 凍結パラメータ最適化
 - FD接線診断でHertz型の接線剛性が正しいか検証
+- α最適値探索（1.0, 1.2, 1.5 比較）
+- penalty_exponent=1.5 をデフォルトにするかの検討
 
 ---
 
@@ -134,18 +151,21 @@ python -m pytest xkep_cae/contact/contact_force/tests/test_strategy.py -q -k "He
 
 ## STA2 準拠チェック
 
-- [x] **tee ログ保存**: テスト結果をログ出力
+- [x] **tee ログ保存**: `/tmp/log-hertz-1.5-90deg.log`, `/tmp/log-baseline-1.0-90deg.log`
 - [x] **再現手順記載**: 全コマンドをstatusに記載
-- [x] **数値の捏造なし**: テスト数 621（+15）は pytest 出力と一致
+- [x] **数値の捏造なし**: テスト 621 passed、frac=0.9981 は tee ログと一致
+- [x] **ベースライン先行取得**: status-284 frac=0.7050 をベースライン使用
 - [x] **回帰なし**: 621 passed, 0 failed
 
 ---
 
 ## TODO
 
-- [ ] Hertz型ペナルティのベンチマーク（90度曲げ penalty_exponent=1.5）
-- [ ] FD接線診断でHertz型の整合性検証
-- [ ] penalty_exponent の StrandBendingOscillationConfig パイプライン貫通
+- [x] Hertz型ペナルティのベンチマーク（90度曲げ penalty_exponent=1.5）→ **frac=0.9981**
+- [x] penalty_exponent の StrandBendingOscillationConfig パイプライン貫通
+- [ ] FD接線診断でHertz型の接線剛性整合性検証
 - [ ] α最適値探索（1.0, 1.2, 1.5 比較）
+- [ ] penalty_exponent=1.5 をデフォルトにするか検討
+- [ ] frac=0.9981→1.0 の最後の0.2%を詰めるか判断
 
 ---
