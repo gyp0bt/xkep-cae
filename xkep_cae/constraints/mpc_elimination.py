@@ -209,6 +209,39 @@ def _build_mpc_transform(
     )
 
 
+def rebuild_mpc_transform(
+    mpc_groups: list[MPCGroup],
+    node_coords: np.ndarray,
+    ndof_total: int,
+    ndof_per_node: int = 6,
+) -> MPCEliminationResult:
+    """現在のノード座標からMPC変換行列 T を再構築する.
+
+    UL参照配置更新後にTを再構築するためのユーティリティ。
+    各MPCGroupの slave_coords/master_coord を node_coords から取得し、
+    更新後の相対位置ベクトルでTを構築する。
+
+    status-283: 大回転時のMPC線形化破綻対策。
+
+    Parameters:
+        mpc_groups: 元のMPCグループリスト
+        node_coords: 現在のノード座標 (n_nodes, 3)
+        ndof_total: 全体自由度数
+        ndof_per_node: 1節点あたりのDOF数
+    """
+    updated_groups = []
+    for grp in mpc_groups:
+        updated_groups.append(
+            MPCGroup(
+                master_node=grp.master_node,
+                slave_nodes=grp.slave_nodes,
+                slave_coords=node_coords[grp.slave_nodes],
+                master_coord=node_coords[grp.master_node],
+            )
+        )
+    return _build_mpc_transform(updated_groups, ndof_total, ndof_per_node)
+
+
 # ====================================================================
 # Process
 # ====================================================================

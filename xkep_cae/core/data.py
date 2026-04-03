@@ -36,6 +36,7 @@ class BoundaryData:
     f_ext_total: np.ndarray | None = None
     f_ext_base: np.ndarray | None = None
     mpc_transform: object | None = None  # MPCEliminationResult（循環参照回避で object）
+    mpc_groups: list | None = None  # MPCGroup リスト（UL更新時のT再構築用, status-283）
 
 
 @dataclass(frozen=True)

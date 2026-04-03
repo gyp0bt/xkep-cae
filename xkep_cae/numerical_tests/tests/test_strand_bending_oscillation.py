@@ -236,3 +236,43 @@ class TestHelical90DegBendPhysics:
         assert abs(math.degrees(tip[4]) - theta_y_theory) < 1.0, (
             f"θ_y={math.degrees(tip[4]):.1f}° vs theory={theta_y_theory}°"
         )
+
+
+class TestMPC90DegBendConvergence:
+    """MPC端部結合 + 接触なし 90度曲げ 収束テスト.
+
+    status-283: MPC変換行列T再構築 + UL参照配置更新により完走。
+    修正前: frac=0.14（~13°で線形化破綻）
+    修正後: frac=1.0
+    """
+
+    @pytest.mark.slow
+    def test_mpc_90deg_nocontact_completes(self) -> None:
+        """MPC + 接触なしで7本90度曲げが frac=1.0 に到達する."""
+        cfg = StrandBendingOscillationConfig(
+            n_strands=7,
+            wire_radius=0.5,
+            pitch_length=100.0,
+            n_elements_per_pitch=16,
+            n_pitches=1.0,
+            E=130.0e3,
+            nu=0.3,
+            rho=8.96e-9,
+            bending_curvature=math.pi / 200.0,
+            n_cycles=1,
+            n_increments_per_cycle=40,
+            rho_inf=0.9,
+            mu=0.15,
+            max_nr_attempts=50,
+            tol_force=1e-8,
+            max_increments=10000,
+            exclude_same_strand=True,
+            free_end_mode=False,
+            contact_enabled=False,
+            loading_mode="rotation",
+        )
+        result = StrandBendingOscillationProcess().process(cfg)
+        sr = result.solver_result
+        frac = sr.load_history[-1] if sr.load_history else 0.0
+        assert frac > 0.99, f"MPC frac={frac:.4f} < 0.99: 90度曲げが完走しない"
+        assert sr.n_cutbacks <= 20, f"cutback={sr.n_cutbacks} > 20: カットバック過多"

@@ -432,6 +432,9 @@ class ContactFrictionProcess(
         # ================================================================
         # 荷重ステップループ
         # ================================================================
+        _mpc_current = input_data.boundary.mpc_transform
+        _mpc_current_ckpt = _mpc_current  # MPC Tチェックポイント（status-283）
+        _mpc_groups = input_data.boundary.mpc_groups  # T再構築用（status-283）
         _max_incr = input_data.max_increments
         _incr_count = 0
         while True:
@@ -460,8 +463,8 @@ class ContactFrictionProcess(
                 state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
 
             # MPC制約をuに伝搬: u_full = T @ u_red（slave DOFをmaster値から再計算）
-            _mpc = input_data.boundary.mpc_transform
-            if _mpc is not None:
+            if _mpc_current is not None:
+                _mpc = _mpc_current
                 _u_red = state.u[_mpc.independent_dofs]
                 _u_proj = _mpc.T @ _u_red
                 if hasattr(_u_proj, "toarray"):
@@ -529,7 +532,7 @@ class ContactFrictionProcess(
                 use_coating=use_coating,
                 dynamic_ref=dynamic_ref,
                 connectivity=connectivity,
-                mpc_transform=input_data.boundary.mpc_transform,
+                mpc_transform=_mpc_current,
             )
             step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
@@ -556,6 +559,8 @@ class ContactFrictionProcess(
                         _state_set(state, "node_coords_ref", ul_assembler.coords_ref)
                         if _ul_ref_base_ckpt is not None:
                             _ul_ref_base[:] = _ul_ref_base_ckpt
+                        if _mpc_current_ckpt is not None:
+                            _mpc_current = _mpc_current_ckpt
                     _time_strategy.restore_checkpoint()
                     _state_set(state, "increment_display", state.increment_display - 1)
                     print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
@@ -640,6 +645,19 @@ class ContactFrictionProcess(
                 ul_assembler.update_reference(_u_incr_ul)
                 _ul_ref_base[:] = state.u
 
+                # MPC変換行列T再構築（status-283: 大回転時の線形化破綻対策）
+                # UL参照配置更新後、変形後座標でMPCの相対位置ベクトルrを再計算。
+                if _mpc_current is not None and _mpc_groups is not None:
+                    from xkep_cae.constraints.mpc_elimination import (
+                        rebuild_mpc_transform,
+                    )
+
+                    _n_nodes = len(state.node_coords_ref)
+                    _coords_current = state.node_coords_ref.copy()
+                    for _i_n in range(_n_nodes):
+                        _coords_current[_i_n] += state.u[_i_n * 6 : _i_n * 6 + 3]
+                    _mpc_current = rebuild_mpc_transform(_mpc_groups, _coords_current, ndof, 6)
+
             # 適応時間増分: 次ステップ幅決定（力ベース SDI 判定, status-233）
             _fc_norm = float(np.linalg.norm(step_result.f_c))
             stepping.process(
@@ -680,6 +698,7 @@ class ContactFrictionProcess(
             if _ul:
                 ul_assembler.checkpoint()
                 _ul_ref_base_ckpt = _ul_ref_base.copy()
+                _mpc_current_ckpt = _mpc_current  # MPC T チェックポイント（status-283）
             _time_strategy.checkpoint()
 
             # ── 外部チェックポイント保存（status-278: 中盤からの対策効果検証用） ──
