@@ -200,6 +200,11 @@ class ContactFrictionInputData:
     chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
     nr_min_restore: bool = False  # status-277: OFF（不正確な状態の持ち越し防止）
     nr_min_restore_window: int = 3  # 最小値からN回連続増加でリストア発動
+    # チャタリング検知→接触凍結モード（status-284: 陽解法スイッチ）
+    chattering_freeze_enabled: bool = True  # 接触凍結モード有効化
+    chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サ��クル数
+    chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
+    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判��緩和倍率
     # チェックポイント復元: frac途中再開（status-279）
     load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
 
