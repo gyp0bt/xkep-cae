@@ -19,7 +19,67 @@ class PairDiagnosticsOutput:
     elem_b: int
     gap: float
     p_n: float
-    status: str  # "active" / "inactive" / "slipping"
+    status: str  # "active" / "inactive" / "sliding"
+
+
+@dataclass(frozen=True)
+class NRIterationSnapshot:
+    """NR1反復の詳細スナップショット（チャタリング内訳分析用, status-287）.
+
+    NR各反復で残差の内訳（接触DOF vs 構造DOF）とペア状態遷移を記録し、
+    不収束の原因を4タイプに分類する:
+    - Type A: 接触活性集合の振動（ペアがON↔OFF）
+    - Type B: 摩擦状態の振動（stick↔slide切替）
+    - Type C: 構造系の収束不良（接触以外のDOFが支配的）
+    - Type D: 接線剛性の不整合（収束率 > 0.9）
+    """
+
+    att: int  # NR反復番号
+    res_ratio: float  # ||R_t||/||f||
+    n_active: int  # 活性ペア数
+    n_sliding: int  # 滑りペア数
+    n_sticking: int  # 固着ペア数
+    contact_res_norm: float  # 接触DOFの残差ノルム
+    structural_res_norm: float  # 非接触DOFの残差ノルム
+    active_set_changed: bool  # 前反復から活性集合変化したか
+    friction_state_changed: bool  # 摩擦状態が変化したか（stick↔slide）
+    pairs_activated: int  # 新たにONになったペア数
+    pairs_deactivated: int  # OFFになったペア数
+    pairs_stick_to_slide: int  # stick→slideになったペア数
+    pairs_slide_to_stick: int  # slide→stickになったペア数
+    convergence_rate: float  # 残差比 r_i / r_{i-1}（1.0 = 初回）
+
+
+def classify_chattering_type(snap: NRIterationSnapshot) -> str:
+    """NR反復スナップショットからチャタリングタイプを分類.
+
+    Returns:
+        "A" (活性集合振動), "B" (摩擦状態振動),
+        "C" (構造系不良), "D" (接線剛性不整合),
+        "E" (接触力値振動: 活性集合固定だが接触DOF残差支配),
+        or 組合せ (e.g. "A+B")
+    """
+    types: list[str] = []
+    contact_dominant = snap.contact_res_norm > snap.structural_res_norm
+    if snap.active_set_changed and contact_dominant:
+        types.append("A")
+    if snap.friction_state_changed and contact_dominant:
+        types.append("B")
+    if not contact_dominant and snap.structural_res_norm > 0:
+        types.append("C")
+    if snap.convergence_rate > 0.9 and snap.att >= 2:
+        types.append("D")
+    # Type E: 接触力値振動（status-287 分析で発見）
+    # 活性集合が固定（A/Bなし）なのに接触DOF残差が支配的。
+    # 接触力の「値」が振動している（ペナルティ力の非線形性 or 摩擦力の方向振動）。
+    if (
+        contact_dominant
+        and not snap.active_set_changed
+        and not snap.friction_state_changed
+        and snap.att >= 2
+    ):
+        types.append("E")
+    return "+".join(types) if types else "-"
 
 
 @dataclass(frozen=True)
@@ -50,6 +110,8 @@ class ConvergenceDiagnosticsOutput:
     # 最終的な収束/非収束
     converged: bool = False
     n_attempts: int = 0
+    # NR反復レベル詳細スナップショット（チャタリング内訳分析用, status-287）
+    nr_iteration_snapshots: list[NRIterationSnapshot] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

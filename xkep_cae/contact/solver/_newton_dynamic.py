@@ -15,7 +15,9 @@ import numpy as np
 from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
+    NRIterationSnapshot,
     PairDiagnosticsOutput,
+    classify_chattering_type,
 )
 from xkep_cae.contact.solver._newton_steps import (
     ContactForceAssemblyInput,
@@ -224,6 +226,8 @@ class NewtonDynamicProcess(
         _freeze_n_active_prev = -1  # 前回凍結時のactive数
         # NRインナー活性ペア凍結（status-276）
         _frozen_contact_dofs: np.ndarray | None = None  # att=0で記録
+        # チャタリング内訳分析用: 前反復のペア状態追跡（status-287）
+        _prev_pair_statuses: dict[int, str] = {}  # pair_id -> status文字列
 
         att = -1
         while att + 1 < _effective_max:
@@ -360,6 +364,78 @@ class NewtonDynamicProcess(
                             )
                         )
             diag.pair_snapshots.append(_pair_snap)
+
+            # ── チャタリング内訳分析: NR反復スナップショット（status-287） ──
+            # 接触DOF vs 構造DOFの残差分離 + ペア状態遷移追跡
+            _cur_pair_statuses: dict[int, str] = {}
+            _n_sliding_snap = 0
+            _n_sticking_snap = 0
+            for _ps in _pair_snap:
+                _cur_pair_statuses[_ps.pair_id] = _ps.status
+                if _ps.status == "sliding":
+                    _n_sliding_snap += 1
+                elif _ps.status == "active":
+                    _n_sticking_snap += 1
+
+            _pairs_activated = 0
+            _pairs_deactivated = 0
+            _pairs_s2s = 0  # stick→slide
+            _pairs_sl2st = 0  # slide→stick
+            _friction_changed = False
+            for _pid, _cur_st in _cur_pair_statuses.items():
+                _prev_st = _prev_pair_statuses.get(_pid, "inactive")
+                if _prev_st == "inactive" and _cur_st != "inactive":
+                    _pairs_activated += 1
+                elif _prev_st != "inactive" and _cur_st == "inactive":
+                    _pairs_deactivated += 1
+                if _prev_st == "active" and _cur_st == "sliding":
+                    _pairs_s2s += 1
+                    _friction_changed = True
+                elif _prev_st == "sliding" and _cur_st == "active":
+                    _pairs_sl2st += 1
+                    _friction_changed = True
+            # 前反復に存在して今回消えたペアをdeactivated扱い
+            for _pid in _prev_pair_statuses:
+                if _pid not in _cur_pair_statuses:
+                    _prev_st2 = _prev_pair_statuses[_pid]
+                    if _prev_st2 != "inactive":
+                        _pairs_deactivated += 1
+
+            _active_set_chg = (_pairs_activated + _pairs_deactivated) > 0
+
+            # 接触DOF vs 構造DOFの残差分離
+            _contact_res = 0.0
+            _structural_res = 0.0
+            if hasattr(manager, "pairs") and len(R_u) > 0:
+                _c_mask = np.zeros(len(R_u), dtype=bool)
+                for _pair_obj in manager.pairs:
+                    if hasattr(_pair_obj, "state") and _pair_obj.state.p_n > 0.0:
+                        _cdofs = _contact_dofs(_pair_obj, cfg.ndof_per_node)
+                        _valid = _cdofs[_cdofs < len(R_u)]
+                        _c_mask[_valid] = True
+                _contact_res = float(np.linalg.norm(R_u[_c_mask])) if _c_mask.any() else 0.0
+                _structural_res = float(np.linalg.norm(R_u[~_c_mask]))
+
+            _conv_rate = diag.convergence_rate_history[-1] if diag.convergence_rate_history else 1.0
+
+            _nr_snap = NRIterationSnapshot(
+                att=att,
+                res_ratio=_res_ratio,
+                n_active=n_active,
+                n_sliding=_n_sliding_snap,
+                n_sticking=_n_sticking_snap,
+                contact_res_norm=_contact_res,
+                structural_res_norm=_structural_res,
+                active_set_changed=_active_set_chg,
+                friction_state_changed=_friction_changed,
+                pairs_activated=_pairs_activated,
+                pairs_deactivated=_pairs_deactivated,
+                pairs_stick_to_slide=_pairs_s2s,
+                pairs_slide_to_stick=_pairs_sl2st,
+                convergence_rate=_conv_rate,
+            )
+            diag.nr_iteration_snapshots.append(_nr_snap)
+            _prev_pair_statuses = _cur_pair_statuses
 
             if conv_out.converged:
                 # ── 凍結モード中の再評価（status-284） ──
@@ -527,11 +603,16 @@ class NewtonDynamicProcess(
                     _freeze_n_active_prev = n_active
                     _freeze_cycle += 1
                     _effective_max = att + cfg.chattering_freeze_nr_max + 5
+                    # チャタリングタイプ分類（status-287）
+                    _chatter_type = (
+                        classify_chattering_type(_nr_snap) if diag.nr_iteration_snapshots else "-"
+                    )
                     if cfg.show_progress:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                            f"低残差チャタリング検知 → 接触凍結モード "
+                            f"低残差チャタリング検知[{_chatter_type}] → 接触凍結モード "
                             f"(att={att}, ||R||/||f||={_cur_ratio:.3e}, "
+                            f"R_c={_contact_res:.2e}, R_s={_structural_res:.2e}, "
                             f"cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
                             f"active={n_active})"
                         )
@@ -546,6 +627,10 @@ class NewtonDynamicProcess(
                 if _consecutive_stall >= cfg.stall_window and not _relax_active:
                     _relax_active = True
                     _stall_type = "チャタリング" if _active_changed else "残差停滞"
+                    # チャタリングタイプ分類（status-287）
+                    _chatter_type = (
+                        classify_chattering_type(_nr_snap) if diag.nr_iteration_snapshots else "-"
+                    )
                     # status-284: 接触凍結モード（最優先）
                     if (
                         cfg.chattering_freeze_enabled
@@ -560,8 +645,9 @@ class NewtonDynamicProcess(
                         if cfg.show_progress:
                             print(
                                 f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                                f"接触{_stall_type}検知 → 接触凍結モード "
+                                f"接触{_stall_type}検知[{_chatter_type}] → 接触凍結モード "
                                 f"(cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
+                                f"R_c={_contact_res:.2e}, R_s={_structural_res:.2e}, "
                                 f"active={n_active})"
                             )
                     # status-268: delta_hブースト（凍結モード無効時のフォールバック）
@@ -574,15 +660,16 @@ class NewtonDynamicProcess(
                         if cfg.show_progress:
                             print(
                                 f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                                f"接触{_stall_type}検知 → delta_hブースト "
+                                f"接触{_stall_type}検知[{_chatter_type}] → delta_hブースト "
                                 f"(×{cfg.chattering_delta_h_boost}, "
                                 f"max_att={_effective_max})"
                             )
                     elif cfg.show_progress:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                            f"接触{_stall_type}検知 → リラクゼーション有効化 "
-                            f"(ω={cfg.contact_relax_omega})"
+                            f"接触{_stall_type}検知[{_chatter_type}] → リラクゼーション有効化 "
+                            f"(ω={cfg.contact_relax_omega}, "
+                            f"R_c={_contact_res:.2e}, R_s={_structural_res:.2e})"
                         )
             # リラクゼーション早期打切り（status-248: 無駄な反復を削減）
             # status-268: delta_hブースト時・凍結モード時は早期打切りをバイパス。
@@ -1034,6 +1121,24 @@ class NewtonDynamicProcess(
         # status-268: delta_hブーストを解除（次インクリメントに影響させない）
         if _delta_h_boosted and hasattr(_contact_force_strategy, "set_delta_h_boost"):
             _contact_force_strategy.set_delta_h_boost(1.0)
+
+        # ── チャタリング内訳サマリ出力（status-287） ──
+        # 不収束インクリメントで直近NRスナップショットからType分布を出力
+        if not step_converged and cfg.show_progress and diag.nr_iteration_snapshots:
+            _type_counts: dict[str, int] = {}
+            for _snap in diag.nr_iteration_snapshots[-10:]:  # 直近10反復
+                _t = classify_chattering_type(_snap)
+                _type_counts[_t] = _type_counts.get(_t, 0) + 1
+            _type_str = ", ".join(f"{k}:{v}" for k, v in sorted(_type_counts.items()))
+            _last = diag.nr_iteration_snapshots[-1]
+            print(
+                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                f"不収束 チャタリング内訳(直近10) [{_type_str}] "
+                f"R_c={_last.contact_res_norm:.2e}, R_s={_last.structural_res_norm:.2e}, "
+                f"active={_last.n_active}, sliding={_last.n_sliding}, "
+                f"activated={_last.pairs_activated}, deactivated={_last.pairs_deactivated}, "
+                f"stick→slide={_last.pairs_stick_to_slide}, slide→stick={_last.pairs_slide_to_stick}"
+            )
 
         return DynamicStepOutput(
             converged=step_converged,
