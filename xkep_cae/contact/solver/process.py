@@ -21,6 +21,10 @@ import warnings
 
 import numpy as np
 
+from xkep_cae.constraints.mpc_elimination import (
+    RebuildMPCTransformInput,
+    RebuildMPCTransformProcess,
+)
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact._manager_process import (
     DetectCandidatesInput,
@@ -104,6 +108,7 @@ class ContactFrictionProcess(
         DeformedCoordsProcess,
         DetectCandidatesProcess,
         UpdateGeometryProcess,
+        RebuildMPCTransformProcess,
     ]
 
     # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
@@ -171,6 +176,7 @@ class ContactFrictionProcess(
             line_contact=True,
             smoothing_delta=manager.config.smoothing_delta,
             huber_delta_h=manager.config.huber_delta_h,
+            penalty_exponent=input_data.penalty_exponent,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -196,6 +202,7 @@ class ContactFrictionProcess(
             if input_data.boundary.prescribed_values is not None
             else np.array([])
         )
+        _prescribed_func = input_data.boundary.prescribed_func
         has_prescribed = len(_prescribed_dofs) > 0
         if has_prescribed:
             fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
@@ -266,7 +273,9 @@ class ContactFrictionProcess(
         # 全累積変位からの接線剛性精度が低下する。
         # update_reference()で参照配置を更新し、各ステップの増分変位を
         # 小さく保つことで二次収束を維持する。
-        _ul_ref_base = np.zeros(ndof) if _ul else None  # 参照配置更新基準変位
+        # checkpoint復元時は u0 を���準にする（初回UL更新で増分=0を保証）
+        _is_resume = getattr(input_data, "skip_initial_detection", False)
+        _ul_ref_base = u0.copy() if (_ul and _is_resume) else (np.zeros(ndof) if _ul else None)
         _ul_ref_base_ckpt: np.ndarray | None = None  # チェックポイント用
 
         def _ul_tangent_wrapper(u_total: np.ndarray) -> object:
@@ -290,18 +299,22 @@ class ContactFrictionProcess(
         broadphase_cell_size = None
         _detect_proc = DetectCandidatesProcess()
         _geom_proc = UpdateGeometryProcess()
-        _dc_init = _detect_proc.process(
-            DetectCandidatesInput(
-                manager=manager,
-                node_coords=node_coords_ref,
-                connectivity=connectivity,
-                radii=radii,
-                margin=broadphase_margin,
-                cell_size=broadphase_cell_size,
-                core_radii=core_radii,
+        _skip_init_detect = getattr(input_data, "skip_initial_detection", False)
+        if not _skip_init_detect:
+            _dc_init = _detect_proc.process(
+                DetectCandidatesInput(
+                    manager=manager,
+                    node_coords=node_coords_ref,
+                    connectivity=connectivity,
+                    radii=radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                    core_radii=core_radii,
+                )
             )
-        )
-        manager = _dc_init.manager
+            manager = _dc_init.manager
+        else:
+            print("  [RESUME] 初期接触検出スキップ（checkpoint pairs使用）")
         _pen_proc = InitialPenetrationProcess()
         _use_adjust = manager.config.adjust_initial_penetration
         if _use_adjust and _ul:
@@ -464,7 +477,13 @@ class ContactFrictionProcess(
 
             # 処方変位
             if has_prescribed:
-                state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
+                if _prescribed_func is not None:
+                    # prescribed_func(frac) は state.u に書き込む絶対値を返す
+                    state.u[_prescribed_dofs] = _prescribed_func(load_frac)
+                else:
+                    state.u[_prescribed_dofs] = (
+                        load_frac - state.ul_frac_base
+                    ) * _prescribed_values
 
             # MPC制約をuに伝搬: u_full = T @ u_red（slave DOFをmaster値から再計算）
             if _mpc_current is not None:
@@ -652,15 +671,18 @@ class ContactFrictionProcess(
                 # MPC変換行列T再構築（status-283: 大回転時の線形化破綻対策）
                 # UL参照配置更新後、変形後座標でMPCの相対位置ベクトルrを再計算。
                 if _mpc_current is not None and _mpc_groups is not None:
-                    from xkep_cae.constraints.mpc_elimination import (
-                        rebuild_mpc_transform,
-                    )
-
                     _n_nodes = len(state.node_coords_ref)
                     _coords_current = state.node_coords_ref.copy()
                     for _i_n in range(_n_nodes):
                         _coords_current[_i_n] += state.u[_i_n * 6 : _i_n * 6 + 3]
-                    _mpc_current = rebuild_mpc_transform(_mpc_groups, _coords_current, ndof, 6)
+                    _mpc_current = RebuildMPCTransformProcess().process(
+                        RebuildMPCTransformInput(
+                            mpc_groups=_mpc_groups,
+                            node_coords=_coords_current,
+                            ndof_total=ndof,
+                            ndof_per_node=6,
+                        )
+                    )
 
             # 適応時間増分: 次ステップ幅決定（力ベース SDI 判定, status-233）
             _fc_norm = float(np.linalg.norm(step_result.f_c))
@@ -705,48 +727,63 @@ class ContactFrictionProcess(
                 _mpc_current_ckpt = _mpc_current  # MPC T チェックポイント（status-283）
             _time_strategy.checkpoint()
 
-            # ── 外部チェックポイント保存（status-278: 中盤からの対策効果検証用） ──
-            # XKEP_CHECKPOINT_FRAC=0.50 XKEP_CHECKPOINT_PATH=/tmp/ckpt.pkl で
-            # 指定fracに到達したらソルバーの全状態をpickle保存。
+            # ── チェックポイント保存（status-286: API化 + 環境変数互換） ──
+            # API: checkpoint_path / checkpoint_frac で指定（優先）
+            # 環境変数: XKEP_CHECKPOINT_FRAC / XKEP_CHECKPOINT_PATH（後方互換）
             import os as _os
 
+            _ckpt_path = input_data.checkpoint_path or _os.environ.get("XKEP_CHECKPOINT_PATH", "")
             _ckpt_frac_str = _os.environ.get("XKEP_CHECKPOINT_FRAC", "")
-            _ckpt_path = _os.environ.get("XKEP_CHECKPOINT_PATH", "")
-            if _ckpt_frac_str and _ckpt_path:
+            _ckpt_frac = input_data.checkpoint_frac
+            if _ckpt_frac_str and not input_data.checkpoint_path:
                 _ckpt_frac = float(_ckpt_frac_str)
-                if load_frac >= _ckpt_frac and not hasattr(self, "_ckpt_saved"):
-                    import pickle as _pickle
+            if _ckpt_path and load_frac >= _ckpt_frac and not hasattr(self, "_ckpt_saved"):
+                import pickle as _pickle
 
-                    _ckpt_data = {
-                        "state": state,
-                        "time_vel": _time_strategy.vel.copy(),
-                        "time_acc": _time_strategy.acc.copy(),
-                        "time_vel_old": _time_strategy._vel_old.copy()
-                        if hasattr(_time_strategy, "_vel_old")
-                        else None,
-                        "time_acc_old": _time_strategy._acc_old.copy()
-                        if hasattr(_time_strategy, "_acc_old")
-                        else None,
-                        "time_u_pred": _time_strategy._u_pred.copy()
-                        if hasattr(_time_strategy, "_u_pred")
-                        else None,
-                        "manager_pairs": manager.pairs[:],
-                        "manager_config": manager.config,
-                        "load_frac": load_frac,
-                        "k_pen": k_pen,
-                        "stepping_state": stepping._state if hasattr(stepping, "_state") else None,
-                        "dt_sub": dt_sub,
-                        "incr_count": _incr_count,
-                        "cutback_count": _n_cutbacks,
-                    }
-                    if hasattr(manager, "connectivity"):
-                        _ckpt_data["connectivity"] = manager.connectivity
-                    with open(_ckpt_path, "wb") as _f:
-                        _pickle.dump(_ckpt_data, _f)
-                    self._ckpt_saved = True
-                    print(
-                        f"  [CHECKPOINT] frac={load_frac:.4f} → {_ckpt_path} (incr={_incr_count})"
-                    )
+                _ckpt_data = {
+                    "state": state,
+                    "time_vel": _time_strategy.vel.copy(),
+                    "time_acc": _time_strategy.acc.copy(),
+                    "time_vel_old": _time_strategy._vel_old.copy()
+                    if hasattr(_time_strategy, "_vel_old")
+                    else None,
+                    "time_acc_old": _time_strategy._acc_old.copy()
+                    if hasattr(_time_strategy, "_acc_old")
+                    else None,
+                    "time_u_pred": _time_strategy._u_pred.copy()
+                    if hasattr(_time_strategy, "_u_pred")
+                    else None,
+                    "manager_pairs": manager.pairs[:],
+                    "manager_config": manager.config,
+                    "load_frac": load_frac,
+                    "k_pen": k_pen,
+                    "stepping_state": stepping._state if hasattr(stepping, "_state") else None,
+                    "dt_sub": dt_sub,
+                    "incr_count": _incr_count,
+                    "cutback_count": _n_cutbacks,
+                    "node_coords_ref": state.node_coords_ref.copy(),
+                }
+                # ULアセンブラの完全状態保存（自工程保証: 次工程で
+                # クリーンに開始できる状態を保証）
+                _ul_asm = None
+                if _ul and hasattr(ul_assembler, "_u_total_accum"):
+                    _ul_asm = ul_assembler
+                elif _ul and hasattr(ul_assembler, "_asm"):
+                    _ul_asm = ul_assembler._asm
+                if _ul_asm is not None:
+                    _ckpt_data["ul_u_total_accum"] = _ul_asm._u_total_accum.copy()
+                    if hasattr(_ul_asm, "coords_ref"):
+                        _ckpt_data["ul_coords_ref"] = _ul_asm.coords_ref.copy()
+                    if hasattr(_ul_asm, "R_ref"):
+                        _ckpt_data["ul_R_ref"] = _ul_asm.R_ref.copy()
+                if _ul_ref_base is not None:
+                    _ckpt_data["ul_ref_base"] = _ul_ref_base.copy()
+                if hasattr(manager, "connectivity"):
+                    _ckpt_data["connectivity"] = manager.connectivity
+                with open(_ckpt_path, "wb") as _f:
+                    _pickle.dump(_ckpt_data, _f)
+                self._ckpt_saved = True
+                print(f"  [CHECKPOINT] frac={load_frac:.4f} → {_ckpt_path} (incr={_incr_count})")
 
             # インクリメント診断生成
             _fc_norm = float(np.linalg.norm(step_result.f_c))

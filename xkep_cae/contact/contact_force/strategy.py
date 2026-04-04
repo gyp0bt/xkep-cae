@@ -191,6 +191,17 @@ def _contact_shape_vector(
     return g_shape
 
 
+def _huber_scalar(x: float, delta: float) -> float:
+    """Huber 関数（モジュールレベル版）: max(0,x) の C1 近似."""
+    if delta <= 0.0:
+        return max(0.0, x)
+    if x < -delta:
+        return 0.0
+    if x > delta:
+        return x
+    return (x + delta) ** 2 / (4.0 * delta)
+
+
 def _huber_deriv_scalar(x: float, delta: float) -> float:
     """Huber 導関数（モジュールレベル版）: C0 連続."""
     if delta <= 0.0:
@@ -430,6 +441,7 @@ class ContactForceStStiffnessInput:
     node_tangents: np.ndarray | None = None
     node_counts: np.ndarray | None = None
     adj_node_map: dict | None = None  # status-272: 隣接ノードマップ
+    penalty_exponent: float = 1.0  # status-285: Hertz型非線形ペナルティ指数
 
 
 @dataclass(frozen=True)
@@ -475,6 +487,14 @@ class ContactForceStStiffnessProcess(
             g_i = pair.state.gap
             x_p = inp.k_pen * (-g_i)
             h_d = _huber_deriv_scalar(x_p, inp.delta_h)
+            # Hertz型非線形ペナルティの導関数補正（status-285）
+            if inp.penalty_exponent != 1.0:
+                h_v = _huber_scalar(x_p, inp.delta_h)
+                pen = h_v / max(inp.k_pen, 1e-30)
+                if pen > 1e-30:
+                    h_d = inp.penalty_exponent * pen ** (inp.penalty_exponent - 1.0) * h_d
+                else:
+                    h_d = 0.0
             dofs = _contact_dofs(pair, inp.ndof_per_node)
             _add_kst_contact_to_coo(
                 pair,
@@ -543,12 +563,18 @@ class HuberContactForceProcess(
         *,
         smoothing_delta: float = 0.0,
         huber_delta_h: float = 0.0,
+        penalty_exponent: float = 1.0,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
         self._smoothing_delta = smoothing_delta
         self._huber_delta_h = huber_delta_h  # >0: delta_h直接指定（status-261）
         self._delta_h_boost: float = 1.0  # チャタリング時ブースト倍率（status-268）
+        # Hertz型非線形ペナルティ（status-285）
+        # penalty_exponent=1.0: 線形ペナルティ（従来）
+        # penalty_exponent=1.5: Hertz型（p_n ∝ δ^1.5）
+        # 接触ON/OFF境界で力が緩やかに立ち上がり、活性集合の離散的切替を平滑化。
+        self._penalty_exponent = penalty_exponent
 
     def set_delta_h_boost(self, factor: float) -> None:
         """Huber遷移幅のブースト倍率を設定（status-268: チャタリング対策）.
@@ -611,6 +637,35 @@ class HuberContactForceProcess(
             0.0,
             np.where(x > delta, 1.0, (x + delta) / (2.0 * delta)),
         )
+
+    def _apply_power_law(self, h_vals: np.ndarray, k_pen: float) -> np.ndarray:
+        """Hertz型非線形ペナルティ: p_n = h^α / k_pen^{α-1} (status-285).
+
+        h_vals = huber(k_pen * penetration, δ)  →  h/k_pen = penetration (smoothed)
+        p_n = k_pen * (h/k_pen)^α = h^α / k_pen^{α-1}
+
+        α=1.0 で線形（元の p_n = h）、α=1.5 でHertz型。
+        """
+        alpha = self._penalty_exponent
+        safe_h = np.maximum(h_vals, 0.0)
+        return safe_h**alpha / max(k_pen, 1e-30) ** (alpha - 1.0)
+
+    def _apply_power_law_deriv(
+        self, h_vals: np.ndarray, h_deriv: np.ndarray, k_pen: float
+    ) -> np.ndarray:
+        """Hertz型導関数補正: dp/dx = α * h^{α-1} / k_pen^{α-1} * h'(x) (status-285).
+
+        dp/dg = dp/dx * dx/dg = dp/dx * (-k_pen)
+        tangent計算では h_deriv に (-k_pen) が後段で掛かるため、
+        h_deriv 自体を α * (h/k_pen)^{α-1} * h'(x) に置換する。
+        """
+        alpha = self._penalty_exponent
+        safe_h = np.maximum(h_vals, 0.0)
+        # h/k_pen = smoothed penetration
+        pen = safe_h / max(k_pen, 1e-30)
+        # (α-1) 乗: penetration=0 付近で 0^{0.5} = 0（Hertz の特徴）
+        pen_pow = np.where(pen > 1e-30, pen ** (alpha - 1.0), 0.0)
+        return alpha * pen_pow * h_deriv
 
     def _extract_pair_arrays(
         self,
@@ -804,6 +859,9 @@ class HuberContactForceProcess(
         # バッチ Huber 計算
         x_pen = k_pen * (-gaps)
         p_n_all = self._huber_batch(x_pen, delta_h)
+        # Hertz型非線形ペナルティ（status-285）
+        if self._penalty_exponent != 1.0:
+            p_n_all = self._apply_power_law(p_n_all, k_pen)
         p_n_all[~has_state] = 0.0
 
         # 残差計算
@@ -929,6 +987,10 @@ class HuberContactForceProcess(
         # バッチ Huber 導関数 + p_n
         x_pen = k_pen * (-gaps)
         h_deriv_all = self._huber_deriv_batch(x_pen, delta_h)
+        # Hertz型非線形ペナルティの導関数補正（status-285）
+        if self._penalty_exponent != 1.0:
+            h_vals = self._huber_batch(x_pen, delta_h)
+            h_deriv_all = self._apply_power_law_deriv(h_vals, h_deriv_all, k_pen)
         h_deriv_all[~has_state] = 0.0
         p_n_all = np.array(
             [manager.pairs[i].state.p_n if has_state[i] else 0.0 for i in range(len(manager.pairs))]
@@ -1093,6 +1155,7 @@ class HuberContactForceProcess(
                     node_tangents=_node_tangents,
                     node_counts=_node_counts,
                     adj_node_map=_adj_node_map,
+                    penalty_exponent=self._penalty_exponent,
                 )
             ).K_st
             # K_st の COO を結合
@@ -1127,6 +1190,7 @@ def _create_contact_force_strategy(
     ndof_per_node: int = 6,
     smoothing_delta: float = 0.0,
     huber_delta_h: float = 0.0,
+    penalty_exponent: float = 1.0,
 ) -> HuberContactForceProcess:
     """接触力 Strategy ファクトリ（status-222 で一本化）."""
     return HuberContactForceProcess(
@@ -1134,4 +1198,5 @@ def _create_contact_force_strategy(
         ndof_per_node=ndof_per_node,
         smoothing_delta=smoothing_delta,
         huber_delta_h=huber_delta_h,
+        penalty_exponent=penalty_exponent,
     )

@@ -16,6 +16,8 @@ from xkep_cae.constraints.mpc_elimination import (
     MPCEliminationProcess,
     MPCEliminationResult,
     MPCGroup,
+    RebuildMPCTransformInput,
+    RebuildMPCTransformProcess,
     _build_mpc_transform,
 )
 from xkep_cae.core import binds_to
@@ -259,3 +261,55 @@ class TestMPCTransformMatrix:
         # = [0, 0, -L*10]
         # So f_red[5] (θz) = -L * 10 = -20
         npt.assert_allclose(f_red[5], -L * 10.0)
+
+
+@binds_to(RebuildMPCTransformProcess)
+class TestRebuildMPCTransformProcessAPI:
+    """RebuildMPCTransformProcess の API テスト."""
+
+    def test_process_returns_result(self) -> None:
+        """Process が MPCEliminationResult を返す."""
+        grp = MPCGroup(
+            master_node=0,
+            slave_nodes=np.array([1]),
+            slave_coords=np.array([[1.0, 0.0, 0.0]]),
+            master_coord=np.array([0.0, 0.0, 0.0]),
+        )
+        node_coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        inp = RebuildMPCTransformInput(
+            mpc_groups=[grp],
+            node_coords=node_coords,
+            ndof_total=12,
+            ndof_per_node=6,
+        )
+        result = RebuildMPCTransformProcess().process(inp)
+        assert isinstance(result, MPCEliminationResult)
+        assert result.ndof_reduced == 6
+        assert result.T.shape == (12, 6)
+
+    def test_meta_name(self) -> None:
+        """meta.name が正しい."""
+        assert RebuildMPCTransformProcess.meta.name == "RebuildMPCTransform"
+
+    def test_updated_coords_change_transform(self) -> None:
+        """変形後座標で再構築するとTが変化する."""
+        grp = MPCGroup(
+            master_node=0,
+            slave_nodes=np.array([1]),
+            slave_coords=np.array([[1.0, 0.0, 0.0]]),
+            master_coord=np.array([0.0, 0.0, 0.0]),
+        )
+        # 初期配置
+        coords_ref = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        result_ref = RebuildMPCTransformProcess().process(
+            RebuildMPCTransformInput(mpc_groups=[grp], node_coords=coords_ref, ndof_total=12)
+        )
+        # 変形後: slaveがy方向に移動
+        coords_def = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 0.0]])
+        result_def = RebuildMPCTransformProcess().process(
+            RebuildMPCTransformInput(mpc_groups=[grp], node_coords=coords_def, ndof_total=12)
+        )
+        # T行列が異なる（相対位置ベクトルが変わるため）
+        T_ref = result_ref.T.toarray()
+        T_def = result_def.T.toarray()
+        assert not np.allclose(T_ref, T_def), "変形後のTが変化すべき"

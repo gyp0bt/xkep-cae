@@ -201,3 +201,65 @@ class TestCreateContactForceStrategy:
         """huber_delta_h が smoothing_delta より優先される."""
         s = HuberContactForceProcess(ndof=24, smoothing_delta=1000.0, huber_delta_h=0.01)
         assert s._resolve_delta_h(k_pen=100.0) == 0.01
+
+
+class TestHertzPenalty:
+    """Hertz型非線形ペナルティ（status-285）のテスト."""
+
+    def test_default_exponent_is_linear(self):
+        """デフォルトで線形ペナルティ（α=1.0）."""
+        s = HuberContactForceProcess(ndof=24)
+        assert s._penalty_exponent == 1.0
+
+    def test_hertz_exponent(self):
+        """α=1.5 でHertz型."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.5)
+        assert s._penalty_exponent == 1.5
+
+    def test_power_law_identity_for_linear(self):
+        """α=1.0 で _apply_power_law は恒等変換."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.0)
+        h = np.array([0.0, 1.0, 5.0, 10.0])
+        result = s._apply_power_law(h, k_pen=100.0)
+        np.testing.assert_allclose(result, h)
+
+    def test_power_law_hertz(self):
+        """α=1.5 で p_n = h^1.5 / k_pen^0.5."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.5)
+        k_pen = 100.0
+        h = np.array([0.0, 1.0, 4.0, 100.0])
+        result = s._apply_power_law(h, k_pen)
+        expected = h**1.5 / k_pen**0.5
+        np.testing.assert_allclose(result, expected)
+
+    def test_power_law_deriv_identity_for_linear(self):
+        """α=1.0 で _apply_power_law_deriv は恒等変換."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.0)
+        h = np.array([1.0, 5.0, 10.0])
+        h_d = np.array([0.5, 0.8, 1.0])
+        result = s._apply_power_law_deriv(h, h_d, k_pen=100.0)
+        np.testing.assert_allclose(result, h_d)
+
+    def test_power_law_deriv_hertz(self):
+        """α=1.5 のHertz導関数が正しい."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.5)
+        k_pen = 100.0
+        h = np.array([4.0, 100.0])
+        h_d = np.array([1.0, 1.0])
+        result = s._apply_power_law_deriv(h, h_d, k_pen)
+        # dp/dx = α * (h/k_pen)^{α-1} * h'
+        pen = h / k_pen
+        expected = 1.5 * pen**0.5 * h_d
+        np.testing.assert_allclose(result, expected)
+
+    def test_power_law_zero_penetration(self):
+        """貫入量ゼロでは力もゼロ."""
+        s = HuberContactForceProcess(ndof=24, penalty_exponent=1.5)
+        h = np.array([0.0])
+        result = s._apply_power_law(h, k_pen=100.0)
+        np.testing.assert_allclose(result, [0.0])
+
+    def test_factory_passes_exponent(self):
+        """ファクトリ関数が penalty_exponent を渡す."""
+        s = _create_contact_force_strategy(ndof=24, penalty_exponent=1.5)
+        assert s._penalty_exponent == 1.5

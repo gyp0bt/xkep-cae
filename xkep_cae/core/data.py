@@ -37,6 +37,12 @@ class BoundaryData:
     f_ext_base: np.ndarray | None = None
     mpc_transform: object | None = None  # MPCEliminationResult（循環参照回避で object）
     mpc_groups: list | None = None  # MPCGroup リスト（UL更新時のT再構築用, status-283）
+    # 処方変位の時間関数（status-286: 揺動サイクル対応）
+    # prescribed_func(load_frac) -> ndarray[len(prescribed_dofs)]
+    # state.u[prescribed_dofs] に書き込む絶対値を返す。
+    # 設定時は prescribed_values の代わりに使用される。
+    # 未設定（None）なら従来通り (load_frac - ul_frac_base) * prescribed_values。
+    prescribed_func: Callable[[float], np.ndarray] | None = None
 
 
 @dataclass(frozen=True)
@@ -98,6 +104,7 @@ def default_strategies(
     n_gauss: int = 2,
     smoothing_delta: float = 0.0,
     huber_delta_h: float = 0.0,
+    penalty_exponent: float = 1.0,
     coating_stiffness: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
@@ -144,6 +151,7 @@ def default_strategies(
             ndof_per_node=ndof_per_node,
             smoothing_delta=smoothing_delta,
             huber_delta_h=huber_delta_h,
+            penalty_exponent=penalty_exponent,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,
@@ -204,9 +212,19 @@ class ContactFrictionInputData:
     chattering_freeze_enabled: bool = True  # 接触凍結モード有効化
     chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サ��クル数
     chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
-    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判��緩和倍率
+    chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
+    # Hertz型非線形ペナルティ（status-285）
+    penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
     # チェックポイント復元: frac途中再開（status-279）
     load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
+    # チェックポイント保存（status-286: pickle API化）
+    # checkpoint_path が非空なら、load_frac >= checkpoint_frac 到達時に pickle 保存。
+    checkpoint_path: str = ""
+    checkpoint_frac: float = 1.0  # 保存トリガーの load_frac 閾値
+    # checkpoint復元モード（status-286: 自工程保証）
+    # True にすると初期接触検出をスキップし、manager の既存 pairs をそのまま使う。
+    # checkpoint から復元した manager_pairs を信頼する。
+    skip_initial_detection: bool = False
 
     @property
     def is_dynamic(self) -> bool:
