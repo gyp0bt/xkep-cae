@@ -914,12 +914,25 @@ class StrandBendingOscillationProcess(
             _u_bend = _ckpt["state"].u.copy()
             _vel_bend = _ckpt["time_vel"]
             _acc_bend = _ckpt["time_acc"]
-            # ULアセンブラの累積変位を復元
-            if "ul_u_total_accum" in _ckpt:
+            # ULアセンブラの完全状態復元（自工程保証:
+            # coords_ref + R_ref + _u_total_accum の3点セットで参照配置を正確復元）
+            if "ul_coords_ref" in _ckpt:
+                if hasattr(assembler, "coords_ref"):
+                    assembler.coords_ref[:] = _ckpt["ul_coords_ref"]
+                if hasattr(assembler, "R_ref"):
+                    assembler.R_ref[:] = _ckpt["ul_R_ref"]
+                if hasattr(assembler, "_u_total_accum"):
+                    assembler._u_total_accum[:] = _ckpt["ul_u_total_accum"]
+                print("  [RESUME] ULアセンブラ完全復元: coords_ref + R_ref + u_accum")
+            elif "ul_u_total_accum" in _ckpt:
+                # 後方互換: coords_ref/R_ref なしの旧checkpoint
                 _u_accum = _ckpt["ul_u_total_accum"]
                 if hasattr(assembler, "_u_total_accum"):
                     assembler._u_total_accum[:] = _u_accum
-                print(f"  [RESUME] UL累積変位復元: ||u_accum||={np.linalg.norm(_u_accum):.4e}")
+                print(
+                    f"  [RESUME] UL累積変位のみ復元（旧形式）: "
+                    f"||u_accum||={np.linalg.norm(_u_accum):.4e}"
+                )
             elif hasattr(assembler, "_u_total_accum"):
                 assembler._u_total_accum[:] = _u_bend
             # 接触マネージャ状態の復元（自工程保証:

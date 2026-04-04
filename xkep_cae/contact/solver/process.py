@@ -761,12 +761,19 @@ class ContactFrictionProcess(
                     "cutback_count": _n_cutbacks,
                     "node_coords_ref": state.node_coords_ref.copy(),
                 }
+                # ULアセンブラの完全状態保存（自工程保証: 次工程で
+                # クリーンに開始できる状態を保証）
+                _ul_asm = None
                 if _ul and hasattr(ul_assembler, "_u_total_accum"):
-                    _ckpt_data["ul_u_total_accum"] = ul_assembler._u_total_accum.copy()
+                    _ul_asm = ul_assembler
                 elif _ul and hasattr(ul_assembler, "_asm"):
-                    _inner = ul_assembler._asm
-                    if hasattr(_inner, "_u_total_accum"):
-                        _ckpt_data["ul_u_total_accum"] = _inner._u_total_accum.copy()
+                    _ul_asm = ul_assembler._asm
+                if _ul_asm is not None:
+                    _ckpt_data["ul_u_total_accum"] = _ul_asm._u_total_accum.copy()
+                    if hasattr(_ul_asm, "coords_ref"):
+                        _ckpt_data["ul_coords_ref"] = _ul_asm.coords_ref.copy()
+                    if hasattr(_ul_asm, "R_ref"):
+                        _ckpt_data["ul_R_ref"] = _ul_asm.R_ref.copy()
                 if hasattr(manager, "connectivity"):
                     _ckpt_data["connectivity"] = manager.connectivity
                 with open(_ckpt_path, "wb") as _f:
