@@ -40,11 +40,13 @@ def _make_two_segment_scenario(
     penalty_exponent: float = 1.0,
     k_pen: float = 1e4,
     n_elems: int = 1,
+    helical_z: bool = False,
 ) -> dict:
     """2本の近接平行セグメント接触シナリオを構築.
 
     n_elems=1: node 0-1 (segA), node 2-3 (segB) → 4ノード
     n_elems=3: チェーン構造 0-1-2-3 (wireA), 4-5-6-7 (wireB) → 8ノード
+    helical_z=True: 3Dヘリカル配置（z方向オフセット付き、status-292）
     """
     if n_elems == 1:
         # 2本の平行セグメント（y方向に近接）
@@ -82,6 +84,37 @@ def _make_two_segment_scenario(
         connectivity = np.array([[0, 1], [1, 2], [2, 3], [4, 5], [5, 6], [6, 7]])
         # 中央要素ペア
         elem_pairs = [(1, 4)]  # elem 1 (nodes 1,2), elem 4 (nodes 5,6)
+
+    # 3Dヘリカル配置（status-292: z方向DOFカップリング検証用）
+    # 4ノード（n_elems=1）で法線にz成分を持つ交差配置:
+    # セグメントAはx方向、セグメントBもx方向だがz方向にオフセット
+    # これにより法線ベクトルにy,z成分が生じる
+    if helical_z and n_elems == 1:
+        r = 0.05
+        # スキュー配置: segAはx方向（長い）、segBは短く中央寄りに配置
+        # segBにy,z方向オフセット → 法線にy,z成分
+        # 最近接点: s≈0.3（内部）、t=0（端部）
+        dy = 0.06  # y方向分離
+        dz = 0.04  # z方向オフセット
+        node_coords = np.array(
+            [
+                [0.0, 0.0, 0.0],  # 0: segA start
+                [1.0, 0.0, 0.0],  # 1: segA end
+                [0.3, dy, dz],  # 2: segB start
+                [0.7, dy + 0.1, dz],  # 3: segB end（わずかに傾斜）
+            ]
+        )
+        connectivity = np.array([[0, 1], [2, 3]])
+        elem_pairs = [(0, 1)]
+    elif helical_z and n_elems >= 3:
+        # Hermite 3要素チェーン + z方向傾き
+        half = n_nodes // 2
+        for i in range(half):
+            x = node_coords[i, 0]
+            node_coords[i, 2] += x * 0.003
+        for i in range(half, n_nodes):
+            x = node_coords[i, 0]
+            node_coords[i, 2] -= x * 0.003
 
     ndof_per_node = 6
     ndof = n_nodes * ndof_per_node
@@ -307,12 +340,14 @@ class TestKcComponentFD:
         eps: float = 1e-7,
         atol: float = 1e-4,
         rtol: float = 0.1,
+        helical_z: bool = False,
     ) -> dict:
         """FD検証を実行して結果を返す."""
         scenario = _make_two_segment_scenario(
             use_hermite=use_hermite,
             penalty_exponent=penalty_exponent,
             n_elems=n_elems,
+            helical_z=helical_z,
         )
 
         # 関連DOFのみ（並進DOFのみ、計算時間削減）
@@ -441,6 +476,72 @@ class TestKcComponentFD:
 
         if result["rel_err"] > 0.1:
             self._report_component_breakdown(result)
+
+    def test_helical_3d_hermite(self):
+        """3Dヘリカル配置 + Hermiteでの K_c FD検証（status-292: z方向DOFカップリング）.
+
+        status-289でz方向不整合が発見された。ヘリカル配置で法線にz成分があるとき
+        K_stがz方向DOFへのカップリングを正しく含んでいるかを検証する。
+        """
+        result = self._run_fd_verification(
+            use_hermite=True,
+            penalty_exponent=1.5,
+            n_elems=3,
+            helical_z=True,
+        )
+        print("\n=== 3Dヘリカル + Hermite + Hertz ===")
+        print(f"  ||K_mat|| = {result['K_mat_norm']:.4e}")
+        print(f"  ||K_geo|| = {result['K_geo_norm']:.4e}")
+        print(f"  ||K_st||  = {result['K_st_norm']:.4e}")
+        print(f"  ||K_c||   = {result['K_c_analytical_norm']:.4e}")
+        print(f"  ||FD_Kc|| = {result['K_c_fd_norm']:.4e}")
+        print(f"  ||diff||  = {result['diff_norm']:.4e}")
+        print(f"  rel_err   = {result['rel_err']:.4e}")
+
+        # z方向不整合の分析
+        self._report_z_direction_analysis(result)
+
+        if result["rel_err"] > 0.1:
+            self._report_component_breakdown(result)
+
+    def test_helical_3d_linear(self):
+        """3Dヘリカル配置 + 線形での K_c FD検証（z方向ベースライン）."""
+        result = self._run_fd_verification(
+            use_hermite=False,
+            penalty_exponent=1.5,
+            n_elems=1,
+            helical_z=True,
+        )
+        print("\n=== 3Dヘリカル + 線形 + Hertz ===")
+        print(f"  ||K_mat|| = {result['K_mat_norm']:.4e}")
+        print(f"  ||K_geo|| = {result['K_geo_norm']:.4e}")
+        print(f"  ||K_st||  = {result['K_st_norm']:.4e}")
+        print(f"  ||K_c||   = {result['K_c_analytical_norm']:.4e}")
+        print(f"  ||FD_Kc|| = {result['K_c_fd_norm']:.4e}")
+        print(f"  ||diff||  = {result['diff_norm']:.4e}")
+        print(f"  rel_err   = {result['rel_err']:.4e}")
+
+        if result["rel_err"] > 0.1:
+            self._report_component_breakdown(result)
+
+    def _report_z_direction_analysis(self, result: dict) -> None:
+        """z方向DOFの不整合を特定分析（status-292）."""
+        diff_dense = (result["K_c_analytical"] - result["fd_kc"]).toarray()
+        ndpn = 6
+        n_nodes = diff_dense.shape[0] // ndpn
+
+        # comp別の不整合ノルム
+        comp_names = ["x", "y", "z", "θx", "θy", "θz"]
+        comp_errs = np.zeros(6)
+        for c in range(6):
+            dofs_c = [nd * ndpn + c for nd in range(n_nodes)]
+            comp_errs[c] = np.linalg.norm(diff_dense[dofs_c, :])
+
+        total_err = np.linalg.norm(diff_dense)
+        print("  --- comp別不整合ノルム ---")
+        for c in range(6):
+            pct = comp_errs[c] / max(total_err, 1e-30) * 100
+            print(f"    {comp_names[c]:>3}: {comp_errs[c]:.4e} ({pct:.1f}%)")
 
     def test_component_magnitudes(self):
         """全構成のコンポーネント割合を一覧出力（診断用）."""
