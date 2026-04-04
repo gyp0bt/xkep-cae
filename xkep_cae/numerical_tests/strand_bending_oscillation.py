@@ -968,14 +968,12 @@ class StrandBendingOscillationProcess(
             _n_osc = cfg.n_oscillation_cycles
             _theta_max = bending_angle
 
-            # prescribed_func(frac, frac_base) はUL参照配置からの増分を返す。
-            # UL法では各increment成功後に update_reference() が呼ばれ、
-            # state.u ≈ 0 にリセットされる。frac_base はUL更新時のfrac。
-            # 増分 = θ(frac) - θ(frac_base) を返せばよい。
-            def _oscillation_func(frac: float, frac_base: float) -> np.ndarray:
-                theta_now = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
-                theta_base = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac_base)
-                return np.full(len(prescribed_dofs_arr), theta_now - theta_base)
+            # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む絶対値。
+            # state.u は初期配置からの全変位を保持（UL更新してもリセットされない）。
+            # frac=0 → θ=θ_max（曲げ完了維持）、cos(2π*frac) で揺動。
+            def _oscillation_func(frac: float) -> np.ndarray:
+                theta = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
+                return np.full(len(prescribed_dofs_arr), theta)
 
             # 揺動フェーズの時間パラメータ
             t_osc = t_cycle * cfg.n_oscillation_cycles

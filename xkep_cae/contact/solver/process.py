@@ -472,8 +472,8 @@ class ContactFrictionProcess(
             # 処方変位
             if has_prescribed:
                 if _prescribed_func is not None:
-                    # prescribed_func(frac, frac_base) はUL参照からの増分を返す
-                    state.u[_prescribed_dofs] = _prescribed_func(load_frac, state.ul_frac_base)
+                    # prescribed_func(frac) は state.u に書き込む絶対値を返す
+                    state.u[_prescribed_dofs] = _prescribed_func(load_frac)
                 else:
                     state.u[_prescribed_dofs] = (
                         load_frac - state.ul_frac_base
