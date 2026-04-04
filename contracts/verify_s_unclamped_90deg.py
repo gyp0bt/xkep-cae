@@ -46,7 +46,7 @@ def run_90deg_bending():
         tol_force=1e-8,
         max_increments=10000,
         exclude_same_strand=True,
-        free_end_mode=False,  # MPC
+        free_end_mode=True,  # status-285と同一（MPC不使用、直接処方変位）
         contact_enabled=True,
         penalty_exponent=1.5,  # Hertz型
     )
