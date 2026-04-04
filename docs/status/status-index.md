@@ -119,6 +119,7 @@
 | [283](status-283.md) | 2026-04-03 | MPC変換行列T動的再構築 — MPC接触なし90度曲げ完走 | 606 passed |
 | [284](status-284.md) | 2026-04-03 | チャタリング検知→接触凍結モード — frac 0.40→0.70改善 | 606 passed |
 | [285](status-285.md) | 2026-04-03 | C16修正 + Hertz型非線形ペナルティ — frac 0.70→0.998 | 621 passed |
+| [286](status-286.md) | 2026-04-04 | 揺動サイクル基盤 — prescribed_func + checkpoint自工程保証 | 621 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
