@@ -263,3 +263,121 @@ class TestHertzPenalty:
         """ファクトリ関数が penalty_exponent を渡す."""
         s = _create_contact_force_strategy(ndof=24, penalty_exponent=1.5)
         assert s._penalty_exponent == 1.5
+
+
+class TestHertzTangentFD:
+    """Hertz型ペナルティの接線剛性FD検証（status-289）.
+
+    K_c の解析的接線と有限差分を比較し、∂p/∂g 導関数の整合性を検証する。
+    """
+
+    def test_hertz_tangent_w_mat_consistency(self):
+        """Hertz型 w_mat = h_deriv_modified * k_pen がスカラーFDと一致するか検証.
+
+        K_matの重み w_mat は dp_n/dg（符号反転済み）に相当する。
+        スカラーFDで求めた dp_n/dg と比較し、行列アセンブリ以前の段階で
+        不整合がないか確認する。
+        """
+        k_pen = 1e4
+        for alpha in [1.0, 1.5]:
+            proc = HuberContactForceProcess(ndof=24, penalty_exponent=alpha)
+            delta_h = 0.0
+            for gap in [-0.1, -0.05, -0.01]:
+                x = k_pen * (-gap)
+                h_der = proc._huber_deriv(x, delta_h)
+                if alpha != 1.0:
+                    h_val = proc._huber(x, delta_h)
+                    h_arr = np.array([h_val])
+                    h_d_arr = np.array([h_der])
+                    h_der = float(proc._apply_power_law_deriv(h_arr, h_d_arr, k_pen)[0])
+                w_mat = h_der * k_pen  # = dp_n/d(penetration)
+
+                # FD: dp_n/d(penetration)
+                eps = 1e-7
+                pen_base = -gap
+                pen_pert = pen_base + eps
+                x_base = k_pen * pen_base
+                x_pert = k_pen * pen_pert
+                p_base = proc._huber(x_base, delta_h)
+                p_pert = proc._huber(x_pert, delta_h)
+                if alpha != 1.0:
+                    p_base = p_base**alpha / k_pen ** (alpha - 1.0)
+                    p_pert = p_pert**alpha / k_pen ** (alpha - 1.0)
+                dpn_dpen_fd = (p_pert - p_base) / eps
+
+                rel_err = abs(w_mat - dpn_dpen_fd) / max(abs(dpn_dpen_fd), 1e-30)
+                assert rel_err < 1e-4, (
+                    f"w_mat FD不整合: α={alpha}, gap={gap}, "
+                    f"w_mat={w_mat:.6e}, FD={dpn_dpen_fd:.6e}, rel_err={rel_err:.3e}"
+                )
+
+    def test_hertz_scalar_dpn_dg_fd(self):
+        """Hertz型 dp_n/dg のスカラーFD検証.
+
+        p_n(g) = [huber(k_pen * (-g), δ)]^α / k_pen^{α-1}
+        dp_n/dg = (p_n(g+eps) - p_n(g)) / eps（FD）
+        vs 解析的: -α * (h/k_pen)^{α-1} * h'(x) * k_pen
+        """
+        k_pen = 1e4
+        alpha = 1.5
+        delta_h = 0.0
+        proc = HuberContactForceProcess(ndof=24, penalty_exponent=alpha)
+
+        for gap in [-0.1, -0.05, -0.01, -0.001]:
+            x = k_pen * (-gap)
+            h_val = proc._huber(x, delta_h)
+            h_der = proc._huber_deriv(x, delta_h)
+            # 解析的 dp_n/dg
+            pen = h_val / k_pen
+            if pen > 1e-30:
+                dpn_dx_analytical = alpha * pen ** (alpha - 1.0) * h_der
+            else:
+                dpn_dx_analytical = 0.0
+            dpn_dg_analytical = dpn_dx_analytical * (-k_pen)
+
+            # FD
+            eps = 1e-7
+            x_pert = k_pen * (-(gap + eps))
+            h_val_pert = proc._huber(x_pert, delta_h)
+            p_n_base = h_val**alpha / k_pen ** (alpha - 1.0)
+            p_n_pert = h_val_pert**alpha / k_pen ** (alpha - 1.0)
+            dpn_dg_fd = (p_n_pert - p_n_base) / eps
+
+            rel_err = abs(dpn_dg_analytical - dpn_dg_fd) / max(abs(dpn_dg_fd), 1e-30)
+            assert rel_err < 1e-4, (
+                f"Hertz dp_n/dg FD不整合 at gap={gap}: "
+                f"analytical={dpn_dg_analytical:.6e}, FD={dpn_dg_fd:.6e}, "
+                f"rel_err={rel_err:.3e}"
+            )
+
+    def test_hertz_scalar_dpn_dg_fd_with_delta_h(self):
+        """Hertz型 dp_n/dg のスカラーFD検証（delta_h > 0）."""
+        k_pen = 1e4
+        alpha = 1.5
+        delta_h = 10.0  # Huber遷移幅
+        proc = HuberContactForceProcess(ndof=24, penalty_exponent=alpha)
+
+        for gap in [-0.1, -0.05, -0.01, -0.001, -1e-4]:
+            x = k_pen * (-gap)
+            h_val = proc._huber(x, delta_h)
+            h_der = proc._huber_deriv(x, delta_h)
+            pen = h_val / k_pen
+            if pen > 1e-30:
+                dpn_dx_analytical = alpha * pen ** (alpha - 1.0) * h_der
+            else:
+                dpn_dx_analytical = 0.0
+            dpn_dg_analytical = dpn_dx_analytical * (-k_pen)
+
+            eps = 1e-7
+            x_pert = k_pen * (-(gap + eps))
+            h_val_pert = proc._huber(x_pert, delta_h)
+            p_n_base = h_val**alpha / k_pen ** (alpha - 1.0)
+            p_n_pert = h_val_pert**alpha / k_pen ** (alpha - 1.0)
+            dpn_dg_fd = (p_n_pert - p_n_base) / eps
+
+            rel_err = abs(dpn_dg_analytical - dpn_dg_fd) / max(abs(dpn_dg_fd), 1e-30)
+            assert rel_err < 1e-3, (
+                f"Hertz dp_n/dg FD不整合(δ_h={delta_h}) at gap={gap}: "
+                f"analytical={dpn_dg_analytical:.6e}, FD={dpn_dg_fd:.6e}, "
+                f"rel_err={rel_err:.3e}"
+            )
