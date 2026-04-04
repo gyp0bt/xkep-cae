@@ -112,6 +112,8 @@ class ConvergenceDiagnosticsOutput:
     n_attempts: int = 0
     # NR反復レベル詳細スナップショット（チャタリング内訳分析用, status-287）
     nr_iteration_snapshots: list[NRIterationSnapshot] = field(default_factory=list)
+    # Type D FD診断結果サマリ（status-288）
+    type_d_fd_reports: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -204,6 +206,34 @@ def _format_diagnostics_report(diag: ConvergenceDiagnosticsOutput, max_attempts:
                 )
             if len(active_pairs) > 10:
                 lines.append(f"    ... and {len(active_pairs) - 10} more")
+
+    # NR反復レベルのチャタリングタイプ分布（status-288）
+    if diag.nr_iteration_snapshots:
+        _snaps = diag.nr_iteration_snapshots
+        _type_counts: dict[str, int] = {}
+        for _snap in _snaps:
+            _t = classify_chattering_type(_snap)
+            _type_counts[_t] = _type_counts.get(_t, 0) + 1
+        _total = len(_snaps)
+        _type_str = ", ".join(
+            f"{k}:{v}({100.0 * v / _total:.0f}%)" for k, v in sorted(_type_counts.items())
+        )
+        lines.append(f"  NR Type distribution ({_total} iterations): [{_type_str}]")
+        # 直近10反復の内訳
+        _recent = _snaps[-10:]
+        _rc: dict[str, int] = {}
+        for _snap in _recent:
+            _t = classify_chattering_type(_snap)
+            _rc[_t] = _rc.get(_t, 0) + 1
+        _rc_str = ", ".join(f"{k}:{v}" for k, v in sorted(_rc.items()))
+        _last = _snaps[-1]
+        lines.append(f"  Last 10 iterations: [{_rc_str}]")
+        lines.append(
+            f"  Last snapshot: R_c={_last.contact_res_norm:.2e}, "
+            f"R_s={_last.structural_res_norm:.2e}, "
+            f"rate={_last.convergence_rate:.3f}, "
+            f"active={_last.n_active}, sliding={_last.n_sliding}"
+        )
 
     lines.append("=" * 60)
     return "\n".join(lines)

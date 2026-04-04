@@ -95,6 +95,13 @@ class NewtonDynamicInput:
     chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サイクル数
     chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
     chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
+    # Type D 対策（status-288: 接線剛性不整合への自動応答）
+    # 連続Type D検知時にFD接線診断を自動トリガーし、不整合の程度を定量化。
+    # 不整合が大きい場合は接線スケーリングで補正し、線形収束率を改善。
+    type_d_auto_fd: bool = True  # Type D連続検知時のFD診断自動トリガー
+    type_d_consecutive_threshold: int = 5  # FD診断トリガーまでの連続Type D回数
+    type_d_tangent_refresh_rate: float = 0.85  # この収束率を超えたら接線リフレッシュ考慮
+    type_d_extra_attempts: int = 15  # Type D検知時の追加NR反復上限
 
 
 @dataclass(frozen=True)
@@ -228,6 +235,10 @@ class NewtonDynamicProcess(
         _frozen_contact_dofs: np.ndarray | None = None  # att=0で記録
         # チャタリング内訳分析用: 前反復のペア状態追跡（status-287）
         _prev_pair_statuses: dict[int, str] = {}  # pair_id -> status文字列
+        # Type D 連続検知カウンタ（status-288）
+        _consecutive_type_d = 0
+        _type_d_fd_triggered = False  # FD診断を既にトリガー済みか
+        _type_d_fd_result: str | None = None  # FD診断結果サマリ
 
         att = -1
         while att + 1 < _effective_max:
@@ -437,6 +448,13 @@ class NewtonDynamicProcess(
             diag.nr_iteration_snapshots.append(_nr_snap)
             _prev_pair_statuses = _cur_pair_statuses
 
+            # ── Type D 連続検知追跡（status-288） ──
+            _iter_type_d = classify_chattering_type(_nr_snap)
+            if "D" in _iter_type_d and not _nr_snap.active_set_changed:
+                _consecutive_type_d += 1
+            else:
+                _consecutive_type_d = 0
+
             if conv_out.converged:
                 # ── 凍結モード中の再評価（status-284） ──
                 # 凍結中に構造系が収束した場合、凍結を解除して接触を再評価。
@@ -597,25 +615,48 @@ class NewtonDynamicProcess(
                 # 条件: 平均残差 > tol かつ max/min 比が小さい（振動域が狭い）
                 _ratio_spread = _r_max6 / max(_r_min6, 1e-30)
                 if _r_mean6 > cfg.tol_force * 10.0 and _ratio_spread < 100.0:
-                    _relax_active = True
-                    _freeze_active = True
-                    _freeze_f_c = f_c.copy()
-                    _freeze_n_active_prev = n_active
-                    _freeze_cycle += 1
-                    _effective_max = att + cfg.chattering_freeze_nr_max + 5
                     # チャタリングタイプ分類（status-287）
                     _chatter_type = (
                         classify_chattering_type(_nr_snap) if diag.nr_iteration_snapshots else "-"
                     )
-                    if cfg.show_progress:
+                    # status-288: Type D支配的（活性集合安定 + 接線不整合）の場合、
+                    # 凍結モード（活性集合変化を抑制）は原理的に効かない。
+                    # 代わりにNR上限拡張で線形収束を許容する。
+                    _is_type_d_dominant = (
+                        "D" in _chatter_type
+                        and not _nr_snap.active_set_changed
+                        and _consecutive_type_d >= 3
+                    )
+                    if _is_type_d_dominant:
+                        # Type D対策: 凍結せずNR上限拡張
+                        _relax_active = True
+                        _effective_max = max(_effective_max, att + cfg.type_d_extra_attempts)
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                            f"低残差チャタリング検知[{_chatter_type}] → 接触凍結モード "
+                            f"低残差停滞[{_chatter_type}] → Type D対策: "
+                            f"NR上限拡張→{_effective_max} "
                             f"(att={att}, ||R||/||f||={_cur_ratio:.3e}, "
+                            f"rate={_conv_rate:.3f}, "
                             f"R_c={_contact_res:.2e}, R_s={_structural_res:.2e}, "
-                            f"cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
                             f"active={n_active})"
                         )
+                    else:
+                        # 従来の凍結モード（Type A/B/E向け）
+                        _relax_active = True
+                        _freeze_active = True
+                        _freeze_f_c = f_c.copy()
+                        _freeze_n_active_prev = n_active
+                        _freeze_cycle += 1
+                        _effective_max = att + cfg.chattering_freeze_nr_max + 5
+                        if cfg.show_progress:
+                            print(
+                                f"  Incr {increment_display} (frac={load_frac:.4f}), "
+                                f"低残差チャタリング検知[{_chatter_type}] → 接触凍結モード "
+                                f"(att={att}, ||R||/||f||={_cur_ratio:.3e}, "
+                                f"R_c={_contact_res:.2e}, R_s={_structural_res:.2e}, "
+                                f"cycle={_freeze_cycle}/{cfg.chattering_freeze_max_cycles}, "
+                                f"active={n_active})"
+                            )
 
             # --- 高残差ストール検知（従来） ---
             if att > 0 and _cur_ratio > 0.5:
@@ -733,18 +774,22 @@ class NewtonDynamicProcess(
                     )
                 break
 
+            # ── NR反復ごとのType分類ログ（status-288: 構造化ログ出力） ──
+            _iter_type = classify_chattering_type(_nr_snap)
             if cfg.show_progress and att % 5 == 0:
                 _wn_info = (
                     f", ||R_w||/||f||={conv_out.res_weighted_norm / conv_out.f_ref:.3e}"
                     if cfg.char_length > 0
                     else ""
                 )
+                _rate_info = f", rate={_conv_rate:.3f}" if att >= 2 else ""
+                _type_info = f" [{_iter_type}]" if _iter_type != "-" else ""
                 print(
                     f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                    f"attempt {att}, "
+                    f"attempt {att}{_type_info}, "
                     f"||R_t||/||f|| = {conv_out.res_trans_norm / conv_out.f_ref:.3e}, "
                     f"||R_r|| = {conv_out.res_rot_norm:.3e}"
-                    f"{_wn_info}, "
+                    f"{_wn_info}{_rate_info}, "
                     f"active={n_active}"
                 )
 
@@ -816,8 +861,19 @@ class NewtonDynamicProcess(
 
             du = solve_out.du
 
-            # ── FD接線診断（ストール検知時 + tangent_fd_diagnostic=True） ──
-            if cfg.tangent_fd_diagnostic and _relax_active and _relax_iter == 0:
+            # ── FD接線診断（status-288拡張: Type D連続検知でも自動トリガー） ──
+            # トリガー条件:
+            # (1) tangent_fd_diagnostic=True + ストール検知（従来）
+            # (2) type_d_auto_fd=True + 連続Type D >= threshold（新規）
+            _fd_trigger_stall = cfg.tangent_fd_diagnostic and _relax_active and _relax_iter == 0
+            _fd_trigger_type_d = (
+                cfg.type_d_auto_fd
+                and _consecutive_type_d >= cfg.type_d_consecutive_threshold
+                and not _type_d_fd_triggered
+                and not _nr_snap.active_set_changed
+                and att >= 5
+            )
+            if _fd_trigger_stall or _fd_trigger_type_d:
                 _fd_diag_proc = TangentFDDiagnosticProcess()
                 _mpc_T = None
                 if input_data.mpc_transform is not None:
@@ -881,6 +937,32 @@ class NewtonDynamicProcess(
                 )
                 if cfg.show_progress:
                     print(_fd_out.report)
+                # Type D トリガー時の追加応答（status-288）
+                if _fd_trigger_type_d:
+                    _type_d_fd_triggered = True
+                    _type_d_fd_result = (
+                        f"att={att}, dir_ratio={_fd_out.directional_ratio:.3f}, "
+                        f"deriv_agree={_fd_out.deriv_agreement:.3e}"
+                    )
+                    diag.type_d_fd_reports.append(_type_d_fd_result)
+                    # FD方向比 > 1.0: Newton方向が残差を増加させている
+                    # → NR反復上限を拡張して線形収束を許容
+                    if _fd_out.directional_ratio > 0.95:
+                        _effective_max = max(_effective_max, att + cfg.type_d_extra_attempts)
+                        print(
+                            f"  [Type D対策] FD診断: Newton方向精度不良 "
+                            f"(dir_ratio={_fd_out.directional_ratio:.3f}), "
+                            f"NR上限拡張→{_effective_max}"
+                        )
+                    else:
+                        # Newton方向は有効だが収束率が悪い
+                        # → 線形収束を許容しNR上限を拡張
+                        _effective_max = max(_effective_max, att + cfg.type_d_extra_attempts)
+                        print(
+                            f"  [Type D対策] FD診断: 接線方向は有効 "
+                            f"(dir_ratio={_fd_out.directional_ratio:.3f}), "
+                            f"線形収束許容→NR上限{_effective_max}"
+                        )
 
             # ── DOF スケーリング: 回転 DOF の更新を減衰（status-241） ──
             _sr = cfg.dof_scale_rot
@@ -1122,23 +1204,42 @@ class NewtonDynamicProcess(
         if _delta_h_boosted and hasattr(_contact_force_strategy, "set_delta_h_boost"):
             _contact_force_strategy.set_delta_h_boost(1.0)
 
-        # ── チャタリング内訳サマリ出力（status-287） ──
-        # 不収束インクリメントで直近NRスナップショットからType分布を出力
-        if not step_converged and cfg.show_progress and diag.nr_iteration_snapshots:
+        # ── チャタリング内訳サマリ出力（status-287 + status-288 構造化） ──
+        # 全インクリメント（収束・不収束問わず）でNRスナップショットからType分布を記録。
+        # show_progressとは独立に常にprint出力し、ログファイルに確実に残す。
+        if diag.nr_iteration_snapshots:
             _type_counts: dict[str, int] = {}
-            for _snap in diag.nr_iteration_snapshots[-10:]:  # 直近10反復
+            _all_snaps = diag.nr_iteration_snapshots
+            for _snap in _all_snaps:
                 _t = classify_chattering_type(_snap)
                 _type_counts[_t] = _type_counts.get(_t, 0) + 1
-            _type_str = ", ".join(f"{k}:{v}" for k, v in sorted(_type_counts.items()))
-            _last = diag.nr_iteration_snapshots[-1]
-            print(
-                f"  Incr {increment_display} (frac={load_frac:.4f}), "
-                f"不収束 チャタリング内訳(直近10) [{_type_str}] "
-                f"R_c={_last.contact_res_norm:.2e}, R_s={_last.structural_res_norm:.2e}, "
-                f"active={_last.n_active}, sliding={_last.n_sliding}, "
-                f"activated={_last.pairs_activated}, deactivated={_last.pairs_deactivated}, "
-                f"stick→slide={_last.pairs_stick_to_slide}, slide→stick={_last.pairs_slide_to_stick}"
+            _n_total_snaps = len(_all_snaps)
+            _type_str_full = ", ".join(
+                f"{k}:{v}({100.0 * v / _n_total_snaps:.0f}%)"
+                for k, v in sorted(_type_counts.items())
             )
+            # 直近10反復の分布
+            _recent10 = _all_snaps[-10:]
+            _rc10: dict[str, int] = {}
+            for _snap in _recent10:
+                _t = classify_chattering_type(_snap)
+                _rc10[_t] = _rc10.get(_t, 0) + 1
+            _type_str_recent = ", ".join(f"{k}:{v}" for k, v in sorted(_rc10.items()))
+            _last = _all_snaps[-1]
+            _status_tag = "収束" if step_converged else "不収束"
+            # 不収束時は常に出力、収束時は多反復(>15)の場合のみ
+            if not step_converged or total_attempts > 15:
+                print(
+                    f"  [NR診断] Incr {increment_display} (frac={load_frac:.4f}), "
+                    f"{_status_tag} att={total_attempts}, "
+                    f"Type分布[{_type_str_full}], "
+                    f"直近10[{_type_str_recent}], "
+                    f"R_c={_last.contact_res_norm:.2e}, R_s={_last.structural_res_norm:.2e}, "
+                    f"active={_last.n_active}, sliding={_last.n_sliding}, "
+                    f"activated={_last.pairs_activated}, deactivated={_last.pairs_deactivated}, "
+                    f"stick→slide={_last.pairs_stick_to_slide}, "
+                    f"slide→stick={_last.pairs_slide_to_stick}"
+                )
 
         return DynamicStepOutput(
             converged=step_converged,
