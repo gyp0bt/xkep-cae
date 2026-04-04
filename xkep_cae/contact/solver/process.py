@@ -273,7 +273,9 @@ class ContactFrictionProcess(
         # 全累積変位からの接線剛性精度が低下する。
         # update_reference()で参照配置を更新し、各ステップの増分変位を
         # 小さく保つことで二次収束を維持する。
-        _ul_ref_base = np.zeros(ndof) if _ul else None  # 参照配置更新基準変位
+        # checkpoint復元時は u0 を���準にする（初回UL更新で増分=0を保証）
+        _is_resume = getattr(input_data, "skip_initial_detection", False)
+        _ul_ref_base = u0.copy() if (_ul and _is_resume) else (np.zeros(ndof) if _ul else None)
         _ul_ref_base_ckpt: np.ndarray | None = None  # チェックポイント用
 
         def _ul_tangent_wrapper(u_total: np.ndarray) -> object:
@@ -774,6 +776,8 @@ class ContactFrictionProcess(
                         _ckpt_data["ul_coords_ref"] = _ul_asm.coords_ref.copy()
                     if hasattr(_ul_asm, "R_ref"):
                         _ckpt_data["ul_R_ref"] = _ul_asm.R_ref.copy()
+                if _ul_ref_base is not None:
+                    _ckpt_data["ul_ref_base"] = _ul_ref_base.copy()
                 if hasattr(manager, "connectivity"):
                     _ckpt_data["connectivity"] = manager.connectivity
                 with open(_ckpt_path, "wb") as _f:

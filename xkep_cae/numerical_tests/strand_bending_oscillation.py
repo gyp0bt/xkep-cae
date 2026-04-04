@@ -1002,18 +1002,19 @@ class StrandBendingOscillationProcess(
             _n_osc = cfg.n_oscillation_cycles
             _theta_max = bending_angle
 
-            # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む絶対値。
-            # state.u は初期配置からの全変位を保持（UL更新してもリセットされない）。
-            # 自工程保証: frac=0 は checkpoint 保存時点の状態と一致すべき。
-            # _u_bend[θ_dof] が実際の曲げ角度（checkpointのfrac < 1.0 の可能性あり）。
+            # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む値。
+            # 自工程保証: checkpoint復元後、state.u はcoords_refからの増分（≈0）。
+            # prescribed_func は coords_ref 基準の増分角度を返す。
+            # frac=0 → Δθ=0（checkpoint状態維持）
+            # frac=0.25/n → Δθ=-θ_ckpt（直線復元）
+            # frac=0.5/n → Δθ=-2θ_ckpt（逆曲げ）
             _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
-            _theta_amplitude = _theta_at_ckpt  # 揺動振幅 = checkpoint時の角度
+            _theta_amplitude = _theta_at_ckpt
 
             def _oscillation_func(frac: float) -> np.ndarray:
-                # frac=0: cos(0)=1 → θ=_theta_at_ckpt（checkpoint状態を維持）
-                # frac=0.5/n: cos(π)=-1 → θ=-_theta_at_ckpt（逆曲げ）
-                theta = _theta_amplitude * math.cos(2.0 * math.pi * _n_osc * frac)
-                return np.full(len(prescribed_dofs_arr), theta)
+                # cos(0)=1 → Δθ=0, cos(π)=-1 → Δθ=-2θ_ckpt
+                delta_theta = _theta_amplitude * (math.cos(2.0 * math.pi * _n_osc * frac) - 1.0)
+                return np.full(len(prescribed_dofs_arr), delta_theta)
 
             # 揺動フェーズの時間パラメータ
             t_osc = t_cycle * cfg.n_oscillation_cycles
@@ -1032,7 +1033,12 @@ class StrandBendingOscillationProcess(
                 boundary=boundary_osc,
                 contact=contact_setup,
                 callbacks=_callbacks,
-                u0=_u_bend,
+                # u0 は復元した coords_ref からの増分変位。
+                # checkpoint保存はUL更新直後なので state.u ≈ ul_ref_base。
+                # 増分 = state.u - ul_ref_base ≈ 0。
+                u0=_u_bend - _ckpt.get("ul_ref_base", _u_bend)
+                if cfg.resume_checkpoint
+                else _u_bend,
                 mass_matrix=M,
                 dt_physical=t_osc,
                 rho_inf=cfg.rho_inf,
