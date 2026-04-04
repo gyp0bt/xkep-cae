@@ -945,6 +945,37 @@ class NewtonDynamicProcess(
                     np.array(sorted(_active_dofs_set), dtype=int) if _active_dofs_set else None
                 )
 
+                # compute_contact_force クロージャ: f_c のみを返す（status-290）
+                def _compute_fc_at(u_eval: np.ndarray) -> np.ndarray:
+                    _fc_out = _force_proc.process(
+                        ContactForceAssemblyInput(
+                            u=u_eval,
+                            f_ext=f_ext,
+                            fixed_dofs=input_data.fixed_dofs,
+                            manager=manager,
+                            node_coords_ref=input_data.node_coords_ref,
+                            contact_force_strategy=_contact_force_strategy,
+                            friction_strategy=_friction_strategy,
+                            coating_strategy=_coating_strategy,
+                            k_pen=k_pen,
+                            mu=mu,
+                            u_ref=u_ref,
+                            load_frac=load_frac,
+                            load_frac_prev=load_frac_prev,
+                            increment_display=increment_display,
+                            ndof_per_node=cfg.ndof_per_node,
+                            use_coating=input_data.use_coating,
+                            assemble_internal_force=input_data.assemble_internal_force,
+                            connectivity=input_data.connectivity,
+                        )
+                    )
+                    return _fc_out.f_c
+
+                # K_c 取得: tangent_out から接触接線のみ抽出
+                _K_c = tangent_out.K_T - input_data.assemble_tangent(u)
+                # 動的項はK_Tに含まれるがK_cには不要 → K_T - K_struct で近似
+                # （K_frictionやK_coatingも含まれるが主要成分はK_c）
+
                 _fd_out = _fd_diag_proc.process(
                     TangentFDDiagnosticInput(
                         u=u,
@@ -955,6 +986,8 @@ class NewtonDynamicProcess(
                         fixed_dofs=input_data.fixed_dofs,
                         compute_residual=_compute_residual_at,
                         active_contact_dofs=_active_dofs_arr,
+                        compute_contact_force=_compute_fc_at,
+                        K_c=_K_c,
                     )
                 )
                 if cfg.show_progress:
