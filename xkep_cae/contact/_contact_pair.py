@@ -253,6 +253,8 @@ def _copy_state(state: _ContactStateOutput) -> _ContactStateOutput:
         gp_z_t=[z.copy() for z in state.gp_z_t] if state.gp_z_t is not None else None,
         gp_stick=list(state.gp_stick) if state.gp_stick is not None else None,
         gp_q_trial_norm=list(state.gp_q_trial_norm) if state.gp_q_trial_norm is not None else None,
+        s_unclamped=state.s_unclamped,
+        t_unclamped=state.t_unclamped,
     )
 
 

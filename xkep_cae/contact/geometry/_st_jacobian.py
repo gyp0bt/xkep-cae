@@ -270,6 +270,27 @@ class ComputeStJacobianProcess(
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
         inv_det = 1.0 / det
+
+        # スムーズクランプの連鎖律: ds_smooth/du = (ds_smooth/ds_unc) * (ds_unc/du)
+        # status-292: w_t≈0のときds_duは1×1系で計算すべき（2×2系だとtカップリング混入）
+        _use_1x1_s = w_s > 1e-30 and w_t < 1e-10  # s のみ有効 → F₁ の 1×1 系
+        _use_1x1_t = w_t > 1e-30 and w_s < 1e-10  # t のみ有効 → F₂ の 1×1 系
+
+        if _use_1x1_s:
+            # t がクランプ → ds_du は F₁ = δ·dA = 0 から 1×1 系で計算
+            if a >= inp.tol_singular:
+                ds_du = self._compute_ds_only(delta, dA, dB, s, t, a)
+                ds_du *= w_s
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        if _use_1x1_t:
+            # s がクランプ → dt_du は F₂ = -δ·dB = 0 から 1×1 系で計算
+            if c >= inp.tol_singular:
+                dt_du = self._compute_dt_only(delta, dA, dB, s, t, c)
+                dt_du *= w_t
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        # 両方有効: 通常の 2×2 系
         # J^{-1} = (1/det) * [[c, b], [b, a]]
         J_inv = np.array([[c, b], [b, a]]) * inv_det
 
@@ -281,7 +302,6 @@ class ComputeStJacobianProcess(
             ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
             dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
 
-        # スムーズクランプの連鎖律: ds_smooth/du = (ds_smooth/ds_unc) * (ds_unc/du)
         ds_du *= w_s
         dt_du *= w_t
 
@@ -368,6 +388,42 @@ class ComputeStJacobianProcess(
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
         inv_det = 1.0 / det
+
+        # status-292: w_t≈0/w_s≈0のとき1×1系に切り替え（2×2カップリング防止）
+        _use_1x1_s = w_s > 1e-30 and w_t < 1e-10
+        _use_1x1_t = w_t > 1e-30 and w_s < 1e-10
+
+        if _use_1x1_s:
+            if a >= inp.tol_singular:
+                ds_du = self._compute_ds_only_hermite(
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    a,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
+                ds_du *= w_s
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        if _use_1x1_t:
+            if c >= inp.tol_singular:
+                dt_du = self._compute_dt_only_hermite(
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    c,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
+                dt_du *= w_t
+            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+
+        # 両方有効: 通常の 2×2 系
         J_inv = np.array([[c, b], [b, a]]) * inv_det
 
         for node_idx in range(4):

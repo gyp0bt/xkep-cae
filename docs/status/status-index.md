@@ -125,6 +125,7 @@
 | [289](status-289.md) | 2026-04-04 | FD接線診断でHertz型∂p/∂g整合性検証 + K_c不整合箇所特定 | 624 passed |
 | [290](status-290.md) | 2026-04-04 | FD接線診断強化 + Type D不整合のcomp別・DOF別分解 | 624 passed |
 | [291](status-291.md) | 2026-04-04 | K_c不整合根本原因特定 + s_unclamped修正（Hermite 20%→0.0001%） | 624+ passed |
+| [292](status-292.md) | 2026-04-04 | StJacobian 2×2カップリング修正（K_st FD不整合94%→0.0001%） | 631 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
