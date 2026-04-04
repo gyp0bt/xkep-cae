@@ -38,10 +38,11 @@ class BoundaryData:
     mpc_transform: object | None = None  # MPCEliminationResult（循環参照回避で object）
     mpc_groups: list | None = None  # MPCGroup リスト（UL更新時のT再構築用, status-283）
     # 処方変位の時間関数（status-286: 揺動サイクル対応）
-    # prescribed_func(load_frac) -> ndarray[len(prescribed_dofs)]
+    # prescribed_func(load_frac, ul_frac_base) -> ndarray[len(prescribed_dofs)]
+    # UL参照配置からの増分変位を返す。
     # 設定時は prescribed_values の代わりに使用される。
-    # 未設定（None）なら従来通り load_frac * prescribed_values。
-    prescribed_func: Callable[[float], np.ndarray] | None = None
+    # 未設定（None）なら従来通り (load_frac - ul_frac_base) * prescribed_values。
+    prescribed_func: Callable[[float, float], np.ndarray] | None = None
 
 
 @dataclass(frozen=True)

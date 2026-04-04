@@ -472,7 +472,8 @@ class ContactFrictionProcess(
             # 処方変位
             if has_prescribed:
                 if _prescribed_func is not None:
-                    state.u[_prescribed_dofs] = _prescribed_func(load_frac)
+                    # prescribed_func(frac, frac_base) はUL参照からの増分を返す
+                    state.u[_prescribed_dofs] = _prescribed_func(load_frac, state.ul_frac_base)
                 else:
                     state.u[_prescribed_dofs] = (
                         load_frac - state.ul_frac_base
@@ -756,6 +757,12 @@ class ContactFrictionProcess(
                     "cutback_count": _n_cutbacks,
                     "node_coords_ref": state.node_coords_ref.copy(),
                 }
+                if _ul and hasattr(ul_assembler, "_u_total_accum"):
+                    _ckpt_data["ul_u_total_accum"] = ul_assembler._u_total_accum.copy()
+                elif _ul and hasattr(ul_assembler, "_asm"):
+                    _inner = ul_assembler._asm
+                    if hasattr(_inner, "_u_total_accum"):
+                        _ckpt_data["ul_u_total_accum"] = _inner._u_total_accum.copy()
                 if hasattr(manager, "connectivity"):
                     _ckpt_data["connectivity"] = manager.connectivity
                 with open(_ckpt_path, "wb") as _f:

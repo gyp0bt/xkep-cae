@@ -915,7 +915,13 @@ class StrandBendingOscillationProcess(
             _vel_bend = _ckpt["time_vel"]
             _acc_bend = _ckpt["time_acc"]
             # ULアセンブラの累積変位を復元
-            if hasattr(assembler, "_u_total_accum"):
+            if "ul_u_total_accum" in _ckpt:
+                _u_accum = _ckpt["ul_u_total_accum"]
+                if hasattr(assembler, "_u_total_accum"):
+                    assembler._u_total_accum[:] = _u_accum
+                print(f"  [RESUME] UL累積変位復元: ||u_accum||={np.linalg.norm(_u_accum):.4e}")
+            elif hasattr(assembler, "_u_total_accum"):
+                # フォールバック: u_bend を累積として使用（不正確だが後方互換）
                 assembler._u_total_accum[:] = _u_bend
             print(f"  [RESUME] 曲げcheckpointロード: ||u||={np.linalg.norm(_u_bend):.4e}")
             # ダミーの曲げ結果（統計用）
@@ -962,9 +968,14 @@ class StrandBendingOscillationProcess(
             _n_osc = cfg.n_oscillation_cycles
             _theta_max = bending_angle
 
-            def _oscillation_func(frac: float) -> np.ndarray:
-                theta = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
-                return np.full(len(prescribed_dofs_arr), theta)
+            # prescribed_func(frac, frac_base) はUL参照配置からの増分を返す。
+            # UL法では各increment成功後に update_reference() が呼ばれ、
+            # state.u ≈ 0 にリセットされる。frac_base はUL更新時のfrac。
+            # 増分 = θ(frac) - θ(frac_base) を返せばよい。
+            def _oscillation_func(frac: float, frac_base: float) -> np.ndarray:
+                theta_now = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
+                theta_base = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac_base)
+                return np.full(len(prescribed_dofs_arr), theta_now - theta_base)
 
             # 揺動フェーズの時間パラメータ
             t_osc = t_cycle * cfg.n_oscillation_cycles
@@ -977,10 +988,6 @@ class StrandBendingOscillationProcess(
                 mpc_transform=None,
                 prescribed_func=_oscillation_func,
             )
-
-            # ULアセンブラの参照配置をリセット（揺動はfrac=0から再開）
-            if hasattr(assembler, "update_reference"):
-                assembler.update_reference(np.zeros_like(_u_bend))
 
             solver_input_osc = ContactFrictionInputData(
                 mesh=mesh,
