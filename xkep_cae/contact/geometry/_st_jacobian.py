@@ -232,12 +232,10 @@ class ComputeStJacobianProcess(
         """線形セグメント前提の ∂(s,t)/∂u 計算."""
         dA = inp.xA1 - inp.xA0
         dB = inp.xB1 - inp.xB0
-        s = inp.s
-        t = inp.t
 
         # クランプ前の値でスムーズ遷移重みを計算
-        s_unc = inp.s_unclamped if inp.s_unclamped is not None else s
-        t_unc = inp.t_unclamped if inp.t_unclamped is not None else t
+        s_unc = inp.s_unclamped if inp.s_unclamped is not None else inp.s
+        t_unc = inp.t_unclamped if inp.t_unclamped is not None else inp.t
         w_s = self._smooth_clip_deriv(s_unc, self._SMOOTH_EPS)
         w_t = self._smooth_clip_deriv(t_unc, self._SMOOTH_EPS)
 
@@ -248,13 +246,18 @@ class ComputeStJacobianProcess(
         if w_s < 1e-30 and w_t < 1e-30:
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
+        # status-293: IFT 幾何を unclamped (s_unc, t_unc) で評価
+        # F₁(s_unc, t_unc, u) = 0 の陰関数微分は unclamped 点での幾何を使う
+        s = s_unc
+        t = t_unc
+
         # Gram 行列の要素
         a = float(np.dot(dA, dA))
         b = float(np.dot(dA, dB))
         c = float(np.dot(dB, dB))
         det = a * c - b * b
 
-        # δ = pA(s) - pB(t)
+        # δ = pA(s_unc) - pB(t_unc)
         delta = (1.0 - s) * inp.xA0 + s * inp.xA1 - (1.0 - t) * inp.xB0 - t * inp.xB1
 
         # 通常: 2×2 系で計算し、スムーズ重みで減衰
@@ -271,39 +274,48 @@ class ComputeStJacobianProcess(
 
         inv_det = 1.0 / det
 
-        # スムーズクランプの連鎖律: ds_smooth/du = (ds_smooth/ds_unc) * (ds_unc/du)
-        # status-292: w_t≈0のときds_duは1×1系で計算すべき（2×2系だとtカップリング混入）
-        _use_1x1_s = w_s > 1e-30 and w_t < 1e-10  # s のみ有効 → F₁ の 1×1 系
-        _use_1x1_t = w_t > 1e-30 and w_s < 1e-10  # t のみ有効 → F₂ の 1×1 系
+        # status-293: smooth blending — 1×1系と2×2系をw_t/w_sで連続補間
+        # ds_du = w_t * ds_du_2x2 + (1 - w_t) * ds_du_1x1（tクランプ度でblend）
+        # dt_du = w_s * dt_du_2x2 + (1 - w_s) * dt_du_1x1（sクランプ度でblend）
+        # w_s = w_t = 1（内部接触点）では2×2のみで計算（高速パス）
 
-        if _use_1x1_s:
-            # t がクランプ → ds_du は F₁ = δ·dA = 0 から 1×1 系で計算
-            if a >= inp.tol_singular:
-                ds_du = self._compute_ds_only(delta, dA, dB, s, t, a)
-                ds_du *= w_s
+        if w_s >= 1.0 - 1e-10 and w_t >= 1.0 - 1e-10:
+            # 高速パス: 両方完全有効 → 2×2系のみ
+            J_inv = np.array([[c, b], [b, a]]) * inv_det
+            for node_idx in range(4):
+                rhs = self._compute_rhs(node_idx, delta, dA, dB, s, t)
+                st_deriv = -J_inv @ rhs
+                ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
+                dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+            ds_du *= w_s
+            dt_du *= w_t
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
-        if _use_1x1_t:
-            # s がクランプ → dt_du は F₂ = -δ·dB = 0 から 1×1 系で計算
-            if c >= inp.tol_singular:
-                dt_du = self._compute_dt_only(delta, dA, dB, s, t, c)
-                dt_du *= w_t
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+        # 1×1系の結果を計算
+        ds_du_1x1 = np.zeros(12)
+        dt_du_1x1 = np.zeros(12)
+        if w_s > 1e-30 and a >= inp.tol_singular:
+            ds_du_1x1 = self._compute_ds_only(delta, dA, dB, s, t, a)
+            ds_du_1x1 *= w_s
+        if w_t > 1e-30 and c >= inp.tol_singular:
+            dt_du_1x1 = self._compute_dt_only(delta, dA, dB, s, t, c)
+            dt_du_1x1 *= w_t
 
-        # 両方有効: 通常の 2×2 系
-        # J^{-1} = (1/det) * [[c, b], [b, a]]
+        # 2×2系の結果を計算
+        ds_du_2x2 = np.zeros(12)
+        dt_du_2x2 = np.zeros(12)
         J_inv = np.array([[c, b], [b, a]]) * inv_det
-
-        # 各ノード DOF (A0, A1, B0, B1) に対する ∂F/∂u を計算
         for node_idx in range(4):
             rhs = self._compute_rhs(node_idx, delta, dA, dB, s, t)
-            # [ds, dt] = -J^{-1} · [rhs1, rhs2]
             st_deriv = -J_inv @ rhs
-            ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
-            dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+            ds_du_2x2[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
+            dt_du_2x2[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+        ds_du_2x2 *= w_s
+        dt_du_2x2 *= w_t
 
-        ds_du *= w_s
-        dt_du *= w_t
+        # smooth blend: w_t でds_duを補間、w_s でdt_duを補間
+        ds_du = w_t * ds_du_2x2 + (1.0 - w_t) * ds_du_1x1
+        dt_du = w_s * dt_du_2x2 + (1.0 - w_s) * dt_du_1x1
 
         return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
@@ -325,12 +337,9 @@ class ComputeStJacobianProcess(
 
         dm_A=None 時は H_Ak(s), H_Ak'(s) のみ（従来の凍結近似）。
         """
-        s = inp.s
-        t = inp.t
-
         # クランプ前の値でスムーズ遷移重みを計算
-        s_unc = inp.s_unclamped if inp.s_unclamped is not None else s
-        t_unc = inp.t_unclamped if inp.t_unclamped is not None else t
+        s_unc = inp.s_unclamped if inp.s_unclamped is not None else inp.s
+        t_unc = inp.t_unclamped if inp.t_unclamped is not None else inp.t
         w_s = self._smooth_clip_deriv(s_unc, self._SMOOTH_EPS)
         w_t = self._smooth_clip_deriv(t_unc, self._SMOOTH_EPS)
 
@@ -340,11 +349,15 @@ class ComputeStJacobianProcess(
         if w_s < 1e-30 and w_t < 1e-30:
             return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
 
+        # status-293: IFT 幾何を unclamped (s_unc, t_unc) で評価
+        s = s_unc
+        t = t_unc
+
         # Hermite 接線ベクトル
         dpA = _hermite_deriv_scalar(s, inp.xA0, inp.xA1, inp.mA0, inp.mA1)
         dpB = _hermite_deriv_scalar(t, inp.xB0, inp.xB1, inp.mB0, inp.mB1)
 
-        # δ = pA(s) - pB(t)（Hermite 補間）
+        # δ = pA(s_unc) - pB(t_unc)（Hermite 補間）
         delta = _hermite_eval_scalar(s, inp.xA0, inp.xA1, inp.mA0, inp.mA1) - _hermite_eval_scalar(
             t, inp.xB0, inp.xB1, inp.mB0, inp.mB1
         )
@@ -389,13 +402,33 @@ class ComputeStJacobianProcess(
 
         inv_det = 1.0 / det
 
-        # status-292: w_t≈0/w_s≈0のとき1×1系に切り替え（2×2カップリング防止）
-        _use_1x1_s = w_s > 1e-30 and w_t < 1e-10
-        _use_1x1_t = w_t > 1e-30 and w_s < 1e-10
+        # status-293: smooth blending — 1×1系と2×2系をw_t/w_sで連続補間
+        J_inv = np.array([[c, b], [b, a]]) * inv_det
 
-        if _use_1x1_s:
-            if a >= inp.tol_singular:
-                ds_du = self._compute_ds_only_hermite(
+        if w_s >= 1.0 - 1e-10 and w_t >= 1.0 - 1e-10:
+            # 高速パス: 両方完全有効 → 2×2系のみ
+            for node_idx in range(4):
+                rhs = self._compute_rhs_hermite(
+                    node_idx,
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
+                st_deriv = -J_inv @ rhs
+                ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
+                dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+            ds_du *= w_s
+            dt_du *= w_t
+        else:
+            # 1×1系の結果
+            ds_du_1x1 = np.zeros(12)
+            dt_du_1x1 = np.zeros(12)
+            if w_s > 1e-30 and a >= inp.tol_singular:
+                ds_du_1x1 = self._compute_ds_only_hermite(
                     delta,
                     dpA,
                     dpB,
@@ -405,12 +438,9 @@ class ComputeStJacobianProcess(
                     dm_A=inp.dm_A,
                     dm_B=inp.dm_B,
                 )
-                ds_du *= w_s
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
-
-        if _use_1x1_t:
-            if c >= inp.tol_singular:
-                dt_du = self._compute_dt_only_hermite(
+                ds_du_1x1 *= w_s
+            if w_t > 1e-30 and c >= inp.tol_singular:
+                dt_du_1x1 = self._compute_dt_only_hermite(
                     delta,
                     dpA,
                     dpB,
@@ -420,29 +450,31 @@ class ComputeStJacobianProcess(
                     dm_A=inp.dm_A,
                     dm_B=inp.dm_B,
                 )
-                dt_du *= w_t
-            return StJacobianOutput(ds_du=ds_du, dt_du=dt_du, valid=True)
+                dt_du_1x1 *= w_t
 
-        # 両方有効: 通常の 2×2 系
-        J_inv = np.array([[c, b], [b, a]]) * inv_det
+            # 2×2系の結果
+            ds_du_2x2 = np.zeros(12)
+            dt_du_2x2 = np.zeros(12)
+            for node_idx in range(4):
+                rhs = self._compute_rhs_hermite(
+                    node_idx,
+                    delta,
+                    dpA,
+                    dpB,
+                    s,
+                    t,
+                    dm_A=inp.dm_A,
+                    dm_B=inp.dm_B,
+                )
+                st_deriv = -J_inv @ rhs
+                ds_du_2x2[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
+                dt_du_2x2[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
+            ds_du_2x2 *= w_s
+            dt_du_2x2 *= w_t
 
-        for node_idx in range(4):
-            rhs = self._compute_rhs_hermite(
-                node_idx,
-                delta,
-                dpA,
-                dpB,
-                s,
-                t,
-                dm_A=inp.dm_A,
-                dm_B=inp.dm_B,
-            )
-            st_deriv = -J_inv @ rhs
-            ds_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[0]
-            dt_du[node_idx * 3 : node_idx * 3 + 3] = st_deriv[1]
-
-        ds_du *= w_s
-        dt_du *= w_t
+            # smooth blend
+            ds_du = w_t * ds_du_2x2 + (1.0 - w_t) * ds_du_1x1
+            dt_du = w_s * dt_du_2x2 + (1.0 - w_s) * dt_du_1x1
 
         # Hermite 非局所: 隣接ノード微分（status-271）
         ds_du_adj = None
@@ -450,6 +482,8 @@ class ComputeStJacobianProcess(
         if inp.dm_ext_A is not None and inp.dm_ext_B is not None:
             ds_du_adj = np.zeros(12)
             dt_du_adj = np.zeros(12)
+            inv_a_safe = 1.0 / a if a >= inp.tol_singular else 0.0
+            inv_c_safe = 1.0 / c if c >= inp.tol_singular else 0.0
             # 4隣接ノード: [A-1, A+2, B-1, B+2]
             for adj_idx, (dm_coeff, side, m_slot) in enumerate(
                 [
@@ -464,9 +498,23 @@ class ComputeStJacobianProcess(
                 rhs = self._compute_rhs_hermite_neighbor(
                     delta, dpA, dpB, s, t, side, m_slot, dm_coeff
                 )
-                st_deriv = -J_inv @ rhs
-                ds_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = st_deriv[0] * w_s
-                dt_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = st_deriv[1] * w_t
+                # 2×2系
+                st_2x2 = -J_inv @ rhs
+                ds_adj_2x2 = st_2x2[0] * w_s
+                dt_adj_2x2 = st_2x2[1] * w_t
+                if w_s >= 1.0 - 1e-10 and w_t >= 1.0 - 1e-10:
+                    ds_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = ds_adj_2x2
+                    dt_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = dt_adj_2x2
+                else:
+                    # 1×1系: ds = -(1/a)*rhs[0], dt = -(1/c)*rhs[1]
+                    ds_adj_1x1 = -inv_a_safe * rhs[0] * w_s
+                    dt_adj_1x1 = -inv_c_safe * rhs[1] * w_t
+                    ds_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = (
+                        w_t * ds_adj_2x2 + (1.0 - w_t) * ds_adj_1x1
+                    )
+                    dt_du_adj[adj_idx * 3 : adj_idx * 3 + 3] = (
+                        w_s * dt_adj_2x2 + (1.0 - w_s) * dt_adj_1x1
+                    )
 
         return StJacobianOutput(
             ds_du=ds_du,

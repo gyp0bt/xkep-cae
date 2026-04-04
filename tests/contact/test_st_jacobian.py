@@ -710,3 +710,147 @@ class TestComputeStJacobianHermiteNonlocal:
         np.testing.assert_allclose(out.dt_du_adj[0:3], 0.0, atol=1e-15)
         np.testing.assert_allclose(out.ds_du_adj[6:9], 0.0, atol=1e-15)
         np.testing.assert_allclose(out.dt_du_adj[6:9], 0.0, atol=1e-15)
+
+
+# ── smooth 遷移帯テスト（status-293）──────────────────
+
+
+def _smooth_clip_01_scalar(s_unc: float, epsilon: float = 0.02) -> float:
+    """_smooth_clip_01 のスカラー版."""
+    if s_unc < -epsilon:
+        return 0.0
+    if s_unc < epsilon:
+        return (s_unc + epsilon) ** 2 / (4.0 * epsilon)
+    if s_unc <= 1.0 - epsilon:
+        return s_unc
+    if s_unc <= 1.0 + epsilon:
+        return 1.0 - (1.0 + epsilon - s_unc) ** 2 / (4.0 * epsilon)
+    return 1.0
+
+
+def _compute_s_t_unclamped(xA0, xA1, xB0, xB1):
+    """クランプなしの s_unc, t_unc を計算."""
+    dA = xA1 - xA0
+    dB = xB1 - xB0
+    w0 = xA0 - xB0
+    a = float(np.dot(dA, dA))
+    b = float(np.dot(dA, dB))
+    c = float(np.dot(dB, dB))
+    d = float(np.dot(dA, w0))
+    e = float(np.dot(dB, w0))
+    det = a * c - b * b
+    if abs(det) < 1e-15:
+        return 0.0, 0.0
+    s_unc = (b * e - c * d) / det
+    t_unc = (a * e - b * d) / det
+    return s_unc, t_unc
+
+
+def _finite_diff_smooth_st(xA0, xA1, xB0, xB1, eps=1e-7, epsilon=0.02):
+    """smooth_clip_01 を通した s_smooth, t_smooth のFD."""
+    coords = [xA0.copy(), xA1.copy(), xB0.copy(), xB1.copy()]
+    s_unc0, t_unc0 = _compute_s_t_unclamped(*coords)
+    s0 = _smooth_clip_01_scalar(s_unc0, epsilon)
+    t0 = _smooth_clip_01_scalar(t_unc0, epsilon)
+
+    ds_du = np.zeros(12)
+    dt_du = np.zeros(12)
+    for node in range(4):
+        for dim in range(3):
+            idx = node * 3 + dim
+            coords_p = [c.copy() for c in coords]
+            coords_p[node][dim] += eps
+            s_unc_p, t_unc_p = _compute_s_t_unclamped(*coords_p)
+            s_p = _smooth_clip_01_scalar(s_unc_p, epsilon)
+            t_p = _smooth_clip_01_scalar(t_unc_p, epsilon)
+
+            coords_m = [c.copy() for c in coords]
+            coords_m[node][dim] -= eps
+            s_unc_m, t_unc_m = _compute_s_t_unclamped(*coords_m)
+            s_m = _smooth_clip_01_scalar(s_unc_m, epsilon)
+            t_m = _smooth_clip_01_scalar(t_unc_m, epsilon)
+
+            ds_du[idx] = (s_p - s_m) / (2 * eps)
+            dt_du[idx] = (t_p - t_m) / (2 * eps)
+    return ds_du, dt_du, s0, t0, s_unc0, t_unc0
+
+
+class TestComputeStJacobianSmoothTransition:
+    """status-293: smooth 遷移帯（w_t/w_s 中間値）のFD検証."""
+
+    def _run_smooth_fd_test(self, xA0, xA1, xB0, xB1, atol=1e-5):
+        """配置に対して smooth FD 検証を実行."""
+        ds_fd, dt_fd, s0, t0, s_unc, t_unc = _finite_diff_smooth_st(xA0, xA1, xB0, xB1)
+        s_clamped = np.clip(s_unc, 0.0, 1.0)
+        t_clamped = np.clip(t_unc, 0.0, 1.0)
+
+        proc = ComputeStJacobianProcess()
+        out = proc.process(
+            StJacobianInput(
+                xA0=xA0,
+                xA1=xA1,
+                xB0=xB0,
+                xB1=xB1,
+                s=float(s_clamped),
+                t=float(t_clamped),
+                s_unclamped=s_unc,
+                t_unclamped=t_unc,
+            )
+        )
+        assert out.valid
+        np.testing.assert_allclose(out.ds_du, ds_fd, atol=atol)
+        np.testing.assert_allclose(out.dt_du, dt_fd, atol=atol)
+        return s_unc, t_unc
+
+    def test_t_transition_zone(self):
+        """t_unc が遷移帯（-ε < t_unc < ε）にある配置.
+
+        B線をA線の端部付近に配置して t_unc ≈ -0.005 を実現。
+        w_t ≈ 0.375（遷移帯中間）。
+        """
+        xA0 = np.array([0.0, 0.0, 0.5])
+        xA1 = np.array([1.0, 0.0, 0.5])
+        # B0をB1に近い位置に置いてt_uncが小さい負値になるように調整
+        xB0 = np.array([0.5, -0.01, 0.0])
+        xB1 = np.array([0.5, 1.0, 0.0])
+
+        s_unc, t_unc = self._run_smooth_fd_test(xA0, xA1, xB0, xB1)
+        # t_unc が遷移帯にあることを確認
+        eps = 0.02
+        assert -eps < t_unc < eps, f"t_unc={t_unc} not in transition zone"
+
+    def test_s_transition_zone(self):
+        """s_unc が遷移帯（-ε < s_unc < ε）にある配置."""
+        # A線の始端付近にBを配置
+        xA0 = np.array([0.0, 0.0, 0.5])
+        xA1 = np.array([1.0, 0.0, 0.5])
+        xB0 = np.array([-0.005, -0.5, 0.0])
+        xB1 = np.array([-0.005, 0.5, 0.0])
+
+        s_unc, t_unc = self._run_smooth_fd_test(xA0, xA1, xB0, xB1)
+        eps = 0.02
+        assert -eps < s_unc < eps, f"s_unc={s_unc} not in transition zone"
+
+    def test_both_transition_zone(self):
+        """s_unc, t_unc 両方が遷移帯にある配置."""
+        xA0 = np.array([0.0, 0.0, 0.5])
+        xA1 = np.array([1.0, 0.0, 0.5])
+        xB0 = np.array([-0.005, -0.01, 0.0])
+        xB1 = np.array([-0.005, 1.0, 0.0])
+
+        s_unc, t_unc = self._run_smooth_fd_test(xA0, xA1, xB0, xB1)
+        eps = 0.02
+        assert -eps < s_unc < eps, f"s_unc={s_unc} not in transition zone"
+        assert -eps < t_unc < eps, f"t_unc={t_unc} not in transition zone"
+
+    def test_t_upper_transition_zone(self):
+        """t_unc が上端遷移帯（1-ε < t_unc < 1+ε）にある配置."""
+        xA0 = np.array([0.0, 0.0, 0.5])
+        xA1 = np.array([1.0, 0.0, 0.5])
+        # B線の終端近くにAが来る配置
+        xB0 = np.array([0.5, -1.0, 0.0])
+        xB1 = np.array([0.5, 0.01, 0.0])
+
+        s_unc, t_unc = self._run_smooth_fd_test(xA0, xA1, xB0, xB1)
+        eps = 0.02
+        assert 1.0 - eps < t_unc < 1.0 + eps, f"t_unc={t_unc} not in upper transition zone"
