@@ -921,10 +921,31 @@ class StrandBendingOscillationProcess(
                     assembler._u_total_accum[:] = _u_accum
                 print(f"  [RESUME] UL累積変位復元: ||u_accum||={np.linalg.norm(_u_accum):.4e}")
             elif hasattr(assembler, "_u_total_accum"):
-                # フォールバック: u_bend を累積として使用（不正確だが後方互換）
                 assembler._u_total_accum[:] = _u_bend
+            # 接触マネージャ状態の復元（自工程保証:
+            # 各インクリメント完了時の保存状態で次のインクリメントをクリーンに開始）
+            if "manager_pairs" in _ckpt:
+                _restored_pairs = _ckpt["manager_pairs"]
+                _restored_config = _ckpt.get("manager_config", contact_config)
+                _restored_conn = _ckpt.get("connectivity", None)
+                manager = _ContactManagerInput(
+                    pairs=_restored_pairs,
+                    config=_restored_config,
+                    connectivity=_restored_conn,
+                )
+                contact_setup = ContactSetupData(
+                    manager=manager,
+                    k_pen=cfg.k_pen,
+                    mu=cfg.mu,
+                )
+                _n_active = sum(
+                    1 for p in _restored_pairs if hasattr(p, "state") and p.state.p_n > 0
+                )
+                print(
+                    f"  [RESUME] 接触マネージャ復元: "
+                    f"{len(_restored_pairs)} pairs ({_n_active} active)"
+                )
             print(f"  [RESUME] 曲げcheckpointロード: ||u||={np.linalg.norm(_u_bend):.4e}")
-            # ダミーの曲げ結果（統計用）
             solver_result_bend = None
         else:
             # 曲げフェーズ実行
@@ -970,9 +991,15 @@ class StrandBendingOscillationProcess(
 
             # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む絶対値。
             # state.u は初期配置からの全変位を保持（UL更新してもリセットされない）。
-            # frac=0 → θ=θ_max（曲げ完了維持）、cos(2π*frac) で揺動。
+            # 自工程保証: frac=0 は checkpoint 保存時点の状態と一致すべき。
+            # _u_bend[θ_dof] が実際の曲げ角度（checkpointのfrac < 1.0 の可能性あり）。
+            _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
+            _theta_amplitude = _theta_at_ckpt  # 揺動振幅 = checkpoint時の角度
+
             def _oscillation_func(frac: float) -> np.ndarray:
-                theta = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
+                # frac=0: cos(0)=1 → θ=_theta_at_ckpt（checkpoint状態を維持）
+                # frac=0.5/n: cos(π)=-1 → θ=-_theta_at_ckpt（逆曲げ）
+                theta = _theta_amplitude * math.cos(2.0 * math.pi * _n_osc * frac)
                 return np.full(len(prescribed_dofs_arr), theta)
 
             # 揺動フェーズの時間パラメータ
@@ -1004,6 +1031,7 @@ class StrandBendingOscillationProcess(
                 tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
                 du_norm_cap=cfg.du_norm_cap,
                 penalty_exponent=cfg.penalty_exponent,
+                skip_initial_detection=bool(cfg.resume_checkpoint),
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

@@ -221,6 +221,10 @@ class ContactFrictionInputData:
     # checkpoint_path が非空なら、load_frac >= checkpoint_frac 到達時に pickle 保存。
     checkpoint_path: str = ""
     checkpoint_frac: float = 1.0  # 保存トリガーの load_frac 閾値
+    # checkpoint復元モード（status-286: 自工程保証）
+    # True にすると初期接触検出をスキップし、manager の既存 pairs をそのまま使う。
+    # checkpoint から復元した manager_pairs を信頼する。
+    skip_initial_detection: bool = False
 
     @property
     def is_dynamic(self) -> bool:

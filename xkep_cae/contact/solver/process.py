@@ -297,18 +297,22 @@ class ContactFrictionProcess(
         broadphase_cell_size = None
         _detect_proc = DetectCandidatesProcess()
         _geom_proc = UpdateGeometryProcess()
-        _dc_init = _detect_proc.process(
-            DetectCandidatesInput(
-                manager=manager,
-                node_coords=node_coords_ref,
-                connectivity=connectivity,
-                radii=radii,
-                margin=broadphase_margin,
-                cell_size=broadphase_cell_size,
-                core_radii=core_radii,
+        _skip_init_detect = getattr(input_data, "skip_initial_detection", False)
+        if not _skip_init_detect:
+            _dc_init = _detect_proc.process(
+                DetectCandidatesInput(
+                    manager=manager,
+                    node_coords=node_coords_ref,
+                    connectivity=connectivity,
+                    radii=radii,
+                    margin=broadphase_margin,
+                    cell_size=broadphase_cell_size,
+                    core_radii=core_radii,
+                )
             )
-        )
-        manager = _dc_init.manager
+            manager = _dc_init.manager
+        else:
+            print("  [RESUME] 初期接触検出スキップ（checkpoint pairs使用）")
         _pen_proc = InitialPenetrationProcess()
         _use_adjust = manager.config.adjust_initial_penetration
         if _use_adjust and _ul:
