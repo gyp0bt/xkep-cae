@@ -186,6 +186,14 @@ class StrandBendingOscillationConfig:
     # Hertz型非線形ペナルティ（status-285）
     # 1.0=線形ペナルティ（従来）, 1.5=Hertz型（p_n ∝ δ^1.5）
     penalty_exponent: float = 1.0
+    # チェックポイント保存（status-286: 曲げ完了時点のpickle保存）
+    checkpoint_path: str = ""  # 非空で曲げ完了時にpickle保存
+    # 揺動サイクル（status-286: sin波処方変位）
+    # n_oscillation_cycles > 0 で揺動フェーズを有効化。
+    # 曲げフェーズ（frac=0→1.0）完了後、揺動フェーズ（frac=0→1.0）を実行。
+    # 揺動の処方変位: θ(frac) = θ_max * sin(2π * n_oscillation_cycles * frac)
+    # resume_checkpoint が設定されている場合、曲げスキップで揺動のみ実行。
+    n_oscillation_cycles: int = 0  # 0=曲げのみ, >0=曲げ後に揺動
 
 
 @dataclass(frozen=True)
@@ -890,27 +898,111 @@ class StrandBendingOscillationProcess(
             mu=cfg.mu,
         )
 
-        # ── ソルバー実行 ──
-        solver_input = ContactFrictionInputData(
-            mesh=mesh,
-            boundary=boundary,
-            contact=contact_setup,
-            callbacks=AssembleCallbacks(
-                assemble_tangent=assembler.assemble_tangent,
-                assemble_internal_force=assembler.assemble_internal_force,
-                ul_assembler=assembler,
-            ),
-            mass_matrix=M,
-            dt_physical=t_total,
-            rho_inf=cfg.rho_inf,
-            max_nr_attempts=cfg.max_nr_attempts,
-            tol_force=cfg.tol_force,
-            max_increments=cfg.max_increments,
-            tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
-            du_norm_cap=cfg.du_norm_cap,
-            penalty_exponent=cfg.penalty_exponent,
+        # ── ソルバー実行: 曲げフェーズ ──
+        _callbacks = AssembleCallbacks(
+            assemble_tangent=assembler.assemble_tangent,
+            assemble_internal_force=assembler.assemble_internal_force,
+            ul_assembler=assembler,
         )
-        solver_result = ContactFrictionProcess().process(solver_input)
+
+        # チェックポイント復元時は曲げフェーズをスキップ
+        if cfg.resume_checkpoint and cfg.n_oscillation_cycles > 0:
+            import pickle as _pickle
+
+            with open(cfg.resume_checkpoint, "rb") as _f:
+                _ckpt = _pickle.load(_f)
+            _u_bend = _ckpt["state"].u.copy()
+            _vel_bend = _ckpt["time_vel"]
+            _acc_bend = _ckpt["time_acc"]
+            # ULアセンブラの累積変位を復元
+            if hasattr(assembler, "_u_total_accum"):
+                assembler._u_total_accum[:] = _u_bend
+            print(f"  [RESUME] 曲げcheckpointロード: ||u||={np.linalg.norm(_u_bend):.4e}")
+            # ダミーの曲げ結果（統計用）
+            solver_result_bend = None
+        else:
+            # 曲げフェーズ実行
+            solver_input = ContactFrictionInputData(
+                mesh=mesh,
+                boundary=boundary,
+                contact=contact_setup,
+                callbacks=_callbacks,
+                mass_matrix=M,
+                dt_physical=t_total,
+                rho_inf=cfg.rho_inf,
+                max_nr_attempts=cfg.max_nr_attempts,
+                tol_force=cfg.tol_force,
+                max_increments=cfg.max_increments,
+                tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+                du_norm_cap=cfg.du_norm_cap,
+                penalty_exponent=cfg.penalty_exponent,
+                checkpoint_path=cfg.checkpoint_path,
+                checkpoint_frac=0.99,
+            )
+            solver_result_bend = ContactFrictionProcess().process(solver_input)
+            _u_bend = solver_result_bend.u
+            _vel_bend = None
+            _acc_bend = None
+            _frac_bend = (
+                solver_result_bend.load_history[-1] if solver_result_bend.load_history else 0.0
+            )
+            print(
+                f"  曲げフェーズ完了: frac={_frac_bend:.4f}, "
+                f"incr={solver_result_bend.n_increments}, "
+                f"cutback={solver_result_bend.n_cutbacks}"
+            )
+
+        # ── 揺動フェーズ ──
+        if cfg.n_oscillation_cycles > 0:
+            # sin波処方変位関数: θ(frac) = θ_max * sin(2π * n_osc * frac)
+            # frac=0でθ=0（曲げ完了位置=直線状態に復元後、振動開始）
+            # ではなく、曲げ完了位置からの揺動: θ(frac) = θ_max * cos(2π * n_osc * frac)
+            # frac=0 → θ=θ_max（曲げ完了）, frac=0.25/n → θ=0（直線）,
+            # frac=0.5/n → θ=-θ_max（逆曲げ）...
+            _n_osc = cfg.n_oscillation_cycles
+            _theta_max = bending_angle
+
+            def _oscillation_func(frac: float) -> np.ndarray:
+                theta = _theta_max * math.cos(2.0 * math.pi * _n_osc * frac)
+                return np.full(len(prescribed_dofs_arr), theta)
+
+            # 揺動フェーズの時間パラメータ
+            t_osc = t_cycle * cfg.n_oscillation_cycles
+
+            boundary_osc = BoundaryData(
+                fixed_dofs=fixed_dofs_arr,
+                prescribed_dofs=prescribed_dofs_arr,
+                prescribed_values=prescribed_values_arr,
+                f_ext_total=f_ext,
+                mpc_transform=None,
+                prescribed_func=_oscillation_func,
+            )
+
+            # ULアセンブラの参照配置をリセット（揺動はfrac=0から再開）
+            if hasattr(assembler, "update_reference"):
+                assembler.update_reference(np.zeros_like(_u_bend))
+
+            solver_input_osc = ContactFrictionInputData(
+                mesh=mesh,
+                boundary=boundary_osc,
+                contact=contact_setup,
+                callbacks=_callbacks,
+                u0=_u_bend,
+                mass_matrix=M,
+                dt_physical=t_osc,
+                rho_inf=cfg.rho_inf,
+                velocity=_vel_bend,
+                acceleration=_acc_bend,
+                max_nr_attempts=cfg.max_nr_attempts,
+                tol_force=cfg.tol_force,
+                max_increments=cfg.max_increments,
+                tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+                du_norm_cap=cfg.du_norm_cap,
+                penalty_exponent=cfg.penalty_exponent,
+            )
+            solver_result = ContactFrictionProcess().process(solver_input_osc)
+        else:
+            solver_result = solver_result_bend
 
         return StrandBendingOscillationResult(
             solver_result=solver_result,

@@ -37,6 +37,11 @@ class BoundaryData:
     f_ext_base: np.ndarray | None = None
     mpc_transform: object | None = None  # MPCEliminationResult（循環参照回避で object）
     mpc_groups: list | None = None  # MPCGroup リスト（UL更新時のT再構築用, status-283）
+    # 処方変位の時間関数（status-286: 揺動サイクル対応）
+    # prescribed_func(load_frac) -> ndarray[len(prescribed_dofs)]
+    # 設定時は prescribed_values の代わりに使用される。
+    # 未設定（None）なら従来通り load_frac * prescribed_values。
+    prescribed_func: Callable[[float], np.ndarray] | None = None
 
 
 @dataclass(frozen=True)
@@ -211,6 +216,10 @@ class ContactFrictionInputData:
     penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
     # チェックポイント復元: frac途中再開（status-279）
     load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
+    # チェックポイント保存（status-286: pickle API化）
+    # checkpoint_path が非空なら、load_frac >= checkpoint_frac 到達時に pickle 保存。
+    checkpoint_path: str = ""
+    checkpoint_frac: float = 1.0  # 保存トリガーの load_frac 閾値
 
     @property
     def is_dynamic(self) -> bool:

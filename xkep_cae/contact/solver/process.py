@@ -202,6 +202,7 @@ class ContactFrictionProcess(
             if input_data.boundary.prescribed_values is not None
             else np.array([])
         )
+        _prescribed_func = input_data.boundary.prescribed_func
         has_prescribed = len(_prescribed_dofs) > 0
         if has_prescribed:
             fixed_dofs = np.unique(np.concatenate([fixed_dofs, _prescribed_dofs]))
@@ -470,7 +471,12 @@ class ContactFrictionProcess(
 
             # 処方変位
             if has_prescribed:
-                state.u[_prescribed_dofs] = (load_frac - state.ul_frac_base) * _prescribed_values
+                if _prescribed_func is not None:
+                    state.u[_prescribed_dofs] = _prescribed_func(load_frac)
+                else:
+                    state.u[_prescribed_dofs] = (
+                        load_frac - state.ul_frac_base
+                    ) * _prescribed_values
 
             # MPC制約をuに伝搬: u_full = T @ u_red（slave DOFをmaster値から再計算）
             if _mpc_current is not None:
@@ -714,48 +720,48 @@ class ContactFrictionProcess(
                 _mpc_current_ckpt = _mpc_current  # MPC T チェックポイント（status-283）
             _time_strategy.checkpoint()
 
-            # ── 外部チェックポイント保存（status-278: 中盤からの対策効果検証用） ──
-            # XKEP_CHECKPOINT_FRAC=0.50 XKEP_CHECKPOINT_PATH=/tmp/ckpt.pkl で
-            # 指定fracに到達したらソルバーの全状態をpickle保存。
+            # ── チェックポイント保存（status-286: API化 + 環境変数互換） ──
+            # API: checkpoint_path / checkpoint_frac で指定（優先）
+            # 環境変数: XKEP_CHECKPOINT_FRAC / XKEP_CHECKPOINT_PATH（後方互換）
             import os as _os
 
+            _ckpt_path = input_data.checkpoint_path or _os.environ.get("XKEP_CHECKPOINT_PATH", "")
             _ckpt_frac_str = _os.environ.get("XKEP_CHECKPOINT_FRAC", "")
-            _ckpt_path = _os.environ.get("XKEP_CHECKPOINT_PATH", "")
-            if _ckpt_frac_str and _ckpt_path:
+            _ckpt_frac = input_data.checkpoint_frac
+            if _ckpt_frac_str and not input_data.checkpoint_path:
                 _ckpt_frac = float(_ckpt_frac_str)
-                if load_frac >= _ckpt_frac and not hasattr(self, "_ckpt_saved"):
-                    import pickle as _pickle
+            if _ckpt_path and load_frac >= _ckpt_frac and not hasattr(self, "_ckpt_saved"):
+                import pickle as _pickle
 
-                    _ckpt_data = {
-                        "state": state,
-                        "time_vel": _time_strategy.vel.copy(),
-                        "time_acc": _time_strategy.acc.copy(),
-                        "time_vel_old": _time_strategy._vel_old.copy()
-                        if hasattr(_time_strategy, "_vel_old")
-                        else None,
-                        "time_acc_old": _time_strategy._acc_old.copy()
-                        if hasattr(_time_strategy, "_acc_old")
-                        else None,
-                        "time_u_pred": _time_strategy._u_pred.copy()
-                        if hasattr(_time_strategy, "_u_pred")
-                        else None,
-                        "manager_pairs": manager.pairs[:],
-                        "manager_config": manager.config,
-                        "load_frac": load_frac,
-                        "k_pen": k_pen,
-                        "stepping_state": stepping._state if hasattr(stepping, "_state") else None,
-                        "dt_sub": dt_sub,
-                        "incr_count": _incr_count,
-                        "cutback_count": _n_cutbacks,
-                    }
-                    if hasattr(manager, "connectivity"):
-                        _ckpt_data["connectivity"] = manager.connectivity
-                    with open(_ckpt_path, "wb") as _f:
-                        _pickle.dump(_ckpt_data, _f)
-                    self._ckpt_saved = True
-                    print(
-                        f"  [CHECKPOINT] frac={load_frac:.4f} → {_ckpt_path} (incr={_incr_count})"
-                    )
+                _ckpt_data = {
+                    "state": state,
+                    "time_vel": _time_strategy.vel.copy(),
+                    "time_acc": _time_strategy.acc.copy(),
+                    "time_vel_old": _time_strategy._vel_old.copy()
+                    if hasattr(_time_strategy, "_vel_old")
+                    else None,
+                    "time_acc_old": _time_strategy._acc_old.copy()
+                    if hasattr(_time_strategy, "_acc_old")
+                    else None,
+                    "time_u_pred": _time_strategy._u_pred.copy()
+                    if hasattr(_time_strategy, "_u_pred")
+                    else None,
+                    "manager_pairs": manager.pairs[:],
+                    "manager_config": manager.config,
+                    "load_frac": load_frac,
+                    "k_pen": k_pen,
+                    "stepping_state": stepping._state if hasattr(stepping, "_state") else None,
+                    "dt_sub": dt_sub,
+                    "incr_count": _incr_count,
+                    "cutback_count": _n_cutbacks,
+                    "node_coords_ref": state.node_coords_ref.copy(),
+                }
+                if hasattr(manager, "connectivity"):
+                    _ckpt_data["connectivity"] = manager.connectivity
+                with open(_ckpt_path, "wb") as _f:
+                    _pickle.dump(_ckpt_data, _f)
+                self._ckpt_saved = True
+                print(f"  [CHECKPOINT] frac={load_frac:.4f} → {_ckpt_path} (incr={_incr_count})")
 
             # インクリメント診断生成
             _fc_norm = float(np.linalg.norm(step_result.f_c))
