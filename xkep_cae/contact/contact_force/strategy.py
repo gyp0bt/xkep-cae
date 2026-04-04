@@ -294,6 +294,11 @@ def _add_kst_contact_to_coo(
         "s": st.s,
         "t": st.t,
     }
+    # s_unclamped/t_unclamped を渡す（status-291: smooth_clip_deriv 重み補正）
+    if hasattr(st, "s_unclamped") and st.s_unclamped is not None:
+        st_kw["s_unclamped"] = st.s_unclamped
+    if hasattr(st, "t_unclamped") and st.t_unclamped is not None:
+        st_kw["t_unclamped"] = st.t_unclamped
     if use_hermite and node_tangents is not None:
         st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
         st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
@@ -1171,6 +1176,161 @@ class HuberContactForceProcess(
                 shape=(self._ndof, self._ndof),
             ).tocsr()
         return sp.csr_matrix((self._ndof, self._ndof))
+
+    def tangent_components(
+        self,
+        u: np.ndarray,
+        manager: object,
+        k_pen: float,
+        *,
+        node_coords: np.ndarray | None = None,
+    ) -> tuple[sp.csr_matrix, sp.csr_matrix, sp.csr_matrix]:
+        """K_mat, K_geo, K_st を個別に返す（status-291: 個別FD検証用）.
+
+        K_c = K_mat - K_geo + K_st
+        """
+        delta_h = self._resolve_delta_h(k_pen)
+        ndof = self._ndof
+        zero = sp.csr_matrix((ndof, ndof))
+
+        if not hasattr(manager, "pairs") or len(manager.pairs) == 0:
+            return zero, zero, zero
+
+        _use_hermite = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "use_hermite_centerline")
+            and manager.config.use_hermite_centerline
+        )
+        _use_st = (
+            hasattr(manager, "config")
+            and hasattr(manager.config, "consistent_st_tangent")
+            and manager.config.consistent_st_tangent
+        )
+
+        _node_tangents = None
+        _node_counts = None
+        _conn = None
+        if _use_hermite and node_coords is not None:
+            _conn = getattr(manager, "connectivity", None)
+            if _conn is not None:
+                from xkep_cae.contact.geometry._compute import (
+                    _compute_node_tangents,
+                )
+
+                _node_tangents = _compute_node_tangents(node_coords, _conn)
+
+        _adj_node_map = None
+        _adj_node_counts = None
+        if _use_hermite and _conn is not None:
+            from xkep_cae.contact.geometry._compute import (
+                _compute_adj_node_map,
+                _compute_node_counts,
+            )
+
+            _adj_node_map = _compute_adj_node_map(_conn)
+            _max_node = int(np.max(_conn)) + 1 if len(_conn) > 0 else 0
+            _adj_node_counts = _compute_node_counts(_max_node, _conn)
+
+        extracted = self._extract_pair_arrays(manager.pairs)
+        if extracted is None:
+            return zero, zero, zero
+        has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
+
+        x_pen = k_pen * (-gaps)
+        h_deriv_all = self._huber_deriv_batch(x_pen, delta_h)
+        if self._penalty_exponent != 1.0:
+            h_vals = self._huber_batch(x_pen, delta_h)
+            h_deriv_all = self._apply_power_law_deriv(h_vals, h_deriv_all, k_pen)
+        h_deriv_all[~has_state] = 0.0
+        p_n_all = np.array(
+            [manager.pairs[i].state.p_n if has_state[i] else 0.0 for i in range(len(manager.pairs))]
+        )
+
+        active = has_state & ((h_deriv_all > 1e-30) | (p_n_all > 1e-30))
+        n_act = int(np.sum(active))
+
+        K_mat = zero
+        K_geo = zero
+        K_st = zero
+
+        if n_act > 0:
+            h_deriv_act = h_deriv_all[active]
+            p_n_act = p_n_all[active]
+            gaps_act = gaps[active]
+            s_act = s_arr[active]
+            t_act = t_arr[active]
+            n_act_v = normals[active]
+            nodes_act = nodes[active]
+            ra_act = radius_a[active]
+            rb_act = radius_b[active]
+
+            w_mat = h_deriv_act * k_pen
+            dist = gaps_act + ra_act + rb_act
+            w_geo = np.where(dist > 1e-15, p_n_act / dist, 0.0)
+
+            coeffs = self._batch_shape_coeffs(
+                s_act,
+                t_act,
+                _use_hermite,
+                _node_counts,
+                nodes_act,
+            )
+
+            nn = n_act_v[:, :, None] * n_act_v[:, None, :]
+            I3 = np.eye(3)[None, :, :]
+            I_nn = I3 - nn
+
+            # K_mat 3x3: w_mat * (n⊗n)
+            K_3x3_mat = w_mat[:, None, None] * nn
+            # K_geo 3x3: w_geo * (I - n⊗n)
+            K_3x3_geo = w_geo[:, None, None] * I_nn
+
+            cc = coeffs[:, :, None] * coeffs[:, None, :]
+            ndpn = self._ndof_per_node
+
+            gdofs = np.zeros((n_act, 12), dtype=int)
+            for k in range(4):
+                for d in range(3):
+                    gdofs[:, k * 3 + d] = nodes_act[:, k] * ndpn + d
+
+            def _assemble_12x12(K_3x3_block):
+                K_local = np.zeros((n_act, 12, 12))
+                for ki in range(4):
+                    for kj in range(4):
+                        K_local[:, ki * 3 : (ki + 1) * 3, kj * 3 : (kj + 1) * 3] = (
+                            cc[:, ki, kj][:, None, None] * K_3x3_block
+                        )
+                row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+                col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
+                val_arr = K_local.ravel()
+                mask = np.abs(val_arr) > 1e-30
+                return sp.coo_matrix(
+                    (val_arr[mask], (row_idx[mask], col_idx[mask])),
+                    shape=(ndof, ndof),
+                ).tocsr()
+
+            K_mat = _assemble_12x12(K_3x3_mat)
+            K_geo = _assemble_12x12(K_3x3_geo)
+
+        if _use_st and node_coords is not None:
+            b1 = ContactForceStStiffnessProcess()
+            K_st = b1.process(
+                ContactForceStStiffnessInput(
+                    pairs=manager.pairs,
+                    node_coords=node_coords,
+                    k_pen=k_pen,
+                    delta_h=delta_h,
+                    ndof_total=ndof,
+                    ndof_per_node=self._ndof_per_node,
+                    use_hermite=_use_hermite,
+                    node_tangents=_node_tangents,
+                    node_counts=_node_counts,
+                    adj_node_map=_adj_node_map,
+                    penalty_exponent=self._penalty_exponent,
+                )
+            ).K_st
+
+        return K_mat, K_geo, K_st
 
     def process(self, input_data: ContactForceInput) -> ContactForceOutput:
         f, _ = self.evaluate(
