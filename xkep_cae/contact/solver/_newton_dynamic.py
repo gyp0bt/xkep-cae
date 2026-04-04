@@ -429,6 +429,16 @@ class NewtonDynamicProcess(
 
             _conv_rate = diag.convergence_rate_history[-1] if diag.convergence_rate_history else 1.0
 
+            # comp別残差ノルム（status-290: x,y,z,θx,θy,θz）
+            _ndpn = cfg.ndof_per_node
+            _comp_norms: tuple[float, ...] = ()
+            if _ndpn > 0 and len(R_u) >= _ndpn:
+                _cn = []
+                for _c in range(_ndpn):
+                    _cdof_arr = np.arange(_c, len(R_u), _ndpn)
+                    _cn.append(float(np.linalg.norm(R_u[_cdof_arr])))
+                _comp_norms = tuple(_cn)
+
             _nr_snap = NRIterationSnapshot(
                 att=att,
                 res_ratio=_res_ratio,
@@ -444,6 +454,7 @@ class NewtonDynamicProcess(
                 pairs_stick_to_slide=_pairs_s2s,
                 pairs_slide_to_stick=_pairs_sl2st,
                 convergence_rate=_conv_rate,
+                comp_res_norms=_comp_norms,
             )
             diag.nr_iteration_snapshots.append(_nr_snap)
             _prev_pair_statuses = _cur_pair_statuses
@@ -774,8 +785,8 @@ class NewtonDynamicProcess(
                     )
                 break
 
-            # ── NR反復ごとのType分類ログ（status-288: 構造化ログ出力） ──
-            _iter_type = classify_chattering_type(_nr_snap)
+            # ── NR反復ごとのType分類ログ（status-288 + status-290 拡張） ──
+            _iter_type = classify_chattering_type(_nr_snap, detailed_d=True)
             if cfg.show_progress and att % 5 == 0:
                 _wn_info = (
                     f", ||R_w||/||f||={conv_out.res_weighted_norm / conv_out.f_ref:.3e}"
@@ -784,6 +795,16 @@ class NewtonDynamicProcess(
                 )
                 _rate_info = f", rate={_conv_rate:.3f}" if att >= 2 else ""
                 _type_info = f" [{_iter_type}]" if _iter_type != "-" else ""
+                # comp別残差（status-290: x,y,z成分のみ簡潔に出力）
+                _comp_info = ""
+                if _comp_norms and len(_comp_norms) >= 3:
+                    _comp_total = max(sum(c * c for c in _comp_norms) ** 0.5, 1e-30)
+                    _comp_pct = [100.0 * c / _comp_total for c in _comp_norms[:3]]
+                    _comp_info = (
+                        f", R(x={_comp_norms[0]:.1e}/{_comp_pct[0]:.0f}%"
+                        f",y={_comp_norms[1]:.1e}/{_comp_pct[1]:.0f}%"
+                        f",z={_comp_norms[2]:.1e}/{_comp_pct[2]:.0f}%)"
+                    )
                 print(
                     f"  Incr {increment_display} (frac={load_frac:.4f}), "
                     f"attempt {att}{_type_info}, "
@@ -791,6 +812,7 @@ class NewtonDynamicProcess(
                     f"||R_r|| = {conv_out.res_rot_norm:.3e}"
                     f"{_wn_info}{_rate_info}, "
                     f"active={n_active}"
+                    f"{_comp_info}"
                 )
 
             # ── ステップ 7: 接線剛性組立 ──
@@ -1208,25 +1230,37 @@ class NewtonDynamicProcess(
         # 全インクリメント（収束・不収束問わず）でNRスナップショットからType分布を記録。
         # show_progressとは独立に常にprint出力し、ログファイルに確実に残す。
         if diag.nr_iteration_snapshots:
-            _type_counts: dict[str, int] = {}
             _all_snaps = diag.nr_iteration_snapshots
-            for _snap in _all_snaps:
-                _t = classify_chattering_type(_snap)
-                _type_counts[_t] = _type_counts.get(_t, 0) + 1
             _n_total_snaps = len(_all_snaps)
+            # Type Dサブタイプ付き分布（status-290）
+            _type_counts_d: dict[str, int] = {}
+            for _snap in _all_snaps:
+                _t = classify_chattering_type(_snap, detailed_d=True)
+                _type_counts_d[_t] = _type_counts_d.get(_t, 0) + 1
             _type_str_full = ", ".join(
                 f"{k}:{v}({100.0 * v / _n_total_snaps:.0f}%)"
-                for k, v in sorted(_type_counts.items())
+                for k, v in sorted(_type_counts_d.items())
             )
-            # 直近10反復の分布
+            # 直近10反復の分布（サブタイプ付き）
             _recent10 = _all_snaps[-10:]
             _rc10: dict[str, int] = {}
             for _snap in _recent10:
-                _t = classify_chattering_type(_snap)
+                _t = classify_chattering_type(_snap, detailed_d=True)
                 _rc10[_t] = _rc10.get(_t, 0) + 1
             _type_str_recent = ", ".join(f"{k}:{v}" for k, v in sorted(_rc10.items()))
             _last = _all_snaps[-1]
             _status_tag = "収束" if step_converged else "不収束"
+            # comp別残差サマリ（最終反復）
+            _comp_summary = ""
+            if _last.comp_res_norms and len(_last.comp_res_norms) >= 3:
+                _cnames = ["x", "y", "z", "θx", "θy", "θz"]
+                _cn = _last.comp_res_norms
+                _ct = max(sum(c * c for c in _cn) ** 0.5, 1e-30)
+                _comp_parts = [
+                    f"{_cnames[i]}={_cn[i]:.1e}/{100 * _cn[i] / _ct:.0f}%"
+                    for i in range(min(len(_cn), 6))
+                ]
+                _comp_summary = f", comp({','.join(_comp_parts)})"
             # 不収束時は常に出力、収束時は多反復(>15)の場合のみ
             if not step_converged or total_attempts > 15:
                 print(
@@ -1239,6 +1273,7 @@ class NewtonDynamicProcess(
                     f"activated={_last.pairs_activated}, deactivated={_last.pairs_deactivated}, "
                     f"stick→slide={_last.pairs_stick_to_slide}, "
                     f"slide→stick={_last.pairs_slide_to_stick}"
+                    f"{_comp_summary}"
                 )
 
         return DynamicStepOutput(

@@ -27,11 +27,15 @@ class NRIterationSnapshot:
     """NR1反復の詳細スナップショット（チャタリング内訳分析用, status-287）.
 
     NR各反復で残差の内訳（接触DOF vs 構造DOF）とペア状態遷移を記録し、
-    不収束の原因を4タイプに分類する:
+    不収束の原因をタイプ分類する:
     - Type A: 接触活性集合の振動（ペアがON↔OFF）
     - Type B: 摩擦状態の振動（stick↔slide切替）
     - Type C: 構造系の収束不良（接触以外のDOFが支配的）
     - Type D: 接線剛性の不整合（収束率 > 0.9）
+      - D.slow: rate 0.9〜0.95（線形収束、改善中）
+      - D.stall: rate 0.95〜1.05（実質停滞）
+      - D.div: rate > 1.05（発散傾向）
+    - Type E: 接触力値振動（活性集合固定だが接触DOF残差支配）
     """
 
     att: int  # NR反復番号
@@ -48,16 +52,38 @@ class NRIterationSnapshot:
     pairs_stick_to_slide: int  # stick→slideになったペア数
     pairs_slide_to_stick: int  # slide→stickになったペア数
     convergence_rate: float  # 残差比 r_i / r_{i-1}（1.0 = 初回）
+    # comp別残差ノルム（status-290: x,y,z,θx,θy,θz）
+    comp_res_norms: tuple[float, ...] = ()  # len=ndof_per_node (通常6)
 
 
-def classify_chattering_type(snap: NRIterationSnapshot) -> str:
+def _classify_type_d_subtype(rate: float) -> str:
+    """Type Dのサブタイプを収束率で分類（status-290）.
+
+    Returns:
+        "D.slow" (0.9 < rate <= 0.95: 線形収束、改善中),
+        "D.stall" (0.95 < rate <= 1.05: 実質停滞),
+        "D.div" (rate > 1.05: 発散傾向)
+    """
+    if rate <= 0.95:
+        return "D.slow"
+    elif rate <= 1.05:
+        return "D.stall"
+    else:
+        return "D.div"
+
+
+def classify_chattering_type(snap: NRIterationSnapshot, *, detailed_d: bool = False) -> str:
     """NR反復スナップショットからチャタリングタイプを分類.
+
+    Args:
+        snap: NR反復スナップショット
+        detailed_d: TrueでType Dをサブタイプ（D.slow/D.stall/D.div）に細分化
 
     Returns:
         "A" (活性集合振動), "B" (摩擦状態振動),
         "C" (構造系不良), "D" (接線剛性不整合),
         "E" (接触力値振動: 活性集合固定だが接触DOF残差支配),
-        or 組合せ (e.g. "A+B")
+        or 組合せ (e.g. "A+B+D.stall")
     """
     types: list[str] = []
     contact_dominant = snap.contact_res_norm > snap.structural_res_norm
@@ -68,10 +94,11 @@ def classify_chattering_type(snap: NRIterationSnapshot) -> str:
     if not contact_dominant and snap.structural_res_norm > 0:
         types.append("C")
     if snap.convergence_rate > 0.9 and snap.att >= 2:
-        types.append("D")
+        if detailed_d:
+            types.append(_classify_type_d_subtype(snap.convergence_rate))
+        else:
+            types.append("D")
     # Type E: 接触力値振動（status-287 分析で発見）
-    # 活性集合が固定（A/Bなし）なのに接触DOF残差が支配的。
-    # 接触力の「値」が振動している（ペナルティ力の非線形性 or 摩擦力の方向振動）。
     if (
         contact_dominant
         and not snap.active_set_changed
