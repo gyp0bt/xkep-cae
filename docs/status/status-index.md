@@ -121,6 +121,9 @@
 | [285](status-285.md) | 2026-04-03 | C16修正 + Hertz型非線形ペナルティ — frac 0.70→0.998 | 621 passed |
 | [286](status-286.md) | 2026-04-04 | 揺動サイクル基盤 — prescribed_func + checkpoint自工程保証 | 621 passed |
 | [287](status-287.md) | 2026-04-04 | チャタリング内訳分析 — 活性集合振動ではなく接線剛性不整合が主因 | 621 passed |
+| [288](status-288.md) | 2026-04-04 | 収束診断ログ構造化 + Type D対策（FD自動トリガー・NR拡張） | 621 passed |
+| [289](status-289.md) | 2026-04-04 | FD接線診断でHertz型∂p/∂g整合性検証 + K_c不整合箇所特定 | 624 passed |
+| [290](status-290.md) | 2026-04-04 | FD接線診断強化 + Type D不整合のcomp別・DOF別分解 | 624 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 

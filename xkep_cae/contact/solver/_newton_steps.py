@@ -671,6 +671,9 @@ class TangentFDDiagnosticInput:
     eps: float = 1e-7
     compute_residual: object | None = None  # u → R_u を計算する callable
     active_contact_dofs: np.ndarray | None = None  # gap<0 ペアの関連DOF（status-260）
+    # f_c単独FD検証（status-290: K_c精度の直接評価）
+    compute_contact_force: object | None = None  # u → f_c を計算する callable
+    K_c: sp.spmatrix | None = None  # 接触接線剛性行列（K_matのみ or K_mat+K_geo+K_st）
 
 
 @dataclass(frozen=True)
@@ -682,6 +685,7 @@ class TangentFDDiagnosticOutput:
     analytical_directional_deriv: float  # K_T @ du · du / ||du||
     deriv_agreement: float  # |fd - analytical| / max(|fd|, |analytical|)
     active_dof_rel_err: float = -1.0  # 活性DOFのみの相対誤差（-1=未計算, status-260）
+    fc_rel_err: float = -1.0  # f_c単独のFD相対誤差（-1=未計算, status-290）
     report: str = ""  # 診断レポート文字列
 
 
@@ -803,16 +807,41 @@ class TangentFDDiagnosticProcess(
                 # 全体系DOF別エラートップ5
                 _full_abs_diff = np.abs(_full_diff)
                 _top5_full = np.argsort(_full_abs_diff)[::-1][:5]
+                _ndpn = 6  # ndof_per_node（デフォルト6DOF）
                 lines.append("  全体系不整合DOF上位5件:")
                 for idx in _top5_full:
                     if _full_abs_diff[idx] > 1e-30:
                         lines.append(
-                            f"    dof={idx} (node={idx // 6}, "
-                            f"comp={idx % 6}): "
+                            f"    dof={idx} (node={idx // _ndpn}, "
+                            f"comp={idx % _ndpn}): "
                             f"FD={dR_arr[idx]:.4e}, "
                             f"analytical={K_du_arr[idx]:.4e}, "
                             f"diff={_full_diff[idx]:.4e}"
                         )
+                # ── status-290: comp別不整合分布 ──
+                # 各DOF成分(0=x,1=y,2=z,3=θx,4=θy,5=θz)ごとの不整合量を集計
+                _n_nodes_full = len(dR_arr) // _ndpn
+                _comp_err = np.zeros(_ndpn)
+                for c in range(_ndpn):
+                    _cdofs = np.arange(c, len(dR_arr), _ndpn)
+                    _comp_err[c] = float(np.linalg.norm(_full_diff[_cdofs]))
+                _comp_total = float(np.linalg.norm(_full_diff))
+                _comp_names = ["x", "y", "z", "θx", "θy", "θz"]
+                _comp_str = ", ".join(
+                    f"{_comp_names[c]}:{_comp_err[c]:.2e}({100 * _comp_err[c] / max(_comp_total, 1e-30):.0f}%)"
+                    for c in range(_ndpn)
+                )
+                lines.append(f"  comp別不整合: [{_comp_str}]")
+                # ── 接触DOF vs 構造DOF分離 ──
+                if inp.active_contact_dofs is not None and len(inp.active_contact_dofs) > 0:
+                    _ac = inp.active_contact_dofs
+                    _non_ac = np.setdiff1d(np.arange(len(dR_arr)), _ac)
+                    _ac_err = float(np.linalg.norm(_full_diff[_ac]))
+                    _non_ac_err = float(np.linalg.norm(_full_diff[_non_ac]))
+                    lines.append(
+                        f"  接触DOF不整合: {_ac_err:.2e} ({len(_ac)} DOFs), "
+                        f"構造DOF不整合: {_non_ac_err:.2e} ({len(_non_ac)} DOFs)"
+                    )
 
             # 活性DOFのみの精度評価（status-260: 活性集合変化を除外）
             if inp.active_contact_dofs is not None and len(inp.active_contact_dofs) > 0:
@@ -878,6 +907,57 @@ class TangentFDDiagnosticProcess(
         deriv_agreement = abs(fd_dd - analytical_dd) / max_dd
 
         lines.append(f"  方向微分整合度: |FD-解析|/max = {deriv_agreement:.4e}")
+
+        # ── f_c 単独FD検証（status-290: K_c精度の直接評価） ──
+        fc_rel_err = -1.0
+        if inp.compute_contact_force is not None and inp.K_c is not None:
+            lines.append("-" * 60)
+            lines.append("  f_c 単独FD検証（K_c精度）")
+            eps = inp.eps
+            fc_base = inp.compute_contact_force(inp.u)
+            fc_pert = inp.compute_contact_force(inp.u + eps * inp.du)
+            dfc = (fc_pert - fc_base) / eps  # FD: ∂f_c/∂u @ du
+            kc_du = np.asarray(inp.K_c @ inp.du).ravel()  # 解析: K_c @ du
+            # 符号注意: f_c は R_u = f_int + f_c - f_ext で使われる。
+            # tangent() は ∂f_c/∂u を返す。evaluate() の f_c は符号反転済み(-f_c_raw)。
+            # FD: ((-f_c_raw_pert) - (-f_c_raw_base))/eps = -(f_c_raw_pert - f_c_raw_base)/eps
+            # K_c @ du は ∂(-f_c_raw)/∂u @ du = K_c @ du
+            # → dfc と kc_du を直接比較可能
+            _fc_diff = dfc - kc_du
+            _fc_diff_norm = float(np.linalg.norm(_fc_diff))
+            _fc_ref = max(float(np.linalg.norm(dfc)), float(np.linalg.norm(kc_du)), 1e-30)
+            fc_rel_err = _fc_diff_norm / _fc_ref
+            lines.append(f"  ||∂f_c/∂u·du (FD)|| = {float(np.linalg.norm(dfc)):.4e}")
+            lines.append(f"  ||K_c @ du|| = {float(np.linalg.norm(kc_du)):.4e}")
+            lines.append(f"  f_c FD相対誤差 = {fc_rel_err:.4e}")
+            if fc_rel_err > 0.1:
+                lines.append("  ⚠ K_c自体が不正確（f_c単独で10%超の不整合）")
+            else:
+                lines.append("  ✓ K_cは整合（問題はK_struct側にある可能性）")
+            # comp別分解
+            _ndpn = 6
+            if len(dfc) >= _ndpn:
+                _comp_names = ["x", "y", "z", "θx", "θy", "θz"]
+                _fc_comp_parts = []
+                _fc_comp_total = max(_fc_diff_norm, 1e-30)
+                for c in range(min(_ndpn, 6)):
+                    _cdofs = np.arange(c, len(dfc), _ndpn)
+                    _ce = float(np.linalg.norm(_fc_diff[_cdofs]))
+                    _fc_comp_parts.append(
+                        f"{_comp_names[c]}={_ce:.1e}/{100 * _ce / _fc_comp_total:.0f}%"
+                    )
+                lines.append(f"  f_c comp別不整合: [{', '.join(_fc_comp_parts)}]")
+            # DOF上位5件
+            _fc_abs_diff = np.abs(_fc_diff)
+            _fc_top5 = np.argsort(_fc_abs_diff)[::-1][:5]
+            lines.append("  f_c不整合DOF上位5件:")
+            for idx in _fc_top5:
+                if _fc_abs_diff[idx] > 1e-30:
+                    lines.append(
+                        f"    dof={idx} (node={idx // _ndpn}, comp={idx % _ndpn}): "
+                        f"FD={dfc[idx]:.4e}, K_c={kc_du[idx]:.4e}, diff={_fc_diff[idx]:.4e}"
+                    )
+
         lines.append("=" * 60)
 
         return TangentFDDiagnosticOutput(
@@ -886,5 +966,6 @@ class TangentFDDiagnosticProcess(
             analytical_directional_deriv=analytical_dd,
             deriv_agreement=deriv_agreement,
             active_dof_rel_err=active_dof_rel_err,
+            fc_rel_err=fc_rel_err,
             report="\n".join(lines),
         )
