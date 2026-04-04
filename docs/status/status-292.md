@@ -83,15 +83,23 @@ K_stが約4倍過大だった。修正後はFDと完全一致。
 
 status-291 TODO「90度曲げでの s_unclamped 修正効果検証」を実施。
 
-**結果**: 現環境（numpy 2.4.4, scipy 1.17.1）ではstatus-285コミット（503b65c）でも frac=0.0016 で完走不可。**コード変更ではなくnumpy/scipyバージョンの差異が原因**。
+### 初回検証（free_end_mode=False）
 
-検証手順:
-1. 現HEAD（ded8549）で実行 → frac=0.0016
-2. s_unclamped無効化して実行 → frac=0.0016（変化なし）
-3. status-285のソースファイルに差し替えて実行 → frac=0.0016（変化なし）
-4. status-285コミットのworktreeで実行 → frac=0.0016（変化なし）
+`free_end_mode=False`（MPC使用）で実行 → frac=0.0016で発散。status-285コミットでも同一結果。
+worktreeテストでstatus-285の正しい設定が`free_end_mode=True`であることが判明。
 
-**結論**: s_unclamped修正は90度曲げの収束に影響しない。環境依存の問題であり、status-285でのfrac=0.998は別の環境（おそらく古いnumpy/scipy）で達成されたもの。
+### 正式検証（free_end_mode=True）— **完走達成**
+
+| 指標 | status-285（修正前） | 今回（修正後） | 改善 |
+|------|---------------------|---------------|------|
+| frac | 0.9981 | **1.0000** | **完走達成** |
+| cutback | 60 | **47** | **22%削減** |
+| incr | 551 | 553 | 同等 |
+| elapsed | — | 778 sec | — |
+
+**s_unclamped修正 + StJacobian 2×2カップリング修正により、90度曲げが初めて完走（frac=1.0）。**
+
+カットバック22%削減は、K_st精度向上によりNR接線が正確になり、不要なカットバックが減少したことを示す。
 
 ---
 
@@ -108,9 +116,9 @@ status-291 TODO「90度曲げでの s_unclamped 修正効果検証」を実施�
 
 ## TODO
 
-- [ ] 90度曲げの環境依存問題: numpy/scipy旧バージョンでの再現テスト
 - [ ] frozen-m非局所項のz方向DOFカップリング: Hermite 3Dヘリカル配置でK_stがs端部でゼロになる問題（現テストではs_unc=2.886で端部、内部接触点での検証が未完）
 - [ ] StJacobian 1×1フォールバックの遷移帯: w_t ∈ (1e-10, 0.5) の中間領域で2×2系と1×1系の切替が急峻。smooth切替の検討
+- [ ] free_end_mode=False（MPC）での90度曲げ収束改善（現在frac=0.0016で発散）
 
 ---
 
@@ -123,8 +131,22 @@ status-291 TODO「90度曲げでの s_unclamped 修正効果検証」を実施�
 2. NRソルバーの接線剛性精度が向上
 3. 2次収束率の改善が期待される
 
-### 現環境での制限
+### 90度曲げ完走の意義
 
-numpy 2.4.4 / scipy 1.17.1 環境では90度曲げテストが最初のインクリメントで発散する。スパース行列ソルバーの数値精度差異が疑われるが未確定。status-285のfrac=0.998結果は古い環境でのもの。
+status-285では frac=0.9981（99.8%、残り0.2%で停止）だったが、今回の修正で **frac=1.0（完走）** を達成。K_st精度向上によりカットバックが22%削減され、NR収束が安定化した。
+
+### 注意: free_end_mode
+
+status-285の90度曲げベンチマークは `free_end_mode=True`（MPC不使用、直接処方変位）で実行されている。`free_end_mode=False`（MPC使用）では現在frac=0.0016で発散する別問題がある。
+
+---
+
+## STA2 準拠チェック
+
+- [x] **tee ログ保存**: `/tmp/log-s_unclamped-90deg-freeend.log`
+- [x] **再現手順**: `python contracts/verify_s_unclamped_90deg.py 2>&1 | tee /tmp/log.log`
+- [x] **数値の捏造なし**: frac=1.0, incr=553, cutback=47 は tee ログと一致
+- [x] **ベースライン先行取得**: status-285 frac=0.9981（worktreeで再現確認済み）
+- [x] **回帰なし**: 631 passed, 0 failed
 
 ---
