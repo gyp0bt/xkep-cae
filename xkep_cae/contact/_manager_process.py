@@ -463,6 +463,10 @@ class UpdateGeometryProcess(
         xB0 = coords[nodes_b0]
         xB1 = coords[nodes_b1]
 
+        # s_unclamped トラッキング（status-291: K_st smooth_clip_deriv 重み補正）
+        s_unc_all: np.ndarray | None = None
+        t_unc_all: np.ndarray | None = None
+
         if input_data.freeze_st:
             # s,t を凍結: 既存値を使い、現在の座標から gap/normal のみ再計算
             s_all = np.array([p.state.s for p in pairs])
@@ -495,8 +499,8 @@ class UpdateGeometryProcess(
             dist_safe = np.where(dist_all > 1e-30, dist_all, 1.0)
             normal_all = delta / dist_safe[:, None]
         else:
-            s_all, t_all, _, _, dist_all, normal_all, _ = _closest_point_segments_batch(
-                xA0, xA1, xB0, xB1
+            s_all, t_all, _, _, dist_all, normal_all, _, s_unc_all, t_unc_all = (
+                _closest_point_segments_batch(xA0, xA1, xB0, xB1)
             )
 
             # Hermite 中心線精密化: 要素間 C1 法線場
@@ -517,17 +521,19 @@ class UpdateGeometryProcess(
                 mB0 = node_tangents[nodes_b0]
                 mB1 = node_tangents[nodes_b1]
 
-                s_all, t_all, _, _, dist_all, normal_all = _closest_point_hermite_refine(
-                    s_all,
-                    t_all,
-                    xA0,
-                    xA1,
-                    xB0,
-                    xB1,
-                    mA0,
-                    mA1,
-                    mB0,
-                    mB1,
+                s_all, t_all, _, _, dist_all, normal_all, s_unc_all, t_unc_all = (
+                    _closest_point_hermite_refine(
+                        s_all,
+                        t_all,
+                        xA0,
+                        xA1,
+                        xB0,
+                        xB1,
+                        mA0,
+                        mA1,
+                        mB0,
+                        mB1,
+                    )
                 )
 
         # s,t under-relaxation: s = α*s_new + (1-α)*s_old
@@ -586,6 +592,11 @@ class UpdateGeometryProcess(
                 "tangent1": t1_all[i],
                 "tangent2": t2_all[i],
             }
+            # s_unclamped/t_unclamped（status-291: K_st smooth_clip_deriv 重み計算用）
+            if s_unc_all is not None:
+                geom_kw["s_unclamped"] = float(s_unc_all[i])
+            if t_unc_all is not None:
+                geom_kw["t_unclamped"] = float(t_unc_all[i])
             if _use_coating:
                 geom_kw["coating_compression"] = float(coat_comp[i])
             new_state = _evolve_state(pair.state, **geom_kw)

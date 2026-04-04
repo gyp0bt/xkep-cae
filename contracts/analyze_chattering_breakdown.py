@@ -23,7 +23,7 @@ from collections import Counter
 warnings.filterwarnings("ignore", category=UserWarning)
 
 from xkep_cae.contact.solver._diagnostics import (  # noqa: E402
-    NRIterationSnapshot,
+    NRIterationSnapshotOutput,
     classify_chattering_type,
 )
 from xkep_cae.numerical_tests.strand_bending_oscillation import (  # noqa: E402
@@ -64,7 +64,7 @@ def _analyze_increment_diagnostics(incr_diags, sr):
 
 def _analyze_nr_snapshots(diag):
     """ConvergenceDiagnosticsOutputのNRスナップショットからType分析."""
-    snaps: list[NRIterationSnapshot] = diag.nr_iteration_snapshots
+    snaps: list[NRIterationSnapshotOutput] = diag.nr_iteration_snapshots
     if not snaps:
         print("  NRスナップショットなし（収束したインクリメント）")
         return

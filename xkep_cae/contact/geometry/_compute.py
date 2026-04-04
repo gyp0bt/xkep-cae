@@ -120,23 +120,36 @@ def _closest_point_segments_batch(
     s = np.where(is_parallel, 0.0, _smooth_clip_01(s_unc))
     t = np.where(is_parallel, t_parallel, _smooth_clip_01(t_unc))
 
+    # 有効 s_unc/t_unc の追跡（status-291: smooth_clip_deriv 重み計算用）
+    s_unc_eff = s_unc.copy()
+    t_unc_eff = t_unc.copy()
+
     s_clamped = (s_unc < 0.0) | (s_unc > 1.0)
     t_clamped = (t_unc < 0.0) | (t_unc > 1.0)
 
-    t_recalc = _smooth_clip_01((b * s + e) / safe_c)
+    t_recalc_unc = (b * s + e) / safe_c
+    t_recalc = _smooth_clip_01(t_recalc_unc)
     t_recalc = np.where(c > tol_parallel, t_recalc, 0.0)
+    t_recalc_unc = np.where(c > tol_parallel, t_recalc_unc, 0.0)
     need_t_recalc = s_clamped & ~is_parallel
     t = np.where(need_t_recalc, t_recalc, t)
+    t_unc_eff = np.where(need_t_recalc, t_recalc_unc, t_unc_eff)
 
     safe_a = np.where(a > tol_parallel, a, 1.0)
-    s_recalc = _smooth_clip_01((b * t - d) / safe_a)
+    s_recalc_unc = (b * t - d) / safe_a
+    s_recalc = _smooth_clip_01(s_recalc_unc)
     s_recalc = np.where(a > tol_parallel, s_recalc, 0.0)
+    s_recalc_unc = np.where(a > tol_parallel, s_recalc_unc, 0.0)
     need_s_recalc = t_clamped & ~is_parallel
     s = np.where(need_s_recalc, s_recalc, s)
+    s_unc_eff = np.where(need_s_recalc, s_recalc_unc, s_unc_eff)
 
-    t_recalc2 = _smooth_clip_01((b * s + e) / safe_c)
+    t_recalc2_unc = (b * s + e) / safe_c
+    t_recalc2 = _smooth_clip_01(t_recalc2_unc)
     t_recalc2 = np.where(c > tol_parallel, t_recalc2, 0.0)
+    t_recalc2_unc = np.where(c > tol_parallel, t_recalc2_unc, 0.0)
     t = np.where(need_s_recalc, t_recalc2, t)
+    t_unc_eff = np.where(need_s_recalc, t_recalc2_unc, t_unc_eff)
 
     point_a = xA0 + s[:, None] * dA
     point_b = xB0 + t[:, None] * dB
@@ -148,7 +161,7 @@ def _closest_point_segments_batch(
     zero_mask = distance < 1e-30
     normal[zero_mask] = [0.0, 0.0, 1.0]
 
-    return s, t, point_a, point_b, distance, normal, is_parallel
+    return s, t, point_a, point_b, distance, normal, is_parallel, s_unc_eff, t_unc_eff
 
 
 def _build_contact_frame_batch(
@@ -550,10 +563,13 @@ def _closest_point_hermite_refine(
     ただし δ = pA(s) - pB(t)（Hermite 補間上の点）
 
     Returns:
-        s, t, point_a, point_b, distance, normal
+        s, t, point_a, point_b, distance, normal, s_unc, t_unc
+        s_unc, t_unc はクランプ前の値（smooth_clip_deriv の重み計算用, status-291）
     """
     s = s0.copy()
     t = t0.copy()
+    s_unc = s.copy()
+    t_unc = t.copy()
     eps = 0.02  # smooth_clip の遷移幅と同じ
 
     for _iter in range(max_iter):
@@ -597,6 +613,10 @@ def _closest_point_hermite_refine(
         s += ds
         t += dt
 
+        # クランプ前の値を保存（status-291: K_st の smooth_clip_deriv 重み計算用）
+        s_unc = s.copy()
+        t_unc = t.copy()
+
         # smooth clamp
         s = _smooth_clip_01(s, eps)
         t = _smooth_clip_01(t, eps)
@@ -611,4 +631,4 @@ def _closest_point_hermite_refine(
     zero_mask = distance < 1e-30
     normal[zero_mask] = [0.0, 0.0, 1.0]
 
-    return s, t, pA, pB, distance, normal
+    return s, t, pA, pB, distance, normal, s_unc, t_unc

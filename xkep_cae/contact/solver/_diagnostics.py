@@ -23,7 +23,7 @@ class PairDiagnosticsOutput:
 
 
 @dataclass(frozen=True)
-class NRIterationSnapshot:
+class NRIterationSnapshotOutput:
     """NR1反復の詳細スナップショット（チャタリング内訳分析用, status-287）.
 
     NR各反復で残差の内訳（接触DOF vs 構造DOF）とペア状態遷移を記録し、
@@ -72,7 +72,7 @@ def _classify_type_d_subtype(rate: float) -> str:
         return "D.div"
 
 
-def classify_chattering_type(snap: NRIterationSnapshot, *, detailed_d: bool = False) -> str:
+def classify_chattering_type(snap: NRIterationSnapshotOutput, *, detailed_d: bool = False) -> str:
     """NR反復スナップショットからチャタリングタイプを分類.
 
     Args:
@@ -138,7 +138,7 @@ class ConvergenceDiagnosticsOutput:
     converged: bool = False
     n_attempts: int = 0
     # NR反復レベル詳細スナップショット（チャタリング内訳分析用, status-287）
-    nr_iteration_snapshots: list[NRIterationSnapshot] = field(default_factory=list)
+    nr_iteration_snapshots: list[NRIterationSnapshotOutput] = field(default_factory=list)
     # Type D FD診断結果サマリ（status-288）
     type_d_fd_reports: list[str] = field(default_factory=list)
 

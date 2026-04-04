@@ -235,7 +235,9 @@ def _batch_update_geometry(
     xB1 = coords[nodes_b1]
 
     # --- バッチ最近接点計算（線形初期推定） ---
-    s_all, t_all, _, _, dist_all, normal_all, _ = closest_point_segments_batch(xA0, xA1, xB0, xB1)
+    s_all, t_all, _, _, dist_all, normal_all, _, _, _ = closest_point_segments_batch(
+        xA0, xA1, xB0, xB1
+    )
 
     # --- Hermite 精密化 ---
     _use_hermite = (
@@ -256,7 +258,7 @@ def _batch_update_geometry(
         mB0 = node_tangents[nodes_b0]
         mB1 = node_tangents[nodes_b1]
 
-        s_all, t_all, _, _, dist_all, normal_all = _closest_point_hermite_refine(
+        s_all, t_all, _, _, dist_all, normal_all, _, _ = _closest_point_hermite_refine(
             s_all,
             t_all,
             xA0,

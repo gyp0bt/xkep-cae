@@ -41,6 +41,8 @@ class _ContactStateOutput:
 
     s: float = 0.0
     t: float = 0.0
+    s_unclamped: float | None = None  # クランプ前のs（K_st smooth_clip_deriv用, status-291）
+    t_unclamped: float | None = None  # クランプ前のt（K_st smooth_clip_deriv用, status-291）
     gap: float = 0.0
     normal: np.ndarray = field(default_factory=lambda: np.zeros(3))
     tangent1: np.ndarray = field(default_factory=lambda: np.zeros(3))

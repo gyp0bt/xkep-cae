@@ -15,7 +15,7 @@ import numpy as np
 from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
-    NRIterationSnapshot,
+    NRIterationSnapshotOutput,
     PairDiagnosticsOutput,
     classify_chattering_type,
 )
@@ -439,7 +439,7 @@ class NewtonDynamicProcess(
                     _cn.append(float(np.linalg.norm(R_u[_cdof_arr])))
                 _comp_norms = tuple(_cn)
 
-            _nr_snap = NRIterationSnapshot(
+            _nr_snap = NRIterationSnapshotOutput(
                 att=att,
                 res_ratio=_res_ratio,
                 n_active=n_active,

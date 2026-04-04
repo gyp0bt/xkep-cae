@@ -276,10 +276,10 @@ def _compute_hermite_s_t(xA0, xA1, xB0, xB1, mA0, mA1, mB0, mB1):
     """Hermite 曲線上の最近接点パラメータを計算."""
     xA0_b, xA1_b = xA0.reshape(1, 3), xA1.reshape(1, 3)
     xB0_b, xB1_b = xB0.reshape(1, 3), xB1.reshape(1, 3)
-    s_lin, t_lin, _, _, _, _, _ = _closest_point_segments_batch(xA0_b, xA1_b, xB0_b, xB1_b)
+    s_lin, t_lin, _, _, _, _, _, _, _ = _closest_point_segments_batch(xA0_b, xA1_b, xB0_b, xB1_b)
     mA0_b, mA1_b = mA0.reshape(1, 3), mA1.reshape(1, 3)
     mB0_b, mB1_b = mB0.reshape(1, 3), mB1.reshape(1, 3)
-    s, t, _, _, _, _ = _closest_point_hermite_refine(
+    s, t, _, _, _, _, _, _ = _closest_point_hermite_refine(
         s_lin, t_lin, xA0_b, xA1_b, xB0_b, xB1_b, mA0_b, mA1_b, mB0_b, mB1_b
     )
     return float(s[0]), float(t[0])
