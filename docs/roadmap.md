@@ -57,6 +57,7 @@
 | チャタリング内訳分析 | **NR反復レベル詳細診断（Type A/B/C/D/E分類）**: frac>0.10で活性集���振動ゼロ、接線剛性不整合(D=52%)が主因。凍結モードは原理的に無効 — status-287 |
 | Type D対策基盤 | **収束診断ログ構造化 + Type D自動検知・FD診断トリガー**: NR進捗にType+rate追加、連続Type D→FD診断自動実行+NR上限拡張、低残差Type D分岐 — status-288 |
 | K_c不整合特定 | **Hertz ∂p/∂g正確、K_c幾何項不足を特定**: comp=2(z方向)にFD不整合集中。frozen-m近似（∂m/∂u=0）がz方向DOFカップリング欠落の根本原因 — status-289 |
+| smooth遷移帯 | **StJacobian smooth blending + unclamped IFT修正**: 1×1/2×2系のhard threshold→w_t/w_s連続補間。IFT幾何をunclamped座標で評価。frozen-m内部接触点K_st FD誤差3x確認（既知制限） — status-293 |
 | **壁** | frozen-m解消（∂m/∂u正確計算）→ NR 2次収束回復 → frac=1.0 / 61本以上 / 1000本6時間 |
 
 ---
