@@ -803,16 +803,41 @@ class TangentFDDiagnosticProcess(
                 # 全体系DOF別エラートップ5
                 _full_abs_diff = np.abs(_full_diff)
                 _top5_full = np.argsort(_full_abs_diff)[::-1][:5]
+                _ndpn = 6  # ndof_per_node（デフォルト6DOF）
                 lines.append("  全体系不整合DOF上位5件:")
                 for idx in _top5_full:
                     if _full_abs_diff[idx] > 1e-30:
                         lines.append(
-                            f"    dof={idx} (node={idx // 6}, "
-                            f"comp={idx % 6}): "
+                            f"    dof={idx} (node={idx // _ndpn}, "
+                            f"comp={idx % _ndpn}): "
                             f"FD={dR_arr[idx]:.4e}, "
                             f"analytical={K_du_arr[idx]:.4e}, "
                             f"diff={_full_diff[idx]:.4e}"
                         )
+                # ── status-290: comp別不整合分布 ──
+                # 各DOF成分(0=x,1=y,2=z,3=θx,4=θy,5=θz)ごとの不整合量を集計
+                _n_nodes_full = len(dR_arr) // _ndpn
+                _comp_err = np.zeros(_ndpn)
+                for c in range(_ndpn):
+                    _cdofs = np.arange(c, len(dR_arr), _ndpn)
+                    _comp_err[c] = float(np.linalg.norm(_full_diff[_cdofs]))
+                _comp_total = float(np.linalg.norm(_full_diff))
+                _comp_names = ["x", "y", "z", "θx", "θy", "θz"]
+                _comp_str = ", ".join(
+                    f"{_comp_names[c]}:{_comp_err[c]:.2e}({100 * _comp_err[c] / max(_comp_total, 1e-30):.0f}%)"
+                    for c in range(_ndpn)
+                )
+                lines.append(f"  comp別不整合: [{_comp_str}]")
+                # ── 接触DOF vs 構造DOF分離 ──
+                if inp.active_contact_dofs is not None and len(inp.active_contact_dofs) > 0:
+                    _ac = inp.active_contact_dofs
+                    _non_ac = np.setdiff1d(np.arange(len(dR_arr)), _ac)
+                    _ac_err = float(np.linalg.norm(_full_diff[_ac]))
+                    _non_ac_err = float(np.linalg.norm(_full_diff[_non_ac]))
+                    lines.append(
+                        f"  接触DOF不整合: {_ac_err:.2e} ({len(_ac)} DOFs), "
+                        f"構造DOF不整合: {_non_ac_err:.2e} ({len(_non_ac)} DOFs)"
+                    )
 
             # 活性DOFのみの精度評価（status-260: 活性集合変化を除外）
             if inp.active_contact_dofs is not None and len(inp.active_contact_dofs) > 0:
