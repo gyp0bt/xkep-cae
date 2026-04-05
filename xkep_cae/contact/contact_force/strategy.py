@@ -1040,6 +1040,10 @@ class HuberContactForceProcess(
 
             # K_3x3 = w_mat * (n⊗n) - w_geo * (I - n⊗n) per pair
             K_3x3 = w_mat[:, None, None] * nn - w_geo[:, None, None] * I_nn  # (N, 3, 3)
+            # K_3x3_mat: 隣接ノード用。幾何剛性(I-n⊗n)を除外（status-295）。
+            # 理由: 隣接ノード変位→s追従により法線変化はほぼ相殺されるが、
+            # ギャップ変化(n⊗n項)は維持される。K_c_adj = mat_only で 11%→1.8%。
+            K_3x3_mat = w_mat[:, None, None] * nn  # (N, 3, 3)
 
             # c_i * c_j: (N, 4, 4)
             cc = coeffs[:, :, None] * coeffs[:, None, :]
@@ -1116,7 +1120,7 @@ class HuberContactForceProcess(
                 for ki in range(4):
                     for aj in range(4):
                         K_c_adj[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
-                            c_alpha[:, ki, aj][:, None, None] * K_3x3
+                            c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
                         )
 
                 # adj DOF indices (N, 12) + validity mask
@@ -1312,6 +1316,75 @@ class HuberContactForceProcess(
 
             K_mat = _assemble_12x12(K_3x3_mat)
             K_geo = _assemble_12x12(K_3x3_geo)
+
+            # ── K_mat_adj: 隣接ノードへの材料剛性拡張（status-295） ──
+            # 幾何剛性(I-n⊗n)は隣接ノードではs追従により相殺されるため除外。
+            if _adj_node_map is not None and _adj_node_counts is not None:
+                active_idx = np.where(active)[0]
+                elem_a_act = np.array([manager.pairs[int(idx)].elem_a for idx in active_idx])
+                elem_b_act = np.array([manager.pairs[int(idx)].elem_b for idx in active_idx])
+
+                c_a0 = np.maximum(_adj_node_counts[nodes_act[:, 0]], 1.0)
+                c_a1 = np.maximum(_adj_node_counts[nodes_act[:, 1]], 1.0)
+                c_b0 = np.maximum(_adj_node_counts[nodes_act[:, 2]], 1.0)
+                c_b1 = np.maximum(_adj_node_counts[nodes_act[:, 3]], 1.0)
+                dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
+                dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
+                dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
+                dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+
+                s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
+                t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
+                h10_s = s3_h - 2.0 * s2_h + s_act
+                h11_s = s3_h - s2_h
+                h10_t = t3_h - 2.0 * t2_h + t_act
+                h11_t = t3_h - t2_h
+
+                alpha_adj = np.column_stack(
+                    [
+                        h10_s * dm_ext_a0,
+                        h11_s * dm_ext_a1,
+                        -h10_t * dm_ext_b0,
+                        -h11_t * dm_ext_b1,
+                    ]
+                )
+
+                adj_gnodes = np.full((n_act, 4), -1, dtype=int)
+                for i in range(n_act):
+                    adj_a = _adj_node_map.get(int(elem_a_act[i]), (-1, -1))
+                    adj_b = _adj_node_map.get(int(elem_b_act[i]), (-1, -1))
+                    adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+
+                c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
+                K_mat_adj_local = np.zeros((n_act, 12, 12))
+                for ki in range(4):
+                    for aj in range(4):
+                        K_mat_adj_local[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
+                            c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
+                        )
+
+                adj_gdofs = np.zeros((n_act, 12), dtype=int)
+                adj_valid = np.zeros((n_act, 12), dtype=bool)
+                for aj in range(4):
+                    valid = adj_gnodes[:, aj] >= 0
+                    for d in range(3):
+                        adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
+                        adj_valid[:, aj * 3 + d] = valid
+
+                row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+                col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
+                val_adj = K_mat_adj_local.ravel()
+                valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
+                mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
+                if mask_adj.any():
+                    K_mat_adj = sp.coo_matrix(
+                        (
+                            val_adj[mask_adj],
+                            (row_adj[mask_adj], col_adj[mask_adj]),
+                        ),
+                        shape=(ndof, ndof),
+                    ).tocsr()
+                    K_mat = K_mat + K_mat_adj
 
         if _use_st and node_coords is not None:
             b1 = ContactForceStStiffnessProcess()

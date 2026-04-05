@@ -233,13 +233,16 @@ class TestKstNonlocalFD:
 
 
 class TestKcAdjFD:
-    """K_c_adj（K_mat+K_geo 隣接ノード拡張）のFD検証（status-273: Step3, status-275修正）.
+    """K_c_adj（K_mat 隣接ノード拡張）のFD検証（status-273: Step3, status-275修正）.
 
     3要素チェーン×2本。Hermite補間で隣接ノード位置が接触力に影響。
-    consistent_st_tangent=False で K_st を除外し、K_mat+K_geo+K_c_adj のみを検証。
+    consistent_st_tangent=False で K_st を除外し、K_mat+K_geo+K_c_adj_mat のみを検証。
 
     status-275: 座標を非平行化 + elem_a=1,elem_b=4（中央要素、近接配置）に変更。
     旧テストは elem_a=0,elem_b=5 が空間的に離れており trivially passing だった。
+
+    status-295: K_c_adj を材料剛性(n⊗n)のみに変更。幾何剛性(I-n⊗n)は
+    隣接ノードではs追従により相殺されるため除外。FD参照も材料剛性のみを検証。
     """
 
     def _make_chain_coords(self):
@@ -269,10 +272,69 @@ class TestKcAdjFD:
         h11 = s3 - s2
         return h00 * x0 + h01 * x1 + h10 * m0 + h11 * m1
 
-    def _compute_force_with_geom(self, coords):
-        """座標から gap/normal を再計算して接触力を返す (12,).
+    def _compute_base_geom(self, coords):
+        """ベース座標での gap, normal, p_n, coeffs を計算."""
+        from xkep_cae.contact.contact_force.strategy import (
+            _hermite_corrected_coeffs,
+        )
+        from xkep_cae.contact.geometry._compute import (
+            _compute_dm_coeffs,
+            _compute_node_counts,
+            _compute_node_tangents,
+        )
 
-        status-294: evaluate() が dm 補正係数を使用するため、FD参照も dm 補正を使用。
+        conn = self._make_connectivity()
+        node_tangents = _compute_node_tangents(coords, conn)
+        node_counts = _compute_node_counts(len(coords), conn)
+
+        s, t = 0.5, 0.5
+        k_pen = 1e4
+        rA, rB = 0.05, 0.05
+        nodes_a = (1, 2)
+        nodes_b = (5, 6)
+
+        pA = self._hermite_interp(
+            s,
+            coords[nodes_a[0]],
+            coords[nodes_a[1]],
+            node_tangents[nodes_a[0]],
+            node_tangents[nodes_a[1]],
+        )
+        pB = self._hermite_interp(
+            t,
+            coords[nodes_b[0]],
+            coords[nodes_b[1]],
+            node_tangents[nodes_b[0]],
+            node_tangents[nodes_b[1]],
+        )
+
+        d = pA - pB
+        dist = np.linalg.norm(d)
+        normal = d / dist if dist > 1e-15 else np.array([0.0, 1.0, 0.0])
+        gap = dist - rA - rB
+
+        delta_h = 100.0
+        x_p = k_pen * (-gap)
+        if delta_h <= 0.0:
+            p_n = max(0.0, x_p)
+        elif x_p < -delta_h:
+            p_n = 0.0
+        elif x_p > delta_h:
+            p_n = x_p
+        else:
+            p_n = (x_p + delta_h) ** 2 / (4.0 * delta_h)
+
+        dm_A = _compute_dm_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
+        dm_B = _compute_dm_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
+        coeffs, _, _ = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
+
+        return normal, gap, p_n, coeffs
+
+    def _compute_force_mat_only(self, coords, normal_base):
+        """材料剛性FD用: 法線はbase固定、p_nのみ再計算して接触力を返す (12,).
+
+        status-295: K_c_adjがmat-only(n⊗n)になったため、FD参照も材料剛性のみ。
+        法線方向はbase時点で固定し、ギャップ変化→p_n変化のみを追跡する。
         """
         from xkep_cae.contact.contact_force.strategy import (
             _hermite_corrected_coeffs,
@@ -293,7 +355,6 @@ class TestKcAdjFD:
         nodes_a = (1, 2)
         nodes_b = (5, 6)
 
-        # Hermite 補間点
         pA = self._hermite_interp(
             s,
             coords[nodes_a[0]],
@@ -309,13 +370,10 @@ class TestKcAdjFD:
             node_tangents[nodes_b[1]],
         )
 
-        # gap, normal
+        # gap を base normal で射影して計算（法線固定）
         d = pA - pB
-        dist = np.linalg.norm(d)
-        normal = d / dist if dist > 1e-15 else np.array([0.0, 1.0, 0.0])
-        gap = dist - rA - rB
+        gap = np.dot(normal_base, d) - rA - rB
 
-        # Huber p_n
         delta_h = 100.0
         x_p = k_pen * (-gap)
         if delta_h <= 0.0:
@@ -327,16 +385,15 @@ class TestKcAdjFD:
         else:
             p_n = (x_p + delta_h) ** 2 / (4.0 * delta_h)
 
-        # dm 補正係数（status-294: evaluate()と整合）
         dm_A = _compute_dm_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
         dm_B = _compute_dm_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
         coeffs, _, _ = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
 
-        # f_c = p_n * c_k * n
+        # f_c = p_n * c_k * n_base（法線固定）
         f_local = np.zeros(12)
         for k in range(4):
             for i in range(3):
-                f_local[k * 3 + i] = p_n * coeffs[k] * normal[i]
+                f_local[k * 3 + i] = p_n * coeffs[k] * normal_base[i]
         return f_local
 
     def _compute_tangent(self, coords):
@@ -422,9 +479,13 @@ class TestKcAdjFD:
         return proc.tangent(np.zeros(ndof), manager, k_pen, node_coords=coords)
 
     def test_kc_adj_fd(self):
-        """K_c_adj の隣接ノードDOF列がFDと一致."""
+        """K_c_adj（mat-only）の隣接ノードDOF列がFDと一致（status-295）.
+
+        K_c_adj は材料剛性(n⊗n)のみ。FD参照も法線固定でp_n変化のみ追跡。
+        """
         coords = self._make_chain_coords()
         K = self._compute_tangent(coords)
+        normal_base, _, _, _ = self._compute_base_geom(coords)
 
         ndpn = 6
         # 4接触ノード (1,2,5,6) の translational DOF
@@ -446,14 +507,14 @@ class TestKcAdjFD:
                     [K[ri, col_dof] if sp.issparse(K) else K[ri, col_dof] for ri in row_dofs]
                 )
 
-                # FD
+                # FD（法線固定: 材料剛性のみ検証）
                 coords_p = coords.copy()
                 coords_p[adj_node, d] += eps
-                f_p = self._compute_force_with_geom(coords_p)
+                f_p = self._compute_force_mat_only(coords_p, normal_base)
 
                 coords_m = coords.copy()
                 coords_m[adj_node, d] -= eps
-                f_m = self._compute_force_with_geom(coords_m)
+                f_m = self._compute_force_mat_only(coords_m, normal_base)
 
                 fd_col = -(f_p - f_m) / (2.0 * eps)
 
