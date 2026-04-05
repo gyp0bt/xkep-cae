@@ -375,6 +375,34 @@ class TestAdaptiveSteppingProcessAPI:
         assert fail_out.can_retry is True
         assert fail_out.next_load_frac < load_frac
 
+    def test_snap_to_one_avoids_micro_dt(self):
+        """残りが通常dtの半分未満なら1.0に吸収する（status-296: 微小dt防止）."""
+        config = AdaptiveSteppingInput(dt_initial_fraction=0.1)
+        proc = AdaptiveSteppingProcess(config)
+
+        # QUERY → frac=0.1
+        out = proc.process(AdaptiveStepInput(action=StepAction.QUERY, load_frac_prev=0.0))
+        assert out.next_load_frac == pytest.approx(0.1, abs=1e-6)
+
+        # SUCCESS で次ステップを計算。load_frac_prev=0.94, load_frac=0.97 とする。
+        # dt=0.03, 残り=0.03。次のdtも ~0.03 なら残り~0 → snap不要。
+        # load_frac_prev=0.96, load_frac=0.98 とする。
+        # dt=0.02, 次dt~0.03 → next_frac=1.01 → min(1.0) → remaining=0。snap不要。
+        # テスト: load_frac=0.985, prev=0.97 → dt=0.015, next~0.015*1.5=0.0225
+        # next_frac=0.985+0.0225=1.0075 → clamp to 1.0 → remaining=0 → snap不要
+        # テスト: load_frac=0.99, prev=0.985 → dt=0.005, next~0.005*1.5=0.0075
+        # next_frac=0.99+0.0075=0.9975 → remaining=0.0025 < 0.0075*0.5=0.00375 → snap!
+        out2 = proc.process(
+            AdaptiveStepInput(
+                action=StepAction.SUCCESS,
+                load_frac=0.99,
+                load_frac_prev=0.985,
+                n_attempts=3,  # good convergence → grow
+            )
+        )
+        # next_frac should snap to 1.0 (remaining < next_delta * 0.5)
+        assert out2.next_load_frac == pytest.approx(1.0, abs=1e-10)
+
 
 # ── InitialPenetrationProcess テスト ─────────────────────
 
@@ -579,6 +607,25 @@ class TestConvergenceCheckProcessAPI:
         assert isinstance(out, ConvergenceCheckOutput)
         assert out.converged is True
         assert out.convergence_type == ConvergenceType.FORCE
+
+    def test_f_ref_floor_field_exists(self):
+        """NewtonDynamicStepInput.f_ref_floor と DynamicStepOutput.f_ref_used が存在する（status-297）."""
+        # f_ref_floor フィールドが存在しデフォルト0.0
+        import dataclasses
+
+        from xkep_cae.contact.solver._newton_dynamic import (
+            DynamicStepOutput,
+            NewtonDynamicStepInput,
+        )
+
+        fields = {f.name: f for f in dataclasses.fields(NewtonDynamicStepInput)}
+        assert "f_ref_floor" in fields
+        assert fields["f_ref_floor"].default == 0.0
+
+        # f_ref_used フィールドが存在しデフォルト0.0
+        out_fields = {f.name: f for f in dataclasses.fields(DynamicStepOutput)}
+        assert "f_ref_used" in out_fields
+        assert out_fields["f_ref_used"].default == 0.0
 
 
 @binds_to(TangentAssemblyProcess)
