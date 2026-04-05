@@ -128,6 +128,7 @@
 | [292](status-292.md) | 2026-04-04 | StJacobian 2×2カップリング修正（K_st FD不整合94%→0.0001%） | 631 passed |
 | [293](status-293.md) | 2026-04-04 | StJacobian smooth遷移帯 + frozen-m内部接触点検証 | 631+ passed |
 | [294](status-294.md) | 2026-04-05 | frozen-m部分解消（dm_A/dm_B有効化 + dm_ext無効化） | 631+ passed |
+| [295](status-295.md) | 2026-04-05 | K_c_adj mat-only化（K_c FD誤差11%→1.8%）+ MPC+contact調査 | 631+ passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -276,6 +277,7 @@ frac1回帰修正:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← 
 非局所Step3:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2(新) (2026-03-30) ← status-273（K_c隣接ノードDOF拡張+FD検証）
 C16+Hertz:             200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15(新) (2026-04-03) ← status-285（C16修正+凍結テスト+Hertz型ペナルティ）
 smooth遷移帯:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4(新) (2026-04-04) ← status-293（StJacobian smooth blending+unclamped IFT+frozen-m検証）
+K_c_adj mat-only:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-05) ← status-295（K_c_adj mat-only化+MPC+contact調査）
 ```
 
 ## 備考
