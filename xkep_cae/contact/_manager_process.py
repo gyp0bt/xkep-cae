@@ -250,6 +250,77 @@ def _build_surface_pair_whitelist(
     return whitelist
 
 
+def _build_end_element_set(
+    conn: np.ndarray,
+    elem_strand_map: dict[int, int],
+    n_exclude: int,
+) -> set[int]:
+    """各素線の端部N要素のセットを構築（status-296: MPC+contact安定化）.
+
+    素線ごとに要素チェーンを構築し、両端からn_exclude要素を除外対象にする。
+
+    Args:
+        conn: (n_elems, 2) 要素-ノード接続
+        elem_strand_map: 要素ID → 素線ID
+        n_exclude: 両端から除外する要素数
+
+    Returns:
+        除外する要素IDのセット
+    """
+    if n_exclude <= 0:
+        return set()
+
+    # 素線ごとに要素を収集
+    strand_elems: dict[int, list[int]] = {}
+    for eid, sid in elem_strand_map.items():
+        strand_elems.setdefault(sid, []).append(eid)
+
+    # 各素線内でチェーン順にソート（隣接ノード共有による順序付け）
+    end_elems: set[int] = set()
+    for _sid, elems in strand_elems.items():
+        if len(elems) <= 2 * n_exclude:
+            # 素線が短すぎる場合は全要素を除外
+            end_elems.update(elems)
+            continue
+
+        # ノード→要素マップを構築
+        node_to_elem: dict[int, list[int]] = {}
+        for eid in elems:
+            for nid in conn[eid]:
+                node_to_elem.setdefault(int(nid), []).append(eid)
+
+        # 端点要素を見つける（1つのノードしか共有しない要素）
+        end_starts = []
+        for eid in elems:
+            n0, n1 = int(conn[eid][0]), int(conn[eid][1])
+            # 各ノードに接続する同素線要素の数
+            deg0 = len([e for e in node_to_elem.get(n0, []) if e in set(elems)])
+            deg1 = len([e for e in node_to_elem.get(n1, []) if e in set(elems)])
+            if deg0 == 1 or deg1 == 1:
+                end_starts.append(eid)
+
+        # 各端点から n_exclude 要素をたどる
+        elem_set = set(elems)
+        for start in end_starts:
+            current = start
+            visited: set[int] = set()
+            for _ in range(n_exclude):
+                end_elems.add(current)
+                visited.add(current)
+                # 隣接要素を見つける
+                n0, n1 = int(conn[current][0]), int(conn[current][1])
+                neighbors = set()
+                for nid in [n0, n1]:
+                    for e in node_to_elem.get(nid, []):
+                        if e != current and e in elem_set and e not in visited:
+                            neighbors.add(e)
+                if not neighbors:
+                    break
+                current = min(neighbors)  # 確定的な順序
+
+    return end_elems
+
+
 @dataclass(frozen=True)
 class DetectCandidatesOutput:
     """Broadphase 候補検出の出力."""
@@ -305,6 +376,11 @@ class DetectCandidatesProcess(
         candidates: list[tuple[int, int]] = []
         sm = config.elem_strand_map
         exclude_same = config.exclude_same_strand and sm is not None
+        # 端部要素除外セット（status-296: MPC+contact��定化）
+        _n_end = getattr(config, "exclude_end_elements", 0)
+        end_elem_set: set[int] = set()
+        if _n_end > 0 and sm is not None:
+            end_elem_set = _build_end_element_set(conn, sm, _n_end)
         for i, j in raw_candidates:
             nodes_i = set(int(n) for n in conn[i])
             nodes_j = set(int(n) for n in conn[j])
@@ -315,6 +391,8 @@ class DetectCandidatesProcess(
                 strand_j = sm.get(j, -1)
                 if strand_i == strand_j and strand_i >= 0:
                     continue
+            if end_elem_set and (i in end_elem_set or j in end_elem_set):
+                continue
             candidates.append((i, j))
 
         # 要素レベルサーフェスペアフィルタ（status-276）
