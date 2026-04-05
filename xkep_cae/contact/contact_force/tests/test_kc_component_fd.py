@@ -496,6 +496,9 @@ class TestKcComponentFD:
 
         status-294: frozen-m部分解消。dm_A/dm_B有効化（dm_ext無効）で
         K_c全体のrel_errは~15%→~11%に改善。残余11%はz方向高次効果。
+
+        status-295: K_c_adj をmat-only(n⊗n)に変更。隣接ノードの幾何剛性(I-n⊗n)は
+        s追従により相殺されるため除外。rel_err ~11%→~1.8%に改善。
         """
         result = self._run_fd_verification(
             use_hermite=True,
@@ -518,8 +521,8 @@ class TestKcComponentFD:
         if result["rel_err"] > 0.1:
             self._report_component_breakdown(result)
 
-        # status-293: frozen-m許容範囲（dm無効時のK_st不整合を含む）
-        assert result["rel_err"] < 0.5, f"3Dヘリカル K_c rel_err={result['rel_err']:.4e} > 0.5"
+        # status-295: K_c_adj mat-only化で 11%→1.8%に改善
+        assert result["rel_err"] < 0.05, f"3Dヘリカル K_c rel_err={result['rel_err']:.4e} > 0.05"
         # K_stが非ゼロであること（内部接触点の検証）
         assert result["K_st_norm"] > 1.0, (
             f"K_st should be non-zero for interior contact: ||K_st||={result['K_st_norm']:.4e}"
