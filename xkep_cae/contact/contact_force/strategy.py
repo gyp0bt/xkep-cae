@@ -263,7 +263,6 @@ def _add_kst_contact_to_coo(
     if use_hermite and node_counts is not None:
         from xkep_cae.contact.geometry._compute import (
             _compute_dm_coeffs,
-            _compute_dm_ext_coeffs,
         )
 
         _dm_A = _compute_dm_coeffs(
@@ -275,15 +274,9 @@ def _add_kst_contact_to_coo(
             node_counts[pair.nodes_b[1]],
         )
         # 非局所 dm 係数（status-272: K_st拡張）
-        if adj_node_map is not None:
-            _dm_ext_A = _compute_dm_ext_coeffs(
-                node_counts[pair.nodes_a[0]],
-                node_counts[pair.nodes_a[1]],
-            )
-            _dm_ext_B = _compute_dm_ext_coeffs(
-                node_counts[pair.nodes_b[0]],
-                node_counts[pair.nodes_b[1]],
-            )
+        # status-294: dm_ext はStJacobianに渡さない。
+        # 隣接ノードの K_mat+K_geo 寄与は K_c_adj（tangent内）が正確にカバーしており、
+        # K_st_adj を追加すると二重計上になることがFD検証で判明。
 
     # StJacobian 入力の構築
     st_kw: dict = {
@@ -855,11 +848,16 @@ class HuberContactForceProcess(
         has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
 
         # Hermite dm 補正用 node_counts
-        # status-278: evaluate() でも dm 補正を無効化し、tangent() と一貫化。
-        # status-266 で tangent() の dm を OFF にして「修正NR法」としたが、
-        # evaluate/tangent の不整合が NR 停滞を悪化させていた（status-277）。
-        # dm 補正の効果は端部ノードの重み修正のみで影響は限定的。
+        # status-294: frozen-m 部分解消。evaluate/tangent 両方で dm_A/dm_B 有効化。
+        # dm_ext は K_c_adj に委譲（K_st_adj との二重計上を防止）。
         _eval_node_counts = None
+        if _use_hermite:
+            _conn = getattr(manager, "connectivity", None)
+            if _conn is not None:
+                from xkep_cae.contact.geometry._compute import _compute_node_counts
+
+                _max_node = int(np.max(_conn)) + 1 if len(_conn) > 0 else 0
+                _eval_node_counts = _compute_node_counts(_max_node, _conn)
 
         # バッチ Huber 計算
         x_pen = k_pen * (-gaps)
@@ -956,8 +954,7 @@ class HuberContactForceProcess(
         )
 
         # Hermite 用 node_tangents + node_counts
-        # status-266: tangent() では常に dm 凍結（修正ニュートン法）
-        # dm 補正は evaluate() のみ適用し、Jacobian の安定性を確保
+        # status-294: frozen-m 部分解消。dm_A/dm_B を有効化（z方向DOFカップリング追加）。
         _node_tangents = None
         _node_counts = None
         _conn = None
@@ -982,6 +979,8 @@ class HuberContactForceProcess(
             _adj_node_map = _compute_adj_node_map(_conn)
             _max_node = int(np.max(_conn)) + 1 if len(_conn) > 0 else 0
             _adj_node_counts = _compute_node_counts(_max_node, _conn)
+            # status-294: frozen-m 部分解消
+            _node_counts = _adj_node_counts
 
         # バッチ配列抽出
         extracted = self._extract_pair_arrays(manager.pairs)
@@ -1230,6 +1229,8 @@ class HuberContactForceProcess(
             _adj_node_map = _compute_adj_node_map(_conn)
             _max_node = int(np.max(_conn)) + 1 if len(_conn) > 0 else 0
             _adj_node_counts = _compute_node_counts(_max_node, _conn)
+            # status-294: frozen-m 部分解消
+            _node_counts = _adj_node_counts
 
         extracted = self._extract_pair_arrays(manager.pairs)
         if extracted is None:

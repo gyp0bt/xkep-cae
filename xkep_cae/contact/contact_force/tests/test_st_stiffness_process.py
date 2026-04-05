@@ -180,147 +180,29 @@ class TestKstNonlocalFD:
         )
         return out.K_st
 
-    def test_kst_adj_manual_formula(self):
-        """K_st_adj が実コードと同じ df_ds/df_dt の公式と一致."""
-        from xkep_cae.contact.contact_force.strategy import (
-            _hermite_corrected_coeffs,
-            _huber_deriv_scalar,
-        )
-        from xkep_cae.contact.geometry._compute import (
-            _compute_dm_coeffs,
-            _compute_dm_ext_coeffs,
-            _compute_node_counts,
-            _compute_node_tangents,
-        )
-        from xkep_cae.contact.geometry._st_jacobian import (
-            ComputeStJacobianProcess,
-            StJacobianInput,
-            _hermite_deriv_scalar,
-        )
+    def test_kst_adj_disabled_status294(self):
+        """K_st_adj は status-294 で無効化（K_c_adj に統合）.
 
+        dm_ext をStJacobianに渡さない設計に変更。隣接ノードの寄与は
+        K_c_adj（tangent内）が正確にカバー。K_st の隣接ノード列がゼロであることを検証。
+        """
         coords = self._make_chain_coords()
         K_st = self._compute_kst(coords)
 
-        conn = self._make_connectivity()
-        node_tangents = _compute_node_tangents(coords, conn)
-        node_counts = _compute_node_counts(len(coords), conn)
-
-        nodes_a = (0, 1)
-        nodes_b = (6, 7)
-        s, t = 0.5, 0.5
-        gap = -0.01
-        p_n = 1.0
-        normal = np.array([0.0, 1.0, 0.0])
-        k_pen = 1e4
-        delta_h = 100.0
-        rA, rB = 0.05, 0.05
-        dist = gap + rA + rB
-
-        # dm 係数
-        dm_A = _compute_dm_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
-        dm_B = _compute_dm_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
-        dm_ext_A = _compute_dm_ext_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
-        dm_ext_B = _compute_dm_ext_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
-        coeffs, dc_ds, dc_dt = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
-
-        # ∂n/∂s, ∂n/∂t（Hermite）
-        dpA = _hermite_deriv_scalar(
-            s,
-            coords[nodes_a[0]],
-            coords[nodes_a[1]],
-            node_tangents[nodes_a[0]],
-            node_tangents[nodes_a[1]],
-        )
-        dpB = _hermite_deriv_scalar(
-            t,
-            coords[nodes_b[0]],
-            coords[nodes_b[1]],
-            node_tangents[nodes_b[0]],
-            node_tangents[nodes_b[1]],
-        )
-        P_perp = np.eye(3) - np.outer(normal, normal)
-        dn_ds = (1.0 / dist) * P_perp @ dpA
-        dn_dt = -(1.0 / dist) * P_perp @ dpB
-
-        # ∂p_n/∂s, ∂p_n/∂t
-        x_p = k_pen * (-gap)
-        h_d = _huber_deriv_scalar(x_p, delta_h)
-        dgap_ds = float(np.dot(normal, dpA))
-        dgap_dt = -float(np.dot(normal, dpB))
-        dpn_ds = h_d * k_pen * (-dgap_ds)
-        dpn_dt = h_d * k_pen * (-dgap_dt)
-
-        # g_shape
-        g_shape = np.zeros(12)
-        for k in range(4):
-            for i in range(3):
-                g_shape[k * 3 + i] = coeffs[k] * normal[i]
-
-        # 完全な df_ds, df_dt（3寄与: ∂p_n/∂s, dc/ds, dn/ds）
-        df_ds = np.zeros(12)
-        df_dt = np.zeros(12)
-        for k in range(4):
-            for i in range(3):
-                li = k * 3 + i
-                df_ds[li] = dpn_ds * g_shape[li] + p_n * (
-                    dc_ds[k] * normal[i] + coeffs[k] * dn_ds[i]
-                )
-                df_dt[li] = dpn_dt * g_shape[li] + p_n * (
-                    dc_dt[k] * normal[i] + coeffs[k] * dn_dt[i]
-                )
-
-        # StJacobian の隣接ノード微分を取得
-        st_in = StJacobianInput(
-            xA0=coords[nodes_a[0]],
-            xA1=coords[nodes_a[1]],
-            xB0=coords[nodes_b[0]],
-            xB1=coords[nodes_b[1]],
-            s=s,
-            t=t,
-            mA0=node_tangents[nodes_a[0]],
-            mA1=node_tangents[nodes_a[1]],
-            mB0=node_tangents[nodes_b[0]],
-            mB1=node_tangents[nodes_b[1]],
-            use_hermite=True,
-            dm_A=dm_A,
-            dm_B=dm_B,
-            dm_ext_A=dm_ext_A,
-            dm_ext_B=dm_ext_B,
-        )
-        st_out = ComputeStJacobianProcess().process(st_in)
-        assert st_out.valid
-        assert st_out.ds_du_adj is not None, "非平行配置で ds_du_adj が None"
-
-        # K_st_adj = -(outer(df_ds, ds_du_adj) + outer(df_dt, dt_du_adj))
-        K_adj_expected = -(np.outer(df_ds, st_out.ds_du_adj) + np.outer(df_dt, st_out.dt_du_adj))
-
-        # K_st の隣接ノード列を抽出して比較
+        # dm_ext 無効化により、隣接ノード (2, 5) の K_st 列はゼロ
         ndpn = 6
-        row_nodes = [0, 1, 6, 7]
-        row_dofs = []
-        for n in row_nodes:
-            for d in range(3):
-                row_dofs.append(n * ndpn + d)
-
-        # ds_du_adj レイアウト: [A-1(3), A+2(3), B-1(3), B+2(3)] = 12列
-        # adj_node_map[0] = (-1, 2), adj_node_map[5] = (5, -1)
-        # A-1=-1(端点), A+2=2, B-1=5, B+2=-1(端点)
-        adj_col_map = {2: slice(3, 6), 5: slice(6, 9)}  # adj列のスライス
-
-        for adj_node, adj_sl in adj_col_map.items():
+        for adj_node in [2, 5]:
             for d in range(3):
                 col_dof = adj_node * ndpn + d
-                k_col = np.array([K_st[ri, col_dof] for ri in row_dofs])
-                expected_col = K_adj_expected[:, adj_sl.start + d]
-                np.testing.assert_allclose(
-                    k_col,
-                    expected_col,
-                    atol=1e-10,
-                    err_msg=f"K_st adj formula: adj_node={adj_node}, d={d}",
+                col_vals = (
+                    K_st[:, col_dof].toarray().ravel() if sp.issparse(K_st) else K_st[:, col_dof]
+                )
+                assert np.allclose(col_vals, 0.0), (
+                    f"K_st adj column should be zero: adj_node={adj_node}, d={d}"
                 )
 
-    def test_kst_adj_nonzero(self):
-        """非平行配置で隣接ノード列に非ゼロ値が存在."""
+    def test_kst_adj_zero_status294(self):
+        """status-294: dm_ext無効化により隣接ノード列はゼロ."""
         coords = self._make_chain_coords()
         K_st = self._compute_kst(coords)
 
@@ -333,8 +215,8 @@ class TestKstNonlocalFD:
                     vals.extend(K_st[:, c].toarray().ravel())
                 else:
                     vals.extend(K_st[:, c])
-            assert not np.allclose(vals, 0.0), (
-                f"Node {adj_node}: K_st adj columns should be nonzero"
+            assert np.allclose(vals, 0.0), (
+                f"Node {adj_node}: K_st adj columns should be zero (dm_ext disabled)"
             )
 
     def test_kst_adj_endpoint_zero(self):
@@ -390,17 +272,20 @@ class TestKcAdjFD:
     def _compute_force_with_geom(self, coords):
         """座標から gap/normal を再計算して接触力を返す (12,).
 
-        tangent() と整合するよう dm 凍結（_hermite_shape_coeffs を使用）。
+        status-294: evaluate() が dm 補正係数を使用するため、FD参照も dm 補正を使用。
         """
         from xkep_cae.contact.contact_force.strategy import (
-            _hermite_shape_coeffs,
+            _hermite_corrected_coeffs,
         )
         from xkep_cae.contact.geometry._compute import (
+            _compute_dm_coeffs,
+            _compute_node_counts,
             _compute_node_tangents,
         )
 
         conn = self._make_connectivity()
         node_tangents = _compute_node_tangents(coords, conn)
+        node_counts = _compute_node_counts(len(coords), conn)
 
         s, t = 0.5, 0.5
         k_pen = 1e4
@@ -442,8 +327,10 @@ class TestKcAdjFD:
         else:
             p_n = (x_p + delta_h) ** 2 / (4.0 * delta_h)
 
-        # 形状関数係数（dm凍結: tangent()と一致させる）
-        coeffs = _hermite_shape_coeffs(s, t)
+        # dm 補正係数（status-294: evaluate()と整合）
+        dm_A = _compute_dm_coeffs(node_counts[nodes_a[0]], node_counts[nodes_a[1]])
+        dm_B = _compute_dm_coeffs(node_counts[nodes_b[0]], node_counts[nodes_b[1]])
+        coeffs, _, _ = _hermite_corrected_coeffs(s, t, dm_A, dm_B)
 
         # f_c = p_n * c_k * n
         f_local = np.zeros(12)

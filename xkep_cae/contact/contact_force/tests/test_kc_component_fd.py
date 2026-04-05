@@ -494,9 +494,8 @@ class TestKcComponentFD:
         status-293: 交差配置に変更し内部接触点（s≈0.5, t≈0.45）を実現。
         K_stが非ゼロになり、z方向DOFカップリングの存在を検証する。
 
-        NOTE(frozen-m): dm補正はstatus-278で無効化（evaluate/tangent一貫性）。
-        そのためK_stはFDの約3倍（frozen-m近似誤差）。K_c全体のrel_errは~15%。
-        dm補正を有効化すればK_st精度は改善するが、NR安定性との兼ね合いで保留。
+        status-294: frozen-m部分解消。dm_A/dm_B有効化（dm_ext無効）で
+        K_c全体のrel_errは~15%→~11%に改善。残余11%はz方向高次効果。
         """
         result = self._run_fd_verification(
             use_hermite=True,
