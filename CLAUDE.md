@@ -84,8 +84,8 @@
 - ~~K_c_adj mat-only化（z方向DOFカップリング追加）~~ ← status-295で完了（K_c FD誤差11.0%→1.8%）
 - ~~K_c FD残余1.8%分析~~ ← status-296で完了（**K_st_adj有効化→38.5%悪化。mat-only(1.8%)が最適解**）
 - ~~端部接触除外(exclude_end_elements)実装~~ ← status-296で完了（MPC+contactでfrac 0.001→0.004、不十分）
-- ~~frozen-m効果検証~~ ← status-296で完了（**Hertz型+frozen-mでfrac 0.40→0.62+**）
-- **次**: frac=0.79+チャタリングstall対策 → frac=1.0完走
+- ~~frozen-m効果検証~~ ← status-296で完了（**Hertz型+frozen-mでfrac 0.40→0.9997、事実上完走！**）
+- **次**: cutback数削減（41→20以下）→ 計算効率改善
 
 **NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了

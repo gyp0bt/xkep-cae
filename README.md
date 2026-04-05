@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**442+ テスト** — 2026-04-05時点 | K_c FD 1.8%最適解確定・端部接触除外・frozen-m検証(frac=0.62+)（status-296） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**442+ テスト** — 2026-04-05時点 | **接触あり90度曲げfrac=0.9997完走**（Hertz型+frozen-m解消, status-296） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

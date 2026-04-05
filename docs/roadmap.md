@@ -62,8 +62,8 @@
 | K_c_adj mat-only | **隣接ノード幾何剛性除外**: K_c FD誤差11.0%→1.8%。s追従による法線変化相殺を理論的に解明 — status-295 |
 | K_c FD 1.8%分析 | **K_st_adj再有効化→38.5%悪化**: 接平面内で K_c_adj geo と K_st_adj が同一寄与。mat-only(1.8%)が最適解 — status-296 |
 | 端部接触除外 | **exclude_end_elements実装**: MPC+contactで端部2要素除外→frac 0.001→0.004（不十分）。T^T K_c Tグローバルカップリングが根本原因 — status-296 |
-| frozen-m効果検証 | **Hertz型+frozen-m解消でfrac 0.40→0.62+**: 線形penaltyはfrac=0.40（不変）、Hertz型で55%+改善 — status-296 |
-| **壁** | frac=0.79+でチャタリングstall → チャタリング対策最適化 → frac=1.0 / 61本以上 / 1000本6時間 |
+| frozen-m効果検証 | **Hertz型+frozen-m解消でfrac 0.40→0.9997（事実上完走）**: 541 incr, 41 cutback。正しい接線での完走達成 — status-296 |
+| **次** | cutback数削減（41→20以下）→ 効率改善 / 61本以上 / 1000本6時間 |
 
 ---
 
