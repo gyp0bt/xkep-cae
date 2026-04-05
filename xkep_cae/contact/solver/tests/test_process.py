@@ -608,24 +608,66 @@ class TestConvergenceCheckProcessAPI:
         assert out.converged is True
         assert out.convergence_type == ConvergenceType.FORCE
 
-    def test_f_ref_floor_field_exists(self):
-        """NewtonDynamicStepInput.f_ref_floor と DynamicStepOutput.f_ref_used が存在する（status-297）."""
-        # f_ref_floor フィールドが存在しデフォルト0.0
+    def test_atol_force_convergence(self):
+        """atol_forceで微小dtの絶対残差収束を判定（status-297）.
+
+        相対判定 res/f_ref = 4.5e-3 >> tol=1e-8 で不収束でも、
+        atol_force = 5e-6 に対して res = 1.7e-6 < 5e-6 なら収束。
+        """
+
+        class _MockMgr:
+            pairs = []
+
+        proc = ConvergenceCheckProcess()
+
+        # 微小dt: f_ref=3.8e-4, res=1.7e-6 → 相対比 4.5e-3 → 不収束
+        R_u = np.array([1.7e-6, 0.0, 0.0])
+        out_no_atol = proc.process(
+            ConvergenceCheckInput(
+                R_u=R_u,
+                du=None,
+                u=np.ones(3),
+                f_ext_ref_norm=3.8e-4,
+                tol_force=1e-8,
+                tol_disp=1e-8,
+                dynamic_ref=False,
+                is_first_attempt=False,
+                energy_ref=None,
+                manager=_MockMgr(),
+            )
+        )
+        assert out_no_atol.converged is False
+
+        # atol_force = 5e-6 → res=1.7e-6 < 5e-6 → 収束
+        out_with_atol = proc.process(
+            ConvergenceCheckInput(
+                R_u=R_u,
+                du=None,
+                u=np.ones(3),
+                f_ext_ref_norm=3.8e-4,
+                tol_force=1e-8,
+                tol_disp=1e-8,
+                dynamic_ref=False,
+                is_first_attempt=False,
+                energy_ref=None,
+                manager=_MockMgr(),
+                atol_force=5e-6,
+            )
+        )
+        assert out_with_atol.converged is True
+        assert out_with_atol.convergence_type == ConvergenceType.FORCE
+
+    def test_atol_force_field_exists(self):
+        """NewtonDynamicStepInput.atol_force フィールドの存在確認（status-297）."""
         import dataclasses
 
         from xkep_cae.contact.solver._newton_dynamic import (
-            DynamicStepOutput,
             NewtonDynamicStepInput,
         )
 
         fields = {f.name: f for f in dataclasses.fields(NewtonDynamicStepInput)}
-        assert "f_ref_floor" in fields
-        assert fields["f_ref_floor"].default == 0.0
-
-        # f_ref_used フィールドが存在しデフォルト0.0
-        out_fields = {f.name: f for f in dataclasses.fields(DynamicStepOutput)}
-        assert "f_ref_used" in out_fields
-        assert out_fields["f_ref_used"].default == 0.0
+        assert "atol_force" in fields
+        assert fields["atol_force"].default == 0.0
 
 
 @binds_to(TangentAssemblyProcess)

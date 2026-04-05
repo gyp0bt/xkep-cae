@@ -130,7 +130,7 @@
 | [294](status-294.md) | 2026-04-05 | frozen-m部分解消（dm_A/dm_B有効化 + dm_ext無効化） | 631+ passed |
 | [295](status-295.md) | 2026-04-05 | K_c_adj mat-only化（K_c FD誤差11%→1.8%）+ MPC+contact調査 | 631+ passed |
 | [296](status-296.md) | 2026-04-05 | K_c FD 1.8%分析 + 端部接���除外 + frozen-m検証(**frac=0.9997完走**) | 442+ passed |
-| [297](status-297.md) | 2026-04-05 | 微小dt耐性改善（dt snap + f_ref floor） | 442+ passed |
+| [297](status-297.md) | 2026-04-05 | 微小dt耐性改善（dt snap + atol_force） | 442+ passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 

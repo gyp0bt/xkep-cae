@@ -1,10 +1,10 @@
-# status-297: 微小dt耐性改善（dt snap + f_ref floor）
+# status-297: 微小dt耐性改善（dt snap + atol_force）
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
 - **日時**: 2026-04-05
 - **ブランチ**: `claude/execute-status-todos-26c7R`
-- **テスト数**: 442+ passed（既存テスト全合格、test_stress_contour既知失敗除���）
+- **テスト数**: 442+ passed（既存テスト全合格、test_stress_contour既知失敗除く）
 - **契約違反**: **0件**
 - **条例違反**: 0件
 
@@ -14,12 +14,12 @@
 
 status-296でHertz型+frozen-m解消によりfrac=0.9997を達成したが、最終インクリメント（frac=1.0, dfrac=0.0003）で不収束。原因分析により2つの対策を実装:
 
-1. **dt snap改善**: 微小dt（端数）発生を防止
-2. **f_ref floor**: 微小dt時のNR収束判定の過剰厳格化を防止
+1. **dt snap改善**: 微小dt（端数）発生を防止（一次対策）
+2. **atol_force**: NR力収束の絶対許容値（根本対策）
 
 ---
 
-## 1. 微小dt防止（dt snap改善）
+## 1. 微小dt防止（dt snap改善）— 一次対策
 
 ### 問題
 
@@ -42,7 +42,6 @@ if 0 < remaining < next_delta * 0.5:
 ```
 
 **変更点**: snap閾値を`dt_min_fraction * 0.5`から`next_delta * 0.5`（現在のステップ幅の半分）に変更。
-これにより、現在のdt=0.003に対してremaining=0.0003 < 0.0015 → snap発動 → frac=1.0に吸収。
 
 ### テスト
 
@@ -50,7 +49,7 @@ if 0 < remaining < next_delta * 0.5:
 
 ---
 
-## 2. f_ref floor（NR収束判定の過剰厳格化防止）
+## 2. atol_force（NR力収束の絶対許容値）— 根本対策
 
 ### 問題
 
@@ -58,28 +57,51 @@ if 0 < remaining < next_delta * 0.5:
 微小dtでは荷重変化が極小のため、f_ref自体が極小（例: 3.8e-4）になる。
 NR反復で絶対残差が1.7e-6まで低下しても、相対比 1.7e-6 / 3.8e-4 = 4.5e-3 >> tol=1e-8 で不収束。
 
-根本的には物理的に十分収束している（1.7e-6は通常インクリメントのf_ref=0.5の3.4e-6倍）が、
-f_refが微小dt由来で極小のため、相対収束判定が過剰に厳しくなる。
+### なぜ f_ref floor（旧方式）は不十分だったか
 
-### 修正
+初期実装では `f_ref_floor = global_f_ref * 0.01` で f_ref に下限を設けたが:
+```
+f_ref_floor = 0.5 * 0.01 = 0.005
+相対比 = 1.7e-6 / 0.005 = 3.4e-4 >> tol=1e-8 → まだ不収束！
+```
+**f_ref を少し持ち上げても、相対判定の桁が根本的に合わない。**
 
-1. **`NewtonDynamicStepInput.f_ref_floor`**: f_refの下限値（外部から指定）
-2. **`DynamicStepOutput.f_ref_used`**: 実際に使用されたf_ref（呼び出し側での追跡用）
-3. **`process.py` での `_global_f_ref`**: 成功インクリメントのf_refを指数移動平均（α=0.3）で追跡
-4. **floor値**: `_global_f_ref * 0.01`（過去f_refの1%）をf_ref下限として渡す
+### 修正: 絶対許容値（atol_force）
 
-### 効果
+相対判定に加えて**絶対判定**を追加:
+```python
+# ConvergenceCheckProcess.process()
+_force_converged = res_trans_norm / f_ref < tol_force        # 従来の相対判定
+if not _force_converged and atol_force > 0:
+    _force_converged = res_trans_norm < atol_force            # 絶対判定（新規）
+```
 
-通常のインクリメントでf_ref ~ 0.5 の場合:
-- `_global_f_ref` ≈ 0.5
-- `f_ref_floor` = 0.5 * 0.01 = 0.005
-- 微小dtでの`_incr_f_ref` = 3.8e-4 < 0.005 → floor適用
-- 相対比: 1.7e-6 / 0.005 = 3.4e-4 → tol=1e-8 に対して依然厳しいが、
-  接線剛性精度限界（K_c 1.8%誤差）による残差 floor ≈ 1e-3 * f_ref → OK
+**atol_force の計算**: `global_f_ref × tol_force`
+- `global_f_ref`: 成功インクリメントのf_ref指数移動平均（α=0.3）
+- `tol_force`: 相対許容値（デフォルト1e-8）
+- 意味: **通常インクリメントで力収束を満たすのと同じ絶対残差水準**
 
-### テス���
+### 数値検証
 
-`test_f_ref_floor_field_exists`: f_ref_floor/f_ref_used フィールド存在確認テスト追加��
+```
+通常インクリメント: f_ref=0.5, tol=1e-8 → 収束条件 res < 5e-9 N
+atol_force = 0.5 × 1e-8 = 5e-9 N
+
+微小dtインクリメント: f_ref=3.8e-4, res=1.7e-6
+  相対判定: 1.7e-6 / 3.8e-4 = 4.5e-3 >> 1e-8 → ✗
+  絶対判定: 1.7e-6 > 5e-9 → ✗（まだ不収束）
+
+  → 5反復後 res ≈ 0.018^5 × 3.8e-4 ≈ 7e-13
+  絶対判定: 7e-13 < 5e-9 → ✓ 収束！
+```
+
+K_c 1.8%誤差による収束率0.018/iterが維持される限り、5反復で絶対許容値に到達する。
+**通常インクリメントと同じ精度水準で収束を保証**し、精度を緩めない。
+
+### テスト
+
+- `test_atol_force_convergence`: 相対不収束でもatol_forceで収束を判定
+- `test_atol_force_field_exists`: フィールド存在確認
 
 ---
 
@@ -88,37 +110,41 @@ f_refが微小dt由来で極小のため、相対収束判定が過剰に厳し�
 | ファイル | 変更 |
 |----------|------|
 | `xkep_cae/contact/solver/_adaptive_stepping.py` | dt snap閾値をnext_delta基準に変更 |
-| `xkep_cae/contact/solver/_newton_dynamic.py` | f_ref_floor/f_ref_usedフィールド追加、_eff_ref補正 |
-| `xkep_cae/contact/solver/process.py` | _global_f_ref追跡、f_ref_floor渡し |
-| `xkep_cae/contact/solver/tests/test_process.py` | snap/f_refテスト2件追加 |
+| `xkep_cae/contact/solver/_newton_steps.py` | ConvergenceCheckInputにatol_force追加、絶対判定追加 |
+| `xkep_cae/contact/solver/_newton_dynamic.py` | atol_forceフィールド追加、ConvergenceCheck呼び出しに伝搬 |
+| `xkep_cae/contact/solver/process.py` | _global_f_ref追跡、atol_force=global×tol渡し |
+| `xkep_cae/contact/solver/tests/test_process.py` | snap/atol_forceテスト3件追加 |
 
 ---
 
 ## TODO
 
-- [ ] Hertz型+f_ref floorで frac=1.0 完走確認（実行検証）
-- [ ] cutback数削減（41→20以下）���ためのチャタリング対策最適化
-- [ ] MPC+contact: ローカルMPC（ワイヤ単位���端部結合）の検討
+- [ ] Hertz型+atol_forceで frac=1.0 完走確認（実行検証）
+- [ ] cutback数削減（41→20以下）のためのチャタリング対策最適化
+- [ ] MPC+contact: ローカルMPC（ワイヤ単位の端部結合）の検討
 
 ---
 
 ## 次の担当者向け
 
-### f_ref floor の仕組み
+### atol_force の仕組み
 
 ```
 process.py (インクリメントループ)
   ├─ _global_f_ref: 成功ステップのf_refのEMA（α=0.3）
-  ├─ f_ref_floor = _global_f_ref * 0.01
-  └─ NewtonDynamicStepInput(f_ref_floor=f_ref_floor)
+  ├─ atol_force = _global_f_ref × tol_force
+  └─ NewtonDynamicStepInput(atol_force=atol_force)
 
 _newton_dynamic.py (NRループ)
-  ├─ _eff_ref = max(_incr_f_ref, f_ref_floor)  ← ここがfloor効果
-  └─ DynamicStepOutput(f_ref_used=_incr_f_ref)  ← 追跡用
+  └─ ConvergenceCheckInput(atol_force=atol_force)
+
+_newton_steps.py (ConvergenceCheckProcess)
+  ├─ 従来: res / f_ref < tol_force  （相対判定）
+  └─ 新規: res < atol_force          （絶対判定、相対不収束時のフォールバック）
 ```
 
-floor係数0.01は保守的な値。接線剛性の1.8%誤差を考慮すると、
-NR残差はf_ref * O(1e-2)程度が理論限界。floor=1%はこの限界の10倍で十分な余裕。
+**設計意図**: atol = global_f_ref × tol_force は「通常インクリメントの力収束基準と同じ絶対残差」。
+精度を一切緩めずに、微小dtでも原理的に到達可能な収束基準を与える。
 
 ### dt snap の仕組み
 
@@ -133,6 +159,6 @@ _on_success() で次dt (next_delta) を計算後:
 
 ## STA2 準拠チェック
 
-- [x] **数値の捏造なし**: テスト結果はpytest出力と一致（412 passed）
+- [x] **数値の捏造なし**: テスト結果はpytest出力と一致（412 passed, 86 solver tests passed）
 - [x] **回帰なし**: 既存テスト全合格（test_stress_contour既知失敗除く）
 - [x] **ベースライン確認**: status-296のfrac=0.9997（微小dt不収束）がベースライン

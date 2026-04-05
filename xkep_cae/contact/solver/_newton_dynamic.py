@@ -130,7 +130,7 @@ class NewtonDynamicStepInput:
     dynamic_ref: bool
     connectivity: np.ndarray | None = None  # Hermite 中心線補間用
     mpc_transform: object | None = None  # MPCEliminationResult（status-253）
-    f_ref_floor: float = 0.0  # 微小dt時のf_ref下限（status-297）
+    atol_force: float = 0.0  # 力残差の絶対許容値 [N]（status-297: 微小dt対策）
 
 
 # 後方互換エイリアス（呼び出し側の段階的移行用）
@@ -324,10 +324,7 @@ class NewtonDynamicProcess(
 
             # ── ステップ 6: 力収束判定 ──
             # 変位制御問題: 初回反復の残差ノルムをインクリメント内参照値として保存
-            # f_ref_floor: 微小dtでf_refが極小になるのを防止（status-297）
             _eff_ref = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
-            if input_data.f_ref_floor > 1e-30:
-                _eff_ref = max(_eff_ref, input_data.f_ref_floor)
             conv_out = _conv_proc.process(
                 ConvergenceCheckInput(
                     R_u=R_u,
@@ -343,6 +340,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
                     mpc_transform=input_data.mpc_transform,
+                    atol_force=input_data.atol_force,
                 )
             )
             # 初回反復で参照残差を保存
@@ -1134,8 +1132,6 @@ class NewtonDynamicProcess(
 
             # ── 変位・エネルギー収束判定 ──
             _eff_ref2 = _incr_f_ref if _incr_f_ref > 1e-30 else input_data.f_ext_ref_norm
-            if input_data.f_ref_floor > 1e-30:
-                _eff_ref2 = max(_eff_ref2, input_data.f_ref_floor)
             conv_out2 = _conv_proc.process(
                 ConvergenceCheckInput(
                     R_u=R_u,
@@ -1151,6 +1147,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
                     mpc_transform=input_data.mpc_transform,
+                    atol_force=input_data.atol_force,
                 )
             )
 

@@ -558,7 +558,9 @@ class ContactFrictionProcess(
                 dynamic_ref=dynamic_ref,
                 connectivity=connectivity,
                 mpc_transform=_mpc_current,
-                f_ref_floor=_global_f_ref * 0.01,  # status-297: 過去f_refの1%を下限
+                # status-297: 通常インクリメントの力収束水準を絶対許容値として渡す
+                # atol = global_f_ref × tol_force → 微小dtでも通常スケールの収束水準で判定
+                atol_force=_global_f_ref * nr_config_dyn.tol_force,
             )
             step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
