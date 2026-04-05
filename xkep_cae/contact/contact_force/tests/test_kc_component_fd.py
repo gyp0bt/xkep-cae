@@ -107,14 +107,25 @@ def _make_two_segment_scenario(
         connectivity = np.array([[0, 1], [2, 3]])
         elem_pairs = [(0, 1)]
     elif helical_z and n_elems >= 3:
-        # Hermite 3要素チェーン + z方向傾き
-        half = n_nodes // 2
-        for i in range(half):
-            x = node_coords[i, 0]
-            node_coords[i, 2] += x * 0.003
-        for i in range(half, n_nodes):
-            x = node_coords[i, 0]
-            node_coords[i, 2] -= x * 0.003
+        # status-293: 交差配置（skew）+ z方向傾き → 内部接触点
+        # wireA: x方向直進 + z傾き、wireB: y方向横断 + z反対傾き
+        # → elem 1 (nodes 1,2) vs elem 4 (nodes 5,6) で s≈0.5, t≈0.45
+        sep = 2 * r + gap_target
+        node_coords = np.array(
+            [
+                [-1.0, 0.0, 0.00],  # 0: wire A 端点
+                [0.0, 0.0, 0.02],  # 1: wire A 内部
+                [1.0, 0.0, 0.04],  # 2: wire A 内部
+                [2.0, 0.0, 0.06],  # 3: wire A 端点
+                [0.5, -1.5, -0.02],  # 4: wire B 端点
+                [0.5, -0.5 + sep / 2, 0.0],  # 5: wire B 内部
+                [0.5, 0.5 + sep / 2, 0.02],  # 6: wire B 内部
+                [0.5, 1.5 + sep / 2, 0.04],  # 7: wire B 端点
+            ]
+        )
+        n_nodes = 8
+        connectivity = np.array([[0, 1], [1, 2], [2, 3], [4, 5], [5, 6], [6, 7]])
+        elem_pairs = [(1, 4)]  # 内部要素ペア
 
     ndof_per_node = 6
     ndof = n_nodes * ndof_per_node
@@ -478,10 +489,14 @@ class TestKcComponentFD:
             self._report_component_breakdown(result)
 
     def test_helical_3d_hermite(self):
-        """3Dヘリカル配置 + Hermiteでの K_c FD検証（status-292: z方向DOFカップリング）.
+        """3Dヘリカル配置 + Hermiteでの K_c FD検証（status-292/293）.
 
-        status-289でz方向不整合が発見された。ヘリカル配置で法線にz成分があるとき
-        K_stがz方向DOFへのカップリングを正しく含んでいるかを検証する。
+        status-293: 交差配置に変更し内部接触点（s≈0.5, t≈0.45）を実現。
+        K_stが非ゼロになり、z方向DOFカップリングの存在を検証する。
+
+        NOTE(frozen-m): dm補正はstatus-278で無効化（evaluate/tangent一貫性）。
+        そのためK_stはFDの約3倍（frozen-m近似誤差）。K_c全体のrel_errは~15%。
+        dm補正を有効化すればK_st精度は改善するが、NR安定性との兼ね合いで保留。
         """
         result = self._run_fd_verification(
             use_hermite=True,
@@ -503,6 +518,13 @@ class TestKcComponentFD:
 
         if result["rel_err"] > 0.1:
             self._report_component_breakdown(result)
+
+        # status-293: frozen-m許容範囲（dm無効時のK_st不整合を含む）
+        assert result["rel_err"] < 0.5, f"3Dヘリカル K_c rel_err={result['rel_err']:.4e} > 0.5"
+        # K_stが非ゼロであること（内部接触点の検証）
+        assert result["K_st_norm"] > 1.0, (
+            f"K_st should be non-zero for interior contact: ||K_st||={result['K_st_norm']:.4e}"
+        )
 
     def test_helical_3d_linear(self):
         """3Dヘリカル配置 + 線形での K_c FD検証（z方向ベースライン）."""
