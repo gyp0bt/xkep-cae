@@ -58,7 +58,8 @@
 | Type D対策基盤 | **収束診断ログ構造化 + Type D自動検知・FD診断トリガー**: NR進捗にType+rate追加、連続Type D→FD診断自動実行+NR上限拡張、低残差Type D分岐 — status-288 |
 | K_c不整合特定 | **Hertz ∂p/∂g正確、K_c幾何項不足を特定**: comp=2(z方向)にFD不整合集中。frozen-m近似（∂m/∂u=0）がz方向DOFカップリング欠落の根本原因 — status-289 |
 | smooth遷移帯 | **StJacobian smooth blending + unclamped IFT修正**: 1×1/2×2系のhard threshold→w_t/w_s連続補間。IFT幾何をunclamped座標で評価。frozen-m内部接触点K_st FD誤差3x確認（既知制限） — status-293 |
-| **壁** | frozen-m解消（∂m/∂u正確計算）→ NR 2次収束回復 → frac=1.0 / 61本以上 / 1000本6時間 |
+| frozen-m部分解消 | **dm_A/dm_B有効化 + dm_ext無効化**: K_c FD誤差15.5%→11.0%。K_st_adjとK_c_adjの二重計上を発見・解消。残余11%はz方向高次効果 — status-294 |
+| **壁** | z方向DOFカップリング追加（11%→0%）→ NR 2次収束回復 → frac=1.0 / 61本以上 / 1000本6時間 |
 
 ---
 
@@ -110,7 +111,7 @@ S7 (GPU)
 - [x] **SDI 排除**: 全候補ペア Huber 評価 + 力ベース dt 制御 + g_off ワイド化（status-233）
 - [x] ~~**n_periods=30 で frac=1.0 到達**: SDI 排除後の dt 改善検証（status-234: 1592 incr, 4403s, fc=208.6N）~~
 - [x] ~~**adaptive stepping 高速化**: dt_max緩和+growth damping撤廃+接触力閾値緩和~~ — status-236 で **完全リバート**（n_periods=30 で逆効果: frac=0.24 で壁、98%カットバック）。パラメータ調整だけでは NR 収束性問題を解決できない
-- [ ] **NR力収束改善**: λ自動推定のc=20はアルミで悪化、dof_scale_rot<1.0は全値で悪化（status-242）。Hermite K_st の 33% FD不整合は凍結接線近似(frozen-m)が原因。次: frozen-m解消（非局所DOF結合が必要）
+- [ ] **NR力収束改善**: λ自動推定のc=20はアルミで悪化、dof_scale_rot<1.0は全値で悪化（status-242）。Hermite K_st のFD不整合はfrozen-m部分解消で15.5%→11.0%に改善（status-294）。次: z方向DOFカップリング追加（11%→0%）
 - [x] ~~**n_periods=30 剛体表面効果検証**: incr 1592→707（55%削減）、cutback 2477→400（84%削減）、frac=1.0 fc=216.96N（status-238）~~
 
 ### 既知の問題

@@ -127,6 +127,7 @@
 | [291](status-291.md) | 2026-04-04 | K_c不整合根本原因特定 + s_unclamped修正（Hermite 20%→0.0001%） | 624+ passed |
 | [292](status-292.md) | 2026-04-04 | StJacobian 2×2カップリング修正（K_st FD不整合94%→0.0001%） | 631 passed |
 | [293](status-293.md) | 2026-04-04 | StJacobian smooth遷移帯 + frozen-m内部接触点検証 | 631+ passed |
+| [294](status-294.md) | 2026-04-05 | frozen-m部分解消（dm_A/dm_B有効化 + dm_ext無効化） | 631+ passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
