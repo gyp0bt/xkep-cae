@@ -73,7 +73,7 @@
 
 ### 次の課題
 
-**接触あり90度曲げ frac=0.998達成** — status-285:
+**接触あり90度曲げ frac=1.0完走** — status-298（ベースライン: incr=535, cutback=45, 752s）:
 - ~~接触凍結モード（status-284）で frac=0.40→0.70（75%改善）~~ ← status-284で完了
 - ~~Hertz型非線形ペナルティ（`p_n ∝ δ^{1.5}`）~~ ← status-285で完了（frac=0.70→0.998、事実上完走）
 - ~~チャタリング内訳分析~~ ← status-287で完了（**活性集合振動ではなく接線剛性���整合(Type D=52%)が主因**）
@@ -86,7 +86,8 @@
 - ~~端部接触除外(exclude_end_elements)実装~~ ← status-296で完了（MPC+contactでfrac 0.001→0.004、不十分）
 - ~~frozen-m効果検証~~ ← status-296で完了（**Hertz型+frozen-mでfrac 0.40→0.9997、事実上完走！**）
 - ~~微小dt耐性改善~~ ← status-297で完了（**dt snap改善 + atol_force絶対許容値で微小dt収束保証**）
-- **次**: cutback数削減（41→20以下）→ 計算効率改善
+- ~~Hertz型+atol_force frac=1.0完走確認~~ ← status-298で完了（**frac=1.0000, incr=535, cutback=45, 752s**）
+- **次**: cutback数削減（45→20以下）→ 計算効率改善
 
 **NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了

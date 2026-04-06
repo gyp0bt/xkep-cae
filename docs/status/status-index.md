@@ -131,6 +131,7 @@
 | [295](status-295.md) | 2026-04-05 | K_c_adj mat-only化（K_c FD誤差11%→1.8%）+ MPC+contact調査 | 631+ passed |
 | [296](status-296.md) | 2026-04-05 | K_c FD 1.8%分析 + 端部接���除外 + frozen-m検証(**frac=0.9997完走**) | 442+ passed |
 | [297](status-297.md) | 2026-04-05 | 微小dt耐性改善（dt snap + atol_force） | 442+ passed |
+| [298](status-298.md) | 2026-04-06 | Hertz型+atol_force frac=1.0完走確認（ベースライン検証） | 442+ passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -280,6 +281,7 @@ frac1回帰修正:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← 
 C16+Hertz:             200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15(新) (2026-04-03) ← status-285（C16修正+凍結テスト+Hertz型ペナルティ）
 smooth遷移帯:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4(新) (2026-04-04) ← status-293（StJacobian smooth blending+unclamped IFT+frozen-m検証）
 K_c_adj mat-only:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-05) ← status-295（K_c_adj mat-only化+MPC+contact調査）
+ベースライン検証:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-06) ← status-298（Hertz+atol_force frac=1.0完走確認）
 ```
 
 ## 備考
