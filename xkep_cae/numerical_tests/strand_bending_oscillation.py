@@ -197,6 +197,11 @@ class StrandBendingOscillationConfig:
     # 揺動の処方変位: θ(frac) = θ_max * sin(2π * n_oscillation_cycles * frac)
     # resume_checkpoint が設定されている場合、曲げスキップで揺動のみ実行。
     n_oscillation_cycles: int = 0  # 0=曲げのみ, >0=曲げ後に揺動
+    # 揺動振幅 [mm]（status-299: 先端横変位揺動）
+    # >0: 揺動フェーズでθ_y回転処方の代わりに先端u_z横変位±amplitude[mm]で処方。
+    # 曲げ完了位置を中心にsin波振動: u_z(frac) = u_z_bend + amplitude * sin(2π*n_osc*frac)
+    # 0: 従来のθ_y回転cos波揺動（status-286互換）
+    oscillation_amplitude: float = 0.0  # [mm], 0=θ回転揺動
 
 
 @dataclass(frozen=True)
@@ -999,35 +1004,49 @@ class StrandBendingOscillationProcess(
 
         # ── 揺動フェーズ ──
         if cfg.n_oscillation_cycles > 0:
-            # sin波処方変位関数: θ(frac) = θ_max * sin(2π * n_osc * frac)
-            # frac=0でθ=0（曲げ完了位置=直線状態に復元後、振動開始）
-            # ではなく、曲げ完了位置からの揺動: θ(frac) = θ_max * cos(2π * n_osc * frac)
-            # frac=0 → θ=θ_max（曲げ完了）, frac=0.25/n → θ=0（直線）,
-            # frac=0.5/n → θ=-θ_max（逆曲げ）...
             _n_osc = cfg.n_oscillation_cycles
-            _theta_max = bending_angle
 
-            # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む値。
-            # 自工程保証: checkpoint復元後、state.u はcoords_refからの増分（≈0）。
-            # prescribed_func は coords_ref 基準の増分角度を返す。
-            # frac=0 → Δθ=0（checkpoint状態維持）
-            # frac=0.25/n → Δθ=-θ_ckpt（直線復元）
-            # frac=0.5/n → Δθ=-2θ_ckpt（逆曲げ）
-            _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
-            _theta_amplitude = _theta_at_ckpt
+            if cfg.oscillation_amplitude > 0.0:
+                # status-299: 先端横変位揺動（u_z ±amplitude）
+                # 曲げ完了位置を中心にsin波で往復。
+                # prescribed_dofs: θ_y → u_z に切り替え（右端各素線ノード）
+                _osc_prescribed_dofs = np.array(
+                    [n * 6 + 2 for n in right_nodes], dtype=int
+                )  # u_z DOF
+                _uz_at_bend = np.array([float(_u_bend[n * 6 + 2]) for n in right_nodes])
+                _osc_amplitude = cfg.oscillation_amplitude
+                # prescribed_values は揺動の最終目標値（frac=1.0時）。
+                # sin(2π*n_osc*1.0)=0 → 最終値=曲げ完了位置。
+                _osc_prescribed_values = _uz_at_bend.copy()
 
-            def _oscillation_func(frac: float) -> np.ndarray:
-                # cos(0)=1 → Δθ=0, cos(π)=-1 → Δθ=-2θ_ckpt
-                delta_theta = _theta_amplitude * (math.cos(2.0 * math.pi * _n_osc * frac) - 1.0)
-                return np.full(len(prescribed_dofs_arr), delta_theta)
+                def _oscillation_func(frac: float) -> np.ndarray:
+                    # sin波: frac=0→Δuz=0, frac=0.25/n→+amp, frac=0.75/n→-amp
+                    delta_uz = _osc_amplitude * math.sin(2.0 * math.pi * _n_osc * frac)
+                    return np.full(len(_osc_prescribed_dofs), delta_uz)
+
+                print(f"  揺動フェーズ: 先端u_z横変位±{_osc_amplitude:.1f}mm, {_n_osc}サイクル")
+                _uz_str = ", ".join(f"{uz:.2f}" for uz in _uz_at_bend[:3])
+                _uz_suffix = "..." if len(_uz_at_bend) > 3 else ""
+                print(f"  曲げ完了時u_z: {_uz_str}{_uz_suffix}")
+            else:
+                # 従来: θ_y回転cos波揺動（status-286互換）
+                _osc_prescribed_dofs = prescribed_dofs_arr
+                _osc_prescribed_values = prescribed_values_arr
+                _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
+                _theta_amplitude = _theta_at_ckpt
+
+                def _oscillation_func(frac: float) -> np.ndarray:
+                    # cos(0)=1 → Δθ=0, cos(π)=-1 → Δθ=-2θ_ckpt
+                    delta_theta = _theta_amplitude * (math.cos(2.0 * math.pi * _n_osc * frac) - 1.0)
+                    return np.full(len(_osc_prescribed_dofs), delta_theta)
 
             # 揺動フェーズの時間パラメータ
             t_osc = t_cycle * cfg.n_oscillation_cycles
 
             boundary_osc = BoundaryData(
                 fixed_dofs=fixed_dofs_arr,
-                prescribed_dofs=prescribed_dofs_arr,
-                prescribed_values=prescribed_values_arr,
+                prescribed_dofs=_osc_prescribed_dofs,
+                prescribed_values=_osc_prescribed_values,
                 f_ext_total=f_ext,
                 mpc_transform=None,
                 prescribed_func=_oscillation_func,
