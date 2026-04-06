@@ -132,6 +132,7 @@
 | [296](status-296.md) | 2026-04-05 | K_c FD 1.8%分析 + 端部接���除外 + frozen-m検証(**frac=0.9997完走**) | 442+ passed |
 | [297](status-297.md) | 2026-04-05 | 微小dt耐性改善（dt snap + atol_force） | 442+ passed |
 | [298](status-298.md) | 2026-04-06 | Hertz型+atol_force frac=1.0完走確認（ベースライン検証） | 442+ passed |
+| [299](status-299.md) | 2026-04-06 | 90度曲げ+先端横変位±48mm揺動 完走（統合モード） | 442+ passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 

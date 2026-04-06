@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**442+ テスト** — 2026-04-06時点 | **接触あり90度曲げfrac=0.9997完走**（Hertz型+frozen-m解消, status-296） | **微小dt耐性改善**（dt snap + atol_force, status-297） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**442+ テスト** — 2026-04-06時点 | **90度曲げ+先端±48mm揺動 frac=1.0完走**（統合モード, status-299） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

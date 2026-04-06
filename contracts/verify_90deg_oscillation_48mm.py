@@ -21,8 +21,8 @@ from xkep_cae.numerical_tests.strand_bending_oscillation import (  # noqa: E402
 )
 
 
-def run_90deg_oscillation():
-    """90度曲げ + 先端横変位±48mm揺動."""
+def run_90deg_oscillation(amplitude: float = 48.0):
+    """90度曲げ + 先端横変位揺動."""
     kappa_90 = math.pi / 2.0 / 100.0  # κ = π/(2*L), θ = κ*L = π/2
     cfg = StrandBendingOscillationConfig(
         n_strands=7,
@@ -47,11 +47,11 @@ def run_90deg_oscillation():
         penalty_exponent=1.5,  # Hertz型
         # 揺動パラメータ（status-299）
         n_oscillation_cycles=2,  # 2サイクル
-        oscillation_amplitude=48.0,  # ±48mm
+        oscillation_amplitude=amplitude,  # ±amplitude mm
     )
 
     print("=" * 70)
-    print("90度曲げ + 先端横変位±48mm揺動（2サイクル）")
+    print(f"90度曲げ + 先端横変位±{amplitude:.1f}mm揺動（2サイクル）")
     print("=" * 70)
     print(f"  κ = {kappa_90:.6f} [1/mm]")
     print(f"  θ_target = {math.degrees(kappa_90 * 100):.1f}°")
@@ -84,7 +84,7 @@ def run_90deg_oscillation():
     print("--- ベースライン比較 ---")
     print("  曲げのみ (status-298): frac=1.0, incr=535, cutback=45, 752s")
     print()
-    print("  今回 (曲げ+揺動±48mm×2cyc):")
+    print(f"  今回 (曲げ+揺動±{amplitude:.0f}mm×2cyc):")
     print(f"    frac={frac:.4f}, incr={sr.n_increments}, cutback={sr.n_cutbacks}")
     print()
     print("検証完了")
@@ -92,4 +92,7 @@ def run_90deg_oscillation():
 
 
 if __name__ == "__main__":
-    run_90deg_oscillation()
+    import sys
+
+    amp = float(sys.argv[1]) if len(sys.argv) > 1 else 48.0
+    run_90deg_oscillation(amplitude=amp)

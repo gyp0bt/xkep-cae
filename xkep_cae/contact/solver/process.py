@@ -617,6 +617,9 @@ class ContactFrictionProcess(
                         energy_history=_energy_history,
                         n_cutbacks=_n_cutbacks,
                         increment_diagnostics=tuple(_increment_diag_list),
+                        final_contact_manager=manager,
+                        final_ul_ref_base=_ul_ref_base.copy() if _ul_ref_base is not None else None,
+                        final_node_coords_ref=state.node_coords_ref.copy(),
                     )
 
                 # ==============================================================
@@ -865,6 +868,8 @@ class ContactFrictionProcess(
         # 正常終了
         # ================================================================
         _u_out = state.u.copy()  # state.uは初期配置からの全累積変位
+        _final_vel = _time_strategy.vel.copy() if _dynamics else None
+        _final_acc = _time_strategy.acc.copy() if _dynamics else None
         elapsed = time.perf_counter() - t0
 
         # エネルギー診断サマリ出力
@@ -884,4 +889,9 @@ class ContactFrictionProcess(
             energy_history=_energy_history,
             n_cutbacks=_n_cutbacks,
             increment_diagnostics=_increment_diag_list,
+            final_contact_manager=manager,
+            final_velocity=_final_vel,
+            final_acceleration=_final_acc,
+            final_ul_ref_base=_ul_ref_base.copy() if _ul_ref_base is not None else None,
+            final_node_coords_ref=state.node_coords_ref.copy(),
         )

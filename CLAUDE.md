@@ -87,7 +87,8 @@
 - ~~frozen-m効果検証~~ ← status-296で完了（**Hertz型+frozen-mでfrac 0.40→0.9997、事実上完走！**）
 - ~~微小dt耐性改善~~ ← status-297で完了（**dt snap改善 + atol_force絶対許容値で微小dt収束保証**）
 - ~~Hertz型+atol_force frac=1.0完走確認~~ ← status-298で完了（**frac=1.0000, incr=535, cutback=45, 752s**）
-- **次**: cutback数削減（45→20以下）→ 計算効率改善
+- ~~90度曲げ+先端横変位±48mm揺動~~ ← status-299で完了（**統合モード frac=1.0000, incr=1900, cutback=72, 1504s**）
+- **次**: cutback数削減（72→30以下）→ 計算効率改善
 
 **NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
