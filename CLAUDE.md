@@ -89,6 +89,7 @@
 - ~~Hertz型+atol_force frac=1.0完走確認~~ ← status-298で完了（**frac=1.0000, incr=535, cutback=45, 752s**）
 - ~~90度曲げ+先端横変位±48mm揺動~~ ← status-299で完了（**統合モード frac=1.0000, incr=1900, cutback=72, 1504s**）
 - **次**: cutback数削減（72→30以下）→ 計算効率改善
+- **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
 - ~~MPC u伝搬修正 + NR内再射影 + 拡張系ラッパー~~ ← status-254で完了
@@ -147,6 +148,11 @@
   - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了
   - ~~B1-B4: 摩擦アセンブリProcess化~~ ← status-256で完了
 - NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
+- **リスタート解析方式**: ContactFrictionProcess の I/O を `(u, v, a, 接触ペア)` 入出力に整理
+  - ソルバーが初期条件 `(u0, v0, a0, contact_pairs)` を受け取り、結果 `(u, v, a, contact_pairs)` を返す
+  - 曲げ・揺動プロセスは境界条件（prescribed_dofs, prescribed_func, f_ext等）を渡すだけの薄いラッパー
+  - update_reference を解析ステップ間で跨がない設計（CR梁ULのf_int=0問題の根本解決）
+  - これにより曲げ→揺動のステップ切り替え時にも内力・接触状態が完全に連続
 - Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
   - ~~Step1: StJacobian隣接ノード微分（ds_du_adj/dt_du_adj）~~ ← status-271で完了
   - ~~Step2: K_st拡張（隣接ノードDOFへの接線剛性エントリ追加）~~ ← status-272で完了
