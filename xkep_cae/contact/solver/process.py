@@ -445,6 +445,8 @@ class ContactFrictionProcess(
         _disp_history: list[np.ndarray] = []
         _contact_force_history: list[float] = []
         _graph_snapshots: list[object] = []
+        # 微小dt対策: 成功インクリメントのf_refを追跡し、下限値として使用（status-297）
+        _global_f_ref: float = 0.0
 
         # ================================================================
         # 荷重ステップループ
@@ -556,6 +558,9 @@ class ContactFrictionProcess(
                 dynamic_ref=dynamic_ref,
                 connectivity=connectivity,
                 mpc_transform=_mpc_current,
+                # status-297: 通常インクリメントの力収束水準を絶対許容値として渡す
+                # atol = global_f_ref × tol_force → 微小dtでも通常スケールの収束水準で判定
+                atol_force=_global_f_ref * nr_config_dyn.tol_force,
             )
             step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
@@ -645,6 +650,16 @@ class ContactFrictionProcess(
                         energy_ratio=_e_out.energy_ratio,
                     )
                 )
+
+            # f_ref追跡更新（status-297: 微小dt対策）
+            # 収束成功時のみ更新（failure時は continue or return で到達しない）
+            _step_f_ref = getattr(step_result, "f_ref_used", 0.0)
+            if step_result.converged and _step_f_ref > 1e-30:
+                if _global_f_ref < 1e-30:
+                    _global_f_ref = _step_f_ref
+                else:
+                    # 指数移動平均（α=0.3）で平滑化
+                    _global_f_ref = 0.7 * _global_f_ref + 0.3 * _step_f_ref
 
             # 被膜圧縮量保存
             if use_coating:

@@ -166,6 +166,9 @@ class StrandBendingOscillationConfig:
     max_increments: int = 10000
     lumped_mass: bool = True
     exclude_same_strand: bool = True
+    exclude_end_elements: int = (
+        0  # >0: 各素線の端部N要素を接触候補から除外（status-296: MPC安定化）
+    )
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
@@ -696,6 +699,7 @@ class StrandBendingOscillationProcess(
             dt_min_fraction=dt_initial / (t_total * 64.0),
             dt_max_fraction=dt_initial / t_total,
             exclude_same_strand=cfg.exclude_same_strand,
+            exclude_end_elements=cfg.exclude_end_elements,
             smoothing_delta=_smoothing_delta,
             huber_delta_h=cfg.huber_delta_h,
         )
@@ -888,6 +892,7 @@ class StrandBendingOscillationProcess(
             dt_min_fraction=dt_initial / (t_total * 64.0),
             dt_max_fraction=dt_initial / t_total,
             exclude_same_strand=cfg.exclude_same_strand,
+            exclude_end_elements=cfg.exclude_end_elements,
             smoothing_delta=_smoothing_delta,
             huber_delta_h=cfg.huber_delta_h,
         )

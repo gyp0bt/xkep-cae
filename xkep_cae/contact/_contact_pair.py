@@ -136,6 +136,9 @@ class _ContactConfigInput:
     ncp_reg: float = 1e-12
     ncp_block_preconditioner: bool = False
     exclude_same_strand: bool = False
+    exclude_end_elements: int = (
+        0  # >0: 各素線の端部N要素を接触候補から除外（status-296: MPC+contact安定化）
+    )
     # 要素レベルサーフェスペアフィルタ（status-276: 候補数削減）
     # >0: 重心距離が閾値以下の異素線要素ペアを「種」とし、
     # 各種ペアの隣接±n要素を候補に追加。長手方向の過剰候補を排除。

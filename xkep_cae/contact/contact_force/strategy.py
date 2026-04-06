@@ -274,9 +274,10 @@ def _add_kst_contact_to_coo(
             node_counts[pair.nodes_b[1]],
         )
         # 非局所 dm 係数（status-272: K_st拡張）
-        # status-294: dm_ext はStJacobianに渡さない。
-        # 隣接ノードの K_mat+K_geo 寄与は K_c_adj（tangent内）が正確にカバーしており、
-        # K_st_adj を追加すると二重計上になることがFD検証で判明。
+        # status-296: K_st_adj再有効化を検証した結果、x,y方向で27倍過大（38.5%に悪化）。
+        # K_c_adj geo(I-n⊗n)とK_st_adj接平面成分が物理的に同一寄与であり、
+        # どちらを有効にしても二重計上が発生。K_c_adj mat-only(1.8%)が最適解。
+        # dm_ext はStJacobianに渡さない（K_st_adjは無効のまま維持）。
 
     # StJacobian 入力の構築
     st_kw: dict = {

@@ -162,7 +162,11 @@ class AdaptiveSteppingProcess(SolverProcess[AdaptiveStepInput, AdaptiveStepOutpu
         next_delta = max(next_delta, cfg.dt_min_fraction)
         next_delta = min(next_delta, cfg.dt_max_fraction)
         next_frac = min(load_frac + next_delta, 1.0)
-        if 1.0 - next_frac < cfg.dt_min_fraction * 0.5:
+        # 残りが通常dtより十分小さいとき、次ステップで微小dt（=端数）が発生する。
+        # 微小dtは接線剛性の相対誤差を露呈させNR不収束を招く（status-296）。
+        # → 残りが通常dtの半分未満なら、現ステップで1.0まで吸収する。
+        remaining = 1.0 - next_frac
+        if 0 < remaining < next_delta * 0.5:
             next_frac = 1.0
         self._queue.appendleft(next_frac)
 

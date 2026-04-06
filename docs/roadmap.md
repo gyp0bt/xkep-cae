@@ -12,7 +12,7 @@
 
 ---
 
-## 現在地（2026-04-05）
+## 現在地（2026-04-06）
 
 **631+ テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
@@ -60,7 +60,11 @@
 | smooth遷移帯 | **StJacobian smooth blending + unclamped IFT修正**: 1×1/2×2系のhard threshold→w_t/w_s連続補間。IFT幾何をunclamped座標で評価。frozen-m内部接触点K_st FD誤差3x確認（既知制限） — status-293 |
 | frozen-m部分解消 | **dm_A/dm_B有効化 + dm_ext無効化**: K_c FD誤差15.5%→11.0%。K_st_adjとK_c_adjの二重計上を発見・解消。残余11%はz方向高次効果 — status-294 |
 | K_c_adj mat-only | **隣接ノード幾何剛性除外**: K_c FD誤差11.0%→1.8%。s追従による法線変化相殺を理論的に解明 — status-295 |
-| **壁** | K_c FD残余1.8%解消（K_st_adj部分有効化）→ NR 2次収束回復 → frac=1.0 / 61本以上 / 1000本6時間 |
+| K_c FD 1.8%分析 | **K_st_adj再有効化→38.5%悪化**: 接平面内で K_c_adj geo と K_st_adj が同一寄与。mat-only(1.8%)が最適解 — status-296 |
+| 端部接触除外 | **exclude_end_elements実装**: MPC+contactで端部2要素除外→frac 0.001→0.004（不十分）。T^T K_c Tグローバルカップリングが根本原因 — status-296 |
+| frozen-m効果検証 | **Hertz型+frozen-m解消でfrac 0.40→0.9997（事実上完走）**: 541 incr, 41 cutback。正しい接線での完走達成 — status-296 |
+| 微小dt耐性 | **dt snap改善 + atol_force**: 端数dt吸収（snap閾値→next_delta基準）、NR絶対許容値（global_f_ref×tol_force）で微小dt収束保証 — status-297 |
+| **次** | cutback数削減（41→20以下）→ 効率改善 / 61本以上 / 1000本6時間 |
 
 ---
 

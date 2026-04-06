@@ -47,6 +47,7 @@ class DynamicStepOutput:
     f_c: np.ndarray
     diagnostics: ConvergenceDiagnosticsOutput
     diverged: bool = False
+    f_ref_used: float = 0.0  # 実際に使用されたf_ref（status-297: global追跡用）
 
 
 @dataclass(frozen=True)
@@ -129,6 +130,7 @@ class NewtonDynamicStepInput:
     dynamic_ref: bool
     connectivity: np.ndarray | None = None  # Hermite 中心線補間用
     mpc_transform: object | None = None  # MPCEliminationResult（status-253）
+    atol_force: float = 0.0  # 力残差の絶対許容値 [N]（status-297: 微小dt対策）
 
 
 # 後方互換エイリアス（呼び出し側の段階的移行用）
@@ -338,6 +340,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
                     mpc_transform=input_data.mpc_transform,
+                    atol_force=input_data.atol_force,
                 )
             )
             # 初回反復で参照残差を保存
@@ -1144,6 +1147,7 @@ class NewtonDynamicProcess(
                     ndof_per_node=cfg.ndof_per_node,
                     char_length=cfg.char_length,
                     mpc_transform=input_data.mpc_transform,
+                    atol_force=input_data.atol_force,
                 )
             )
 
@@ -1316,6 +1320,7 @@ class NewtonDynamicProcess(
             f_c=f_c,
             diagnostics=diag,
             diverged=_diverged,
+            f_ref_used=_incr_f_ref,
         )
 
 

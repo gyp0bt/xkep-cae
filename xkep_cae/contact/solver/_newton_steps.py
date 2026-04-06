@@ -182,6 +182,7 @@ class ConvergenceCheckInput:
     ndof_per_node: int = 6
     char_length: float = 0.0  # 代表長さ [mm]（回転残差の正規化用、status-241）
     mpc_transform: object | None = None  # MPCEliminationResult（status-255: 縮退系残差判定）
+    atol_force: float = 0.0  # 絶対許容値 [N]（status-297: 微小dt時の収束保証）
 
 
 @dataclass(frozen=True)
@@ -270,7 +271,12 @@ class ConvergenceCheckProcess(
         n_active = sum(1 for p in inp.manager.pairs if hasattr(p, "state") and p.state.p_n > 0.0)
 
         # 力収束: 並進残差のみで判定（接触力は並進 DOF のみにアセンブリ）
-        if res_trans_norm / f_ref < inp.tol_force:
+        # atol_force: 絶対許容値。微小dtでf_refが極小でも、
+        # 絶対残差が通常スケールの力収束水準以下なら収束を認める（status-297）。
+        _force_converged = res_trans_norm / f_ref < inp.tol_force
+        if not _force_converged and inp.atol_force > 0:
+            _force_converged = res_trans_norm < inp.atol_force
+        if _force_converged:
             return ConvergenceCheckOutput(
                 converged=True,
                 convergence_type=ConvergenceType.FORCE,
