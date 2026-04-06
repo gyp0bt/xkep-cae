@@ -12,7 +12,7 @@
 
 ---
 
-## 現在地（2026-04-05）
+## 現在地（2026-04-06）
 
 **631+ テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
@@ -63,6 +63,7 @@
 | K_c FD 1.8%分析 | **K_st_adj再有効化→38.5%悪化**: 接平面内で K_c_adj geo と K_st_adj が同一寄与。mat-only(1.8%)が最適解 — status-296 |
 | 端部接触除外 | **exclude_end_elements実装**: MPC+contactで端部2要素除外→frac 0.001→0.004（不十分）。T^T K_c Tグローバルカップリングが根本原因 — status-296 |
 | frozen-m効果検証 | **Hertz型+frozen-m解消でfrac 0.40→0.9997（事実上完走）**: 541 incr, 41 cutback。正しい接線での完走達成 — status-296 |
+| 微小dt耐性 | **dt snap改善 + atol_force**: 端数dt吸収（snap閾値→next_delta基準）、NR絶対許容値（global_f_ref×tol_force）で微小dt収束保証 — status-297 |
 | **次** | cutback数削減（41→20以下）→ 効率改善 / 61本以上 / 1000本6時間 |
 
 ---
