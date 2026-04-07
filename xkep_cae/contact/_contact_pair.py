@@ -175,6 +175,7 @@ class _ContactConfigInput:
     use_hermite_centerline: bool = True  # status-245: Hermite デフォルト ON（frozen-m 解消済み）
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
+    coating_thickness: float = 0.0  # 被膜厚さ [mm], >0: core_radius = radius - thickness
     contact_compliance: float = 0.0
     smoothing_delta: float = 0.0
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（status-261, k_penスケール非依存）

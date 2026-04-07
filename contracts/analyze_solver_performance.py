@@ -115,6 +115,7 @@ def run_case(
     coating_stiffness: float = 0.0,
     coating_damping: float = 0.0,
     coating_mu: float = 0.0,
+    coating_thickness: float = 0.0,
 ) -> tuple[float, int, int, float]:
     """1ケースの実行 + 分析."""
     kappa_90 = math.pi / 2.0 / 100.0
@@ -147,6 +148,7 @@ def run_case(
         coating_stiffness=coating_stiffness,
         coating_damping=coating_damping,
         coating_mu=coating_mu,
+        coating_thickness=coating_thickness,
     )
 
     print(f"  penalty_exponent   = {cfg.penalty_exponent}")
@@ -189,13 +191,15 @@ def main() -> None:
     # ── ケース1: 被膜なし（ベースライン再現） ──
     frac1, incr1, cb1, t1 = run_case("被膜なし（ベースライン再現）")
 
-    # ── ケース2: 被膜付き（典型的ワイヤロープ値） ──
-    # ポリマー被膜: k=5e3 N/mm, c=0.1 N·s/mm, μ=0.15
+    # ── ケース2: 被膜付き（physics test準拠） ──
+    # coating_thickness=0.05mm (wire_radius=0.5mmの10%)
+    # k=1e6 N/mm, c=1e4 N·s/mm, μ=0.3 (physics test値)
     frac2, incr2, cb2, t2 = run_case(
-        "被膜付き（k=5e3, c=0.1, μ=0.15）",
-        coating_stiffness=5e3,
-        coating_damping=0.1,
-        coating_mu=0.15,
+        "被膜付き（k=1e6, c=1e4, μ=0.3, t=0.05mm）",
+        coating_stiffness=1e6,
+        coating_damping=1e4,
+        coating_mu=0.3,
+        coating_thickness=0.05,
     )
 
     # ── 比較サマリ ──
