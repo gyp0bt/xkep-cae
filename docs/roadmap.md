@@ -64,7 +64,9 @@
 | 端部接触除外 | **exclude_end_elements実装**: MPC+contactで端部2要素除外→frac 0.001→0.004（不十分）。T^T K_c Tグローバルカップリングが根本原因 — status-296 |
 | frozen-m効果検証 | **Hertz型+frozen-m解消でfrac 0.40→0.9997（事実上完走）**: 541 incr, 41 cutback。正しい接線での完走達成 — status-296 |
 | 微小dt耐性 | **dt snap改善 + atol_force**: 端数dt吸収（snap閾値→next_delta基準）、NR絶対許容値（global_f_ref×tol_force）で微小dt収束保証 — status-297 |
-| **次** | cutback数削減（41→20以下）→ 効率改善 / 61本以上 / 1000本6時間 |
+| ベースライン検証 | **Hertz型+atol_force frac=1.0完走確認**: incr=535, cutback=45, 752s。status-285比でcutback 25%削減 — status-298 |
+| 曲げ+揺動±48mm | **統合モード(prescribed_func)でfrac=1.0完走**: incr=1900, cutback=72, 1504s — status-299 |
+| **次** | cutback数削減（72→30以下）→ 効率改善 / 61本以上 / 1000本6時間 |
 
 ---
 

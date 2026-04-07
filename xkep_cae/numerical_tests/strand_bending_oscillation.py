@@ -197,6 +197,11 @@ class StrandBendingOscillationConfig:
     # 揺動の処方変位: θ(frac) = θ_max * sin(2π * n_oscillation_cycles * frac)
     # resume_checkpoint が設定されている場合、曲げスキップで揺動のみ実行。
     n_oscillation_cycles: int = 0  # 0=曲げのみ, >0=曲げ後に揺動
+    # 揺動振幅 [mm]（status-299: 先端横変位揺動）
+    # >0: 揺動フェーズでθ_y回転処方の代わりに先端u_z横変位±amplitude[mm]で処方。
+    # 曲げ完了位置を中心にsin波振動: u_z(frac) = u_z_bend + amplitude * sin(2π*n_osc*frac)
+    # 0: 従来のθ_y回転cos波揺動（status-286互換）
+    oscillation_amplitude: float = 0.0  # [mm], 0=θ回転揺動
 
 
 @dataclass(frozen=True)
@@ -869,8 +874,64 @@ class StrandBendingOscillationProcess(
         )
         T1 = 1.0 / f1 if f1 > 1e-30 else 1.0
         t_cycle = max(10.0 * T1, 1.0)
-        t_total = t_cycle * cfg.n_cycles
-        dt_initial = t_total / (cfg.n_increments_per_cycle * cfg.n_cycles)
+
+        # status-299: 曲げ+揺動統合モード
+        # n_oscillation_cycles > 0 の場合、曲げ+揺動を1回のソルバーで実行。
+        # frac_bend = 曲げフェーズが全体のどこまでか
+        _n_osc = cfg.n_oscillation_cycles
+        # u_z直接揺動（oscillation_amplitude > 0）は prescribed_dofs が変わるため
+        # 2フェーズ方式。θ_y揺動（amplitude=0）のみ統合モード。
+        # 統合モード: 曲げ+揺動を1回のソルバーで実行。
+        # 2フェーズ方式はUL参照配置不整合（CR梁のf_int=0問題）で使用不可。
+        _combined_mode = _n_osc > 0 and cfg.loading_mode != "moment"
+        if _combined_mode:
+            _frac_bend = cfg.n_cycles / (cfg.n_cycles + _n_osc)
+            t_total = t_cycle * (cfg.n_cycles + _n_osc)
+            # 揺動振幅: oscillation_amplitude > 0 なら先端変位→θ変換
+            # 先端変位 δ ≈ R * Δθ where R = 1/κ = strand_length / (κ*strand_length)
+            if cfg.oscillation_amplitude > 0.0:
+                _R_bend = strand_length / bending_angle if bending_angle > 1e-10 else strand_length
+                _theta_osc_amp = cfg.oscillation_amplitude / _R_bend
+            else:
+                _theta_osc_amp = bending_angle  # 従来: 全曲げ角度で揺動
+
+            def _combined_prescribed_func(frac: float) -> np.ndarray:
+                if frac <= _frac_bend:
+                    # 曲げフェーズ: θ = bending_angle * (frac / frac_bend)
+                    _theta = bending_angle * (frac / _frac_bend)
+                else:
+                    # 揺動フェーズ: 1-cos 波形でC1連続（transition微分=0）
+                    # sin(2πnt) は transition で dθ/dt ≠ 0 → 不連続。
+                    # 代わりに (1-cos(2πnt))/2 を使い、最初の半周期で振幅まで
+                    # 滑らかに立ち上がる。
+                    _osc_frac = (frac - _frac_bend) / (1.0 - _frac_bend)
+                    _phase = 2.0 * math.pi * _n_osc * _osc_frac
+                    _delta_theta = _theta_osc_amp * math.sin(_phase)
+                    # 最初の1/4周期にランプ適用（C1連続化）
+                    _ramp_end = 0.25 / _n_osc  # 最初のn_oscの1/4周期
+                    if _osc_frac < _ramp_end:
+                        # sin波にハーフcos窓: 0→1の滑らかなランプ
+                        _w = 0.5 * (1.0 - math.cos(math.pi * _osc_frac / _ramp_end))
+                        _delta_theta *= _w
+                    _theta = bending_angle + _delta_theta
+                return np.full(len(prescribed_dofs_arr), _theta)
+
+            print(
+                f"  統合モード: 曲げ(frac<{_frac_bend:.3f}) + "
+                f"θ揺動±{math.degrees(_theta_osc_amp):.1f}°×{_n_osc}cyc"
+            )
+            if cfg.oscillation_amplitude > 0.0:
+                print(
+                    f"  先端変位±{cfg.oscillation_amplitude:.1f}mm → "
+                    f"θ振幅±{math.degrees(_theta_osc_amp):.1f}°"
+                )
+        else:
+            _frac_bend = 1.0
+            _combined_prescribed_func = None
+            t_total = t_cycle * cfg.n_cycles
+
+        _total_cycles = (cfg.n_cycles + _n_osc) if _combined_mode else cfg.n_cycles
+        dt_initial = t_total / (cfg.n_increments_per_cycle * _total_cycles)
 
         boundary = BoundaryData(
             fixed_dofs=fixed_dofs_arr,
@@ -878,18 +939,20 @@ class StrandBendingOscillationProcess(
             prescribed_values=prescribed_values_arr,
             f_ext_total=f_ext,
             mpc_transform=None,  # MPC不使用
+            prescribed_func=_combined_prescribed_func,
         )
 
         # ── 接触設定 ──
         _smoothing_delta = (
             cfg.smoothing_delta if cfg.smoothing_delta > 0.0 else 1000.0 / cfg.wire_radius
         )
+        _cutback_depth = 256.0 if _combined_mode else 64.0
         contact_config = _ContactConfigInput(
             beam_E=cfg.E,
             beam_I=sec_Iy,
             mu=cfg.mu,
             adaptive_timestepping=True,
-            dt_min_fraction=dt_initial / (t_total * 64.0),
+            dt_min_fraction=dt_initial / (t_total * _cutback_depth),
             dt_max_fraction=dt_initial / t_total,
             exclude_same_strand=cfg.exclude_same_strand,
             exclude_end_elements=cfg.exclude_end_elements,
@@ -986,8 +1049,9 @@ class StrandBendingOscillationProcess(
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
-            _vel_bend = None
-            _acc_bend = None
+            # status-299: 速度・加速度を揺動フェーズに引き継ぎ（慣性力不整合防止）
+            _vel_bend = solver_result_bend.final_velocity
+            _acc_bend = solver_result_bend.final_acceleration
             _frac_bend = (
                 solver_result_bend.load_history[-1] if solver_result_bend.load_history else 0.0
             )
@@ -997,53 +1061,121 @@ class StrandBendingOscillationProcess(
                 f"cutback={solver_result_bend.n_cutbacks}"
             )
 
+            # status-299: 接触マネージャ状態を揺動フェーズに引き継ぎ（旧2フェーズ用）
+            if (
+                not _combined_mode
+                and solver_result_bend.final_contact_manager is not None
+                and cfg.n_oscillation_cycles > 0
+            ):
+                _bend_mgr = solver_result_bend.final_contact_manager
+                contact_setup = ContactSetupData(
+                    manager=_bend_mgr,
+                    k_pen=cfg.k_pen,
+                    mu=cfg.mu,
+                )
+                _n_active = sum(
+                    1
+                    for p in getattr(_bend_mgr, "pairs", [])
+                    if hasattr(p, "state") and p.state.p_n > 0
+                )
+                print(
+                    f"  接触マネージャ引き継ぎ: "
+                    f"{len(getattr(_bend_mgr, 'pairs', []))} pairs ({_n_active} active)"
+                )
+
         # ── 揺動フェーズ ──
-        if cfg.n_oscillation_cycles > 0:
-            # sin波処方変位関数: θ(frac) = θ_max * sin(2π * n_osc * frac)
-            # frac=0でθ=0（曲げ完了位置=直線状態に復元後、振動開始）
-            # ではなく、曲げ完了位置からの揺動: θ(frac) = θ_max * cos(2π * n_osc * frac)
-            # frac=0 → θ=θ_max（曲げ完了）, frac=0.25/n → θ=0（直線）,
-            # frac=0.5/n → θ=-θ_max（逆曲げ）...
+        # 統合モード（_combined_mode）の場合、曲げ+揺動は prescribed_func で
+        # 1回のソルバーで実行済み。旧2フェーズ方式はフォールバック。
+        if _combined_mode:
+            solver_result = solver_result_bend
+        elif cfg.n_oscillation_cycles > 0:
             _n_osc = cfg.n_oscillation_cycles
-            _theta_max = bending_angle
 
-            # prescribed_func(frac) は state.u[prescribed_dofs] に書き込む値。
-            # 自工程保証: checkpoint復元後、state.u はcoords_refからの増分（≈0）。
-            # prescribed_func は coords_ref 基準の増分角度を返す。
-            # frac=0 → Δθ=0（checkpoint状態維持）
-            # frac=0.25/n → Δθ=-θ_ckpt（直線復元）
-            # frac=0.5/n → Δθ=-2θ_ckpt（逆曲げ）
-            _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
-            _theta_amplitude = _theta_at_ckpt
+            if cfg.oscillation_amplitude > 0.0:
+                # status-299: 先端横変位揺動（u_z ±amplitude）
+                # 曲げ完了位置を中心にsin波で往復。
+                # prescribed_dofs: u_z（揺動）+ θ_y（曲げ完了値で固定）
+                _uz_dofs = [n * 6 + 2 for n in right_nodes]
+                _theta_dofs = [n * 6 + 4 for n in right_nodes]
+                _osc_prescribed_dofs = np.array(_uz_dofs + _theta_dofs, dtype=int)
+                _uz_at_bend = np.array([float(_u_bend[d]) for d in _uz_dofs])
+                _theta_at_bend = np.array([float(_u_bend[d]) for d in _theta_dofs])
+                _n_uz = len(_uz_dofs)
+                _osc_amplitude = cfg.oscillation_amplitude
+                # prescribed_values: u_z=曲げ完了値（frac=1.0でsin=0）, θ_y=曲げ完了値
+                _osc_prescribed_values = np.concatenate([_uz_at_bend, _theta_at_bend])
 
-            def _oscillation_func(frac: float) -> np.ndarray:
-                # cos(0)=1 → Δθ=0, cos(π)=-1 → Δθ=-2θ_ckpt
-                delta_theta = _theta_amplitude * (math.cos(2.0 * math.pi * _n_osc * frac) - 1.0)
-                return np.full(len(prescribed_dofs_arr), delta_theta)
+                def _oscillation_func(frac: float) -> np.ndarray:
+                    # prescribed_func は state.u[prescribed_dofs] に書き込む絶対値。
+                    # u_z: 曲げ完了位置 + sin波変位
+                    # θ_y: 曲げ完了値で固定（安定性確保）
+                    delta_uz = _osc_amplitude * math.sin(2.0 * math.pi * _n_osc * frac)
+                    uz_vals = _uz_at_bend + delta_uz
+                    return np.concatenate([uz_vals, _theta_at_bend])
+
+                print(
+                    f"  揺動フェーズ: 先端u_z横変位±{_osc_amplitude:.1f}mm, "
+                    f"{_n_osc}サイクル（θ_y固定）"
+                )
+                _uz_str = ", ".join(f"{uz:.2f}" for uz in _uz_at_bend[:3])
+                _uz_suffix = "..." if len(_uz_at_bend) > 3 else ""
+                print(f"  曲げ完了時u_z: {_uz_str}{_uz_suffix}")
+            else:
+                # 従来: θ_y回転cos波揺動（status-286互換）
+                _osc_prescribed_dofs = prescribed_dofs_arr
+                _osc_prescribed_values = prescribed_values_arr
+                _theta_at_ckpt = float(_u_bend[prescribed_dofs_arr[0]])
+                _theta_amplitude = _theta_at_ckpt
+
+                def _oscillation_func(frac: float) -> np.ndarray:
+                    # cos(0)=1 → Δθ=0, cos(π)=-1 → Δθ=-2θ_ckpt
+                    delta_theta = _theta_amplitude * (math.cos(2.0 * math.pi * _n_osc * frac) - 1.0)
+                    return np.full(len(_osc_prescribed_dofs), delta_theta)
 
             # 揺動フェーズの時間パラメータ
             t_osc = t_cycle * cfg.n_oscillation_cycles
 
             boundary_osc = BoundaryData(
                 fixed_dofs=fixed_dofs_arr,
-                prescribed_dofs=prescribed_dofs_arr,
-                prescribed_values=prescribed_values_arr,
+                prescribed_dofs=_osc_prescribed_dofs,
+                prescribed_values=_osc_prescribed_values,
                 f_ext_total=f_ext,
                 mpc_transform=None,
                 prescribed_func=_oscillation_func,
+            )
+
+            # status-299: 揺動フェーズ用に新しいアセンブラを作成。
+            # 曲げ中のupdate_reference()で座標が変わったアセンブラを再利用すると
+            # u_incr=0 → f_int=0 になり応力状態が消失する。
+            # 新品アセンブラ（原点メッシュ）+ u0=_u_bend（全累積変位）で
+            # f_int(u_bend) が正しく計算される。
+            _beam_result_osc = ULCRBeamAssemblerProcess().process(
+                ULCRBeamAssemblerInput(
+                    node_coords=strand_coords,
+                    connectivity=strand_conn,
+                    E=cfg.E,
+                    G=G,
+                    A=sec["A"],
+                    Iy=sec["Iy"],
+                    Iz=sec["Iz"],
+                    J=sec["J"],
+                    kappa_y=sec["kappa"],
+                    kappa_z=sec["kappa"],
+                )
+            )
+            _asm_osc = _beam_result_osc.assembler
+            _callbacks_osc = AssembleCallbacks(
+                assemble_tangent=_asm_osc.assemble_tangent,
+                assemble_internal_force=_asm_osc.assemble_internal_force,
+                ul_assembler=_asm_osc,
             )
 
             solver_input_osc = ContactFrictionInputData(
                 mesh=mesh,
                 boundary=boundary_osc,
                 contact=contact_setup,
-                callbacks=_callbacks,
-                # u0 は復元した coords_ref からの増分変位。
-                # checkpoint保存はUL更新直後なので state.u ≈ ul_ref_base。
-                # 増分 = state.u - ul_ref_base ≈ 0。
-                u0=_u_bend - _ckpt.get("ul_ref_base", _u_bend)
-                if cfg.resume_checkpoint
-                else _u_bend,
+                callbacks=_callbacks_osc,
+                u0=_u_bend,
                 mass_matrix=M,
                 dt_physical=t_osc,
                 rho_inf=cfg.rho_inf,
@@ -1055,7 +1187,7 @@ class StrandBendingOscillationProcess(
                 tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
                 du_norm_cap=cfg.du_norm_cap,
                 penalty_exponent=cfg.penalty_exponent,
-                skip_initial_detection=bool(cfg.resume_checkpoint),
+                skip_initial_detection=False,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

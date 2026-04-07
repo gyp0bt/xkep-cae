@@ -250,6 +250,14 @@ class SolverResultData:
     n_cutbacks: int = 0  # カットバック総数
     # 全インクリメント診断（IncrementDiagnosticsOutput のリスト）
     increment_diagnostics: tuple = ()
+    # 最終接触マネージャ状態（status-299: 揺動フェーズへの引き継ぎ用）
+    final_contact_manager: object | None = None
+    # 最終速度・加速度（status-299: 動的解析の揺動フェーズ引き継ぎ）
+    final_velocity: np.ndarray | None = None
+    final_acceleration: np.ndarray | None = None
+    # UL参照配置（status-299: 2フェーズリスタートでの内力整合用）
+    final_ul_ref_base: np.ndarray | None = None
+    final_node_coords_ref: np.ndarray | None = None
 
 
 @dataclass(frozen=True)
