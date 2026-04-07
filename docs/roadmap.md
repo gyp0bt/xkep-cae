@@ -66,6 +66,7 @@
 | 微小dt耐性 | **dt snap改善 + atol_force**: 端数dt吸収（snap閾値→next_delta基準）、NR絶対許容値（global_f_ref×tol_force）で微小dt収束保証 — status-297 |
 | ベースライン検証 | **Hertz型+atol_force frac=1.0完走確認**: incr=535, cutback=45, 752s。status-285比でcutback 25%削減 — status-298 |
 | 曲げ+揺動±48mm | **統合モード(prescribed_func)でfrac=1.0完走**: incr=1900, cutback=72, 1504s — status-299 |
+| 2D投影可視化 | 変形メッシュ2D投影スクリプト実装（XZ側面+XY端面 4パネル + 時系列スナップショット）— status-300 |
 | **次** | cutback数削減（72→30以下）→ 効率改善 / 61本以上 / 1000本6時間 |
 
 ---
