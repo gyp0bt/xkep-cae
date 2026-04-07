@@ -48,7 +48,11 @@ status-299のTODO「変形メッシュの2D投影可視化」を実装。
 - 2D投影図: XZ平面でエラスティカ理論線との一致確認
 - スナップショット: frac=0→1の変形過程が正しく描画されることを確認
 
-フルソルバー実行での画像生成は次回セッションのTODOとする（実行に752+秒要）。
+フルソルバー実行で4枚の検証画像を生成し `docs/verification/` に保存済み:
+- `deformed_mesh_2d_90deg_bend.png`: 90度曲げ（frac=1.0, 727.6s）
+- `deformed_mesh_2d_90deg_bend_snapshots.png`: 90度曲げ変形過程スナップショット
+- `deformed_mesh_2d_90deg_osc48mm.png`: 90度曲げ+±48mm揺動（frac=1.0, 1459.1s）
+- `deformed_mesh_2d_90deg_osc48mm_snapshots.png`: 曲げ+揺動変形過程スナップショット
 
 ---
 
@@ -60,8 +64,8 @@ status-299のTODO「変形メッシュの2D投影可視化」を実装。
 
 ## TODO
 
-- [ ] フルソルバー実行で90度曲げ2D投影図を生成し `docs/verification/` に保存
-- [ ] フルソルバー実行で90度曲げ+±48mm揺動2D投影図を生成し `docs/verification/` に保存
+- [x] フルソルバー実行で90度曲げ2D投影図を生成し `docs/verification/` に保存 → 完了（frac=1.0000, incr=535, cutback=45, 727.6s）
+- [x] フルソルバー実行で90度曲げ+±48mm揺動2D投影図を生成し `docs/verification/` に保存 → 完了（frac=1.0000, incr=1900, cutback=72, 1459.1s）
 - [ ] cutback数削減（72→30以下）: 計算効率改善
 - [ ] 揺動フェーズの物理的妥当性検証（応力分布、接触力履歴）
 - [ ] MPC+contact: ローカルMPC（ワイヤ単位の端部結合）の検討
