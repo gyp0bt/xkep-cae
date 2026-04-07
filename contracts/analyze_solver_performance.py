@@ -189,12 +189,13 @@ def main() -> None:
     # ── ケース1: 被膜なし（ベースライン再現） ──
     frac1, incr1, cb1, t1 = run_case("被膜なし（ベースライン再現）")
 
-    # ── ケース2: 被膜付き ──
+    # ── ケース2: 被膜付き（典型的ワイヤロープ値） ──
+    # ポリマー被膜: k=5e3 N/mm, c=0.1 N·s/mm, μ=0.15
     frac2, incr2, cb2, t2 = run_case(
-        "被膜付き（k=1e6, c=1e4, μ=0.3）",
-        coating_stiffness=1e6,
-        coating_damping=1e4,
-        coating_mu=0.3,
+        "被膜付き（k=5e3, c=0.1, μ=0.15）",
+        coating_stiffness=5e3,
+        coating_damping=0.1,
+        coating_mu=0.15,
     )
 
     # ── 比較サマリ ──
