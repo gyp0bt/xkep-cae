@@ -202,6 +202,11 @@ class StrandBendingOscillationConfig:
     # 曲げ完了位置を中心にsin波振動: u_z(frac) = u_z_bend + amplitude * sin(2π*n_osc*frac)
     # 0: 従来のθ_y回転cos波揺動（status-286互換）
     oscillation_amplitude: float = 0.0  # [mm], 0=θ回転揺動
+    # 被膜パラメータ（status-301: 1000本モデルの縮小モデル用）
+    coating_stiffness: float = 0.0  # 被膜剛性 [N/mm], 0=被膜なし
+    coating_damping: float = 0.0  # 被膜減衰 [N·s/mm]
+    coating_mu: float = 0.0  # 被膜摩擦係数
+    coating_k_t_ratio: float = 0.5  # 接線剛性比
 
 
 @dataclass(frozen=True)
@@ -707,6 +712,10 @@ class StrandBendingOscillationProcess(
             exclude_end_elements=cfg.exclude_end_elements,
             smoothing_delta=_smoothing_delta,
             huber_delta_h=cfg.huber_delta_h,
+            coating_stiffness=cfg.coating_stiffness,
+            coating_damping=cfg.coating_damping,
+            coating_mu=cfg.coating_mu,
+            coating_k_t_ratio=cfg.coating_k_t_ratio,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
@@ -958,6 +967,10 @@ class StrandBendingOscillationProcess(
             exclude_end_elements=cfg.exclude_end_elements,
             smoothing_delta=_smoothing_delta,
             huber_delta_h=cfg.huber_delta_h,
+            coating_stiffness=cfg.coating_stiffness,
+            coating_damping=cfg.coating_damping,
+            coating_mu=cfg.coating_mu,
+            coating_k_t_ratio=cfg.coating_k_t_ratio,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
