@@ -22,16 +22,6 @@ from xkep_cae.contact.friction.law_friction import (
 )
 
 
-def _contact_dofs(pair: object, ndof_per_node: int = 6) -> np.ndarray:
-    """接触ペアの全体 DOF インデックス (4節点 × ndof_per_node)."""
-    nodes = np.array(
-        [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]],
-        dtype=int,
-    )
-    offsets = np.arange(ndof_per_node, dtype=int)
-    return (nodes[:, None] * ndof_per_node + offsets).ravel()
-
-
 def _contact_tangent_shape_vector(
     pair: object, axis: int, *, use_hermite: bool = False
 ) -> np.ndarray:
