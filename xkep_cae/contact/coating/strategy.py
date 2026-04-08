@@ -15,6 +15,36 @@ import scipy.sparse as sp
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.core import ProcessMeta, SolverProcess
 
+# ── バリア関数ヘルパー（status-303） ────────────────────────
+
+_BARRIER_CLAMP = 1e-3  # min(1 - ratio) で特異点回避
+
+
+def _coat_total(pair: object) -> float:
+    """ペアの被膜総厚さ（A側+B側）."""
+    return (pair.radius_a - pair.core_radius_a) + (pair.radius_b - pair.core_radius_b)
+
+
+def _barrier_p_n(k_coat: float, delta: float, delta_max: float) -> float:
+    """バリア関数: f = k * δ / (1 - δ/δ_max).
+
+    δ→δ_max で力→∞。芯線貫入を防止する。
+    """
+    if delta_max <= 1e-30:
+        return k_coat * delta
+    ratio = delta / delta_max
+    denom = max(1.0 - ratio, _BARRIER_CLAMP)
+    return k_coat * delta / denom
+
+
+def _barrier_k_eff(k_coat: float, delta: float, delta_max: float) -> float:
+    """バリア関数の接線剛性: df/dδ = k / (1 - δ/δ_max)²."""
+    if delta_max <= 1e-30:
+        return k_coat
+    ratio = delta / delta_max
+    denom = max(1.0 - ratio, _BARRIER_CLAMP)
+    return k_coat / (denom**2)
+
 
 class NoCoatingProcess(SolverProcess[None, None]):
     """被膜なし（ゼロ返却）.
@@ -109,13 +139,25 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         ndof_per_node = getattr(config, "ndof_per_node", 6)
         f_coat = np.zeros(n_nodes * ndof_per_node)
 
+        # status-303: バリア関数判定
+        use_barrier = (
+            getattr(config, "coating_barrier", True)
+            and getattr(config, "coating_thickness", 0.0) > 0.0
+        )
+
         for pair in pairs:
             cc = pair.state.coating_compression
             if cc <= 0.0 and pair.state.coating_compression_prev <= 0.0:
                 continue
 
-            # Kelvin-Voigt: f = k * δ + c * δ̇
-            f_n = k_coat * cc
+            # 被膜法線力
+            if use_barrier:
+                ct = _coat_total(pair)
+                f_n = _barrier_p_n(k_coat, cc, ct)
+            else:
+                f_n = k_coat * cc
+
+            # 粘性項（Kelvin-Voigt）
             if c_coat > 0.0 and dt > 0.0:
                 delta_dot = (cc - pair.state.coating_compression_prev) / dt
                 f_n += c_coat * delta_dot
@@ -154,11 +196,18 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         """被膜Kelvin-Voigtモデルの接線剛性行列を計算する."""
         k_coat = config.coating_stiffness
         c_coat = config.coating_damping
-        # 実効接線剛性: 弾性 + 粘性（後退Euler）
-        k_eff = k_coat
-        if c_coat > 0.0 and dt > 0.0:
-            k_eff += c_coat / dt
         ndof_per_node = getattr(config, "ndof_per_node", 6)
+
+        # status-303: バリア関数判定
+        use_barrier = (
+            getattr(config, "coating_barrier", True)
+            and getattr(config, "coating_thickness", 0.0) > 0.0
+        )
+
+        # 線形モデル時はグローバル k_eff（バリア時はペア毎に計算）
+        k_eff_global = k_coat
+        if c_coat > 0.0 and dt > 0.0:
+            k_eff_global += c_coat / dt
 
         rows: list[int] = []
         cols: list[int] = []
@@ -168,6 +217,15 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             cc = pair.state.coating_compression
             if cc <= 1e-15:
                 continue
+
+            # ペア毎の実効接線剛性
+            if use_barrier:
+                ct = _coat_total(pair)
+                k_eff = _barrier_k_eff(k_coat, cc, ct)
+                if c_coat > 0.0 and dt > 0.0:
+                    k_eff += c_coat / dt
+            else:
+                k_eff = k_eff_global
 
             n_vec = pair.state.normal
             s = pair.state.s
@@ -227,6 +285,12 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         f_fric = np.zeros(n_nodes * ndof_per_node)
         du = u_cur - u_ref
 
+        # status-303: バリア関数判定
+        use_barrier = (
+            getattr(config, "coating_barrier", True)
+            and getattr(config, "coating_thickness", 0.0) > 0.0
+        )
+
         for pi, pair in enumerate(pairs):
             cc = pair.state.coating_compression
             if cc <= 0.0:
@@ -244,7 +308,11 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
                 continue
 
             # 被膜法線力（弾性成分のみ — 摩擦のCoulomb条件に使用）
-            p_n = k_coat * cc
+            if use_barrier:
+                ct = _coat_total(pair)
+                p_n = _barrier_p_n(k_coat, cc, ct)
+            else:
+                p_n = k_coat * cc
 
             # 接線相対変位増分
             s = pair.state.s
@@ -314,6 +382,12 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
         k_t = k_coat * config.coating_k_t_ratio
         ndof_per_node = getattr(config, "ndof_per_node", 6)
 
+        # status-303: バリア関数判定
+        use_barrier = (
+            getattr(config, "coating_barrier", True)
+            and getattr(config, "coating_thickness", 0.0) > 0.0
+        )
+
         rows: list[int] = []
         cols: list[int] = []
         data: list[float] = []
@@ -323,7 +397,11 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             if cc <= 0.0:
                 continue
 
-            p_n = k_coat * cc
+            if use_barrier:
+                ct = _coat_total(pair)
+                p_n = _barrier_p_n(k_coat, cc, ct)
+            else:
+                p_n = k_coat * cc
 
             # 2x2接線剛性
             D_t = _tangent_2x2_core(
