@@ -590,14 +590,11 @@ class ContactForceStStiffnessProcess(
                 dm_A_batch,
                 dm_B_batch,
             )
-            # dpA, dpB for dn/ds, dn/dt
-            from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_scalar
+            # dpA, dpB for dn/ds, dn/dt（バッチ化: status-310）
+            from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_batch
 
-            dpA_arr = np.zeros((n_act, 3))
-            dpB_arr = np.zeros((n_act, 3))
-            for i in range(n_act):
-                dpA_arr[i] = _hermite_deriv_scalar(float(s_act[i]), xA0[i], xA1[i], mA0[i], mA1[i])
-                dpB_arr[i] = _hermite_deriv_scalar(float(t_act[i]), xB0[i], xB1[i], mB0[i], mB1[i])
+            dpA_arr = _hermite_deriv_batch(s_act, xA0, xA1, mA0, mA1)
+            dpB_arr = _hermite_deriv_batch(t_act, xB0, xB1, mB0, mB1)
         else:
             from xkep_cae.contact.geometry._st_jacobian import (
                 _batch_st_jacobian_linear,
@@ -1324,12 +1321,20 @@ class HuberContactForceProcess(
                     ]
                 )
 
-                # adj global node indices (N, 4)
-                adj_gnodes = np.full((n_act, 4), -1, dtype=int)
-                for i in range(n_act):
-                    adj_a = _adj_node_map.get(int(elem_a_act[i]), (-1, -1))
-                    adj_b = _adj_node_map.get(int(elem_b_act[i]), (-1, -1))
-                    adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+                # adj global node indices (N, 4) — dict→配列ルックアップ（status-310）
+                _max_elem = max(max(elem_a_act), max(elem_b_act)) + 1
+                _adj_arr = np.full((_max_elem, 2), -1, dtype=int)
+                for _eidx, (_al, _ar) in _adj_node_map.items():
+                    if _eidx < _max_elem:
+                        _adj_arr[_eidx] = [_al, _ar]
+                adj_gnodes = np.column_stack(
+                    [
+                        _adj_arr[elem_a_act, 0],
+                        _adj_arr[elem_a_act, 1],
+                        _adj_arr[elem_b_act, 0],
+                        _adj_arr[elem_b_act, 1],
+                    ]
+                )
 
                 # c_alpha (N, 4, 4) = coeffs[ki] * alpha_adj[aj]
                 c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
