@@ -176,6 +176,9 @@ class _ContactConfigInput:
     coating_mu: float = 0.0
     coating_k_t_ratio: float = 0.5
     coating_thickness: float = 0.0  # 被膜厚さ [mm], >0: core_radius = radius - thickness
+    coating_barrier: bool = (
+        True  # status-303: バリア関数 f=kδ/(1-δ/δ_max)。coating_thickness>0時のみ有効
+    )
     contact_compliance: float = 0.0
     smoothing_delta: float = 0.0
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（status-261, k_penスケール非依存）

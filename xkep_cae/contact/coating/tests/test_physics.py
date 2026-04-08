@@ -25,6 +25,8 @@ def _make_config(
     c_coat: float = 0.0,
     mu: float = 0.0,
     k_t_ratio: float = 0.5,
+    coating_barrier: bool = False,
+    coating_thickness: float = 0.0,
 ) -> object:
     """テスト用の接触設定を作成.
 
@@ -39,6 +41,8 @@ def _make_config(
         coating_mu=mu,
         coating_k_t_ratio=k_t_ratio,
         ndof_per_node=6,
+        coating_barrier=coating_barrier,
+        coating_thickness=coating_thickness,
     )
 
 
@@ -54,6 +58,10 @@ def _make_pair(
     coating_z_t: np.ndarray | None = None,
     coating_stick: bool = True,
     coating_q_trial_norm: float = 0.0,
+    radius_a: float = 0.0,
+    radius_b: float = 0.0,
+    core_radius_a: float = 0.0,
+    core_radius_b: float = 0.0,
 ) -> _ContactPairOutput:
     """テスト用の接触ペアを作成."""
     if normal is None:
@@ -82,6 +90,10 @@ def _make_pair(
         nodes_a=np.array([0, 1]),
         nodes_b=np.array([2, 3]),
         state=state,
+        radius_a=radius_a,
+        radius_b=radius_b,
+        core_radius_a=core_radius_a,
+        core_radius_b=core_radius_b,
     )
 
 
@@ -420,3 +432,247 @@ class TestKelvinVoigtCoatingPhysics:
 
         K = p.friction_stiffness([pair], _COORDS, config, _NDOF)
         assert K.nnz == 0
+
+
+# ── バリア関数テスト（status-303）──────────────────────────────
+
+# 被膜厚さ 0.05mm/本 → coat_total = 0.10mm
+_COAT_THICK = 0.05
+_RADIUS = 0.25
+_CORE_RADIUS = _RADIUS - _COAT_THICK  # 0.20
+
+
+def _make_barrier_config(
+    *,
+    k_coat: float = 1e6,
+    c_coat: float = 0.0,
+    mu: float = 0.0,
+    k_t_ratio: float = 0.5,
+) -> object:
+    """バリア関数有効の被膜設定."""
+    return _make_config(
+        k_coat=k_coat,
+        c_coat=c_coat,
+        mu=mu,
+        k_t_ratio=k_t_ratio,
+        coating_barrier=True,
+        coating_thickness=_COAT_THICK,
+    )
+
+
+def _make_barrier_pair(
+    *,
+    coating_compression: float = 0.0,
+    coating_compression_prev: float = 0.0,
+    **kwargs: object,
+) -> _ContactPairOutput:
+    """バリア関数用ペア（radius/core_radius設定済み）."""
+    return _make_pair(
+        coating_compression=coating_compression,
+        coating_compression_prev=coating_compression_prev,
+        radius_a=_RADIUS,
+        radius_b=_RADIUS,
+        core_radius_a=_CORE_RADIUS,
+        core_radius_b=_CORE_RADIUS,
+        **kwargs,
+    )
+
+
+class TestBarrierCoatingPhysics:
+    """バリア関数被膜モデルの物理的妥当性テスト（status-303）."""
+
+    # ── 基本特性 ──────────────────────────────────────
+
+    def test_small_compression_matches_linear(self) -> None:
+        """小圧縮量ではバリアと線形がほぼ一致する."""
+        p = KelvinVoigtCoatingProcess()
+        delta = 0.001  # coat_total=0.10 の 1%
+        config_barrier = _make_barrier_config(k_coat=1e6)
+        config_linear = _make_config(k_coat=1e6)
+        pair_barrier = _make_barrier_pair(coating_compression=delta)
+        pair_linear = _make_pair(coating_compression=delta)
+
+        f_barrier = p.forces([pair_barrier], _COORDS, config_barrier, 0.01)
+        f_linear = p.forces([pair_linear], _COORDS, config_linear, 0.01)
+
+        # 1%圧縮 → ratio=0.01 → 1/(1-0.01)≈1.01 → 1%差以内
+        np.testing.assert_allclose(f_barrier, f_linear, rtol=0.02)
+
+    def test_force_increases_nonlinearly(self) -> None:
+        """圧縮量↑で力が非線形に増大する（線形より大きい）."""
+        p = KelvinVoigtCoatingProcess()
+        config = _make_barrier_config(k_coat=1e6)
+        delta_small = 0.02  # 20%
+        delta_large = 0.08  # 80%
+
+        pair_small = _make_barrier_pair(coating_compression=delta_small)
+        pair_large = _make_barrier_pair(coating_compression=delta_large)
+
+        f_small = p.forces([pair_small], _COORDS, config, 0.01)
+        f_large = p.forces([pair_large], _COORDS, config, 0.01)
+
+        norm_small = np.linalg.norm(f_small)
+        norm_large = np.linalg.norm(f_large)
+
+        # 線形なら 4倍（0.08/0.02=4）。バリアならそれ以上。
+        # 80%圧縮: f=k*0.08/(1-0.8)=k*0.08/0.2=k*0.4
+        # 20%圧縮: f=k*0.02/(1-0.2)=k*0.02/0.8=k*0.025
+        # 比率: 0.4/0.025 = 16 >> 4
+        assert norm_large / norm_small > 4.0, "バリア関数は線形より急速に増大すべき"
+
+    def test_no_core_penetration(self) -> None:
+        """δ=δ_max（100%圧縮）でも有限の力（クランプ）."""
+        p = KelvinVoigtCoatingProcess()
+        config = _make_barrier_config(k_coat=1e6)
+        coat_total = 2 * _COAT_THICK  # 0.10mm
+        pair = _make_barrier_pair(coating_compression=coat_total)
+
+        f = p.forces([pair], _COORDS, config, 0.01)
+        # クランプで有限値（NaNやInfにならない）
+        assert np.all(np.isfinite(f))
+        assert np.linalg.norm(f) > 0
+
+    def test_barrier_force_exact_value(self) -> None:
+        """バリア関数の解析値と一致する."""
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        config = _make_barrier_config(k_coat=k_coat)
+        delta = 0.05  # 50%圧縮
+        coat_total = 2 * _COAT_THICK  # 0.10mm
+
+        pair = _make_barrier_pair(coating_compression=delta)
+        f = p.forces([pair], _COORDS, config, 0.01)
+        f_nodes = f.reshape(4, 6)
+        f_B = f_nodes[2, :3] + f_nodes[3, :3]
+
+        # f = k * δ / (1 - δ/δ_max) = 1e6 * 0.05 / (1 - 0.5) = 1e5
+        expected_fn = k_coat * delta / (1.0 - delta / coat_total)
+        actual_fn = np.linalg.norm(f_B)
+        np.testing.assert_allclose(actual_fn, expected_fn, rtol=1e-10)
+
+    def test_action_reaction_with_barrier(self) -> None:
+        """バリア関数でも作用反作用が成立する."""
+        p = KelvinVoigtCoatingProcess()
+        config = _make_barrier_config(k_coat=1e6)
+        pair = _make_barrier_pair(coating_compression=0.08)
+
+        f = p.forces([pair], _COORDS, config, 0.01)
+        f_nodes = f.reshape(4, 6)
+        f_A = f_nodes[0, :3] + f_nodes[1, :3]
+        f_B = f_nodes[2, :3] + f_nodes[3, :3]
+
+        np.testing.assert_allclose(f_A + f_B, 0.0, atol=1e-10)
+
+    # ── 接線剛性 ──────────────────────────────────────
+
+    def test_barrier_stiffness_exact_value(self) -> None:
+        """バリア接線剛性の解析値と一致する."""
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        config = _make_barrier_config(k_coat=k_coat)
+        delta = 0.05  # 50%圧縮
+        coat_total = 2 * _COAT_THICK  # 0.10mm
+
+        pair = _make_barrier_pair(coating_compression=delta)
+        K_barrier = p.stiffness([pair], _COORDS, config, _NDOF, 0.01)
+        K_linear = p.stiffness(
+            [_make_pair(coating_compression=delta)],
+            _COORDS,
+            _make_config(k_coat=k_coat),
+            _NDOF,
+            0.01,
+        )
+
+        # バリア k_eff = k / (1 - ratio)² = k / 0.25 = 4k
+        ratio = delta / coat_total  # 0.5
+        expected_ratio = 1.0 / (1.0 - ratio) ** 2  # 4.0
+        actual_ratio = np.abs(K_barrier.toarray()).sum() / np.abs(K_linear.toarray()).sum()
+        np.testing.assert_allclose(actual_ratio, expected_ratio, rtol=1e-10)
+
+    def test_barrier_stiffness_symmetry(self) -> None:
+        """バリア接線剛性行列が対称."""
+        p = KelvinVoigtCoatingProcess()
+        config = _make_barrier_config(k_coat=1e6)
+        pair = _make_barrier_pair(coating_compression=0.08)
+
+        K = p.stiffness([pair], _COORDS, config, _NDOF, 0.01).toarray()
+        np.testing.assert_allclose(K, K.T, atol=1e-10)
+
+    def test_barrier_stiffness_positive_semi_definite(self) -> None:
+        """バリア接線剛性行列が半正定値."""
+        p = KelvinVoigtCoatingProcess()
+        config = _make_barrier_config(k_coat=1e6)
+        pair = _make_barrier_pair(coating_compression=0.08)
+
+        K = p.stiffness([pair], _COORDS, config, _NDOF, 0.01).toarray()
+        eigenvalues = np.linalg.eigvalsh(K)
+        assert np.all(eigenvalues >= -1e-8)
+
+    def test_barrier_stiffness_fd_consistency(self) -> None:
+        """バリア接線剛性がFD（有限差分）と整合する."""
+        k_coat = 1e6
+        delta = 0.05
+        coat_total = 2 * _COAT_THICK
+
+        # 解析的接線剛性
+        from xkep_cae.contact.coating.strategy import _barrier_k_eff
+
+        k_analytical = _barrier_k_eff(k_coat, delta, coat_total)
+
+        # FD: (f(δ+h) - f(δ-h)) / (2h)
+        from xkep_cae.contact.coating.strategy import _barrier_p_n
+
+        h = 1e-7
+        f_plus = _barrier_p_n(k_coat, delta + h, coat_total)
+        f_minus = _barrier_p_n(k_coat, delta - h, coat_total)
+        k_fd = (f_plus - f_minus) / (2 * h)
+
+        np.testing.assert_allclose(k_analytical, k_fd, rtol=1e-5)
+
+    # ── 摩擦 ──────────────────────────────────────
+
+    def test_barrier_friction_slip_limit(self) -> None:
+        """バリア関数の法線力に基づくCoulomb限界."""
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        mu = 0.3
+        delta = 0.08  # 80%圧縮
+        coat_total = 2 * _COAT_THICK
+        config = _make_barrier_config(k_coat=k_coat, mu=mu, k_t_ratio=0.5)
+
+        u_cur = np.zeros(_NDOF)
+        u_cur[0 * 6 + 0] = -1.0  # 大きな接線変位 → スリップ
+        u_cur[1 * 6 + 0] = -1.0
+        u_ref = np.zeros(_NDOF)
+
+        pair = _make_barrier_pair(coating_compression=delta)
+        pairs = [pair]
+        f = p.friction_forces(pairs, _COORDS, config, u_cur, u_ref)
+        f_nodes = f.reshape(4, 6)
+
+        # バリア法線力に基づくCoulomb限界
+        ratio = delta / coat_total
+        p_n_barrier = k_coat * delta / (1.0 - ratio)
+        coulomb_limit = mu * p_n_barrier
+
+        f_A = f_nodes[0, :3] + f_nodes[1, :3]
+        f_friction_mag = np.linalg.norm(f_A)
+        assert f_friction_mag <= coulomb_limit * (1.0 + 1e-8)
+
+    def test_barrier_disabled_when_no_thickness(self) -> None:
+        """coating_thickness=0ではバリア無効（線形に戻る）."""
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        delta = 0.05
+
+        # barrier=True だが thickness=0 → 線形
+        config_no_thick = _make_config(k_coat=k_coat, coating_barrier=True, coating_thickness=0.0)
+        config_linear = _make_config(k_coat=k_coat)
+
+        pair1 = _make_pair(coating_compression=delta)
+        pair2 = _make_pair(coating_compression=delta)
+
+        f1 = p.forces([pair1], _COORDS, config_no_thick, 0.01)
+        f2 = p.forces([pair2], _COORDS, config_linear, 0.01)
+
+        np.testing.assert_allclose(f1, f2, atol=1e-15)
