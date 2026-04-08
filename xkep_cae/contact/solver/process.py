@@ -233,7 +233,16 @@ class ContactFrictionProcess(
         node_coords_ref = input_data.mesh.node_coords.copy()
         connectivity = input_data.mesh.connectivity
         radii = input_data.mesh.radii
-        core_radii = None
+        # 被膜厚さ > 0 の場合、芯線半径を計算（status-301）
+        # core_radii = radius - coating_thickness で被膜圧縮量が正しく計算される
+        _coat_thick = manager.config.coating_thickness
+        if _coat_thick > 0.0 and manager.config.coating_stiffness > 0.0:
+            if np.isscalar(radii):
+                core_radii = float(radii) - _coat_thick
+            else:
+                core_radii = np.asarray(radii, dtype=float) - _coat_thick
+        else:
+            core_radii = None
 
         state = SolverStateOutput(
             u=u0,
