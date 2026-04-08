@@ -22,7 +22,6 @@ from dataclasses import dataclass
 import numpy as np
 import scipy.sparse as sp
 
-from xkep_cae.contact._assembly_utils import _contact_dofs
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
@@ -468,60 +467,277 @@ class ContactForceStStiffnessProcess(
     uses = [ComputeStJacobianProcess]
 
     def process(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
-        from xkep_cae.contact.geometry._st_jacobian import (
-            StJacobianInput,
-        )
+        return self._process_batch(inp)
 
-        st_proc = ComputeStJacobianProcess()
-        rows: list[int] = []
-        cols: list[int] = []
-        vals: list[float] = []
+    def _process_batch(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
+        """K_st のバッチ計算（status-309: ベクトル化高速化）.
 
-        for pair in inp.pairs:
+        全アクティブペアをNumPy配列に抽出し、StJacobian+K_stを一括計算。
+        """
+        zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+
+        # ── ペアデータ抽出 ──
+        n_pairs = len(inp.pairs)
+        if n_pairs == 0:
+            return ContactForceStStiffnessOutput(K_st=zero)
+
+        has_state = np.zeros(n_pairs, dtype=bool)
+        p_n_all = np.zeros(n_pairs)
+        gaps = np.zeros(n_pairs)
+        s_arr = np.zeros(n_pairs)
+        t_arr = np.zeros(n_pairs)
+        s_unc_arr = np.zeros(n_pairs)
+        t_unc_arr = np.zeros(n_pairs)
+        normals = np.zeros((n_pairs, 3))
+        nodes = np.zeros((n_pairs, 4), dtype=int)
+        radius_a = np.zeros(n_pairs)
+        radius_b = np.zeros(n_pairs)
+
+        for i, pair in enumerate(inp.pairs):
             if not hasattr(pair, "state"):
                 continue
-            p_n = pair.state.p_n
-            if p_n <= 1e-30:
-                continue
-            g_i = pair.state.gap
-            x_p = inp.k_pen * (-g_i)
-            h_d = _huber_deriv_scalar(x_p, inp.delta_h)
-            # Hertz型非線形ペナルティの導関数補正（status-285）
-            if inp.penalty_exponent != 1.0:
-                h_v = _huber_scalar(x_p, inp.delta_h)
-                pen = h_v / max(inp.k_pen, 1e-30)
-                if pen > 1e-30:
-                    h_d = inp.penalty_exponent * pen ** (inp.penalty_exponent - 1.0) * h_d
-                else:
-                    h_d = 0.0
-            dofs = _contact_dofs(pair, inp.ndof_per_node)
-            _add_kst_contact_to_coo(
-                pair,
-                p_n,
-                pair.state.normal,
-                dofs,
-                st_proc,
-                StJacobianInput,
-                rows,
-                cols,
-                vals,
-                inp.node_coords,
-                inp.ndof_per_node,
-                use_hermite=inp.use_hermite,
-                node_tangents=inp.node_tangents,
-                node_counts=inp.node_counts,
-                h_deriv=h_d,
-                k_pen=inp.k_pen,
-                adj_node_map=inp.adj_node_map,
+            has_state[i] = True
+            p_n_all[i] = pair.state.p_n
+            gaps[i] = pair.state.gap
+            s_arr[i] = pair.state.s
+            t_arr[i] = pair.state.t
+            s_unc_arr[i] = (
+                pair.state.s_unclamped
+                if hasattr(pair.state, "s_unclamped") and pair.state.s_unclamped is not None
+                else pair.state.s
+            )
+            t_unc_arr[i] = (
+                pair.state.t_unclamped
+                if hasattr(pair.state, "t_unclamped") and pair.state.t_unclamped is not None
+                else pair.state.t
+            )
+            normals[i] = pair.state.normal
+            nodes[i, 0] = pair.nodes_a[0]
+            nodes[i, 1] = pair.nodes_a[1]
+            nodes[i, 2] = pair.nodes_b[0]
+            nodes[i, 3] = pair.nodes_b[1]
+            radius_a[i] = pair.radius_a
+            radius_b[i] = pair.radius_b
+
+        # アクティブペア: has_state & p_n > 0
+        active = has_state & (p_n_all > 1e-30)
+        n_act = int(np.sum(active))
+        if n_act == 0:
+            return ContactForceStStiffnessOutput(K_st=zero)
+
+        # アクティブペアのインデックスとデータ抽出
+        act_idx = np.where(active)[0]
+        p_n_act = p_n_all[act_idx]
+        gaps_act = gaps[act_idx]
+        s_act = s_arr[act_idx]
+        t_act = t_arr[act_idx]
+        s_unc_act = s_unc_arr[act_idx]
+        t_unc_act = t_unc_arr[act_idx]
+        n_act_v = normals[act_idx]
+        nodes_act = nodes[act_idx]
+        ra_act = radius_a[act_idx]
+        rb_act = radius_b[act_idx]
+
+        # h_deriv バッチ計算
+        x_pen = inp.k_pen * (-gaps_act)
+        h_deriv = HuberContactForceProcess._huber_deriv_batch(x_pen, inp.delta_h)
+        if inp.penalty_exponent != 1.0:
+            h_vals = HuberContactForceProcess._huber_batch(x_pen, inp.delta_h)
+            pen = h_vals / max(inp.k_pen, 1e-30)
+            safe_pen = np.maximum(pen, 0.0)
+            h_deriv = np.where(
+                safe_pen > 1e-30,
+                inp.penalty_exponent * safe_pen ** (inp.penalty_exponent - 1.0) * h_deriv,
+                0.0,
             )
 
-        if not rows:
-            return ContactForceStStiffnessOutput(
-                K_st=sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+        # ── 座標抽出 ──
+        nc = inp.node_coords
+        xA0 = nc[nodes_act[:, 0]]  # (N, 3)
+        xA1 = nc[nodes_act[:, 1]]
+        xB0 = nc[nodes_act[:, 2]]
+        xB1 = nc[nodes_act[:, 3]]
+
+        # ── バッチ StJacobian ──
+        if inp.use_hermite and inp.node_tangents is not None:
+            from xkep_cae.contact.geometry._st_jacobian import (
+                _batch_st_jacobian_hermite,
             )
+
+            mA0 = inp.node_tangents[nodes_act[:, 0]]
+            mA1 = inp.node_tangents[nodes_act[:, 1]]
+            mB0 = inp.node_tangents[nodes_act[:, 2]]
+            mB1 = inp.node_tangents[nodes_act[:, 3]]
+            dm_A_batch = None
+            dm_B_batch = None
+            if inp.node_counts is not None:
+                dm_A_batch, dm_B_batch = HuberContactForceProcess._batch_dm_coeffs(
+                    inp.node_counts, nodes_act
+                )
+            ds_du, dt_du, valid = _batch_st_jacobian_hermite(
+                xA0,
+                xA1,
+                xB0,
+                xB1,
+                s_act,
+                t_act,
+                s_unc_act,
+                t_unc_act,
+                mA0,
+                mA1,
+                mB0,
+                mB1,
+                dm_A_batch,
+                dm_B_batch,
+            )
+            # dpA, dpB for dn/ds, dn/dt
+            from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_scalar
+
+            dpA_arr = np.zeros((n_act, 3))
+            dpB_arr = np.zeros((n_act, 3))
+            for i in range(n_act):
+                dpA_arr[i] = _hermite_deriv_scalar(float(s_act[i]), xA0[i], xA1[i], mA0[i], mA1[i])
+                dpB_arr[i] = _hermite_deriv_scalar(float(t_act[i]), xB0[i], xB1[i], mB0[i], mB1[i])
+        else:
+            from xkep_cae.contact.geometry._st_jacobian import (
+                _batch_st_jacobian_linear,
+            )
+
+            ds_du, dt_du, valid = _batch_st_jacobian_linear(
+                xA0,
+                xA1,
+                xB0,
+                xB1,
+                s_act,
+                t_act,
+                s_unc_act,
+                t_unc_act,
+            )
+            dpA_arr = xA1 - xA0  # dA (N, 3)
+            dpB_arr = xB1 - xB0  # dB (N, 3)
+
+        # invalid ペアを除外
+        if not np.all(valid):
+            keep = valid
+            act_idx = act_idx[keep]
+            p_n_act = p_n_act[keep]
+            gaps_act = gaps_act[keep]
+            s_act = s_act[keep]
+            t_act = t_act[keep]
+            n_act_v = n_act_v[keep]
+            nodes_act = nodes_act[keep]
+            ra_act = ra_act[keep]
+            rb_act = rb_act[keep]
+            h_deriv = h_deriv[keep]
+            ds_du = ds_du[keep]
+            dt_du = dt_du[keep]
+            dpA_arr = dpA_arr[keep]
+            dpB_arr = dpB_arr[keep]
+            n_act = int(np.sum(keep))
+
+        if n_act == 0:
+            return ContactForceStStiffnessOutput(K_st=zero)
+
+        # ── 形状関数係数・微分（バッチ） ──
+        if inp.use_hermite and inp.node_counts is not None:
+            dm_A_batch2, dm_B_batch2 = HuberContactForceProcess._batch_dm_coeffs(
+                inp.node_counts, nodes_act
+            )
+            coeffs, dc_ds, dc_dt = HuberContactForceProcess._batch_hermite_corrected_coeffs(
+                s_act, t_act, dm_A_batch2, dm_B_batch2
+            )
+        elif inp.use_hermite:
+            coeffs = HuberContactForceProcess._batch_hermite_coeffs(s_act, t_act)
+            s2 = s_act * s_act
+            t2 = t_act * t_act
+            dc_ds = np.column_stack(
+                [
+                    6.0 * s2 - 6.0 * s_act,
+                    -6.0 * s2 + 6.0 * s_act,
+                    np.zeros(n_act),
+                    np.zeros(n_act),
+                ]
+            )
+            dc_dt = np.column_stack(
+                [
+                    np.zeros(n_act),
+                    np.zeros(n_act),
+                    -(6.0 * t2 - 6.0 * t_act),
+                    -(-6.0 * t2 + 6.0 * t_act),
+                ]
+            )
+        else:
+            coeffs = np.column_stack([1.0 - s_act, s_act, -(1.0 - t_act), -t_act])
+            dc_ds = np.tile([-1.0, 1.0, 0.0, 0.0], (n_act, 1))
+            dc_dt = np.tile([0.0, 0.0, 1.0, -1.0], (n_act, 1))
+
+        # ── ∂n/∂s, ∂n/∂t のバッチ計算 ──
+        dist = gaps_act + ra_act + rb_act  # (N,)
+        safe_dist = np.where(dist > 1e-15, dist, 1.0)
+        inv_dist = np.where(dist > 1e-15, 1.0 / safe_dist, 0.0)  # (N,)
+
+        # P_perp = I - n⊗n: (N, 3, 3)
+        I3 = np.eye(3)[None, :, :]
+        nn = n_act_v[:, :, None] * n_act_v[:, None, :]
+        P_perp = I3 - nn
+
+        # dn/ds = (1/dist) * P_perp @ dpA: (N, 3)
+        dn_ds = inv_dist[:, None] * np.einsum("nij,nj->ni", P_perp, dpA_arr)
+        dn_dt = -inv_dist[:, None] * np.einsum("nij,nj->ni", P_perp, dpB_arr)
+
+        # ── ∂p_n/∂s, ∂p_n/∂t のバッチ計算 ──
+        # dgap/ds = dot(n, dpA), dgap/dt = -dot(n, dpB)
+        dgap_ds = np.sum(n_act_v * dpA_arr, axis=1)  # (N,)
+        dgap_dt = -np.sum(n_act_v * dpB_arr, axis=1)
+        dpn_ds = h_deriv * inp.k_pen * (-dgap_ds)
+        dpn_dt = h_deriv * inp.k_pen * (-dgap_dt)
+        # h_deriv が小さい場合はゼロに
+        dpn_ds = np.where(h_deriv > 1e-30, dpn_ds, 0.0)
+        dpn_dt = np.where(h_deriv > 1e-30, dpn_dt, 0.0)
+
+        # ── g_shape (N, 12) ──
+        g_shape = np.zeros((n_act, 12))
+        for k in range(4):
+            g_shape[:, k * 3 : k * 3 + 3] = coeffs[:, k][:, None] * n_act_v
+
+        # ── df_ds, df_dt (N, 12) ──
+        # df_ds = dpn_ds * g_shape + p_n * (dc_ds[k]*n + coeffs[k]*dn_ds)
+        df_ds = dpn_ds[:, None] * g_shape
+        df_dt = dpn_dt[:, None] * g_shape
+        for k in range(4):
+            df_ds[:, k * 3 : k * 3 + 3] += p_n_act[:, None] * (
+                dc_ds[:, k][:, None] * n_act_v + coeffs[:, k][:, None] * dn_ds
+            )
+            df_dt[:, k * 3 : k * 3 + 3] += p_n_act[:, None] * (
+                dc_dt[:, k][:, None] * n_act_v + coeffs[:, k][:, None] * dn_dt
+            )
+
+        # ── K_st_local = -(outer(df_ds, ds_du) + outer(df_dt, dt_du)): (N, 12, 12) ──
+        K_st_local = -(
+            np.einsum("ni,nj->nij", df_ds, ds_du) + np.einsum("ni,nj->nij", df_dt, dt_du)
+        )
+
+        # ── DOF インデックス (N, 12) ──
+        ndpn = inp.ndof_per_node
+        gdofs = np.zeros((n_act, 12), dtype=int)
+        for k in range(4):
+            for d in range(3):
+                gdofs[:, k * 3 + d] = nodes_act[:, k] * ndpn + d
+
+        # ── COO 構築 ──
+        row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+        col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
+        val_arr = K_st_local.ravel()
+        mask = np.abs(val_arr) > 1e-30
+        rows_np = row_idx[mask]
+        cols_np = col_idx[mask]
+        vals_np = val_arr[mask]
+
+        if len(vals_np) == 0:
+            return ContactForceStStiffnessOutput(K_st=zero)
         return ContactForceStStiffnessOutput(
             K_st=sp.coo_matrix(
-                (vals, (rows, cols)),
+                (vals_np, (rows_np, cols_np)),
                 shape=(inp.ndof_total, inp.ndof_total),
             ).tocsr()
         )
