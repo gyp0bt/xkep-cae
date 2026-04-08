@@ -34,6 +34,7 @@ class StepEnergyInput:
     f_c: np.ndarray
     dt: float
     step: int
+    coating_energy: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,7 @@ class StepEnergyOutput:
     total_energy: float
     energy_ratio: float
     step: int
+    coating_energy: float = 0.0
 
 
 class StepEnergyDiagnosticsProcess(
@@ -105,6 +107,7 @@ class StepEnergyDiagnosticsProcess(
             total_energy=total,
             energy_ratio=energy_ratio,
             step=input_data.step,
+            coating_energy=input_data.coating_energy,
         )
 
 
@@ -120,6 +123,7 @@ class EnergyHistoryEntryOutput:
     contact_work: float
     total_energy: float
     energy_ratio: float
+    coating_energy: float = 0.0
 
 
 # C17: エネルギー履歴蓄積器は可変状態を持つため Process 外部ユーティリティ
@@ -162,8 +166,14 @@ class _EnergyHistoryAccumulator:
             f"  最終 SE: {ef.strain_energy:.6e}",
             f"  最終 Total: {ef.total_energy:.6e}",
             f"  エネルギー減衰率: {self.decay_ratio:.4f}",
-            "=" * 50,
         ]
+        # 被膜エネルギー診断
+        if ef.coating_energy > 0.0:
+            e_total = abs(ef.total_energy)
+            ratio = ef.coating_energy / max(e_total, 1e-30)
+            lines.append(f"  被膜エネルギー: {ef.coating_energy:.6e}")
+            lines.append(f"  被膜/総エネルギー比: {ratio:.4f} ({ratio * 100:.2f}%)")
+        lines.append("=" * 50)
         return "\n".join(lines)
 
 

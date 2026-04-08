@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import scipy.sparse as sp
 
@@ -44,6 +46,23 @@ def _barrier_k_eff(k_coat: float, delta: float, delta_max: float) -> float:
     ratio = delta / delta_max
     denom = max(1.0 - ratio, _BARRIER_CLAMP)
     return k_coat / (denom**2)
+
+
+def _barrier_energy(k_coat: float, delta: float, delta_max: float) -> float:
+    """バリア関数の弾性エネルギー（解析積分）.
+
+    E = ∫₀^δ k·x/(1-x/δ_max) dx = k·δ_max²·[-ln(1-r) - r]  (r = δ/δ_max)
+
+    δ→δ_max でエネルギー→∞（芯線貫入防止のペナルティ）。
+    """
+    if delta <= 0.0:
+        return 0.0
+    if delta_max <= 1e-30:
+        # 線形フォールバック
+        return 0.5 * k_coat * delta**2
+    ratio = delta / delta_max
+    ratio_clamped = min(ratio, 1.0 - _BARRIER_CLAMP)
+    return k_coat * delta_max**2 * (-math.log(1.0 - ratio_clamped) - ratio_clamped)
 
 
 class NoCoatingProcess(SolverProcess[None, None]):
@@ -101,6 +120,10 @@ class NoCoatingProcess(SolverProcess[None, None]):
     ) -> sp.csr_matrix:
         """ゼロ摩擦剛性行列を返す."""
         return sp.csr_matrix((ndof_total, ndof_total))
+
+    def energy(self, pairs: list, config: object) -> float:
+        """被膜弾性エネルギー（常にゼロ）."""
+        return 0.0
 
     def process(self, input_data: None) -> None:
         """Strategy として使用。直接呼出不要."""
@@ -455,6 +478,29 @@ class KelvinVoigtCoatingProcess(SolverProcess[None, None]):
             return sp.csr_matrix((ndof_total, ndof_total))
 
         return sp.coo_matrix((data, (rows, cols)), shape=(ndof_total, ndof_total)).tocsr()
+
+    def energy(self, pairs: list, config: object) -> float:
+        """被膜弾性エネルギーの総和.
+
+        バリア関数: E = k·δ_max²·[-ln(1 - δ/δ_max) - δ/δ_max]
+        線形モデル: E = 0.5·k·δ²
+        """
+        k_coat = config.coating_stiffness
+        use_barrier = (
+            getattr(config, "coating_barrier", True)
+            and getattr(config, "coating_thickness", 0.0) > 0.0
+        )
+        total = 0.0
+        for pair in pairs:
+            cc = pair.state.coating_compression
+            if cc <= 0.0:
+                continue
+            if use_barrier:
+                ct = _coat_total(pair)
+                total += _barrier_energy(k_coat, cc, ct)
+            else:
+                total += 0.5 * k_coat * cc**2
+        return total
 
     def process(self, input_data: None) -> None:
         """Strategy として使用。直接呼出不要."""

@@ -757,3 +757,101 @@ class TestBarrierCoatingPhysics:
 
         nonzero = np.abs(df_analytical) > 1e-20
         np.testing.assert_allclose(df_analytical[nonzero], df_fd[nonzero], rtol=1e-5)
+
+
+# ── 被膜エネルギーテスト（status-306）──────────────────────────────
+
+
+class TestCoatingEnergyPhysics:
+    """被膜弾性エネルギー計算の物理的妥当性テスト."""
+
+    def test_zero_compression_zero_energy(self) -> None:
+        """δ=0 ならエネルギーゼロ."""
+        p = KelvinVoigtCoatingProcess()
+        pair = _make_pair(coating_compression=0.0)
+        config = _make_config(k_coat=1e6)
+        assert p.energy([pair], config) == 0.0
+
+    def test_linear_energy_half_k_delta_sq(self) -> None:
+        """線形モデルのエネルギーが 0.5*k*δ² と一致する."""
+        p = KelvinVoigtCoatingProcess()
+        k = 1e6
+        delta = 0.01
+        config = _make_config(k_coat=k)
+        pair = _make_pair(coating_compression=delta)
+        e = p.energy([pair], config)
+        np.testing.assert_allclose(e, 0.5 * k * delta**2, rtol=1e-10)
+
+    def test_barrier_energy_analytical(self) -> None:
+        """バリア関数エネルギーの解析値と一致する.
+
+        E = k * δ_max² * [-ln(1 - r) - r]  where r = δ/δ_max
+        """
+        import math
+
+        p = KelvinVoigtCoatingProcess()
+        k = 1e6
+        delta = 0.05  # 50%圧縮
+        coat_total = 2 * _COAT_THICK  # 0.10mm
+        r = delta / coat_total
+
+        config = _make_barrier_config(k_coat=k)
+        pair = _make_barrier_pair(coating_compression=delta)
+        e = p.energy([pair], config)
+
+        expected = k * coat_total**2 * (-math.log(1.0 - r) - r)
+        np.testing.assert_allclose(e, expected, rtol=1e-10)
+
+    def test_barrier_energy_exceeds_linear(self) -> None:
+        """バリアエネルギーが同δの線形エネルギーより大きい."""
+        p = KelvinVoigtCoatingProcess()
+        k = 1e6
+        delta = 0.05  # 50%圧縮
+        config_barrier = _make_barrier_config(k_coat=k)
+        config_linear = _make_config(k_coat=k)
+        pair_barrier = _make_barrier_pair(coating_compression=delta)
+        pair_linear = _make_pair(coating_compression=delta)
+
+        e_barrier = p.energy([pair_barrier], config_barrier)
+        e_linear = p.energy([pair_linear], config_linear)
+        assert e_barrier > e_linear
+
+    def test_energy_consistent_with_force(self) -> None:
+        """dE/dδ が力に一致する（数値微分で検証）."""
+        from xkep_cae.contact.coating.strategy import _barrier_energy, _barrier_p_n
+
+        k = 1e6
+        delta = 0.04
+        delta_max = 0.10
+        eps = 1e-7
+
+        e_plus = _barrier_energy(k, delta + eps, delta_max)
+        e_minus = _barrier_energy(k, delta - eps, delta_max)
+        de_dd_fd = (e_plus - e_minus) / (2.0 * eps)
+        f_analytical = _barrier_p_n(k, delta, delta_max)
+
+        np.testing.assert_allclose(de_dd_fd, f_analytical, rtol=1e-5)
+
+    def test_multi_pair_energy_sum(self) -> None:
+        """複数ペアのエネルギーが和で計算される."""
+        p = KelvinVoigtCoatingProcess()
+        k = 1e6
+        d1, d2 = 0.02, 0.04
+
+        config = _make_barrier_config(k_coat=k)
+        pair1 = _make_barrier_pair(coating_compression=d1)
+        pair2 = _make_barrier_pair(coating_compression=d2)
+
+        e_sum = p.energy([pair1, pair2], config)
+        e1 = p.energy([pair1], config)
+        e2 = p.energy([pair2], config)
+        np.testing.assert_allclose(e_sum, e1 + e2, rtol=1e-12)
+
+    def test_no_coating_process_energy_zero(self) -> None:
+        """NoCoatingProcess のエネルギーが常にゼロ."""
+        from xkep_cae.contact.coating.strategy import NoCoatingProcess
+
+        p = NoCoatingProcess()
+        pair = _make_pair(coating_compression=0.05)
+        config = _make_config(k_coat=1e6)
+        assert p.energy([pair], config) == 0.0

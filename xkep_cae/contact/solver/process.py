@@ -637,6 +637,9 @@ class ContactFrictionProcess(
 
                 # エネルギー診断
                 _f_int = _asm_internal_force(state.u)
+                _coat_energy = 0.0
+                if use_coating:
+                    _coat_energy = strategies.coating.energy(manager.pairs, manager.config)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
                         u=state.u,
@@ -647,6 +650,7 @@ class ContactFrictionProcess(
                         f_c=step_result.f_c,
                         dt=dt_sub,
                         step=state.increment_display,
+                        coating_energy=_coat_energy,
                     )
                 )
                 _t_physical = load_frac * (input_data.dt_physical or 0.0)
@@ -660,6 +664,7 @@ class ContactFrictionProcess(
                         contact_work=_e_out.contact_work,
                         total_energy=_e_out.total_energy,
                         energy_ratio=_e_out.energy_ratio,
+                        coating_energy=_e_out.coating_energy,
                     )
                 )
 
