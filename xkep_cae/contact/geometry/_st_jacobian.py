@@ -826,3 +826,403 @@ class ComputeStJacobianProcess(
         ds_du[9:12] = inv_a * h_b1 * dpA
 
         return ds_du
+
+
+# ── バッチ版 StJacobian（status-309: ベクトル化高速化） ──────
+
+
+def _smooth_clip_deriv_batch(s_unc: np.ndarray, epsilon: float = 0.02) -> np.ndarray:
+    """_smooth_clip_01 のバッチ微分（ベクトル化版）.
+
+    Returns:
+        (N,) 各ペアの smooth clip 重み
+    """
+    result = np.where(
+        s_unc < -epsilon,
+        0.0,
+        np.where(
+            s_unc < epsilon,
+            (s_unc + epsilon) / (2.0 * epsilon),
+            np.where(
+                s_unc <= 1.0 - epsilon,
+                1.0,
+                np.where(s_unc <= 1.0 + epsilon, (1.0 + epsilon - s_unc) / (2.0 * epsilon), 0.0),
+            ),
+        ),
+    )
+    return result
+
+
+def _batch_st_jacobian_linear(
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    s: np.ndarray,
+    t: np.ndarray,
+    s_unc: np.ndarray,
+    t_unc: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """線形セグメントの ∂(s,t)/∂u をバッチ計算.
+
+    Args:
+        xA0, xA1, xB0, xB1: (N, 3) セグメント端点座標
+        s, t: (N,) クランプ済みパラメータ
+        s_unc, t_unc: (N,) クランプ前パラメータ
+
+    Returns:
+        ds_du: (N, 12) ds/du
+        dt_du: (N, 12) dt/du
+        valid: (N,) bool 有効フラグ
+    """
+    N = len(s)
+    ds_du = np.zeros((N, 12))
+    dt_du = np.zeros((N, 12))
+    valid = np.ones(N, dtype=bool)
+
+    if N == 0:
+        return ds_du, dt_du, valid
+
+    # Smooth clip 重み
+    w_s = _smooth_clip_deriv_batch(s_unc)
+    w_t = _smooth_clip_deriv_batch(t_unc)
+
+    # 両方ゼロ重みは早期リターン済み（valid=True, ds_du=dt_du=0）
+    active = (w_s > 1e-30) | (w_t > 1e-30)
+    if not np.any(active):
+        return ds_du, dt_du, valid
+
+    # IFT 幾何を unclamped で評価（status-293）
+    s_eval = s_unc
+    t_eval = t_unc
+
+    dA = xA1 - xA0  # (N, 3)
+    dB = xB1 - xB0  # (N, 3)
+
+    # Gram 行列
+    a = np.sum(dA * dA, axis=1)  # (N,)
+    b_gram = np.sum(dA * dB, axis=1)  # (N,)
+    c = np.sum(dB * dB, axis=1)  # (N,)
+    det = a * c - b_gram * b_gram  # (N,)
+
+    # delta = pA(s_unc) - pB(t_unc)
+    delta = (
+        (1.0 - s_eval)[:, None] * xA0
+        + s_eval[:, None] * xA1
+        - (1.0 - t_eval)[:, None] * xB0
+        - t_eval[:, None] * xB1
+    )  # (N, 3)
+
+    tol = 1e-10
+    ac_product = np.maximum(a * c, 1e-30)
+    non_singular = np.abs(det) >= tol * ac_product
+
+    # ── 高速パス: w_s≈1, w_t≈1, 非特異 ──
+    fast = active & (w_s >= 1.0 - 1e-10) & (w_t >= 1.0 - 1e-10) & non_singular
+    n_fast = int(np.sum(fast))
+
+    if n_fast > 0:
+        inv_det_f = 1.0 / det[fast]  # (Nf,)
+        dA_f = dA[fast]
+        dB_f = dB[fast]
+        delta_f = delta[fast]
+        s_f = s_eval[fast]
+        t_f = t_eval[fast]
+        a_f = a[fast]
+        b_f = b_gram[fast]
+        c_f = c[fast]
+        w_s_f = w_s[fast]
+        w_t_f = w_t[fast]
+
+        # 4ノードの RHS をバッチ計算: rhs[node] = (Nf, 2, 3)
+        # Node 0 (A0): rhs0 = (1-s)*dA - delta, -(1-s)*dB
+        rhs0_F1 = (1.0 - s_f)[:, None] * dA_f - delta_f  # (Nf, 3)
+        rhs0_F2 = -(1.0 - s_f)[:, None] * dB_f
+
+        # Node 1 (A1): s*dA + delta, -s*dB
+        rhs1_F1 = s_f[:, None] * dA_f + delta_f
+        rhs1_F2 = -s_f[:, None] * dB_f
+
+        # Node 2 (B0): -(1-t)*dA, (1-t)*dB + delta
+        rhs2_F1 = -(1.0 - t_f)[:, None] * dA_f
+        rhs2_F2 = (1.0 - t_f)[:, None] * dB_f + delta_f
+
+        # Node 3 (B1): -t*dA, t*dB - delta
+        rhs3_F1 = -t_f[:, None] * dA_f
+        rhs3_F2 = t_f[:, None] * dB_f - delta_f
+
+        # st_deriv = -J_inv @ rhs, J_inv = [[c, b], [b, a]] / det
+        # ds = -(c * rhs_F1 + b * rhs_F2) / det
+        # dt = -(b * rhs_F1 + a * rhs_F2) / det
+        ds_du_f = np.zeros((n_fast, 12))
+        dt_du_f = np.zeros((n_fast, 12))
+
+        for node_idx, (rF1, rF2) in enumerate(
+            [(rhs0_F1, rhs0_F2), (rhs1_F1, rhs1_F2), (rhs2_F1, rhs2_F2), (rhs3_F1, rhs3_F2)]
+        ):
+            ds_du_f[:, node_idx * 3 : node_idx * 3 + 3] = (
+                -(c_f[:, None] * rF1 + b_f[:, None] * rF2) * inv_det_f[:, None]
+            )
+            dt_du_f[:, node_idx * 3 : node_idx * 3 + 3] = (
+                -(b_f[:, None] * rF1 + a_f[:, None] * rF2) * inv_det_f[:, None]
+            )
+
+        ds_du_f *= w_s_f[:, None]
+        dt_du_f *= w_t_f[:, None]
+        ds_du[fast] = ds_du_f
+        dt_du[fast] = dt_du_f
+
+    # ── 低速パス: エッジケース（特異 or クランプ境界） ──
+    slow = active & ~fast
+    if np.any(slow):
+        slow_idx = np.where(slow)[0]
+        proc = ComputeStJacobianProcess()
+        for idx in slow_idx:
+            out = proc.process(
+                StJacobianInput(
+                    xA0=xA0[idx],
+                    xA1=xA1[idx],
+                    xB0=xB0[idx],
+                    xB1=xB1[idx],
+                    s=float(s[idx]),
+                    t=float(t[idx]),
+                    s_unclamped=float(s_unc[idx]),
+                    t_unclamped=float(t_unc[idx]),
+                )
+            )
+            ds_du[idx] = out.ds_du
+            dt_du[idx] = out.dt_du
+            valid[idx] = out.valid
+
+    return ds_du, dt_du, valid
+
+
+def _batch_st_jacobian_hermite(
+    xA0: np.ndarray,
+    xA1: np.ndarray,
+    xB0: np.ndarray,
+    xB1: np.ndarray,
+    s: np.ndarray,
+    t: np.ndarray,
+    s_unc: np.ndarray,
+    t_unc: np.ndarray,
+    mA0: np.ndarray,
+    mA1: np.ndarray,
+    mB0: np.ndarray,
+    mB1: np.ndarray,
+    dm_A: np.ndarray | None = None,
+    dm_B: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Hermite 幾何の ∂(s,t)/∂u をバッチ計算.
+
+    Args:
+        xA0..xB1: (N, 3) セグメント端点座標
+        s, t: (N,) クランプ済みパラメータ
+        s_unc, t_unc: (N,) クランプ前パラメータ
+        mA0..mB1: (N, 3) ノード接線ベクトル
+        dm_A: (N, 2, 2) or None — ∂m/∂x ローカル係数
+        dm_B: (N, 2, 2) or None — ∂m/∂x ローカル係数
+
+    Returns:
+        ds_du: (N, 12) ds/du
+        dt_du: (N, 12) dt/du
+        valid: (N,) bool 有効フラグ
+    """
+    N = len(s)
+    ds_du = np.zeros((N, 12))
+    dt_du = np.zeros((N, 12))
+    valid = np.ones(N, dtype=bool)
+
+    if N == 0:
+        return ds_du, dt_du, valid
+
+    w_s = _smooth_clip_deriv_batch(s_unc)
+    w_t = _smooth_clip_deriv_batch(t_unc)
+    active = (w_s > 1e-30) | (w_t > 1e-30)
+    if not np.any(active):
+        return ds_du, dt_du, valid
+
+    s_eval = s_unc
+    t_eval = t_unc
+
+    # Hermite 接線ベクトル（バッチ）
+    # dpA/ds = H00'(s)*xA0 + H10'(s)*mA0 + H01'(s)*xA1 + H11'(s)*mA1
+    dh00_s = 6.0 * s_eval * s_eval - 6.0 * s_eval  # (N,)
+    dh01_s = -6.0 * s_eval * s_eval + 6.0 * s_eval
+    dh10_s = 3.0 * s_eval * s_eval - 4.0 * s_eval + 1.0
+    dh11_s = 3.0 * s_eval * s_eval - 2.0 * s_eval
+
+    dh00_t = 6.0 * t_eval * t_eval - 6.0 * t_eval
+    dh01_t = -6.0 * t_eval * t_eval + 6.0 * t_eval
+    dh10_t = 3.0 * t_eval * t_eval - 4.0 * t_eval + 1.0
+    dh11_t = 3.0 * t_eval * t_eval - 2.0 * t_eval
+
+    dpA = (
+        dh00_s[:, None] * xA0
+        + dh10_s[:, None] * mA0
+        + dh01_s[:, None] * xA1
+        + dh11_s[:, None] * mA1
+    )  # (N, 3)
+    dpB = (
+        dh00_t[:, None] * xB0
+        + dh10_t[:, None] * mB0
+        + dh01_t[:, None] * xB1
+        + dh11_t[:, None] * mB1
+    )  # (N, 3)
+
+    # Hermite 位置
+    h00_s = 2.0 * s_eval**3 - 3.0 * s_eval**2 + 1.0
+    h01_s = -2.0 * s_eval**3 + 3.0 * s_eval**2
+    h10_s = s_eval**3 - 2.0 * s_eval**2 + s_eval
+    h11_s = s_eval**3 - s_eval**2
+
+    h00_t = 2.0 * t_eval**3 - 3.0 * t_eval**2 + 1.0
+    h01_t = -2.0 * t_eval**3 + 3.0 * t_eval**2
+    h10_t = t_eval**3 - 2.0 * t_eval**2 + t_eval
+    h11_t = t_eval**3 - t_eval**2
+
+    pA = h00_s[:, None] * xA0 + h10_s[:, None] * mA0 + h01_s[:, None] * xA1 + h11_s[:, None] * mA1
+    pB = h00_t[:, None] * xB0 + h10_t[:, None] * mB0 + h01_t[:, None] * xB1 + h11_t[:, None] * mB1
+    delta = pA - pB  # (N, 3)
+
+    # 2階微分
+    ddh00_s = 12.0 * s_eval - 6.0
+    ddh01_s = -12.0 * s_eval + 6.0
+    ddh10_s = 6.0 * s_eval - 4.0
+    ddh11_s = 6.0 * s_eval - 2.0
+
+    ddh00_t = 12.0 * t_eval - 6.0
+    ddh01_t = -12.0 * t_eval + 6.0
+    ddh10_t = 6.0 * t_eval - 4.0
+    ddh11_t = 6.0 * t_eval - 2.0
+
+    d2pA = (
+        ddh00_s[:, None] * xA0
+        + ddh10_s[:, None] * mA0
+        + ddh01_s[:, None] * xA1
+        + ddh11_s[:, None] * mA1
+    )
+    d2pB = (
+        ddh00_t[:, None] * xB0
+        + ddh10_t[:, None] * mB0
+        + ddh01_t[:, None] * xB1
+        + ddh11_t[:, None] * mB1
+    )
+
+    # Gram 行列（Hermite: 2階微分項を含む）
+    a = np.sum(dpA * dpA, axis=1) + np.sum(delta * d2pA, axis=1)
+    b_gram = np.sum(dpA * dpB, axis=1)
+    c = np.sum(dpB * dpB, axis=1) - np.sum(delta * d2pB, axis=1)
+    det = a * c - b_gram * b_gram
+
+    tol = 1e-10
+    ac_product = np.maximum(np.abs(a * c), 1e-30)
+    non_singular = np.abs(det) >= tol * ac_product
+
+    # ── 高速パス: w_s≈1, w_t≈1, 非特異 ──
+    fast = active & (w_s >= 1.0 - 1e-10) & (w_t >= 1.0 - 1e-10) & non_singular
+    n_fast = int(np.sum(fast))
+
+    if n_fast > 0:
+        inv_det_f = 1.0 / det[fast]
+        dpA_f = dpA[fast]
+        dpB_f = dpB[fast]
+        delta_f = delta[fast]
+        a_f = a[fast]
+        b_f = b_gram[fast]
+        c_f = c[fast]
+        w_s_f = w_s[fast]
+        w_t_f = w_t[fast]
+
+        # h_eff, dh_eff per node（Hermite 基底 + dm 補正）
+        # Node 0: h=H00(s), dh=H00'(s)
+        h_A0 = h00_s[fast].copy()
+        dh_A0 = dh00_s[fast].copy()
+        h_A1 = h01_s[fast].copy()
+        dh_A1 = dh01_s[fast].copy()
+        h_B0 = h00_t[fast].copy()
+        dh_B0 = dh00_t[fast].copy()
+        h_B1 = h01_t[fast].copy()
+        dh_B1 = dh01_t[fast].copy()
+
+        if dm_A is not None:
+            dm_A_f = dm_A[fast]  # (Nf, 2, 2)
+            h10_sf = h10_s[fast]
+            h11_sf = h11_s[fast]
+            dh10_sf = dh10_s[fast]
+            dh11_sf = dh11_s[fast]
+            h_A0 += h10_sf * dm_A_f[:, 0, 0] + h11_sf * dm_A_f[:, 1, 0]
+            dh_A0 += dh10_sf * dm_A_f[:, 0, 0] + dh11_sf * dm_A_f[:, 1, 0]
+            h_A1 += h10_sf * dm_A_f[:, 0, 1] + h11_sf * dm_A_f[:, 1, 1]
+            dh_A1 += dh10_sf * dm_A_f[:, 0, 1] + dh11_sf * dm_A_f[:, 1, 1]
+
+        if dm_B is not None:
+            dm_B_f = dm_B[fast]
+            h10_tf = h10_t[fast]
+            h11_tf = h11_t[fast]
+            dh10_tf = dh10_t[fast]
+            dh11_tf = dh11_t[fast]
+            h_B0 += h10_tf * dm_B_f[:, 0, 0] + h11_tf * dm_B_f[:, 1, 0]
+            dh_B0 += dh10_tf * dm_B_f[:, 0, 0] + dh11_tf * dm_B_f[:, 1, 0]
+            h_B1 += h10_tf * dm_B_f[:, 0, 1] + h11_tf * dm_B_f[:, 1, 1]
+            dh_B1 += dh10_tf * dm_B_f[:, 0, 1] + dh11_tf * dm_B_f[:, 1, 1]
+
+        # RHS for 4 nodes (Hermite)
+        # A0: rhs[0] = h_A0 * dpA + dh_A0 * delta, rhs[1] = -h_A0 * dpB
+        # A1: rhs[0] = h_A1 * dpA + dh_A1 * delta, rhs[1] = -h_A1 * dpB
+        # B0: rhs[0] = -h_B0 * dpA, rhs[1] = h_B0 * dpB - dh_B0 * delta
+        # B1: rhs[0] = -h_B1 * dpA, rhs[1] = h_B1 * dpB - dh_B1 * delta
+        rhs_data = [
+            (h_A0[:, None] * dpA_f + dh_A0[:, None] * delta_f, -h_A0[:, None] * dpB_f),
+            (h_A1[:, None] * dpA_f + dh_A1[:, None] * delta_f, -h_A1[:, None] * dpB_f),
+            (-h_B0[:, None] * dpA_f, h_B0[:, None] * dpB_f - dh_B0[:, None] * delta_f),
+            (-h_B1[:, None] * dpA_f, h_B1[:, None] * dpB_f - dh_B1[:, None] * delta_f),
+        ]
+
+        ds_du_f = np.zeros((n_fast, 12))
+        dt_du_f = np.zeros((n_fast, 12))
+
+        for node_idx, (rF1, rF2) in enumerate(rhs_data):
+            ds_du_f[:, node_idx * 3 : node_idx * 3 + 3] = (
+                -(c_f[:, None] * rF1 + b_f[:, None] * rF2) * inv_det_f[:, None]
+            )
+            dt_du_f[:, node_idx * 3 : node_idx * 3 + 3] = (
+                -(b_f[:, None] * rF1 + a_f[:, None] * rF2) * inv_det_f[:, None]
+            )
+
+        ds_du_f *= w_s_f[:, None]
+        dt_du_f *= w_t_f[:, None]
+        ds_du[fast] = ds_du_f
+        dt_du[fast] = dt_du_f
+
+    # ── 低速パス: エッジケース ──
+    slow = active & ~fast
+    if np.any(slow):
+        slow_idx = np.where(slow)[0]
+        proc = ComputeStJacobianProcess()
+        for idx in slow_idx:
+            kw: dict = {
+                "xA0": xA0[idx],
+                "xA1": xA1[idx],
+                "xB0": xB0[idx],
+                "xB1": xB1[idx],
+                "s": float(s[idx]),
+                "t": float(t[idx]),
+                "s_unclamped": float(s_unc[idx]),
+                "t_unclamped": float(t_unc[idx]),
+                "mA0": mA0[idx],
+                "mA1": mA1[idx],
+                "mB0": mB0[idx],
+                "mB1": mB1[idx],
+                "use_hermite": True,
+            }
+            if dm_A is not None:
+                kw["dm_A"] = dm_A[idx]
+            if dm_B is not None:
+                kw["dm_B"] = dm_B[idx]
+            out = proc.process(StJacobianInput(**kw))
+            ds_du[idx] = out.ds_du
+            dt_du[idx] = out.dt_du
+            valid[idx] = out.valid
+
+    return ds_du, dt_du, valid

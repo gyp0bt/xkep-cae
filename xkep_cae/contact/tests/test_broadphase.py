@@ -151,3 +151,112 @@ class TestBroadphasePhysics:
             assert 0 <= i < j < n_segs
         # 重複なし
         assert len(result) == len(set(result))
+
+
+class TestBroadphaseBenchmark:
+    """broadphase 大規模ベンチマーク（status-309）."""
+
+    @staticmethod
+    def _make_helical_segments(
+        n_wires: int,
+        n_elems_per_wire: int,
+        wire_radius: float = 0.5e-3,
+        pitch: float = 100e-3,
+        n_pitches: float = 3.0,
+    ) -> tuple[list[tuple[np.ndarray, np.ndarray]], float]:
+        """ヘリカル撚線配置のセグメントを生成.
+
+        Returns:
+            (segments, wire_radius) のタプル
+        """
+        import math
+
+        length = n_pitches * pitch
+        # 層ごとの素線数: 1 + 6 + 12 + 18 + ...
+        layout: list[tuple[float, float]] = []  # (lay_radius, angle_offset)
+        remaining = n_wires
+        # 中心素線
+        if remaining > 0:
+            layout.append((0.0, 0.0))
+            remaining -= 1
+        layer = 1
+        while remaining > 0:
+            n_in_layer = min(6 * layer, remaining)
+            lay_radius = 2.0 * wire_radius * layer
+            for k in range(n_in_layer):
+                angle = 2.0 * math.pi * k / (6 * layer)
+                layout.append((lay_radius, angle))
+            remaining -= n_in_layer
+            layer += 1
+
+        n_pts = n_elems_per_wire + 1
+        z_arr = np.linspace(0.0, length, n_pts)
+        segments: list[tuple[np.ndarray, np.ndarray]] = []
+        for lay_r, angle0 in layout:
+            if lay_r < 1e-15:
+                # 中心素線（直線）
+                for i in range(n_elems_per_wire):
+                    p0 = np.array([0.0, 0.0, z_arr[i]])
+                    p1 = np.array([0.0, 0.0, z_arr[i + 1]])
+                    segments.append((p0, p1))
+            else:
+                for i in range(n_elems_per_wire):
+                    theta0 = 2.0 * math.pi * z_arr[i] / pitch + angle0
+                    theta1 = 2.0 * math.pi * z_arr[i + 1] / pitch + angle0
+                    p0 = np.array([lay_r * math.cos(theta0), lay_r * math.sin(theta0), z_arr[i]])
+                    p1 = np.array(
+                        [lay_r * math.cos(theta1), lay_r * math.sin(theta1), z_arr[i + 1]]
+                    )
+                    segments.append((p0, p1))
+        return segments, wire_radius
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize(
+        "n_wires,n_elems",
+        [
+            (7, 48),
+            (19, 48),
+            (61, 48),
+            (127, 48),
+            (271, 32),
+            (547, 32),
+            (1000, 32),
+        ],
+    )
+    def test_broadphase_scaling(self, n_wires: int, n_elems: int) -> None:
+        """撚線規模別の broadphase 性能計測.
+
+        1000本撚線（32要素/本 = 32,000セグメント）までのスケーリングを確認。
+        """
+        import time
+
+        segments, r = self._make_helical_segments(n_wires, n_elems)
+        n_segs = len(segments)
+
+        # ウォームアップ（JIT/キャッシュ効果排除）
+        _broadphase_aabb(segments[: min(100, n_segs)], radii=r)
+
+        # 計測（3回実行の最小値）
+        times = []
+        n_pairs_list = []
+        for _ in range(3):
+            t0 = time.perf_counter()
+            pairs = _broadphase_aabb(segments, radii=r, margin=r * 0.5)
+            t1 = time.perf_counter()
+            times.append(t1 - t0)
+            n_pairs_list.append(len(pairs))
+
+        best_time = min(times)
+        n_pairs = n_pairs_list[0]
+
+        # ペア整合性チェック
+        for i, j in pairs:
+            assert 0 <= i < j < n_segs
+        assert len(pairs) == len(set(pairs))
+
+        # 結果出力（tee 対応）
+        print(
+            f"\n[broadphase] n_wires={n_wires}, n_elems={n_elems}, "
+            f"n_segs={n_segs}, n_pairs={n_pairs}, "
+            f"time={best_time:.4f}s"
+        )
