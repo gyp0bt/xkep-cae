@@ -172,6 +172,71 @@ class TestBatchStJacobianLinearAPI:
         np.testing.assert_allclose(dt_batch[0], out.dt_du, atol=1e-12)
 
 
+class TestHermiteDerivBatchAPI:
+    """バッチ版 Hermite 接線微分の API テスト（status-310）."""
+
+    def test_single_pair_matches_scalar(self):
+        """1ペアでスカラー版と一致."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _hermite_deriv_batch,
+            _hermite_deriv_scalar,
+        )
+
+        x0 = np.array([[0.0, 0.0, 0.0]])
+        x1 = np.array([[1.0, 0.0, 0.0]])
+        m0 = np.array([[1.0, 0.1, 0.0]])
+        m1 = np.array([[1.0, -0.1, 0.0]])
+        s = np.array([0.3])
+
+        batch_result = _hermite_deriv_batch(s, x0, x1, m0, m1)
+        scalar_result = _hermite_deriv_scalar(0.3, x0[0], x1[0], m0[0], m1[0])
+
+        assert batch_result.shape == (1, 3)
+        np.testing.assert_allclose(batch_result[0], scalar_result, atol=1e-14)
+
+    def test_multi_pair_matches_scalar(self):
+        """複数ペアでスカラー版と一致."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _hermite_deriv_batch,
+            _hermite_deriv_scalar,
+        )
+
+        rng = np.random.default_rng(77)
+        N = 30
+        x0 = rng.uniform(-1, 1, (N, 3))
+        x1 = x0 + rng.uniform(0.5, 1.5, (N, 3))
+        m0 = rng.uniform(-0.5, 0.5, (N, 3))
+        m1 = rng.uniform(-0.5, 0.5, (N, 3))
+        s = rng.uniform(0.0, 1.0, N)
+
+        batch_result = _hermite_deriv_batch(s, x0, x1, m0, m1)
+        assert batch_result.shape == (N, 3)
+
+        for i in range(N):
+            scalar_result = _hermite_deriv_scalar(float(s[i]), x0[i], x1[i], m0[i], m1[i])
+            np.testing.assert_allclose(
+                batch_result[i], scalar_result, atol=1e-14, err_msg=f"mismatch at pair {i}"
+            )
+
+    def test_boundary_values(self):
+        """s=0 と s=1 の境界値でスカラー版と一致."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _hermite_deriv_batch,
+            _hermite_deriv_scalar,
+        )
+
+        x0 = np.array([[0.0, 0.0, 0.0], [1.0, 2.0, 3.0]])
+        x1 = np.array([[1.0, 0.0, 0.0], [4.0, 5.0, 6.0]])
+        m0 = np.array([[1.0, 0.0, 0.0], [0.5, 0.5, 0.0]])
+        m1 = np.array([[1.0, 0.0, 0.0], [0.5, -0.5, 0.0]])
+        s = np.array([0.0, 1.0])
+
+        batch_result = _hermite_deriv_batch(s, x0, x1, m0, m1)
+        for i in range(2):
+            scalar_result = _hermite_deriv_scalar(float(s[i]), x0[i], x1[i], m0[i], m1[i])
+            np.testing.assert_allclose(batch_result[i], scalar_result, atol=1e-14)
+
+
 class TestBatchStJacobianHermiteAPI:
     """バッチ版 StJacobian（Hermite）の API テスト（status-309）."""
 

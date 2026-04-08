@@ -140,6 +140,33 @@ def _hermite_deriv_scalar(
     )
 
 
+def _hermite_deriv_batch(
+    s: np.ndarray,
+    x0: np.ndarray,
+    x1: np.ndarray,
+    m0: np.ndarray,
+    m1: np.ndarray,
+) -> np.ndarray:
+    """バッチ版 Hermite 接線: dp/ds (N, 3).
+
+    Parameters
+    ----------
+    s : (N,) パラメータ配列
+    x0, x1 : (N, 3) 端点座標
+    m0, m1 : (N, 3) 端点接線ベクトル
+
+    Returns
+    -------
+    dp : (N, 3) 各ペアの dp/ds
+    """
+    s2 = s * s
+    dh00 = (6.0 * s2 - 6.0 * s)[:, None]  # (N, 1)
+    dh10 = (3.0 * s2 - 4.0 * s + 1.0)[:, None]
+    dh01 = (-6.0 * s2 + 6.0 * s)[:, None]
+    dh11 = (3.0 * s2 - 2.0 * s)[:, None]
+    return dh00 * x0 + dh10 * m0 + dh01 * x1 + dh11 * m1
+
+
 # ── Input / Output ───────────────────────────────────────────
 
 

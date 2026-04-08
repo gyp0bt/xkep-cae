@@ -346,145 +346,270 @@ def _assemble_friction_st_stiffness(
     node_counts: np.ndarray | None = None,
     adj_node_map: dict | None = None,
 ) -> sp.csr_matrix:
-    """摩擦の K_st（接触点滑り剛性）を組み立て.
+    """摩擦の K_st（接触点滑り剛性）をバッチ計算で組み立て.
 
     f_fric = Σ_α q_α · G_tα の s,t 依存の連鎖微分:
         ∂f_fric/∂s = Σ_α q_α · ∂G_tα/∂s
         ∂f_fric/∂t = Σ_α q_α · ∂G_tα/∂t
 
-    ∂G_tα/∂s の係数変化項: [-tα, tα, 0, 0]
-    ∂G_tα/∂t の係数変化項: [0, 0, tα, -tα]
-
-    status-274: Hermite隣接ノードDOF拡張（adj_node_map非None時に
-    ds_du_adj/dt_du_adjによる非局所寄与を追加）。
+    status-274: Hermite隣接ノードDOF拡張。
+    status-310: ペアforループを排除しNumPyバッチ化。
     """
-    from xkep_cae.contact.geometry._st_jacobian import (
-        ComputeStJacobianProcess,
-        StJacobianInput,
-    )
+    zero = sp.csr_matrix((ndof_total, ndof_total))
 
-    rows: list[int] = []
-    cols: list[int] = []
-    data: list[float] = []
-    st_proc = ComputeStJacobianProcess()
+    # ── アクティブペア抽出 ──
+    n_pairs = len(contact_pairs)
+    if n_pairs == 0:
+        return zero
 
+    # friction_forces_localに存在し、stateを持つペアを抽出
+    act_indices = []
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
             continue
-        # SDI 排除: INACTIVE skip を除去（status-233）。
         if pair_idx not in friction_forces_local:
             continue
-
         q = friction_forces_local[pair_idx]
-        q1, q2 = float(q[0]), float(q[1])
-        if abs(q1) < 1e-30 and abs(q2) < 1e-30:
+        if abs(q[0]) < 1e-30 and abs(q[1]) < 1e-30:
             continue
+        act_indices.append(pair_idx)
 
+    n_act = len(act_indices)
+    if n_act == 0:
+        return zero
+
+    # ── ペアデータをNumPy配列に一括抽出 ──
+    s_arr = np.zeros(n_act)
+    t_arr = np.zeros(n_act)
+    s_unc_arr = np.zeros(n_act)
+    t_unc_arr = np.zeros(n_act)
+    nodes = np.zeros((n_act, 4), dtype=int)
+    q1_arr = np.zeros(n_act)
+    q2_arr = np.zeros(n_act)
+    t1_arr = np.zeros((n_act, 3))
+    t2_arr = np.zeros((n_act, 3))
+
+    for i, pair_idx in enumerate(act_indices):
+        pair = contact_pairs[pair_idx]
         st = pair.state
-        xA0 = node_coords[pair.nodes_a[0]]
-        xA1 = node_coords[pair.nodes_a[1]]
-        xB0 = node_coords[pair.nodes_b[0]]
-        xB1 = node_coords[pair.nodes_b[1]]
+        s_arr[i] = st.s
+        t_arr[i] = st.t
+        s_unc_arr[i] = getattr(st, "s_unclamped", st.s) or st.s
+        t_unc_arr[i] = getattr(st, "t_unclamped", st.t) or st.t
+        nodes[i, 0] = pair.nodes_a[0]
+        nodes[i, 1] = pair.nodes_a[1]
+        nodes[i, 2] = pair.nodes_b[0]
+        nodes[i, 3] = pair.nodes_b[1]
+        q = friction_forces_local[pair_idx]
+        q1_arr[i] = q[0]
+        q2_arr[i] = q[1]
+        t1_arr[i] = st.tangent1
+        t2_arr[i] = st.tangent2
 
-        # StJacobian 入力構築（Hermite隣接ノード対応）
-        st_kw: dict = {
-            "xA0": xA0,
-            "xA1": xA1,
-            "xB0": xB0,
-            "xB1": xB1,
-            "s": st.s,
-            "t": st.t,
-        }
-        _dm_ext_A = None
-        _dm_ext_B = None
-        if use_hermite and node_tangents is not None:
-            st_kw["mA0"] = node_tangents[pair.nodes_a[0]]
-            st_kw["mA1"] = node_tangents[pair.nodes_a[1]]
-            st_kw["mB0"] = node_tangents[pair.nodes_b[0]]
-            st_kw["mB1"] = node_tangents[pair.nodes_b[1]]
-            st_kw["use_hermite"] = True
-            if node_counts is not None:
-                from xkep_cae.contact.geometry._compute import (
-                    _compute_dm_coeffs,
-                    _compute_dm_ext_coeffs,
-                )
+    # ── 座標抽出 ──
+    nc = node_coords
+    xA0 = nc[nodes[:, 0]]
+    xA1 = nc[nodes[:, 1]]
+    xB0 = nc[nodes[:, 2]]
+    xB1 = nc[nodes[:, 3]]
 
-                _dm_A = _compute_dm_coeffs(
-                    node_counts[pair.nodes_a[0]],
-                    node_counts[pair.nodes_a[1]],
-                )
-                _dm_B = _compute_dm_coeffs(
-                    node_counts[pair.nodes_b[0]],
-                    node_counts[pair.nodes_b[1]],
-                )
-                st_kw["dm_A"] = _dm_A
-                st_kw["dm_B"] = _dm_B
-                if adj_node_map is not None:
-                    _dm_ext_A = _compute_dm_ext_coeffs(
-                        node_counts[pair.nodes_a[0]],
-                        node_counts[pair.nodes_a[1]],
-                    )
-                    _dm_ext_B = _compute_dm_ext_coeffs(
-                        node_counts[pair.nodes_b[0]],
-                        node_counts[pair.nodes_b[1]],
-                    )
-                    st_kw["dm_ext_A"] = _dm_ext_A
-                    st_kw["dm_ext_B"] = _dm_ext_B
+    # ── バッチ StJacobian ──
+    if use_hermite and node_tangents is not None:
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _batch_st_jacobian_hermite,
+        )
 
-        out = st_proc.process(StJacobianInput(**st_kw))
-        if not out.valid:
-            continue
+        mA0 = node_tangents[nodes[:, 0]]
+        mA1 = node_tangents[nodes[:, 1]]
+        mB0 = node_tangents[nodes[:, 2]]
+        mB1 = node_tangents[nodes[:, 3]]
+        dm_A_batch = None
+        dm_B_batch = None
+        if node_counts is not None:
+            from xkep_cae.contact.contact_force.strategy import (
+                HuberContactForceProcess,
+            )
 
-        t1 = st.tangent1
-        t2 = st.tangent2
+            dm_A_batch, dm_B_batch = HuberContactForceProcess._batch_dm_coeffs(node_counts, nodes)
+        ds_du, dt_du, valid = _batch_st_jacobian_hermite(
+            xA0,
+            xA1,
+            xB0,
+            xB1,
+            s_arr,
+            t_arr,
+            s_unc_arr,
+            t_unc_arr,
+            mA0,
+            mA1,
+            mB0,
+            mB1,
+            dm_A_batch,
+            dm_B_batch,
+        )
+    else:
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _batch_st_jacobian_linear,
+        )
 
-        # ∂f_fric/∂s = Σ_α q_α · ∂G_tα/∂s
-        # ∂G_tα/∂s の係数変化: dc_k/ds * tα_i
-        dc_ds = [-1.0, 1.0, 0.0, 0.0]
-        dc_dt = [0.0, 0.0, 1.0, -1.0]
+        ds_du, dt_du, valid = _batch_st_jacobian_linear(
+            xA0,
+            xA1,
+            xB0,
+            xB1,
+            s_arr,
+            t_arr,
+            s_unc_arr,
+            t_unc_arr,
+        )
 
-        df_ds = np.zeros(12)
-        df_dt = np.zeros(12)
-        for _alpha, (qa, ta) in enumerate([(q1, t1), (q2, t2)]):
-            if abs(qa) < 1e-30:
+    # invalidペアを除外
+    if not np.all(valid):
+        keep = valid
+        nodes = nodes[keep]
+        q1_arr = q1_arr[keep]
+        q2_arr = q2_arr[keep]
+        t1_arr = t1_arr[keep]
+        t2_arr = t2_arr[keep]
+        ds_du = ds_du[keep]
+        dt_du = dt_du[keep]
+        n_act = int(np.sum(keep))
+
+    if n_act == 0:
+        return zero
+
+    # ── df_ds, df_dt (N, 12) のバッチ計算 ──
+    # dc_ds = [-1, 1, 0, 0], dc_dt = [0, 0, 1, -1]
+    # df_ds[k*3+i] = Σ_α q_α * dc_ds[k] * tα[i]
+    # q1*t1 + q2*t2 の各成分: (N, 3)
+    qt_ds = q1_arr[:, None] * t1_arr + q2_arr[:, None] * t2_arr  # (N, 3)
+
+    df_ds = np.zeros((n_act, 12))
+    df_ds[:, 0:3] = -qt_ds  # k=0: dc_ds=-1
+    df_ds[:, 3:6] = qt_ds  # k=1: dc_ds=+1
+    # k=2,3: dc_ds=0 → ゼロのまま
+
+    df_dt = np.zeros((n_act, 12))
+    # k=0,1: dc_dt=0 → ゼロのまま
+    df_dt[:, 6:9] = qt_ds  # k=2: dc_dt=+1
+    df_dt[:, 9:12] = -qt_ds  # k=3: dc_dt=-1
+
+    # ── K_st_local = outer(df_ds, ds_du) + outer(df_dt, dt_du): (N, 12, 12) ──
+    K_st_local = np.einsum("ni,nj->nij", df_ds, ds_du) + np.einsum("ni,nj->nij", df_dt, dt_du)
+
+    # ── DOF インデックス (N, 12) ──
+    ndpn = ndof_per_node
+    gdofs = np.zeros((n_act, 12), dtype=int)
+    for k in range(4):
+        for d in range(3):
+            gdofs[:, k * 3 + d] = nodes[:, k] * ndpn + d
+
+    # ── COO 構築 ──
+    row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+    col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
+    val_arr = K_st_local.ravel()
+    mask = np.abs(val_arr) > 1e-30
+    rows_np = row_idx[mask]
+    cols_np = col_idx[mask]
+    vals_np = val_arr[mask]
+
+    # ── 隣接ノードDOF拡張（status-274: Hermite非局所∂g/∂u） ──
+    # バッチStJacobianはds_du_adjを返さないため、隣接ノード拡張が必要なペアのみ
+    # スカラー版にフォールバック
+    adj_rows: list[int] = []
+    adj_cols: list[int] = []
+    adj_data: list[float] = []
+    if (
+        adj_node_map is not None
+        and use_hermite
+        and node_tangents is not None
+        and node_counts is not None
+    ):
+        from xkep_cae.contact.geometry._compute import (
+            _compute_dm_coeffs,
+            _compute_dm_ext_coeffs,
+        )
+        from xkep_cae.contact.geometry._st_jacobian import (
+            ComputeStJacobianProcess,
+            StJacobianInput,
+        )
+
+        st_proc = ComputeStJacobianProcess()
+        # act_indices に対応するペアをスキャン
+        for local_i, pair_idx in enumerate(act_indices):
+            if not valid[local_i] if local_i < len(valid) else True:
                 continue
-            for k in range(4):
-                for i in range(3):
-                    li = k * 3 + i
-                    df_ds[li] += qa * dc_ds[k] * ta[i]
-                    df_dt[li] += qa * dc_dt[k] * ta[i]
+            pair = contact_pairs[pair_idx]
+            elem_a = getattr(pair, "elem_a", -1)
+            elem_b = getattr(pair, "elem_b", -1)
+            if elem_a == -1 and elem_b == -1:
+                continue
 
-        # K_st_fric = outer(df_ds, ds_du) + outer(df_dt, dt_du)
-        # 摩擦剛性は TangentAssembly で K_T - K_fric（符号反転）されるので
-        # ここでは +df/d(s,t) · d(s,t)/du を返す
-        K_local = np.outer(df_ds, out.ds_du) + np.outer(df_dt, out.dt_du)
+            st = pair.state
+            _xA0 = node_coords[pair.nodes_a[0]]
+            _xA1 = node_coords[pair.nodes_a[1]]
+            _xB0 = node_coords[pair.nodes_b[0]]
+            _xB1 = node_coords[pair.nodes_b[1]]
 
-        nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
-        gdofs = np.empty(12, dtype=int)
-        for k, node_id in enumerate(nodes):
-            for d in range(3):
-                gdofs[k * 3 + d] = node_id * ndof_per_node + d
+            st_kw: dict = {
+                "xA0": _xA0,
+                "xA1": _xA1,
+                "xB0": _xB0,
+                "xB1": _xB1,
+                "s": st.s,
+                "t": st.t,
+                "mA0": node_tangents[pair.nodes_a[0]],
+                "mA1": node_tangents[pair.nodes_a[1]],
+                "mB0": node_tangents[pair.nodes_b[0]],
+                "mB1": node_tangents[pair.nodes_b[1]],
+                "use_hermite": True,
+            }
+            _dm_A = _compute_dm_coeffs(node_counts[pair.nodes_a[0]], node_counts[pair.nodes_a[1]])
+            _dm_B = _compute_dm_coeffs(node_counts[pair.nodes_b[0]], node_counts[pair.nodes_b[1]])
+            st_kw["dm_A"] = _dm_A
+            st_kw["dm_B"] = _dm_B
+            _dm_ext_A = _compute_dm_ext_coeffs(
+                node_counts[pair.nodes_a[0]], node_counts[pair.nodes_a[1]]
+            )
+            _dm_ext_B = _compute_dm_ext_coeffs(
+                node_counts[pair.nodes_b[0]], node_counts[pair.nodes_b[1]]
+            )
+            st_kw["dm_ext_A"] = _dm_ext_A
+            st_kw["dm_ext_B"] = _dm_ext_B
 
-        for li in range(12):
-            gi = gdofs[li]
-            for lj in range(12):
-                gj = gdofs[lj]
-                val = K_local[li, lj]
-                if abs(val) > 1e-30:
-                    rows.append(gi)
-                    cols.append(gj)
-                    data.append(val)
+            out = st_proc.process(StJacobianInput(**st_kw))
+            if not out.valid or out.ds_du_adj is None:
+                continue
 
-        # K_st 隣接ノードDOF拡張（status-274: Hermite非局所∂g/∂u）
-        if out.ds_du_adj is not None and adj_node_map is not None:
-            adj_a = adj_node_map.get(pair.elem_a if hasattr(pair, "elem_a") else -1, (-1, -1))
-            adj_b = adj_node_map.get(pair.elem_b if hasattr(pair, "elem_b") else -1, (-1, -1))
+            adj_a = adj_node_map.get(elem_a, (-1, -1))
+            adj_b = adj_node_map.get(elem_b, (-1, -1))
             adj_global_nodes = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
 
-            K_fric_adj = np.outer(df_ds, out.ds_du_adj) + np.outer(df_dt, out.dt_du_adj)
+            # df_ds/df_dt は既にバッチ計算済み — local_i に対応する行を取得
+            # ただしvalidフィルタ後のインデックス調整が必要
+            _df_ds = np.zeros(12)
+            _df_dt = np.zeros(12)
+            q = friction_forces_local[pair_idx]
+            _q1, _q2 = float(q[0]), float(q[1])
+            _t1, _t2 = st.tangent1, st.tangent2
+            for _alpha, (qa, ta) in enumerate([(_q1, _t1), (_q2, _t2)]):
+                if abs(qa) < 1e-30:
+                    continue
+                dc_ds_v = [-1.0, 1.0, 0.0, 0.0]
+                dc_dt_v = [0.0, 0.0, 1.0, -1.0]
+                for k in range(4):
+                    for d in range(3):
+                        li = k * 3 + d
+                        _df_ds[li] += qa * dc_ds_v[k] * ta[d]
+                        _df_dt[li] += qa * dc_dt_v[k] * ta[d]
+
+            K_fric_adj = np.outer(_df_ds, out.ds_du_adj) + np.outer(_df_dt, out.dt_du_adj)
+
+            _pair_nodes = [pair.nodes_a[0], pair.nodes_a[1], pair.nodes_b[0], pair.nodes_b[1]]
+            _gdofs = np.array([n * ndof_per_node + d for n in _pair_nodes for d in range(3)])
 
             for li in range(12):
-                gi = gdofs[li]
+                gi = _gdofs[li]
                 for adj_idx in range(4):
                     adj_node = adj_global_nodes[adj_idx]
                     if adj_node < 0:
@@ -494,15 +619,19 @@ def _assemble_friction_st_stiffness(
                         gj = adj_node * ndof_per_node + dj
                         val = K_fric_adj[li, adj_lj]
                         if abs(val) > 1e-30:
-                            rows.append(gi)
-                            cols.append(gj)
-                            data.append(val)
+                            adj_rows.append(gi)
+                            adj_cols.append(gj)
+                            adj_data.append(val)
 
-    if len(data) == 0:
-        return sp.csr_matrix((ndof_total, ndof_total))
+    # 全COOを統合
+    all_rows = np.concatenate([rows_np, np.array(adj_rows, dtype=int)]) if adj_rows else rows_np
+    all_cols = np.concatenate([cols_np, np.array(adj_cols, dtype=int)]) if adj_cols else cols_np
+    all_vals = np.concatenate([vals_np, np.array(adj_data)]) if adj_data else vals_np
 
+    if len(all_vals) == 0:
+        return zero
     return sp.coo_matrix(
-        (data, (rows, cols)),
+        (all_vals, (all_rows, all_cols)),
         shape=(ndof_total, ndof_total),
     ).tocsr()
 
