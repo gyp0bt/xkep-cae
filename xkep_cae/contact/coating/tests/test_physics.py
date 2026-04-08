@@ -676,3 +676,84 @@ class TestBarrierCoatingPhysics:
         f2 = p.forces([pair2], _COORDS, config_linear, 0.01)
 
         np.testing.assert_allclose(f1, f2, atol=1e-15)
+
+    def test_barrier_force_stiffness_fd_process_level(self) -> None:
+        """Process level FD: 力と剛性行列の整合（幾何固定条件）.
+
+        被膜の力ベクトル f = f_n(δ) * g_n、剛性 K = k_eff(δ) * outer(g_n, g_n)。
+        圧縮量δの摂動に対して K*du ≈ Δf を検証する。
+        幾何固定（s, t, n 固定）なので材料接線のみの検証。
+
+        注: ソルバー全体系の67%FD誤差（status-301）は被膜の幾何接線剛性
+        （∂n/∂u, ∂s/∂u）の欠落が原因であり、この材料接線は正確。
+        """
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        config = _make_barrier_config(k_coat=k_coat, c_coat=0.0)
+        delta = 0.05
+        dt = 0.01
+
+        # 法線方向のギャップ勾配ベクトル g_n_full（DOF空間）
+        normal = np.array([0.0, 1.0, 0.0])
+        s, t = 0.5, 0.5
+        weights = [-(1.0 - s), -s, (1.0 - t), t]
+        node_ids = [0, 1, 2, 3]
+        g_n_full = np.zeros(_NDOF)
+        for w, nid in zip(weights, node_ids, strict=True):
+            for comp in range(3):
+                g_n_full[nid * 6 + comp] = w * normal[comp]
+
+        # 微小変位 du を g_n 方向に設定
+        eps = 1e-7
+        du = eps * g_n_full
+        d_delta = np.dot(g_n_full, du)  # = eps * ||g_n||²
+
+        # 力の中央差分
+        pair_plus = _make_barrier_pair(coating_compression=delta + d_delta)
+        pair_minus = _make_barrier_pair(coating_compression=delta - d_delta)
+        f_plus = p.forces([pair_plus], _COORDS, config, dt)
+        f_minus = p.forces([pair_minus], _COORDS, config, dt)
+        df_fd = (f_plus - f_minus) / 2.0  # dδ=d_delta の力変化
+
+        # 剛性行列の予測: K * du
+        pair = _make_barrier_pair(coating_compression=delta)
+        K = p.stiffness([pair], _COORDS, config, _NDOF, dt)
+        df_analytical = K @ du
+
+        # 幾何固定条件では材料接線が完全一致
+        nonzero = np.abs(df_analytical) > 1e-20
+        np.testing.assert_allclose(df_analytical[nonzero], df_fd[nonzero], rtol=1e-5)
+
+    def test_linear_force_stiffness_fd_process_level(self) -> None:
+        """線形モデルでも同じFD整合テスト."""
+        p = KelvinVoigtCoatingProcess()
+        k_coat = 1e6
+        config = _make_config(k_coat=k_coat, c_coat=0.0)
+        delta = 0.05
+        dt = 0.01
+
+        normal = np.array([0.0, 1.0, 0.0])
+        s, t = 0.5, 0.5
+        weights = [-(1.0 - s), -s, (1.0 - t), t]
+        node_ids = [0, 1, 2, 3]
+        g_n_full = np.zeros(_NDOF)
+        for w, nid in zip(weights, node_ids, strict=True):
+            for comp in range(3):
+                g_n_full[nid * 6 + comp] = w * normal[comp]
+
+        eps = 1e-7
+        du = eps * g_n_full
+        d_delta = np.dot(g_n_full, du)
+
+        pair_plus = _make_pair(coating_compression=delta + d_delta)
+        pair_minus = _make_pair(coating_compression=delta - d_delta)
+        f_plus = p.forces([pair_plus], _COORDS, config, dt)
+        f_minus = p.forces([pair_minus], _COORDS, config, dt)
+        df_fd = (f_plus - f_minus) / 2.0
+
+        pair = _make_pair(coating_compression=delta)
+        K = p.stiffness([pair], _COORDS, config, _NDOF, dt)
+        df_analytical = K @ du
+
+        nonzero = np.abs(df_analytical) > 1e-20
+        np.testing.assert_allclose(df_analytical[nonzero], df_fd[nonzero], rtol=1e-5)
