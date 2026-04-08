@@ -208,6 +208,7 @@ class StrandBendingOscillationConfig:
     coating_mu: float = 0.0  # 被膜摩擦係数
     coating_k_t_ratio: float = 0.5  # 接線剛性比
     coating_thickness: float = 0.0  # 被膜厚さ [mm], >0: core_radius = wire_radius - thickness
+    coating_barrier: bool = True  # バリア関数被膜モデル（status-303）
 
 
 @dataclass(frozen=True)
@@ -718,6 +719,7 @@ class StrandBendingOscillationProcess(
             coating_mu=cfg.coating_mu,
             coating_k_t_ratio=cfg.coating_k_t_ratio,
             coating_thickness=cfg.coating_thickness,
+            coating_barrier=cfg.coating_barrier,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
@@ -974,6 +976,7 @@ class StrandBendingOscillationProcess(
             coating_mu=cfg.coating_mu,
             coating_k_t_ratio=cfg.coating_k_t_ratio,
             coating_thickness=cfg.coating_thickness,
+            coating_barrier=cfg.coating_barrier,
         )
         manager = _ContactManagerInput(config=contact_config)
         contact_setup = ContactSetupData(
