@@ -478,6 +478,19 @@ class LinearSolveOutput:
     success: bool
 
 
+def _sparse_solve(K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+    """スパース線形ソルブ: pypardiso → scipy fallback（status-311）."""
+    try:
+        import pypardiso
+
+        return pypardiso.spsolve(K_csc, rhs)
+    except (ImportError, RuntimeError):
+        pass
+    from scipy.sparse.linalg import spsolve
+
+    return spsolve(K_csc, rhs)
+
+
 class LinearSolveProcess(
     SolverProcess[LinearSolveInput, LinearSolveOutput],
 ):
@@ -528,9 +541,7 @@ class LinearSolveProcess(
             _rhs[fixed] = 0.0
 
         try:
-            from scipy.sparse.linalg import spsolve
-
-            du = spsolve(K_csc, _rhs)
+            du = _sparse_solve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
@@ -583,9 +594,7 @@ class LinearSolveProcess(
             _rhs_red[fixed_reduced] = 0.0
 
         try:
-            from scipy.sparse.linalg import spsolve
-
-            du_red = spsolve(K_red_csc, _rhs_red)
+            du_red = _sparse_solve(K_red_csc, _rhs_red)
             # 全体系に復元
             du_full = (T @ du_red).A.ravel() if sp.issparse(T @ du_red) else T @ du_red
             return LinearSolveOutput(du=du_full, success=True)
