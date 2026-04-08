@@ -48,6 +48,8 @@ class DynamicStepOutput:
     diagnostics: ConvergenceDiagnosticsOutput
     diverged: bool = False
     f_ref_used: float = 0.0  # 実際に使用されたf_ref（status-297: global追跡用）
+    convergence_type: str = ""  # "force"/"disp"/"energy"/""（status-307: 収束型追跡）
+    failure_reason: str = ""  # "nr_limit"/"diverged"/"relax_fail"/"solve_fail"/""（status-307）
 
 
 @dataclass(frozen=True)
@@ -203,6 +205,8 @@ class NewtonDynamicProcess(
         step_converged = False
         n_active = 0
         _diverged = False
+        _convergence_type = ""  # status-307: "force"/"disp"/"energy"
+        _failure_reason = ""  # status-307: "nr_limit"/"diverged"/"relax_fail"/"solve_fail"
         _consecutive_increase = 0
         _prev_res_ratio = float("inf")
         _incr_f_ref: float = 0.0  # インクリメント内の参照残差（初回で設定）
@@ -346,6 +350,17 @@ class NewtonDynamicProcess(
             # 初回反復で参照残差を保存
             if att == 0 and input_data.dynamic_ref:
                 _incr_f_ref = conv_out.f_ref
+            # status-307: f_ref値と判定モードの出力（初回のみ）
+            if att == 0 and cfg.show_progress:
+                _ref_src = "dynamic_ref" if input_data.dynamic_ref else "f_ext"
+                _atol_str = ""
+                if input_data.atol_force > 0:
+                    _atol_str = f", atol={input_data.atol_force:.2e}"
+                print(
+                    f"  [f_ref] Incr {increment_display}: "
+                    f"f_ref={conv_out.f_ref:.3e} ({_ref_src})"
+                    f"{_atol_str}"
+                )
             n_active = conv_out.n_active
 
             _res_ratio = conv_out.res_trans_norm / conv_out.f_ref
@@ -572,6 +587,7 @@ class NewtonDynamicProcess(
                             )
                         continue
                 step_converged = True
+                _convergence_type = "force"
                 if cfg.show_progress:
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -735,6 +751,7 @@ class NewtonDynamicProcess(
                 and not _freeze_active
             ):
                 _diverged = True  # status-277: 積極的dt縮小で小dt回復を促進
+                _failure_reason = "relax_fail"
                 if cfg.show_progress:
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -781,6 +798,7 @@ class NewtonDynamicProcess(
                         )
                     break
                 _diverged = True
+                _failure_reason = "diverged"
                 if cfg.show_progress:
                     print(
                         f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -790,7 +808,11 @@ class NewtonDynamicProcess(
 
             # ── NR反復ごとのType分類ログ（status-288 + status-290 拡張） ──
             _iter_type = classify_chattering_type(_nr_snap, detailed_d=True)
-            if cfg.show_progress and att % 5 == 0:
+            # status-307: 5反復ごと + 残差急変動時（前回比10倍以上増加）に出力
+            _spike_detected = (
+                att >= 1 and _prev_res_ratio > 1e-30 and _cur_ratio > _prev_res_ratio * 10.0
+            )
+            if cfg.show_progress and (att % 5 == 0 or _spike_detected):
                 _wn_info = (
                     f", ||R_w||/||f||={conv_out.res_weighted_norm / conv_out.f_ref:.3e}"
                     if cfg.char_length > 0
@@ -798,6 +820,8 @@ class NewtonDynamicProcess(
                 )
                 _rate_info = f", rate={_conv_rate:.3f}" if att >= 2 else ""
                 _type_info = f" [{_iter_type}]" if _iter_type != "-" else ""
+                if _spike_detected:
+                    _type_info += " [SPIKE]"
                 # comp別残差（status-290: x,y,z成分のみ簡潔に出力）
                 _comp_info = ""
                 if _comp_norms and len(_comp_norms) >= 3:
@@ -880,6 +904,7 @@ class NewtonDynamicProcess(
                 )
             )
             if not solve_out.success:
+                _failure_reason = "solve_fail"
                 if cfg.show_progress:
                     print(f"  WARNING: Linear solve failed at attempt {att}")
                 break
@@ -1242,8 +1267,12 @@ class NewtonDynamicProcess(
                             )
                         continue
                 step_converged = True
+                ctype = conv_out2.convergence_type
+                if ctype == ConvergenceType.DISPLACEMENT:
+                    _convergence_type = "disp"
+                else:
+                    _convergence_type = "energy"
                 if cfg.show_progress:
-                    ctype = conv_out2.convergence_type
                     if ctype == ConvergenceType.DISPLACEMENT:
                         print(
                             f"  Incr {increment_display} (frac={load_frac:.4f}), "
@@ -1258,6 +1287,10 @@ class NewtonDynamicProcess(
                             f"energy = {conv_out2.energy:.3e} (energy converged)"
                         )
                 break
+
+        # NR上限到達で不収束の場合
+        if not step_converged and not _failure_reason:
+            _failure_reason = "nr_limit"
 
         # status-268: delta_hブーストを解除（次インクリメントに影響させない）
         if _delta_h_boosted and hasattr(_contact_force_strategy, "set_delta_h_boost"):
@@ -1321,6 +1354,8 @@ class NewtonDynamicProcess(
             diagnostics=diag,
             diverged=_diverged,
             f_ref_used=_incr_f_ref,
+            convergence_type=_convergence_type,
+            failure_reason=_failure_reason,
         )
 
 
