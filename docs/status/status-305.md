@@ -102,6 +102,7 @@ python contracts/validate_process_contracts.py
 
 ## TODO
 
+- [ ] **被膜エネルギー比診断**: E_barrier / E_total < 1% で数値正則化の妥当性を定量判定。解析積分 `E = k[-δ_max·ln(1-δ/δ_max) - δ]` で計算可能。物理/人工の両モードで使える工学的判断基準
 - [ ] 既存テスト `test_strand_bending_oscillation_converges` の回帰修正（frac=0.025止まり）
 - [ ] 被膜幾何接線剛性（∂n/∂u, ∂s/∂u）の実装（大規模タスク）
 - [ ] 高速化フェーズ: 接触ペア検出KD-tree化
