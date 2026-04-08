@@ -1039,7 +1039,9 @@ def _batch_st_jacobian_hermite(
     mB1: np.ndarray,
     dm_A: np.ndarray | None = None,
     dm_B: np.ndarray | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    dm_ext_A: np.ndarray | None = None,
+    dm_ext_B: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray | None, np.ndarray | None]:
     """Hermite 幾何の ∂(s,t)/∂u をバッチ計算.
 
     Args:
@@ -1049,25 +1051,32 @@ def _batch_st_jacobian_hermite(
         mA0..mB1: (N, 3) ノード接線ベクトル
         dm_A: (N, 2, 2) or None — ∂m/∂x ローカル係数
         dm_B: (N, 2, 2) or None — ∂m/∂x ローカル係数
+        dm_ext_A: (N, 2) or None — 隣接ノード ∂m/∂x 係数 [∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}]
+        dm_ext_B: (N, 2) or None — 隣接ノード ∂m/∂x 係数 [∂mB0/∂x_{B-1}, ∂mB1/∂x_{B+2}]
 
     Returns:
         ds_du: (N, 12) ds/du
         dt_du: (N, 12) dt/du
         valid: (N,) bool 有効フラグ
+        ds_du_adj: (N, 12) or None — 隣接ノード ds/du [A-1(3), A+2(3), B-1(3), B+2(3)]
+        dt_du_adj: (N, 12) or None — 隣接ノード dt/du
     """
     N = len(s)
     ds_du = np.zeros((N, 12))
     dt_du = np.zeros((N, 12))
     valid = np.ones(N, dtype=bool)
+    compute_adj = dm_ext_A is not None and dm_ext_B is not None
+    ds_du_adj: np.ndarray | None = np.zeros((N, 12)) if compute_adj else None
+    dt_du_adj: np.ndarray | None = np.zeros((N, 12)) if compute_adj else None
 
     if N == 0:
-        return ds_du, dt_du, valid
+        return ds_du, dt_du, valid, ds_du_adj, dt_du_adj
 
     w_s = _smooth_clip_deriv_batch(s_unc)
     w_t = _smooth_clip_deriv_batch(t_unc)
     active = (w_s > 1e-30) | (w_t > 1e-30)
     if not np.any(active):
-        return ds_du, dt_du, valid
+        return ds_du, dt_du, valid, ds_du_adj, dt_du_adj
 
     s_eval = s_unc
     t_eval = t_unc
@@ -1222,6 +1231,62 @@ def _batch_st_jacobian_hermite(
         ds_du[fast] = ds_du_f
         dt_du[fast] = dt_du_f
 
+        # ── 隣接ノード微分（バッチ）: status-311 ──
+        if compute_adj:
+            assert ds_du_adj is not None and dt_du_adj is not None
+            ds_adj_f = np.zeros((n_fast, 12))
+            dt_adj_f = np.zeros((n_fast, 12))
+            dm_ext_A_f = dm_ext_A[fast]  # (Nf, 2)
+            dm_ext_B_f = dm_ext_B[fast]  # (Nf, 2)
+
+            # 4隣接ノード: [A-1, A+2, B-1, B+2]
+            # adj_idx=0: A-1 → ∂mA0/∂x_{A-1}, h=H10(s)*coeff, dh=H10'(s)*coeff
+            # adj_idx=1: A+2 → ∂mA1/∂x_{A+2}, h=H11(s)*coeff, dh=H11'(s)*coeff
+            # adj_idx=2: B-1 → ∂mB0/∂x_{B-1}, h=H10(t)*coeff, dh=H10'(t)*coeff
+            # adj_idx=3: B+2 → ∂mB1/∂x_{B+2}, h=H11(t)*coeff, dh=H11'(t)*coeff
+            h10_sf = h10_s[fast]
+            h11_sf = h11_s[fast]
+            dh10_sf = dh10_s[fast]
+            dh11_sf = dh11_s[fast]
+            h10_tf = h10_t[fast]
+            h11_tf = h11_t[fast]
+            dh10_tf = dh10_t[fast]
+            dh11_tf = dh11_t[fast]
+
+            adj_specs = [
+                # (coeff, h_basis, dh_basis, side)
+                (dm_ext_A_f[:, 0], h10_sf, dh10_sf, "A"),  # A-1
+                (dm_ext_A_f[:, 1], h11_sf, dh11_sf, "A"),  # A+2
+                (dm_ext_B_f[:, 0], h10_tf, dh10_tf, "B"),  # B-1
+                (dm_ext_B_f[:, 1], h11_tf, dh11_tf, "B"),  # B+2
+            ]
+
+            for adj_idx, (coeff, h_basis, dh_basis, side) in enumerate(adj_specs):
+                h = h_basis * coeff  # (Nf,)
+                dh = dh_basis * coeff  # (Nf,)
+                # ゼロ係数はスキップ（演算量削減）
+                nonzero = np.abs(coeff) > 1e-30
+                if not np.any(nonzero):
+                    continue
+
+                if side == "A":
+                    rF1 = h[:, None] * dpA_f + dh[:, None] * delta_f  # (Nf, 3)
+                    rF2 = -h[:, None] * dpB_f  # (Nf, 3)
+                else:
+                    rF1 = -h[:, None] * dpA_f
+                    rF2 = h[:, None] * dpB_f - dh[:, None] * delta_f
+
+                # J_inv @ rhs: [ds, dt] = -J_inv @ [rF1, rF2]
+                ds_adj = -(c_f[:, None] * rF1 + b_f[:, None] * rF2) * inv_det_f[:, None]
+                dt_adj = -(b_f[:, None] * rF1 + a_f[:, None] * rF2) * inv_det_f[:, None]
+                ds_adj *= w_s_f[:, None]
+                dt_adj *= w_t_f[:, None]
+                ds_adj_f[:, adj_idx * 3 : adj_idx * 3 + 3] = ds_adj
+                dt_adj_f[:, adj_idx * 3 : adj_idx * 3 + 3] = dt_adj
+
+            ds_du_adj[fast] = ds_adj_f
+            dt_du_adj[fast] = dt_adj_f
+
     # ── 低速パス: エッジケース ──
     slow = active & ~fast
     if np.any(slow):
@@ -1247,9 +1312,15 @@ def _batch_st_jacobian_hermite(
                 kw["dm_A"] = dm_A[idx]
             if dm_B is not None:
                 kw["dm_B"] = dm_B[idx]
+            if compute_adj:
+                kw["dm_ext_A"] = dm_ext_A[idx]
+                kw["dm_ext_B"] = dm_ext_B[idx]
             out = proc.process(StJacobianInput(**kw))
             ds_du[idx] = out.ds_du
             dt_du[idx] = out.dt_du
             valid[idx] = out.valid
+            if compute_adj and out.ds_du_adj is not None:
+                ds_du_adj[idx] = out.ds_du_adj
+                dt_du_adj[idx] = out.dt_du_adj
 
-    return ds_du, dt_du, valid
+    return ds_du, dt_du, valid, ds_du_adj, dt_du_adj

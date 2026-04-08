@@ -574,7 +574,7 @@ class ContactForceStStiffnessProcess(
                 dm_A_batch, dm_B_batch = HuberContactForceProcess._batch_dm_coeffs(
                     inp.node_counts, nodes_act
                 )
-            ds_du, dt_du, valid = _batch_st_jacobian_hermite(
+            ds_du, dt_du, valid, _, _ = _batch_st_jacobian_hermite(
                 xA0,
                 xA1,
                 xB0,
