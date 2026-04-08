@@ -456,6 +456,8 @@ class ContactFrictionProcess(
         _graph_snapshots: list[object] = []
         # 微小dt対策: 成功インクリメントのf_refを追跡し、下限値として使用（status-297）
         _global_f_ref: float = 0.0
+        # status-307: 収束型インクリメント統計
+        _conv_type_counts: dict[str, int] = {"force": 0, "disp": 0, "energy": 0}
 
         # ================================================================
         # 荷重ステップループ
@@ -600,7 +602,14 @@ class ContactFrictionProcess(
                             _mpc_current = _mpc_current_ckpt
                     _time_strategy.restore_checkpoint()
                     _state_set(state, "increment_display", state.increment_display - 1)
-                    print(f"  Adaptive dt retry: frac {load_frac:.4f} → sub-steps")
+                    # status-307: カットバック原因タグ + dt値出力
+                    _cb_reason = getattr(step_result, "failure_reason", "unknown")
+                    _cb_tag = f"[CUTBACK:{_cb_reason}]" if _cb_reason else "[CUTBACK]"
+                    print(
+                        f"  {_cb_tag} frac {load_frac:.4f}, "
+                        f"dt={dt_sub:.4e} → sub-steps "
+                        f"(cutback #{_n_cutbacks})"
+                    )
                     continue
                 else:
                     print(
@@ -635,8 +644,43 @@ class ContactFrictionProcess(
                 # ステップ完了
                 # ==============================================================
 
+                # status-307: 収束型統計
+                _ct = getattr(step_result, "convergence_type", "")
+                if _ct in _conv_type_counts:
+                    _conv_type_counts[_ct] += 1
+
+                # status-307: 被膜圧縮統計（被膜あり時のみ）
+                if use_coating and manager.pairs:
+                    _coat_comps = [
+                        p.state.coating_compression
+                        for p in manager.pairs
+                        if p.state.coating_compression > 0
+                    ]
+                    if _coat_comps:
+                        _coat_maxes = [
+                            (p.radius_a - p.core_radius_a) + (p.radius_b - p.core_radius_b)
+                            for p in manager.pairs
+                            if p.state.coating_compression > 0
+                        ]
+                        _coat_ratios = [
+                            c / max(m, 1e-30) for c, m in zip(_coat_comps, _coat_maxes, strict=True)
+                        ]
+                        _n_pen = sum(1 for r in _coat_ratios if r >= 1.0)
+                        # 50ステップごとに出力（毎ステップは冗長）
+                        if state.increment_display % 50 == 0 or _n_pen > 0:
+                            print(
+                                f"  [coat] incr={state.increment_display}: "
+                                f"n_active={len(_coat_comps)}, "
+                                f"mean={sum(_coat_ratios) / len(_coat_ratios) * 100:.0f}%, "
+                                f"max={max(_coat_ratios) * 100:.0f}%, "
+                                f"n_penetrated={_n_pen}"
+                            )
+
                 # エネルギー診断
                 _f_int = _asm_internal_force(state.u)
+                _coat_energy = 0.0
+                if use_coating:
+                    _coat_energy = strategies.coating.energy(manager.pairs, manager.config)
                 _e_out = _energy_proc.process(
                     StepEnergyInput(
                         u=state.u,
@@ -647,6 +691,7 @@ class ContactFrictionProcess(
                         f_c=step_result.f_c,
                         dt=dt_sub,
                         step=state.increment_display,
+                        coating_energy=_coat_energy,
                     )
                 )
                 _t_physical = load_frac * (input_data.dt_physical or 0.0)
@@ -660,6 +705,7 @@ class ContactFrictionProcess(
                         contact_work=_e_out.contact_work,
                         total_energy=_e_out.total_energy,
                         energy_ratio=_e_out.energy_ratio,
+                        coating_energy=_e_out.coating_energy,
                     )
                 )
 
@@ -884,6 +930,16 @@ class ContactFrictionProcess(
         # エネルギー診断サマリ出力
         if _energy_history is not None and len(_energy_history.entries) > 0:
             print(_energy_history.summary())
+
+        # status-307: 収束型統計サマリ
+        _total_conv = sum(_conv_type_counts.values())
+        if _total_conv > 0:
+            _parts = []
+            for _ckey in ("force", "disp", "energy"):
+                _cn = _conv_type_counts[_ckey]
+                if _cn > 0:
+                    _parts.append(f"{_ckey}={_cn}({100 * _cn // _total_conv}%)")
+            print(f"  [収束型統計] {', '.join(_parts)}, total={_total_conv}")
 
         return SolverResultData(
             u=_u_out,
