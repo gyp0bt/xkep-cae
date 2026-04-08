@@ -640,74 +640,74 @@ class ContactFrictionProcess(
                         final_node_coords_ref=state.node_coords_ref.copy(),
                     )
 
-                # ==============================================================
-                # ステップ完了
-                # ==============================================================
+            # ==============================================================
+            # ステップ完了
+            # ==============================================================
 
-                # status-307: 収束型統計
-                _ct = getattr(step_result, "convergence_type", "")
-                if _ct in _conv_type_counts:
-                    _conv_type_counts[_ct] += 1
+            # status-307: 収束型統計
+            _ct = getattr(step_result, "convergence_type", "")
+            if _ct in _conv_type_counts:
+                _conv_type_counts[_ct] += 1
 
-                # status-307: 被膜圧縮統計（被膜あり時のみ）
-                if use_coating and manager.pairs:
-                    _coat_comps = [
-                        p.state.coating_compression
+            # status-307: 被膜圧縮統計（被膜あり時のみ）
+            if use_coating and manager.pairs:
+                _coat_comps = [
+                    p.state.coating_compression
+                    for p in manager.pairs
+                    if p.state.coating_compression > 0
+                ]
+                if _coat_comps:
+                    _coat_maxes = [
+                        (p.radius_a - p.core_radius_a) + (p.radius_b - p.core_radius_b)
                         for p in manager.pairs
                         if p.state.coating_compression > 0
                     ]
-                    if _coat_comps:
-                        _coat_maxes = [
-                            (p.radius_a - p.core_radius_a) + (p.radius_b - p.core_radius_b)
-                            for p in manager.pairs
-                            if p.state.coating_compression > 0
-                        ]
-                        _coat_ratios = [
-                            c / max(m, 1e-30) for c, m in zip(_coat_comps, _coat_maxes, strict=True)
-                        ]
-                        _n_pen = sum(1 for r in _coat_ratios if r >= 1.0)
-                        # 50ステップごとに出力（毎ステップは冗長）
-                        if state.increment_display % 50 == 0 or _n_pen > 0:
-                            print(
-                                f"  [coat] incr={state.increment_display}: "
-                                f"n_active={len(_coat_comps)}, "
-                                f"mean={sum(_coat_ratios) / len(_coat_ratios) * 100:.0f}%, "
-                                f"max={max(_coat_ratios) * 100:.0f}%, "
-                                f"n_penetrated={_n_pen}"
-                            )
+                    _coat_ratios = [
+                        c / max(m, 1e-30) for c, m in zip(_coat_comps, _coat_maxes, strict=True)
+                    ]
+                    _n_pen = sum(1 for r in _coat_ratios if r >= 1.0)
+                    # 50ステップごとに出力（毎ステップは冗長）
+                    if state.increment_display % 50 == 0 or _n_pen > 0:
+                        print(
+                            f"  [coat] incr={state.increment_display}: "
+                            f"n_active={len(_coat_comps)}, "
+                            f"mean={sum(_coat_ratios) / len(_coat_ratios) * 100:.0f}%, "
+                            f"max={max(_coat_ratios) * 100:.0f}%, "
+                            f"n_penetrated={_n_pen}"
+                        )
 
-                # エネルギー診断
-                _f_int = _asm_internal_force(state.u)
-                _coat_energy = 0.0
-                if use_coating:
-                    _coat_energy = strategies.coating.energy(manager.pairs, manager.config)
-                _e_out = _energy_proc.process(
-                    StepEnergyInput(
-                        u=state.u,
-                        velocity=_time_strategy.vel,
-                        mass_matrix=_time_strategy.M,
-                        f_int=_f_int,
-                        f_ext=f_ext,
-                        f_c=step_result.f_c,
-                        dt=dt_sub,
-                        step=state.increment_display,
-                        coating_energy=_coat_energy,
-                    )
+            # エネルギー診断
+            _f_int = _asm_internal_force(state.u)
+            _coat_energy = 0.0
+            if use_coating:
+                _coat_energy = strategies.coating.energy(manager.pairs, manager.config)
+            _e_out = _energy_proc.process(
+                StepEnergyInput(
+                    u=state.u,
+                    velocity=_time_strategy.vel,
+                    mass_matrix=_time_strategy.M,
+                    f_int=_f_int,
+                    f_ext=f_ext,
+                    f_c=step_result.f_c,
+                    dt=dt_sub,
+                    step=state.increment_display,
+                    coating_energy=_coat_energy,
                 )
-                _t_physical = load_frac * (input_data.dt_physical or 0.0)
-                _energy_history.append(
-                    EnergyHistoryEntry(
-                        step=state.increment_display,
-                        time=_t_physical,
-                        kinetic_energy=_e_out.kinetic_energy,
-                        strain_energy=_e_out.strain_energy,
-                        external_work=_e_out.external_work,
-                        contact_work=_e_out.contact_work,
-                        total_energy=_e_out.total_energy,
-                        energy_ratio=_e_out.energy_ratio,
-                        coating_energy=_e_out.coating_energy,
-                    )
+            )
+            _t_physical = load_frac * (input_data.dt_physical or 0.0)
+            _energy_history.append(
+                EnergyHistoryEntry(
+                    step=state.increment_display,
+                    time=_t_physical,
+                    kinetic_energy=_e_out.kinetic_energy,
+                    strain_energy=_e_out.strain_energy,
+                    external_work=_e_out.external_work,
+                    contact_work=_e_out.contact_work,
+                    total_energy=_e_out.total_energy,
+                    energy_ratio=_e_out.energy_ratio,
+                    coating_energy=_e_out.coating_energy,
                 )
+            )
 
             # f_ref追跡更新（status-297: 微小dt対策）
             # 収束成功時のみ更新（failure時は continue or return で到達しない）

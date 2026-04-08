@@ -1,13 +1,15 @@
-"""Broadphase 接触候補探索（AABB 空間ハッシュ）.
+"""Broadphase 接触候補探索（KD-tree + AABB フィルタ）.
 
 プライベートモジュール（C16 準拠）。
+
+status-308: 空間ハッシュグリッドから scipy.spatial.cKDTree に置換。
+内部ループのC実装化により大規模メッシュでの高速化を実現。
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 import numpy as np
+from scipy.spatial import cKDTree
 
 
 def _broadphase_aabb(
@@ -17,16 +19,17 @@ def _broadphase_aabb(
     margin: float = 0.0,
     cell_size: float | None = None,
 ) -> list[tuple[int, int]]:
-    """AABB 空間ハッシュによる候補ペア探索.
+    """KD-tree + AABB フィルタによる候補ペア探索.
 
-    各セグメントの AABB を均一格子にビニングし、
-    同一セルまたは隣接セル内のペアを候補として返す。
+    各セグメントの AABB 中心で KD-tree を構築し、
+    query_pairs で近接ペアを高速に列挙した後、
+    AABB 重複判定でフィルタリングする。
 
     Args:
         segments: [(x0, x1), ...] セグメント端点のリスト。各端点は (3,)
         radii: セグメントごとの断面半径。スカラーなら全セグメント共通
         margin: 追加探索マージン
-        cell_size: 格子セルサイズ。None なら自動推定
+        cell_size: 未使用（後方互換のため残置）
 
     Returns:
         候補ペア (i, j) のリスト（i < j）
@@ -48,49 +51,22 @@ def _broadphase_aabb(
     lo_all = np.minimum(x0_arr, x1_arr) - expand  # (n, 3)
     hi_all = np.maximum(x0_arr, x1_arr) + expand  # (n, 3)
 
-    # セルサイズ自動推定
-    if cell_size is None:
-        sizes = np.max(hi_all - lo_all, axis=1)  # (n,)
-        cell_size = max(float(np.mean(sizes)) * 1.5, 1e-30)
+    # AABB 中心と半対角長
+    mid_all = 0.5 * (lo_all + hi_all)  # (n, 3)
+    half_all = 0.5 * (hi_all - lo_all)  # (n, 3)
+    half_diag = np.linalg.norm(half_all, axis=1)  # (n,)
 
-    inv_cell = 1.0 / cell_size
+    # KD-tree 構築 + 近接ペア探索
+    # ペア (i,j) が AABB 重複する可能性があるのは
+    # ||mid_i - mid_j|| <= half_diag_i + half_diag_j <= 2 * max(half_diag)
+    max_half_diag = float(np.max(half_diag))
+    tree = cKDTree(mid_all)
+    kd_pairs = tree.query_pairs(r=2.0 * max_half_diag, output_type="ndarray")
 
-    # セルインデックス一括計算
-    ilo_all = np.floor(lo_all * inv_cell).astype(np.intp)  # (n, 3)
-    ihi_all = np.floor(hi_all * inv_cell).astype(np.intp)  # (n, 3)
-
-    # 空間ハッシュ: 各セグメントが占めるセルにビニング
-    grid: dict[tuple[int, int, int], list[int]] = defaultdict(list)
-
-    for i in range(n):
-        ix0 = int(ilo_all[i, 0])
-        iy0 = int(ilo_all[i, 1])
-        iz0 = int(ilo_all[i, 2])
-        ix1 = int(ihi_all[i, 0])
-        iy1 = int(ihi_all[i, 1])
-        iz1 = int(ihi_all[i, 2])
-        for ix in range(ix0, ix1 + 1):
-            for iy in range(iy0, iy1 + 1):
-                for iz in range(iz0, iz1 + 1):
-                    grid[(ix, iy, iz)].append(i)
-
-    # 候補ペア収集（重複除去）
-    seen: set[tuple[int, int]] = set()
-    for cell_indices in grid.values():
-        nc = len(cell_indices)
-        if nc < 2:
-            continue
-        for a_idx in range(nc):
-            for b_idx in range(a_idx + 1, nc):
-                i = cell_indices[a_idx]
-                j = cell_indices[b_idx]
-                seen.add((i, j) if i < j else (j, i))
-
-    if not seen:
+    if len(kd_pairs) == 0:
         return []
 
     # バッチ AABB 重複判定（ベクトル化）
-    pairs_arr = np.array(list(seen), dtype=np.intp)  # (m, 2)
-    pi, pj = pairs_arr[:, 0], pairs_arr[:, 1]
+    pi, pj = kd_pairs[:, 0], kd_pairs[:, 1]
     overlap = np.all(lo_all[pi] <= hi_all[pj], axis=1) & np.all(lo_all[pj] <= hi_all[pi], axis=1)
-    return [(int(r[0]), int(r[1])) for r in pairs_arr[overlap]]
+    return [(int(kd_pairs[k, 0]), int(kd_pairs[k, 1])) for k in np.nonzero(overlap)[0]]
