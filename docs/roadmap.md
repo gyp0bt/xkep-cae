@@ -78,7 +78,8 @@
 | K_stベクトル化 | **K_stアセンブリベクトル化**: バッチStJacobian(線形+Hermite)+einsum COO構築でペアforループ排除。broadphase大規模ベンチマーク(1000本5.6s)。6テスト追加 — status-309 |
 | 高速化第2弾完了 | **Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + adj_node_map配列化 + K_st性能測定(69-208x高速化)**: 接触力アセンブリ全体のforループ排除完了。9テスト追加 — status-310 |
 | 高速化第3弾+adj | **adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合**: tolil排除(83s→0.004s)。摩擦K_st隣接ノード完全バッチ化。3テスト追加 — status-311 |
-| **次** | **BC forループベクトル化 + symbolic factorizationキャッシュ** → 1000本6時間 |
+| LinearSolve最適化 | **BCベクトル化 + ソルバーキャッシュ + MPC triple productキャッシュ + 責務分離修正**: BC適用forループ完全排除、pypardiso import判定キャッシュ、MPC T.T/fixed_reducedキャッシュ、strand_bending_oscillation LinaerSolveProcess委譲 — status-312 |
+| **次** | **スパース求解高速化（高速化フェーズ第3弾）**: 大規模問題ベンチマーク → 1000本6時間 |
 
 ---
 

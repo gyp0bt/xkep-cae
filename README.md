@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**442+20+14+6+3+6 テスト** — 2026-04-08時点 | **Hermite dpA/dpBバッチ化+摩擦K_stベクトル化+K_st性能69-208x高速化**（status-310） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**515 テスト** — 2026-04-09時点 | **LinearSolveProcess最適化 — BCベクトル化+ソルバーキャッシュ+MPC triple productキャッシュ+責務分離修正**（status-312） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
