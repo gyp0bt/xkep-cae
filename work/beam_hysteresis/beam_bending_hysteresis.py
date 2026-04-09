@@ -1,24 +1,34 @@
 """
-Beam bending hysteresis — unified model
-========================================
+Beam bending hysteresis — asymmetric slope investigation
+=========================================================
 
-Real cable = elastic + stick-slip + plasticity + friction dissipation.
-How to express this simply?
+PROBLEM: All previous fiber+KH models give the same loading/unloading
+slope because E (elastic stiffness) is the same in both directions.
 
-Answer: Generalized Prandtl-Ishlinskii model.
-  N parallel elements, each = elastic spring + friction slider:
-    Element i:  sigma_i = k_i * (eps - slip_i)
-                |sigma_i - alpha_i| <= f_yi
-  Total: sigma = E_base*eps + sum(sigma_i)
+Real cable observation:
+  - Loading slope (initial tangent) > Unloading slope
+  - Loading: elastic-like start then flattens
+  - Unloading: gentler slope, elliptical return to near-origin
 
-  With curvature-dependent friction: f_yi = f_yi0 + beta_i * |eps|
+NEW APPROACH: Direct M-kappa model + EI decomposition.
 
-  This unifies:
-    - Elastic beam bending (E_base)
-    - Strand stick-slip (individual friction elements)
-    - Effective "plasticity" (sum of nonlinear elements)
-    - Friction dissipation (hysteresis area = energy lost)
-    - Pressure-dependent normal force (beta term)
+Physical picture:
+  EI_total = EI_individual + EI_contact
+  - EI_individual: sum of individual strand bending stiffnesses (always present)
+  - EI_contact: additional stiffness from inter-strand friction lock
+
+  Loading (from zero):
+    All strands stuck -> EI = EI_individual + EI_contact = EI_max
+    As curvature increases, outer strands slip -> EI decreases
+
+  Unloading (from peak):
+    At peak, strands have slipped to new positions.
+    On reversal, relative strand motion reverses.
+    BUT: the normal force N has decreased (less curvature)
+    -> friction capacity is lower
+    -> strands re-lock less firmly
+    -> EI_contact is reduced
+    -> unloading stiffness < initial loading stiffness
 
 [<- README](../../README.md)
 """
@@ -31,60 +41,10 @@ from dataclasses import dataclass, field
 
 
 # ============================================================
-# Generalized Prandtl-Ishlinskii fiber model
+# Model 1: Standard fiber + KH (baseline, symmetric slopes)
 # ============================================================
 @dataclass
-class PrandtlIshlinskiiFiber:
-    """N parallel friction elements + elastic backbone.
-
-    sigma = E_base * eps + sum_i [k_i * (eps - slip_i)]
-    Each element i has threshold f_yi(eps) = f_yi0 + beta_i * |eps|
-
-    Parameters
-    ----------
-    E_base : float
-        Purely elastic backbone stiffness (beam bending without friction)
-    k : array
-        Spring stiffness of each friction element
-    f_y0 : array
-        Base friction threshold of each element
-    beta : array
-        Pressure sensitivity of each element
-    """
-    E_base: float
-    k: np.ndarray
-    f_y0: np.ndarray
-    beta: np.ndarray
-    slip: np.ndarray = field(default=None)
-    alpha: np.ndarray = field(default=None)
-
-    def __post_init__(self):
-        n = len(self.k)
-        if self.slip is None:
-            self.slip = np.zeros(n)
-        if self.alpha is None:
-            self.alpha = np.zeros(n)
-
-    def stress(self, eps):
-        sigma = self.E_base * eps
-        for i in range(len(self.k)):
-            f_y = self.f_y0[i] + self.beta[i] * abs(eps)
-            trial = self.k[i] * (eps - self.slip[i])
-            eta = trial - self.alpha[i]
-            if abs(eta) <= f_y:
-                sigma += trial
-            else:
-                s = np.sign(eta)
-                dg = (abs(eta) - f_y) / (self.k[i] + 0)  # H=0 per element (pure friction)
-                self.slip[i] += s * dg
-                self.alpha[i] += 0  # no hardening per element
-                sigma += self.k[i] * (eps - self.slip[i])
-        return sigma
-
-
-@dataclass
 class StandardKH:
-    """Simple KH for comparison."""
     E: float
     sigma_y: float
     H: float
@@ -103,75 +63,159 @@ class StandardKH:
         return self.E * (eps - self.eps_p)
 
 
+# ============================================================
+# Model 2: Two-spring fiber (E_beam + E_contact)
+# E_contact degrades after slip.
+#
+# sigma = E_beam * eps + sigma_contact
+# sigma_contact: KH with E_contact that DEGRADES after yielding.
+# On reversal, the elastic slope in the contact spring is E_degraded < E_contact.
+# ============================================================
 @dataclass
-class PressureDependentKH:
-    """KH with pressure-dependent sigma_y."""
-    E: float
-    sigma_y0: float
-    beta: float
-    H: float
-    eps_p: float = 0.0
-    alpha: float = 0.0
+class TwoSpringDegradingContact:
+    """Elastic beam + contact spring that degrades after slip.
+
+    Physical: once strands slip past each other, the contact surface
+    has changed. On re-engagement, the contact stiffness is lower.
+    This directly reduces the unloading slope.
+
+    Loading elastic slope = E_beam + E_contact_virgin
+    Unloading elastic slope = E_beam + E_contact_degraded
+    """
+    E_beam: float           # always-present elastic stiffness
+    E_contact_virgin: float # contact stiffness before any slip
+    E_contact_degraded: float  # contact stiffness after slip
+    sigma_y: float          # friction threshold
+    H: float                # hardening
+
+    # Contact spring state
+    eps_p_c: float = 0.0
+    alpha_c: float = 0.0
+    ever_slipped: bool = False
 
     def stress(self, eps):
-        sy = self.sigma_y0 + self.beta * abs(eps)
-        sig_trial = self.E * (eps - self.eps_p)
-        eta = sig_trial - self.alpha
-        if abs(eta) <= sy:
-            return sig_trial
-        s = np.sign(eta)
-        dg = (abs(eta) - sy) / (self.E + self.H)
-        self.eps_p += s * dg
-        self.alpha += s * self.H * dg
-        return self.E * (eps - self.eps_p)
+        # Elastic backbone (always linear)
+        sig_beam = self.E_beam * eps
+
+        # Contact spring (KH with degrading E)
+        E_c = self.E_contact_degraded if self.ever_slipped else self.E_contact_virgin
+        sig_trial_c = E_c * (eps - self.eps_p_c)
+        eta = sig_trial_c - self.alpha_c
+
+        if abs(eta) <= self.sigma_y:
+            return sig_beam + sig_trial_c
+        else:
+            self.ever_slipped = True
+            E_c = self.E_contact_degraded  # degrade
+            # Recompute trial with degraded stiffness
+            sig_trial_c = E_c * (eps - self.eps_p_c)
+            eta = sig_trial_c - self.alpha_c
+            if abs(eta) <= self.sigma_y:
+                return sig_beam + sig_trial_c
+            s = np.sign(eta)
+            dg = (abs(eta) - self.sigma_y) / (E_c + self.H)
+            self.eps_p_c += s * dg
+            self.alpha_c += s * self.H * dg
+            return sig_beam + E_c * (eps - self.eps_p_c)
 
 
 # ============================================================
-# Fiber section + bending
+# Model 3: Multi-layer Prandtl-Ishlinskii with degradation
+#
+# Each friction element loses stiffness after first slip.
+# Elements with low threshold slip first, degrade first.
+# Net effect: initial loading uses high k, unloading uses degraded k.
+# ============================================================
+@dataclass
+class PIWithDegradation:
+    """Prandtl-Ishlinskii with contact stiffness degradation.
+
+    N parallel elements: each has virgin and degraded stiffness.
+    """
+    E_base: float
+    k_virgin: np.ndarray
+    k_degraded: np.ndarray
+    f_y: np.ndarray
+    slip: np.ndarray = field(default=None)
+    alpha: np.ndarray = field(default=None)
+    has_slipped: np.ndarray = field(default=None)
+
+    def __post_init__(self):
+        n = len(self.k_virgin)
+        if self.slip is None:
+            self.slip = np.zeros(n)
+        if self.alpha is None:
+            self.alpha = np.zeros(n)
+        if self.has_slipped is None:
+            self.has_slipped = np.zeros(n, dtype=bool)
+
+    def stress(self, eps):
+        sigma = self.E_base * eps
+        for i in range(len(self.k_virgin)):
+            k = self.k_degraded[i] if self.has_slipped[i] else self.k_virgin[i]
+            trial = k * (eps - self.slip[i])
+            eta = trial - self.alpha[i]
+            if abs(eta) <= self.f_y[i]:
+                sigma += trial
+            else:
+                self.has_slipped[i] = True
+                k = self.k_degraded[i]
+                # Recompute
+                trial = k * (eps - self.slip[i])
+                eta = trial - self.alpha[i]
+                if abs(eta) <= self.f_y[i]:
+                    sigma += trial
+                else:
+                    s = np.sign(eta)
+                    dg = (abs(eta) - self.f_y[i]) / k
+                    self.slip[i] += s * dg
+                    sigma += k * (eps - self.slip[i])
+        return sigma
+
+
+# ============================================================
+# Fiber section
 # ============================================================
 class FiberSection:
-    def __init__(self, diameter, n_fiber=60):
+    def __init__(self, diameter, n_fiber=50):
         self.diameter = diameter
         R = diameter / 2.0
-        self.y_coords = np.linspace(-R + R/n_fiber, R - R/n_fiber, n_fiber)
+        self.y = np.linspace(-R + R/n_fiber, R - R/n_fiber, n_fiber)
         dy = 2 * R / n_fiber
-        self.areas = np.array([self._chord_area(y, dy, R) for y in self.y_coords])
+        self.A = np.array([self._area(y, dy, R) for y in self.y])
         self.fibers = []
 
     def setup(self, factory):
-        self.fibers = [factory() for _ in range(len(self.y_coords))]
-
-    def setup_graded(self, factory_fn):
-        R = self.diameter / 2.0
-        self.fibers = [factory_fn(abs(y) / R) for y in self.y_coords]
+        self.fibers = [factory() for _ in self.y]
 
     @staticmethod
-    def _chord_area(y, dy, R):
-        y_lo, y_hi = max(y - dy/2, -R), min(y + dy/2, R)
-        if y_hi <= y_lo:
-            return 0.0
-        w_lo = 2 * np.sqrt(max(R**2 - y_lo**2, 0))
-        w_hi = 2 * np.sqrt(max(R**2 - y_hi**2, 0))
-        return (w_lo + w_hi) / 2 * (y_hi - y_lo)
+    def _area(y, dy, R):
+        yl, yh = max(y-dy/2, -R), min(y+dy/2, R)
+        if yh <= yl: return 0.0
+        wl = 2*np.sqrt(max(R**2-yl**2, 0))
+        wh = 2*np.sqrt(max(R**2-yh**2, 0))
+        return (wl+wh)/2 * (yh-yl)
 
     def moment(self, kappa):
         M = 0.0
-        for y, A, mat in zip(self.y_coords, self.areas, self.fibers):
+        for y, A, f in zip(self.y, self.A, self.fibers):
             eps = -kappa * y
-            sigma = mat.stress(eps)
-            M += -sigma * y * A
+            sig = f.stress(eps)
+            M += -sig * y * A
         return M
 
 
-def bend_cycle(section, L, delta_max, n=600):
-    d_up = np.linspace(0, delta_max, n + 1)
-    P_up = np.array([4 * section.moment(12 * d / L**2) / L for d in d_up])
+# ============================================================
+# Bending cycle
+# ============================================================
+def bend_cycle(section, L, dmax, n=800):
+    d_up = np.linspace(0, dmax, n+1)
+    P_up = np.array([4 * section.moment(12*d/L**2) / L for d in d_up])
 
     d_dn, P_dn = [], []
-    for d in np.linspace(delta_max, 0, 3*n + 1)[1:]:
-        P = 4 * section.moment(12 * d / L**2) / L
-        d_dn.append(d)
-        P_dn.append(P)
+    for d in np.linspace(dmax, 0, 3*n+1)[1:]:
+        P = 4 * section.moment(12*d/L**2) / L
+        d_dn.append(d); P_dn.append(P)
         if P <= 0:
             if len(P_dn) >= 2 and P_dn[-2] > 0:
                 t = P_dn[-2] / (P_dn[-2] - P)
@@ -179,255 +223,211 @@ def bend_cycle(section, L, delta_max, n=600):
                 P_dn[-1] = 0.0
             break
 
-    return (np.concatenate([d_up, np.array(d_dn)]),
-            np.concatenate([P_up, np.array(P_dn)]))
+    return np.concatenate([d_up, d_dn]), np.concatenate([P_up, P_dn])
+
+
+def tangent_stiffness(d, P):
+    """Compute dP/d(delta) along the curve."""
+    dd = np.diff(d)
+    dP = np.diff(P)
+    stiffness = np.where(np.abs(dd) > 1e-10, dP / dd, 0)
+    return 0.5*(d[:-1]+d[1:]), stiffness
 
 
 # ============================================================
 # Main
 # ============================================================
 def main():
-    D = 17.0
-    L = 100.0
-    delta_max = 30.0
+    D, L, dmax = 17.0, 100.0, 30.0
     R = D / 2.0
-    eps_max = 12 * delta_max / L**2 * R
 
-    # ============================================================
-    # Model 1: Standard KH (reference)
-    # ============================================================
+    # eps_max at surface: kappa_max * R = 12*30/100^2 * 8.5 = 0.306
+    eps_max = 12 * dmax / L**2 * R
+    print(f"eps_max = {eps_max:.3f}")
+
+    # =========================================
+    # M1: Standard KH (baseline, same slopes)
+    # sigma_y=1500, eps_y=0.15, eps_max/eps_y=2.0
+    # =========================================
     sec1 = FiberSection(D)
     sec1.setup(lambda: StandardKH(E=10_000, sigma_y=1500, H=1000))
-    d1, P1 = bend_cycle(sec1, L, delta_max)
+    d1, P1 = bend_cycle(sec1, L, dmax)
 
-    # ============================================================
-    # Model 2: Pressure-dependent KH (previous best)
-    # ============================================================
+    # =========================================
+    # M2: Two-spring with degradation
+    # Contact spring yield: sigma_y=300, eps_y_c=300/4000=0.075
+    # eps_max/eps_y_c = 4.1 => outer 75% of fibers yield in contact spring
+    # Loading: E_beam + E_contact_virgin = 6000 + 4000 = 10000
+    # After slip: E_beam + E_contact_degraded = 6000 + 1500 = 7500
+    # =========================================
     sec2 = FiberSection(D)
-    sec2.setup(lambda: PressureDependentKH(E=10_000, sigma_y0=500, beta=5000, H=800))
-    d2, P2 = bend_cycle(sec2, L, delta_max)
+    sec2.setup(lambda: TwoSpringDegradingContact(
+        E_beam=6000, E_contact_virgin=4000, E_contact_degraded=1500,
+        sigma_y=300, H=500,
+    ))
+    d2, P2 = bend_cycle(sec2, L, dmax)
 
-    # ============================================================
-    # Model 3: Prandtl-Ishlinskii (the "flat" unified model)
-    # N=5 parallel friction elements with spread thresholds
-    # + pressure-dependent friction
-    #
-    # Physical interpretation:
-    #   Element 1: outer strand layer (low f_y, high beta) - slips first
-    #   Element 2: next layer
-    #   ...
-    #   Element N: core strands (high f_y, low beta) - slips last or never
-    #   E_base: elastic beam bending of individual strands
-    # ============================================================
-    N_elem = 5
-    # Distribute stiffness: total contact stiffness = 4000 MPa
-    k_total = 4000.0
-    k_arr = np.full(N_elem, k_total / N_elem)
-
-    # Spread friction thresholds: outer layers low, inner layers high
-    f_y0_arr = np.array([200, 400, 800, 1500, 3000])
-
-    # Pressure sensitivity: outer layers high, inner layers low
-    beta_arr = np.array([8000, 5000, 3000, 1000, 0])
-
+    # =========================================
+    # M3: Two-spring, stronger degradation
+    # Contact yield: sigma_y=200, eps_y_c=200/4000=0.05
+    # eps_max/eps_y_c = 6.1 => most fibers yield
+    # After slip: E_degraded=500 => total=6500 (65% of virgin)
+    # =========================================
     sec3 = FiberSection(D)
-    sec3.setup(lambda: PrandtlIshlinskiiFiber(
-        E_base=6000,
-        k=k_arr.copy(),
-        f_y0=f_y0_arr.copy(),
-        beta=beta_arr.copy(),
+    sec3.setup(lambda: TwoSpringDegradingContact(
+        E_beam=6000, E_contact_virgin=4000, E_contact_degraded=500,
+        sigma_y=200, H=300,
     ))
-    d3, P3 = bend_cycle(sec3, L, delta_max)
+    d3, P3 = bend_cycle(sec3, L, dmax)
 
-    # ============================================================
-    # Model 4: PI without pressure dependence (for comparison)
-    # ============================================================
+    # =========================================
+    # M4: PI with degradation (5 layers)
+    # Lower thresholds so yield actually occurs
+    # =========================================
+    N = 5
+    k_v = np.array([1000, 800, 600, 400, 200], dtype=float)
+    k_d = np.array([300, 250, 200, 150, 100], dtype=float)
+    fy  = np.array([50, 100, 200, 400, 800], dtype=float)  # much lower
+
     sec4 = FiberSection(D)
-    sec4.setup(lambda: PrandtlIshlinskiiFiber(
-        E_base=6000,
-        k=k_arr.copy(),
-        f_y0=f_y0_arr.copy(),
-        beta=np.zeros(N_elem),
+    sec4.setup(lambda: PIWithDegradation(
+        E_base=6000, k_virgin=k_v.copy(), k_degraded=k_d.copy(), f_y=fy.copy(),
     ))
-    d4, P4 = bend_cycle(sec4, L, delta_max)
+    d4, P4 = bend_cycle(sec4, L, dmax)
 
-    # ============================================================
-    # Model 5: PI with more elements (smoother curve, 10 layers)
-    # ============================================================
-    N10 = 10
-    k10 = np.full(N10, k_total / N10)
-    f_y0_10 = np.linspace(100, 3000, N10)  # linear spread
-    beta_10 = np.linspace(8000, 0, N10)     # decreasing pressure sensitivity
-
-    sec5 = FiberSection(D)
-    sec5.setup(lambda: PrandtlIshlinskiiFiber(
-        E_base=6000,
-        k=k10.copy(),
-        f_y0=f_y0_10.copy(),
-        beta=beta_10.copy(),
-    ))
-    d5, P5 = bend_cycle(sec5, L, delta_max)
-
+    # =========================================
     # Elastic
+    # =========================================
     sec_el = FiberSection(D)
     sec_el.setup(lambda: StandardKH(E=10_000, sigma_y=1e12, H=0))
-    d_el, P_el = bend_cycle(sec_el, L, delta_max)
+    d_el, P_el = bend_cycle(sec_el, L, dmax)
 
     models = [
-        ('M1: Standard KH', d1, P1, 'blue', '-'),
-        ('M2: Pressure-dep KH', d2, P2, 'red', '-'),
-        ('M3: PI 5-layer + pressure', d3, P3, 'green', '-'),
-        ('M4: PI 5-layer (no pressure)', d4, P4, 'cyan', '--'),
-        ('M5: PI 10-layer + pressure', d5, P5, 'magenta', '-'),
+        ('M1: Standard KH (same slope)', d1, P1, 'blue', '-'),
+        ('M2: Degraded contact (mild)', d2, P2, 'red', '-'),
+        ('M3: Degraded contact (strong)', d3, P3, 'green', '-'),
+        ('M4: PI + degradation', d4, P4, 'magenta', '-'),
     ]
 
     # ============================================================
-    # Summary
+    # Measure slopes: loading 0-5mm vs unloading first 5mm
     # ============================================================
-    print(f"D={D}mm, L={L}mm, dmax={delta_max}mm, eps_max={eps_max:.3f}")
-    print(f"\n{'Model':<30} {'Pmax[kN]':>9} {'d_res[mm]':>9} {'res%':>5}")
-    print("-" * 55)
+    print(f"D={D}mm, L={L}mm, dmax={dmax}mm\n")
+    print(f"{'Model':<35} {'Pmax':>7} {'d_res':>6} {'SlopeL':>8} {'SlopeU':>8} {'U/L':>6}")
+    print("-" * 72)
     for name, d, P, _, _ in models:
-        print(f"{name:<30} {P.max()/1000:>9.2f} {d[-1]:>9.1f} {d[-1]/delta_max*100:>5.0f}%")
+        # Loading slope: secant from 0 to 10mm
+        i10 = np.searchsorted(d, 10.0)
+        sL = (P[i10] - P[0]) / (d[i10] - d[0] + 1e-30)
+
+        # Unloading slope: secant from peak to peak-10mm
+        ip = np.argmax(d)
+        ip10 = ip + np.searchsorted(-d[ip:], -(dmax - 10.0))
+        ip10 = min(ip10, len(d)-1)
+        sU = (P[ip10] - P[ip]) / (d[ip10] - d[ip] + 1e-30) if ip10 > ip else 0
+
+        ratio = abs(sU / sL) if sL != 0 else 0
+        print(f"{name:<35} {P.max()/1000:>6.1f}k {d[-1]:>5.1f}m {sL:>8.0f} {sU:>8.0f} {ratio:>6.2f}")
 
     # ============================================================
     # Plot
     # ============================================================
     fig, axes = plt.subplots(2, 3, figsize=(18, 11))
 
-    # --- (a) All models ---
+    # (a) All hysteresis
     ax = axes[0, 0]
     for name, d, P, c, ls in models:
-        label = name.split(':')[1].strip()[:30]
-        ax.plot(d, P/1000, color=c, ls=ls, lw=2, label=label)
+        ax.plot(d, P/1000, color=c, ls=ls, lw=2, label=name.split(':')[1].strip()[:28])
     ax.plot(d_el, P_el/1000, 'k:', lw=1, alpha=0.3, label='Elastic')
     ax.set_xlabel('Center deflection [mm]')
     ax.set_ylabel('Load P [kN]')
     ax.set_title('(a) All models')
     ax.legend(fontsize=7, loc='upper left')
     ax.grid(True, alpha=0.3)
-    ax.set_xlim(left=0); ax.set_ylim(bottom=0)
+    ax.set_xlim(0); ax.set_ylim(bottom=0)
 
-    # --- (b) M1 vs M3: Standard KH vs PI ---
+    # (b) M1 (baseline) + tangent stiffness
     ax = axes[0, 1]
-    ax.plot(d1, P1/1000, 'b-', lw=2, label='M1: Standard KH')
-    ax.plot(d3, P3/1000, 'g-', lw=2.5, label='M3: PI + pressure')
+    ax.plot(d1, P1/1000, 'b-', lw=2.5, label='M1: Standard KH')
     ax.plot(d_el, P_el/1000, 'k:', lw=1, alpha=0.3)
+    ax.set_title('(b) M1: Standard KH\n(loading slope = unloading slope)')
     ax.set_xlabel('Center deflection [mm]')
     ax.set_ylabel('Load P [kN]')
-    ax.set_title('(b) Standard KH vs PI model')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(left=0); ax.set_ylim(bottom=0)
+    ax.legend(); ax.grid(True, alpha=0.3)
+    ax.set_xlim(0); ax.set_ylim(bottom=0)
 
-    # --- (c) PI model close-up (best candidate) ---
+    # (c) M3 (strong degradation) — TARGET SHAPE
     ax = axes[0, 2]
-    ax.plot(d5, P5/1000, 'm-', lw=2.5, label='PI 10-layer + pressure')
-    ax.plot(d_el, P_el/1000, 'k:', lw=1, alpha=0.3, label='Elastic')
-    ax.fill_between(d5, 0, P5/1000, alpha=0.08, color='magenta')
+    ax.plot(d3, P3/1000, 'g-', lw=2.5, label='M3: Strong degradation')
+    ax.plot(d_el, P_el/1000, 'k:', lw=1, alpha=0.3)
+    ax.set_title('(c) M3: Contact stiffness degrades after slip\n'
+                 '(loading slope > unloading slope)')
     ax.set_xlabel('Center deflection [mm]')
     ax.set_ylabel('Load P [kN]')
-    d_res5 = d5[-1]
-    ax.set_title(f'(c) PI 10-layer: d_res={d_res5:.1f}mm ({d_res5/delta_max*100:.0f}%)')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(left=0); ax.set_ylim(bottom=0)
+    ax.legend(); ax.grid(True, alpha=0.3)
+    ax.set_xlim(0); ax.set_ylim(bottom=0)
 
-    # --- (d) PI with/without pressure ---
+    # (d) Tangent stiffness comparison
     ax = axes[1, 0]
-    ax.plot(d3, P3/1000, 'g-', lw=2.5, label='PI + pressure')
-    ax.plot(d4, P4/1000, 'c--', lw=2, label='PI (no pressure)')
+    for name, d, P, c, _ in models:
+        dm, stiff = tangent_stiffness(d, P)
+        ax.plot(dm, stiff/1000, color=c, lw=1.5, alpha=0.8,
+                label=name.split(':')[0])
     ax.set_xlabel('Center deflection [mm]')
-    ax.set_ylabel('Load P [kN]')
-    ax.set_title('(d) Effect of pressure-dependent friction')
-    ax.legend(fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_xlim(left=0); ax.set_ylim(bottom=0)
-
-    # --- (e) Normalized comparison ---
-    ax = axes[1, 1]
-    for name, d, P, c, ls in models:
-        Pm = P.max()
-        if Pm > 0:
-            label = name.split(':')[0]
-            ax.plot(d/delta_max, P/Pm, color=c, ls=ls, lw=1.5, label=label)
-    ax.set_xlabel('delta / delta_max')
-    ax.set_ylabel('P / P_max')
-    ax.set_title('(e) Normalized shape comparison')
+    ax.set_ylabel('Tangent stiffness dP/d(delta) [kN/mm]')
+    ax.set_title('(d) Tangent stiffness along path')
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='k', lw=0.5)
 
-    # --- (f) Unified model concept ---
+    # (e) M1 vs M3 direct
+    ax = axes[1, 1]
+    ax.plot(d1, P1/1000, 'b-', lw=2, label='M1: Standard KH')
+    ax.plot(d3, P3/1000, 'g-', lw=2, label='M3: Degraded contact')
+    ax.set_xlabel('Center deflection [mm]')
+    ax.set_ylabel('Load P [kN]')
+    ax.set_title('(e) Direct comparison: symmetric vs asymmetric')
+    ax.legend(fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(0); ax.set_ylim(bottom=0)
+
+    # (f) Explanation
     ax = axes[1, 2]
     ax.axis('off')
     text = (
-        'UNIFIED MODEL: PRANDTL-ISHLINSKII\n'
-        '=' * 42 + '\n\n'
-        'sigma = E_base*eps  (elastic backbone)\n'
-        '      + sum_i sigma_i  (friction elements)\n\n'
-        'Each element i:\n'
-        '  sigma_i = k_i * (eps - slip_i)\n'
-        '  |sigma_i - alpha_i| <= f_yi(eps)\n'
-        '  f_yi = f_yi0 + beta_i * |eps|\n\n'
-        'Physical mapping:\n'
-        '  E_base   = beam bending (no friction)\n'
-        '  k_i      = strand layer i contact stiffness\n'
-        '  f_yi0    = base friction (strand weight)\n'
-        '  beta_i   = curvature-dependent normal force\n'
-        '  slip_i   = strand sliding displacement\n\n'
-        'What each piece gives:\n'
-        '  E_base alone     => linear elastic\n'
-        '  + f_yi (spread)  => smooth nonlinear transition\n'
-        '  + beta_i         => asymmetric slopes (teardrop)\n'
-        '  + fiber section  => curvature effect\n\n'
-        '-' * 42 + '\n'
-        'Result: tilted teardrop hysteresis\n'
-        '  - Loading: stiff (friction locks strands)\n'
-        '  - Unloading: soft (friction releases)\n'
-        '  - Elliptical return to near-origin\n'
-        '  - Thin loop = small dissipation fraction'
+        'WHY UNLOADING IS SOFTER\n'
+        '=' * 38 + '\n\n'
+        'Cable EI = EI_beam + EI_contact\n\n'
+        'LOADING (virgin contact):\n'
+        '  Strands stuck together\n'
+        '  EI_contact = EI_contact_virgin (high)\n'
+        '  => Steep initial slope\n\n'
+        'FIRST SLIP:\n'
+        '  Contact surfaces slide\n'
+        '  Interface geometry changes\n'
+        '  EI_contact DEGRADES permanently\n\n'
+        'UNLOADING (degraded contact):\n'
+        '  Even in stick mode, the contact\n'
+        '  stiffness is now LOWER:\n'
+        '  EI_contact = EI_contact_degraded\n'
+        '  => Gentler unloading slope\n\n'
+        '-' * 38 + '\n'
+        'Model: sigma = E_beam*eps + sig_c\n'
+        '  sig_c uses E_c_virgin before slip\n'
+        '  sig_c uses E_c_degraded after slip\n\n'
+        'This is contact DAMAGE, not plasticity.\n'
+        'The elastic stiffness itself changes.\n'
+        '(Similar to continuum damage mechanics)'
     )
     ax.text(0.02, 0.98, text, transform=ax.transAxes,
             fontsize=9.5, va='top', ha='left', family='monospace',
             bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.8))
 
     plt.tight_layout()
-    outpath = '/home/user/xkep-cae/work/beam_hysteresis/hysteresis_comparison.png'
-    plt.savefig(outpath, dpi=150)
+    out = '/home/user/xkep-cae/work/beam_hysteresis/hysteresis_comparison.png'
+    plt.savefig(out, dpi=150)
     plt.close()
-    print(f"\nPlot saved: {outpath}")
-
-    print("""
-CONCLUSION: How to express the combined effects "simply"
-=========================================================
-
-Real cable = elastic + stick-slip + plasticity + friction dissipation
-
-This is a GENERALIZED PRANDTL-ISHLINSKII model:
-
-  sigma(eps) = E_base * eps + sum_{i=1}^{N} play_i(eps)
-
-where each play_i is a friction element with:
-  - stiffness k_i (strand layer contact stiffness)
-  - threshold f_yi = f_yi0 + beta_i * |eps| (pressure-dependent)
-
-The parameters map directly to cable physics:
-  - E_base = sum of individual strand bending stiffnesses (EI_min)
-  - k_i = contact stiffness contribution from strand layer i
-  - f_yi0 = friction force from strand weight/pretension
-  - beta_i = friction increase due to curvature-induced normal force
-
-This is essentially a RHEOLOGICAL MODEL:
-  Spring E_base in parallel with N (spring + friction slider) elements.
-
-The spread of thresholds {f_yi} determines the smoothness of the curve.
-The pressure sensitivity {beta_i} determines the loading/unloading asymmetry.
-
-It is EQUIVALENT to:
-  - Fiber section model with KH materials (proven: diff=0)
-  - But adds pressure-dependent sigma_y for slope asymmetry
-  - Prandtl-Ishlinskii gives smoother curves than single-KH
-""")
+    print(f"\nPlot saved: {out}")
 
 
 if __name__ == '__main__':
