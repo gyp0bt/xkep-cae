@@ -491,6 +491,26 @@ def _sparse_solve(K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
     return spsolve(K_csc, rhs)
 
 
+def _zero_sparse_rows(K: sp.spmatrix, dofs: np.ndarray) -> None:
+    """CSR行列の指定行をゼロ化（ベクトル化版、status-312）.
+
+    forループ `for d in dofs: data[indptr[d]:indptr[d+1]] = 0` を
+    NumPy配列演算で置換。固定DOFが数千〜数万の大規模問題で高速。
+    """
+    if len(dofs) == 0:
+        return
+    indptr = K.indptr
+    starts = indptr[dofs]
+    ends = indptr[dofs + 1]
+    lengths = ends - starts
+    total = lengths.sum()
+    if total == 0:
+        return
+    offsets = np.repeat(starts, lengths)
+    within = np.arange(total) - np.repeat(np.cumsum(lengths) - lengths, lengths)
+    K.data[offsets + within] = 0.0
+
+
 class LinearSolveProcess(
     SolverProcess[LinearSolveInput, LinearSolveOutput],
 ):
@@ -516,27 +536,22 @@ class LinearSolveProcess(
         """標準BC適用 + 線形ソルブ.
 
         status-311: tolil() + forループを排除し、CSR直接操作に置換。
-        行/列のゼロ化はCSR/CSCの indptr/data を直接操作して高速化。
+        status-312: forループをNumPyベクトル化（_zero_sparse_rows）。
         """
         _rhs = -inp.R_u.copy()
         fixed = inp.fixed_dofs
 
         K_csc = inp.K_T.tocsc()
         if len(fixed) > 0:
-            # CSR で行ゼロ化（indptr直接アクセス）
             K_csr = K_csc.tocsr()
-            for d in fixed:
-                K_csr.data[K_csr.indptr[d] : K_csr.indptr[d + 1]] = 0.0
-            # CSC で列ゼロ化（indptr直接アクセス）
+            _zero_sparse_rows(K_csr, fixed)
             K_csc = K_csr.tocsc()
-            for d in fixed:
-                K_csc.data[K_csc.indptr[d] : K_csc.indptr[d + 1]] = 0.0
-            # 対角要素を1に
-            K_csc = K_csc.tocsr()
-            diag_vals = K_csc.diagonal()
+            _zero_sparse_rows(K_csc, fixed)  # CSC列 = CSCの「行」
+            K_csr = K_csc.tocsr()
+            diag_vals = K_csr.diagonal()
             diag_vals[fixed] = 1.0
-            K_csc.setdiag(diag_vals)
-            K_csc = K_csc.tocsc()
+            K_csr.setdiag(diag_vals)
+            K_csc = K_csr.tocsc()
             K_csc.eliminate_zeros()
             _rhs[fixed] = 0.0
 
@@ -563,33 +578,25 @@ class LinearSolveProcess(
         K_red = T.T @ K_full @ T
         _rhs_red = T.T @ _rhs_full
 
-        # 固定DOFを縮退系のindexに変換
-        # master DOF中の固定DOFを特定
+        # 固定DOFを縮退系のindexに変換（status-312: forループ排除）
+        indep = np.asarray(mpc.independent_dofs)
         _indep_to_reduced = np.full(K_full.shape[0], -1, dtype=int)
-        for j, d in enumerate(mpc.independent_dofs):
-            _indep_to_reduced[d] = j
+        _indep_to_reduced[indep] = np.arange(len(indep))
+        rd = _indep_to_reduced[inp.fixed_dofs]
+        fixed_reduced = rd[rd >= 0]
 
-        fixed_reduced = []
-        for d in inp.fixed_dofs:
-            rd = _indep_to_reduced[d]
-            if rd >= 0:
-                fixed_reduced.append(rd)
-        fixed_reduced = np.array(fixed_reduced, dtype=int)
-
-        # 縮退系にBC適用（status-311: tolil排除、CSR/CSC直接操作）
+        # 縮退系にBC適用（status-312: _zero_sparse_rowsベクトル化）
         K_red_csc = K_red.tocsc()
         if len(fixed_reduced) > 0:
             K_red_csr = K_red_csc.tocsr()
-            for d in fixed_reduced:
-                K_red_csr.data[K_red_csr.indptr[d] : K_red_csr.indptr[d + 1]] = 0.0
+            _zero_sparse_rows(K_red_csr, fixed_reduced)
             K_red_csc = K_red_csr.tocsc()
-            for d in fixed_reduced:
-                K_red_csc.data[K_red_csc.indptr[d] : K_red_csc.indptr[d + 1]] = 0.0
-            K_red_csc = K_red_csc.tocsr()
-            diag_vals = K_red_csc.diagonal()
+            _zero_sparse_rows(K_red_csc, fixed_reduced)
+            K_red_csr = K_red_csc.tocsr()
+            diag_vals = K_red_csr.diagonal()
             diag_vals[fixed_reduced] = 1.0
-            K_red_csc.setdiag(diag_vals)
-            K_red_csc = K_red_csc.tocsc()
+            K_red_csr.setdiag(diag_vals)
+            K_red_csc = K_red_csr.tocsc()
             K_red_csc.eliminate_zeros()
             _rhs_red[fixed_reduced] = 0.0
 

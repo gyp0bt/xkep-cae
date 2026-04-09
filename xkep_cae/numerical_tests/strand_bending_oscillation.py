@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 from xkep_cae.constraints.mpc_elimination import (
     MPCEliminationConfig,
@@ -33,6 +32,10 @@ from xkep_cae.constraints.mpc_elimination import (
     MPCGroup,
 )
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact.solver._newton_steps import (
+    LinearSolveInput,
+    LinearSolveProcess,
+)
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -339,8 +342,8 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     # BC用マスク
     all_constrained = set(fixed_dofs.tolist()) | set(prescribed_dofs.tolist())
     free_mask = np.ones(ndof, dtype=bool)
-    for d in all_constrained:
-        free_mask[d] = False
+    free_mask[np.array(sorted(all_constrained), dtype=int)] = False
+    _linear_solver = LinearSolveProcess()
 
     frac = 0.0
     frac_prev = 0.0  # 前回収束時のfrac
@@ -390,16 +393,16 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
                 break  # 発散
 
             K = assembler.assemble_tangent(u_incr)
-            # BC適用: 拘束DOFの行/列をゼロ化、対角=1
-            K_lil = K.tolil()
-            for d in all_constrained:
-                K_lil[d, :] = 0.0
-                K_lil[:, d] = 0.0
-                K_lil[d, d] = 1.0
-            K_csr = K_lil.tocsr()
-
-            du = spla.spsolve(K_csr, -R)
-            u_incr += du
+            solve_out = _linear_solver.process(
+                LinearSolveInput(
+                    K_T=K,
+                    R_u=R,
+                    fixed_dofs=np.array(sorted(all_constrained), dtype=int),
+                )
+            )
+            if not solve_out.success:
+                break
+            u_incr += solve_out.du
 
         if converged:
             # UL参照配置を更新

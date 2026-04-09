@@ -52,6 +52,7 @@ from xkep_cae.contact.solver._newton_steps import (
     LineSearchUpdateOutput,
     LineSearchUpdateProcess,
     TangentAssemblyProcess,
+    _zero_sparse_rows,
 )
 from xkep_cae.contact.solver._solver_state import (
     SolverStateInitInput,
@@ -678,6 +679,41 @@ class TestTangentAssemblyProcessAPI:
         assert issubclass(TangentAssemblyProcess, SolverProcess)
 
 
+class TestZeroSparseRowsAPI:
+    """_zero_sparse_rows ベクトル化ヘルパーのテスト (status-312)."""
+
+    def test_single_row(self):
+        """1行のゼロ化."""
+        K = sp.random(5, 5, density=0.6, format="csr", random_state=42)
+        K_ref = K.copy()
+        _zero_sparse_rows(K, np.array([2]))
+        K_ref_dense = K_ref.toarray()
+        K_ref_dense[2, :] = 0.0
+        np.testing.assert_array_equal(K.toarray(), K_ref_dense)
+
+    def test_multiple_rows(self):
+        """複数行のゼロ化."""
+        K = sp.random(10, 10, density=0.5, format="csr", random_state=42)
+        dofs = np.array([1, 3, 7, 9])
+        K_ref = K.toarray().copy()
+        _zero_sparse_rows(K, dofs)
+        K_ref[dofs, :] = 0.0
+        np.testing.assert_array_equal(K.toarray(), K_ref)
+
+    def test_empty_dofs(self):
+        """空DOF配列で無操作."""
+        K = sp.random(5, 5, density=0.6, format="csr", random_state=42)
+        K_before = K.toarray().copy()
+        _zero_sparse_rows(K, np.array([], dtype=int))
+        np.testing.assert_array_equal(K.toarray(), K_before)
+
+    def test_all_rows(self):
+        """全行のゼロ化."""
+        K = sp.random(4, 4, density=0.8, format="csr", random_state=42)
+        _zero_sparse_rows(K, np.arange(4))
+        np.testing.assert_array_equal(K.toarray(), np.zeros((4, 4)))
+
+
 @binds_to(LinearSolveProcess)
 class TestLinearSolveProcessAPI:
     """LinearSolveProcess の API テスト."""
@@ -694,6 +730,21 @@ class TestLinearSolveProcessAPI:
         assert isinstance(out, LinearSolveOutput)
         assert out.success is True
         assert np.allclose(out.du, [-0.5, -1.0, -1.5])
+
+    def test_solve_with_fixed_dofs(self):
+        """固定DOF適用の線形ソルブ（status-312: ベクトル化BC検証）."""
+        proc = LinearSolveProcess()
+        # 3x3 SPD行列
+        K = sp.csr_matrix(np.array([[4.0, 1.0, 0.0], [1.0, 3.0, 1.0], [0.0, 1.0, 2.0]]))
+        R = np.array([1.0, 2.0, 3.0])
+        fixed = np.array([0, 2])
+        out = proc.process(LinearSolveInput(K_T=K, R_u=R, fixed_dofs=fixed))
+        assert out.success is True
+        # 固定DOFの変位はゼロ
+        assert abs(out.du[0]) < 1e-12
+        assert abs(out.du[2]) < 1e-12
+        # 自由DOF: K[1,1]*du[1] = -R[1] → 3*du[1] = -2 → du[1] = -2/3
+        assert abs(out.du[1] - (-2.0 / 3.0)) < 1e-12
 
 
 @binds_to(LineSearchUpdateProcess)

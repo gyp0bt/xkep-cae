@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-04-08）
+## 現在地（2026-04-09）
 
-**442+20+14+6+3+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -78,7 +78,8 @@
 | K_stベクトル化 | **K_stアセンブリベクトル化**: バッチStJacobian(線形+Hermite)+einsum COO構築でペアforループ排除。broadphase大規模ベンチマーク(1000本5.6s)。6テスト追加 — status-309 |
 | 高速化第2弾完了 | **Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + adj_node_map配列化 + K_st性能測定(69-208x高速化)**: 接触力アセンブリ全体のforループ排除完了。9テスト追加 — status-310 |
 | 高速化第3弾+adj | **adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合**: tolil排除(83s→0.004s)。摩擦K_st隣接ノード完全バッチ化。3テスト追加 — status-311 |
-| **次** | **BC forループベクトル化 + symbolic factorizationキャッシュ** → 1000本6時間 |
+| BC+責務修正 | **BC forループNumPyベクトル化 + MPC forループ排除 + strand_bending_oscillation責務分離違反修正**: _zero_sparse_rows実装。5テスト追加 — status-312 |
+| **次** | **1000本撚線プロファイリング + 被膜幾何接線剛性** → 1000本6時間 |
 
 ---
 
