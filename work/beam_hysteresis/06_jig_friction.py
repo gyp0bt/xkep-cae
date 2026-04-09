@@ -395,5 +395,107 @@ def main():
     print(f"  => Load-proportional widening, independent of strain history")
 
 
+def compare_spans():
+    """Compare L=100mm vs L=200mm with same jig friction and dmax=30mm."""
+    D = 17.0
+    dmax = 30.0
+    n_fiber = 60
+
+    # Internal friction parameters
+    N_layers = 150
+    E_base = 1500.0
+    k_contact_total = 7500.0
+    degrade_ratio = 0.25
+
+    # Jig friction parameters (fixed)
+    mu = 0.2
+    r_s = 10.0
+    r_l = 10.0
+
+    spans = [100.0, 200.0]
+    results = {}
+
+    for L in spans:
+        print(f"\n=== L={L:.0f}mm, dmax={dmax:.0f}mm, mu={mu}, r={r_s:.0f}mm ===")
+        corr = 2 * mu * (r_s + r_l)
+        print(f"  correction={corr:.1f}mm, beta=corr/L={corr/L:.4f}")
+        eps_max = 12 * dmax / L**2 * (D / 2)
+        print(f"  eps_max(surface) = {eps_max:.4f}")
+
+        # Without jig friction
+        sec0 = FiberSection(D, n_fiber=n_fiber)
+        sec0.setup(make_friction_model_factory(E_base, k_contact_total, N_layers, degrade_ratio))
+        d0, P0 = bend_cycle(sec0, L, dmax, n=2000)
+
+        # With jig friction
+        sec1 = FiberSection(D, n_fiber=n_fiber)
+        sec1.setup(make_friction_model_factory(E_base, k_contact_total, N_layers, degrade_ratio))
+        d1, P1 = bend_cycle_jig_friction(sec1, L, dmax, mu, r_s, r_l, n=2000)
+
+        results[L] = {'no_jig': (d0, P0), 'with_jig': (d1, P1)}
+
+        for tag, (d, P) in [('no_jig', (d0, P0)), ('with_jig', (d1, P1))]:
+            sL, sU, ratio = compute_slopes(d, P, dmax)
+            print(f"  {tag}: Pmax={P.max()/1000:.2f}kN, d_res={d[-1]:.1f}mm, U/L={ratio:.2f}")
+
+    # ============================================================
+    # Plot: 2x2 (L=100 / L=200) x (absolute / normalized)
+    # ============================================================
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+
+    colors = {'no_jig': 'blue', 'with_jig': 'red'}
+
+    for col, L in enumerate(spans):
+        ax = axes[0, col]
+        d0, P0 = results[L]['no_jig']
+        d1, P1 = results[L]['with_jig']
+        ax.plot(d0, P0 / 1000, '-', color='blue', lw=2, label='Internal only')
+        ax.plot(d1, P1 / 1000, '-', color='red', lw=2,
+                label=f'Internal + jig (mu={mu})')
+        ax.fill_between(d0, 0, P0 / 1000, alpha=0.05, color='blue')
+        ax.fill_between(d1, 0, P1 / 1000, alpha=0.05, color='red')
+
+        corr = 2 * mu * (r_s + r_l)
+        eps_max = 12 * dmax / L**2 * (D / 2)
+        sL0, sU0, r0 = compute_slopes(d0, P0, dmax)
+        sL1, sU1, r1 = compute_slopes(d1, P1, dmax)
+        ax.set_xlabel('Center deflection [mm]')
+        ax.set_ylabel('Load P [kN]')
+        ax.set_title(
+            f'L={L:.0f}mm, dmax={dmax:.0f}mm\n'
+            f'eps_max={eps_max:.3f}, beta={corr/L:.3f}\n'
+            f'U/L: {r0:.2f} (no jig) -> {r1:.2f} (with jig)')
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0)
+        ax.set_ylim(bottom=0)
+
+    # Normalized comparison (P/Pmax vs d/dmax)
+    for col, L in enumerate(spans):
+        ax = axes[1, col]
+        d0, P0 = results[L]['no_jig']
+        d1, P1 = results[L]['with_jig']
+        P0max, P1max = P0.max(), P1.max()
+        ax.plot(d0 / dmax, P0 / P0max, '-', color='blue', lw=2,
+                label=f'Internal only (Pmax={P0max/1000:.1f}kN)')
+        ax.plot(d1 / dmax, P1 / P1max, '-', color='red', lw=2,
+                label=f'+ jig mu={mu} (Pmax={P1max/1000:.1f}kN)')
+
+        ax.set_xlabel('d / dmax')
+        ax.set_ylabel('P / Pmax')
+        ax.set_title(f'L={L:.0f}mm normalized shape')
+        ax.legend(fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    plt.suptitle(
+        f'Span comparison: L=100 vs L=200mm | mu={mu}, r_s=r_l={r_s:.0f}mm, dmax={dmax:.0f}mm',
+        fontsize=13, fontweight='bold', y=1.01)
+    plt.tight_layout()
+    out = '/home/user/xkep-cae/work/beam_hysteresis/06_jig_friction_span_compare.png'
+    plt.savefig(out, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"\nPlot saved: {out}")
+
+
 if __name__ == '__main__':
-    main()
+    compare_spans()
