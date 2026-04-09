@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 import numpy as np
 import scipy.sparse as sp
-import scipy.sparse.linalg as spla
 
 from xkep_cae.constraints.mpc_elimination import (
     MPCEliminationConfig,
@@ -33,6 +32,7 @@ from xkep_cae.constraints.mpc_elimination import (
     MPCGroup,
 )
 from xkep_cae.contact._contact_pair import _ContactConfigInput, _ContactManagerInput
+from xkep_cae.contact.solver._newton_steps import LinearSolveInput, LinearSolveProcess
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
     AssembleCallbacks,
@@ -337,10 +337,12 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     total_attempts = 0
 
     # BC用マスク
-    all_constrained = set(fixed_dofs.tolist()) | set(prescribed_dofs.tolist())
+    all_constrained = np.array(
+        sorted(set(fixed_dofs.tolist()) | set(prescribed_dofs.tolist())), dtype=int
+    )
     free_mask = np.ones(ndof, dtype=bool)
-    for d in all_constrained:
-        free_mask[d] = False
+    free_mask[all_constrained] = False
+    _solve_proc = LinearSolveProcess()
 
     frac = 0.0
     frac_prev = 0.0  # 前回収束時のfrac
@@ -390,16 +392,18 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
                 break  # 発散
 
             K = assembler.assemble_tangent(u_incr)
-            # BC適用: 拘束DOFの行/列をゼロ化、対角=1
-            K_lil = K.tolil()
-            for d in all_constrained:
-                K_lil[d, :] = 0.0
-                K_lil[:, d] = 0.0
-                K_lil[d, d] = 1.0
-            K_csr = K_lil.tocsr()
-
-            du = spla.spsolve(K_csr, -R)
-            u_incr += du
+            # BC適用 + 線形ソルブ（status-312: LinearSolveProcess委譲）
+            solve_out = _solve_proc.process(
+                LinearSolveInput(
+                    K_T=K,
+                    R_u=R,
+                    fixed_dofs=all_constrained,
+                    mpc_transform=None,
+                )
+            )
+            if not solve_out.success:
+                break
+            u_incr += solve_out.du
 
         if converged:
             # UL参照配置を更新

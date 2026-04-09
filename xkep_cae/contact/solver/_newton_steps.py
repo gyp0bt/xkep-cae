@@ -478,17 +478,82 @@ class LinearSolveOutput:
     success: bool
 
 
+class _SolverBackend:
+    """スパースソルバーバックエンド（status-312）.
+
+    - import判定を初回のみ実行しキャッシュ（NR反復ごとのtry/except排除）
+    - pypardiso利用時: pypardiso.spsolve のモジュールレベル PyPardisoSolver が
+      同一スパースパターンでのsymbolic factorizationを自動キャッシュ
+    - scipy利用時: spsolve を使用（SuperLU APIにsymbolic/numeric分離なし）
+    """
+
+    def __init__(self) -> None:
+        self._spsolve: object = None
+
+    def solve(self, K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+        if self._spsolve is None:
+            try:
+                import pypardiso
+
+                self._spsolve = pypardiso.spsolve
+            except (ImportError, RuntimeError):
+                from scipy.sparse.linalg import spsolve
+
+                self._spsolve = spsolve
+        return self._spsolve(K_csc, rhs)
+
+
+_solver_backend = _SolverBackend()
+
+
 def _sparse_solve(K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
-    """スパース線形ソルブ: pypardiso → scipy fallback（status-311）."""
-    try:
-        import pypardiso
+    """スパース線形ソルブ: pypardiso → scipy fallback.
 
-        return pypardiso.spsolve(K_csc, rhs)
-    except (ImportError, RuntimeError):
-        pass
-    from scipy.sparse.linalg import spsolve
+    status-312: _SolverBackend でimport判定をキャッシュ。
+    pypardiso内部のsymbolic factorizationキャッシュを活用。
+    """
+    return _solver_backend.solve(K_csc, rhs)
 
-    return spsolve(K_csc, rhs)
+
+def _zero_rows_csr(K_csr: sp.csr_matrix, dofs: np.ndarray) -> None:
+    """CSR行列の指定行をゼロ化（indptr直接操作、ベクトル化）.
+
+    status-312: forループを排除。indptrからスライス範囲を一括取得し、
+    np.arange + np.repeat でデータインデックスを生成して一括ゼロ化。
+    """
+    starts = K_csr.indptr[dofs]
+    ends = K_csr.indptr[dofs + 1]
+    lengths = ends - starts
+    total = lengths.sum()
+    if total == 0:
+        return
+    offsets = np.repeat(starts, lengths)
+    increments = np.arange(total) - np.repeat(np.cumsum(lengths) - lengths, lengths)
+    K_csr.data[offsets + increments] = 0.0
+
+
+def _apply_bc_inplace(K_csc: sp.csc_matrix, rhs: np.ndarray, fixed: np.ndarray) -> sp.csc_matrix:
+    """固定DOFのBC適用: 行/列ゼロ化 + 対角=1 + rhs=0（ベクトル化版）.
+
+    status-312: forループを完全排除しNumPyベクトル操作に置換。
+    """
+    if len(fixed) == 0:
+        return K_csc
+    # CSR で行ゼロ化
+    K_csr = K_csc.tocsr()
+    _zero_rows_csr(K_csr, fixed)
+    # CSC で列ゼロ化（CSCのcolumn = CSR的に行ゼロ化と同構造）
+    K_csc = K_csr.tocsc()
+    _zero_rows_csr(K_csc, fixed)  # CSCのindptr[col]は列の先頭
+    # 対角要素を1に
+    K_csr2 = K_csc.tocsr()
+    diag_vals = K_csr2.diagonal()
+    diag_vals[fixed] = 1.0
+    K_csr2.setdiag(diag_vals)
+    K_csc = K_csr2.tocsc()
+    K_csc.eliminate_zeros()
+    rhs[fixed] = 0.0
+    return K_csc
 
 
 class LinearSolveProcess(
@@ -503,6 +568,15 @@ class LinearSolveProcess(
         document_path="docs/newton_solver.md",
     )
 
+    def __init__(self) -> None:
+        super().__init__()
+        # MPC triple product キャッシュ（status-312）
+        # NR反復間でT不変のため、T.T(CSR)・fixed_reduced マッピングをキャッシュ
+        self._mpc_cache_id: int | None = None
+        self._T_T_csr: sp.spmatrix | None = None
+        self._fixed_reduced: np.ndarray | None = None
+        self._fixed_dofs_key: int | None = None  # hash of fixed_dofs
+
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
         _mpc = inp.mpc_transform
 
@@ -515,36 +589,44 @@ class LinearSolveProcess(
     def _solve_standard(self, inp: LinearSolveInput) -> LinearSolveOutput:
         """標準BC適用 + 線形ソルブ.
 
-        status-311: tolil() + forループを排除し、CSR直接操作に置換。
-        行/列のゼロ化はCSR/CSCの indptr/data を直接操作して高速化。
+        status-312: _apply_bc_inplace でforループを完全排除（NumPyベクトル化）。
         """
         _rhs = -inp.R_u.copy()
         fixed = inp.fixed_dofs
-
         K_csc = inp.K_T.tocsc()
-        if len(fixed) > 0:
-            # CSR で行ゼロ化（indptr直接アクセス）
-            K_csr = K_csc.tocsr()
-            for d in fixed:
-                K_csr.data[K_csr.indptr[d] : K_csr.indptr[d + 1]] = 0.0
-            # CSC で列ゼロ化（indptr直接アクセス）
-            K_csc = K_csr.tocsc()
-            for d in fixed:
-                K_csc.data[K_csc.indptr[d] : K_csc.indptr[d + 1]] = 0.0
-            # 対角要素を1に
-            K_csc = K_csc.tocsr()
-            diag_vals = K_csc.diagonal()
-            diag_vals[fixed] = 1.0
-            K_csc.setdiag(diag_vals)
-            K_csc = K_csc.tocsc()
-            K_csc.eliminate_zeros()
-            _rhs[fixed] = 0.0
+        K_csc = _apply_bc_inplace(K_csc, _rhs, fixed)
 
         try:
             du = _sparse_solve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
+
+    def _get_mpc_cache(
+        self, mpc: object, fixed_dofs: np.ndarray, ndof_total: int
+    ) -> tuple[sp.spmatrix, np.ndarray]:
+        """MPC関連の不変量をキャッシュから取得（status-312）.
+
+        T.T (CSR) と fixed_reduced はNR反復間で不変のためキャッシュする。
+        """
+        mpc_id = id(mpc)
+        fixed_key = hash(fixed_dofs.data.tobytes()) if len(fixed_dofs) > 0 else 0
+        if self._mpc_cache_id == mpc_id and self._fixed_dofs_key == fixed_key:
+            return self._T_T_csr, self._fixed_reduced
+
+        # キャッシュミス: 再計算
+        T_T_csr = mpc.T.T.tocsr()
+        _indep_to_reduced = np.full(ndof_total, -1, dtype=int)
+        indep_dofs = np.asarray(mpc.independent_dofs)
+        _indep_to_reduced[indep_dofs] = np.arange(len(indep_dofs))
+        mapped = _indep_to_reduced[fixed_dofs]
+        fixed_reduced = mapped[mapped >= 0]
+
+        self._mpc_cache_id = mpc_id
+        self._T_T_csr = T_T_csr
+        self._fixed_reduced = fixed_reduced
+        self._fixed_dofs_key = fixed_key
+        return T_T_csr, fixed_reduced
 
     def _solve_with_mpc(self, inp: LinearSolveInput, mpc: object) -> LinearSolveOutput:
         """MPC DOF消去による縮退系ソルブ.
@@ -554,49 +636,29 @@ class LinearSolveProcess(
         du_full = T @ du_red
 
         固定DOFはMPC変換後の縮退系で適用する。
+        status-312: T.T(CSR) と fixed_reduced をキャッシュ。
         """
-        T = mpc.T  # (ndof_total, ndof_reduced)
+        T = mpc.T  # (ndof_total, ndof_reduced) CSC
         K_full = inp.K_T.tocsc()
         _rhs_full = -inp.R_u.copy()
 
-        # 縮退系に変換
-        K_red = T.T @ K_full @ T
-        _rhs_red = T.T @ _rhs_full
+        # キャッシュからT.TとBC変換を取得
+        T_T_csr, fixed_reduced = self._get_mpc_cache(mpc, inp.fixed_dofs, K_full.shape[0])
 
-        # 固定DOFを縮退系のindexに変換
-        # master DOF中の固定DOFを特定
-        _indep_to_reduced = np.full(K_full.shape[0], -1, dtype=int)
-        for j, d in enumerate(mpc.independent_dofs):
-            _indep_to_reduced[d] = j
+        # 縮退系に変換（T_T_csrはキャッシュ済みCSR）
+        K_red = T_T_csr @ K_full @ T
+        _rhs_red = T_T_csr @ _rhs_full
 
-        fixed_reduced = []
-        for d in inp.fixed_dofs:
-            rd = _indep_to_reduced[d]
-            if rd >= 0:
-                fixed_reduced.append(rd)
-        fixed_reduced = np.array(fixed_reduced, dtype=int)
-
-        # 縮退系にBC適用（status-311: tolil排除、CSR/CSC直接操作）
+        # 縮退系にBC適用
         K_red_csc = K_red.tocsc()
-        if len(fixed_reduced) > 0:
-            K_red_csr = K_red_csc.tocsr()
-            for d in fixed_reduced:
-                K_red_csr.data[K_red_csr.indptr[d] : K_red_csr.indptr[d + 1]] = 0.0
-            K_red_csc = K_red_csr.tocsc()
-            for d in fixed_reduced:
-                K_red_csc.data[K_red_csc.indptr[d] : K_red_csc.indptr[d + 1]] = 0.0
-            K_red_csc = K_red_csc.tocsr()
-            diag_vals = K_red_csc.diagonal()
-            diag_vals[fixed_reduced] = 1.0
-            K_red_csc.setdiag(diag_vals)
-            K_red_csc = K_red_csc.tocsc()
-            K_red_csc.eliminate_zeros()
-            _rhs_red[fixed_reduced] = 0.0
+        K_red_csc = _apply_bc_inplace(K_red_csc, _rhs_red, fixed_reduced)
 
         try:
             du_red = _sparse_solve(K_red_csc, _rhs_red)
             # 全体系に復元
-            du_full = (T @ du_red).A.ravel() if sp.issparse(T @ du_red) else T @ du_red
+            du_full = T @ du_red
+            if sp.issparse(du_full):
+                du_full = du_full.A.ravel()
             return LinearSolveOutput(du=du_full, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
