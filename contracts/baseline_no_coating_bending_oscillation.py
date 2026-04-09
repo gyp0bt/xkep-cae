@@ -1,7 +1,9 @@
 """被膜なし7本撚線 曲げ揺動 ベースライン計測.
 
 status-313: 高速化(status-308〜312)後のベースライン確認。
-比較対象: status-301 被膜なし incr=1900, cutback=72, 1527s。
+status-314: surface_pair_n_neighbor パイプライン貫通 + n_neighbor=2 効果確認。
+  結果: 7本ではn_neighbor=2は効果なし（incr/cutback同一、時間+17.5%は環境差）。
+  デフォルト=0維持。91本以上で効果を期待。
 
 構成:
   - 7本撚線, R=0.5mm, pitch=100mm, 16要素/ピッチ, 1ピッチ
@@ -33,7 +35,7 @@ def main() -> None:
     """被膜なし7本撚線 曲げ+揺動 ベースライン計測."""
     print("=" * 70)
     print("被膜なし7本撚線 曲げ揺動 ベースライン")
-    print("  status-301比較: incr=1900, cutback=72, 1527s")
+    print("  status-313比較: incr=1810, cutback=75, 967s (n_neighbor=0)")
     print("=" * 70)
 
     cfg = StrandBendingOscillationConfig(
@@ -83,6 +85,7 @@ def main() -> None:
     print(f"  oscillation_amplitude:  {cfg.oscillation_amplitude} mm")
     print(f"  coating_stiffness:      {cfg.coating_stiffness} (被膜なし)")
     print(f"  coating_thickness:      {cfg.coating_thickness} (被膜なし)")
+    print(f"  surface_pair_n_neighbor: {cfg.surface_pair_n_neighbor}")
 
     # プロファイルデータクリア
     ProcessMetaclass._profile_data.clear()
@@ -118,13 +121,13 @@ def main() -> None:
         print(f"  contact forces:   {len(sr.contact_force_history)} entries")
         print(f"  max contact F:    {max(sr.contact_force_history):.6e}")
 
-    # status-301比較
+    # status-313比較（n_neighbor=0ベースライン）
     print("\n" + "-" * 70)
-    print("status-301比較（高速化前ベースライン）")
+    print("status-313比較（n_neighbor=0ベースライン）")
     print("-" * 70)
-    prev_incr = 1900
-    prev_cb = 72
-    prev_elapsed = 1527.0
+    prev_incr = 1810
+    prev_cb = 75
+    prev_elapsed = 967.0
     print(
         f"  increments:  {prev_incr} → {sr.n_increments}  ({(sr.n_increments - prev_incr) / prev_incr * 100:+.1f}%)"
     )
