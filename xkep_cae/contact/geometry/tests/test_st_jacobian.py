@@ -260,7 +260,7 @@ class TestBatchStJacobianHermiteAPI:
         s = np.array([0.4])
         t = np.array([0.6])
 
-        ds_batch, dt_batch, valid_batch = _batch_st_jacobian_hermite(
+        ds_batch, dt_batch, valid_batch, _, _ = _batch_st_jacobian_hermite(
             xA0,
             xA1,
             xB0,
@@ -323,7 +323,7 @@ class TestBatchStJacobianHermiteAPI:
         dm_A = rng.uniform(-0.5, 0.5, (N, 2, 2))
         dm_B = rng.uniform(-0.5, 0.5, (N, 2, 2))
 
-        ds_batch, dt_batch, valid_batch = _batch_st_jacobian_hermite(
+        ds_batch, dt_batch, valid_batch, _, _ = _batch_st_jacobian_hermite(
             xA0,
             xA1,
             xB0,
@@ -373,3 +373,175 @@ class TestBatchStJacobianHermiteAPI:
                 atol=1e-10,
                 err_msg=f"dt_du mismatch at pair {i}",
             )
+
+
+class TestBatchStJacobianAdjAPI:
+    """バッチ版 ds_du_adj/dt_du_adj のスカラー版一致テスト（status-311）."""
+
+    def test_adj_none_without_dm_ext(self):
+        """dm_ext未指定時は adj が None."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _batch_st_jacobian_hermite,
+        )
+
+        xA0 = np.array([[0.0, 0.0, 0.0]])
+        xA1 = np.array([[1.0, 0.0, 0.0]])
+        xB0 = np.array([[0.5, 0.5, 0.0]])
+        xB1 = np.array([[0.5, 1.5, 0.0]])
+        mA0 = np.array([[1.0, 0.0, 0.0]])
+        mA1 = np.array([[1.0, 0.0, 0.0]])
+        mB0 = np.array([[0.0, 1.0, 0.0]])
+        mB1 = np.array([[0.0, 1.0, 0.0]])
+        s = np.array([0.4])
+        t = np.array([0.6])
+
+        _, _, _, ds_adj, dt_adj = _batch_st_jacobian_hermite(
+            xA0, xA1, xB0, xB1, s, t, s, t, mA0, mA1, mB0, mB1
+        )
+        assert ds_adj is None
+        assert dt_adj is None
+
+    def test_single_pair_adj_matches_scalar(self):
+        """1ペアで adj がスカラー版と一致."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _batch_st_jacobian_hermite,
+        )
+
+        xA0 = np.array([[0.0, 0.0, 0.0]])
+        xA1 = np.array([[1.0, 0.0, 0.0]])
+        xB0 = np.array([[0.5, 0.5, 0.0]])
+        xB1 = np.array([[0.5, 1.5, 0.0]])
+        mA0 = np.array([[1.0, 0.0, 0.0]])
+        mA1 = np.array([[1.0, 0.0, 0.0]])
+        mB0 = np.array([[0.0, 1.0, 0.0]])
+        mB1 = np.array([[0.0, 1.0, 0.0]])
+        dm_A = np.array([[[0.5, -0.5], [0.5, -0.5]]])
+        dm_B = np.array([[[0.5, -0.5], [0.5, -0.5]]])
+        dm_ext_A = np.array([[-0.5, 0.5]])  # (1, 2)
+        dm_ext_B = np.array([[-0.5, 0.5]])
+        s = np.array([0.4])
+        t = np.array([0.6])
+
+        _, _, _, ds_adj_batch, dt_adj_batch = _batch_st_jacobian_hermite(
+            xA0,
+            xA1,
+            xB0,
+            xB1,
+            s,
+            t,
+            s,
+            t,
+            mA0,
+            mA1,
+            mB0,
+            mB1,
+            dm_A,
+            dm_B,
+            dm_ext_A,
+            dm_ext_B,
+        )
+
+        out = ComputeStJacobianProcess().process(
+            StJacobianInput(
+                xA0=xA0[0],
+                xA1=xA1[0],
+                xB0=xB0[0],
+                xB1=xB1[0],
+                s=0.4,
+                t=0.6,
+                s_unclamped=0.4,
+                t_unclamped=0.6,
+                mA0=mA0[0],
+                mA1=mA1[0],
+                mB0=mB0[0],
+                mB1=mB1[0],
+                use_hermite=True,
+                dm_A=dm_A[0],
+                dm_B=dm_B[0],
+                dm_ext_A=dm_ext_A[0],
+                dm_ext_B=dm_ext_B[0],
+            )
+        )
+        assert ds_adj_batch is not None
+        assert out.ds_du_adj is not None
+        np.testing.assert_allclose(ds_adj_batch[0], out.ds_du_adj, atol=1e-12)
+        np.testing.assert_allclose(dt_adj_batch[0], out.dt_du_adj, atol=1e-12)
+
+    def test_multi_pair_adj_matches_scalar(self):
+        """複数ペアで adj がスカラー版と一致."""
+        from xkep_cae.contact.geometry._st_jacobian import (
+            _batch_st_jacobian_hermite,
+        )
+
+        rng = np.random.default_rng(456)
+        N = 20
+        xA0 = rng.uniform(-1, 1, (N, 3))
+        xA1 = xA0 + rng.uniform(0.5, 1.5, (N, 3))
+        xB0 = rng.uniform(-1, 1, (N, 3))
+        xB1 = xB0 + rng.uniform(0.5, 1.5, (N, 3))
+        mA0 = rng.uniform(-0.5, 0.5, (N, 3))
+        mA1 = rng.uniform(-0.5, 0.5, (N, 3))
+        mB0 = rng.uniform(-0.5, 0.5, (N, 3))
+        mB1 = rng.uniform(-0.5, 0.5, (N, 3))
+        s = rng.uniform(0.1, 0.9, N)
+        t = rng.uniform(0.1, 0.9, N)
+        dm_A = rng.uniform(-0.5, 0.5, (N, 2, 2))
+        dm_B = rng.uniform(-0.5, 0.5, (N, 2, 2))
+        dm_ext_A = rng.uniform(-0.5, 0.5, (N, 2))
+        dm_ext_B = rng.uniform(-0.5, 0.5, (N, 2))
+
+        _, _, valid_batch, ds_adj_batch, dt_adj_batch = _batch_st_jacobian_hermite(
+            xA0,
+            xA1,
+            xB0,
+            xB1,
+            s,
+            t,
+            s,
+            t,
+            mA0,
+            mA1,
+            mB0,
+            mB1,
+            dm_A,
+            dm_B,
+            dm_ext_A,
+            dm_ext_B,
+        )
+
+        proc = ComputeStJacobianProcess()
+        for i in range(N):
+            out = proc.process(
+                StJacobianInput(
+                    xA0=xA0[i],
+                    xA1=xA1[i],
+                    xB0=xB0[i],
+                    xB1=xB1[i],
+                    s=float(s[i]),
+                    t=float(t[i]),
+                    s_unclamped=float(s[i]),
+                    t_unclamped=float(t[i]),
+                    mA0=mA0[i],
+                    mA1=mA1[i],
+                    mB0=mB0[i],
+                    mB1=mB1[i],
+                    use_hermite=True,
+                    dm_A=dm_A[i],
+                    dm_B=dm_B[i],
+                    dm_ext_A=dm_ext_A[i],
+                    dm_ext_B=dm_ext_B[i],
+                )
+            )
+            if out.ds_du_adj is not None:
+                np.testing.assert_allclose(
+                    ds_adj_batch[i],
+                    out.ds_du_adj,
+                    atol=1e-10,
+                    err_msg=f"ds_du_adj mismatch at pair {i}",
+                )
+                np.testing.assert_allclose(
+                    dt_adj_batch[i],
+                    out.dt_du_adj,
+                    atol=1e-10,
+                    err_msg=f"dt_du_adj mismatch at pair {i}",
+                )

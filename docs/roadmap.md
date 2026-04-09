@@ -77,7 +77,8 @@
 | 収束型統計修正+KD-tree | **収束型統計デッドコード修正**: process.pyのインデント不正で[収束型統計]・エネルギー診断が出力されないバグ修正。**broadphase KD-tree化**: 空間ハッシュ→cKDTree置換。14テスト追加 — status-308 |
 | K_stベクトル化 | **K_stアセンブリベクトル化**: バッチStJacobian(線形+Hermite)+einsum COO構築でペアforループ排除。broadphase大規模ベンチマーク(1000本5.6s)。6テスト追加 — status-309 |
 | 高速化第2弾完了 | **Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + adj_node_map配列化 + K_st性能測定(69-208x高速化)**: 接触力アセンブリ全体のforループ排除完了。9テスト追加 — status-310 |
-| **次** | **スパース求解高速化（高速化フェーズ第3弾）** → 1000本6時間 |
+| 高速化第3弾+adj | **adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合**: tolil排除(83s→0.004s)。摩擦K_st隣接ノード完全バッチ化。3テスト追加 — status-311 |
+| **次** | **BC forループベクトル化 + symbolic factorizationキャッシュ** → 1000本6時間 |
 
 ---
 

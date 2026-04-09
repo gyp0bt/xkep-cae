@@ -478,6 +478,19 @@ class LinearSolveOutput:
     success: bool
 
 
+def _sparse_solve(K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+    """スパース線形ソルブ: pypardiso → scipy fallback（status-311）."""
+    try:
+        import pypardiso
+
+        return pypardiso.spsolve(K_csc, rhs)
+    except (ImportError, RuntimeError):
+        pass
+    from scipy.sparse.linalg import spsolve
+
+    return spsolve(K_csc, rhs)
+
+
 class LinearSolveProcess(
     SolverProcess[LinearSolveInput, LinearSolveOutput],
 ):
@@ -500,32 +513,35 @@ class LinearSolveProcess(
         return self._solve_standard(inp)
 
     def _solve_standard(self, inp: LinearSolveInput) -> LinearSolveOutput:
-        """標準BC適用 + 線形ソルブ."""
-        K_eff = inp.K_T.tolil()
+        """標準BC適用 + 線形ソルブ.
 
+        status-311: tolil() + forループを排除し、CSR直接操作に置換。
+        行/列のゼロ化はCSR/CSCの indptr/data を直接操作して高速化。
+        """
         _rhs = -inp.R_u.copy()
         fixed = inp.fixed_dofs
+
+        K_csc = inp.K_T.tocsc()
         if len(fixed) > 0:
-            # バッチ BC 適用: lil_matrix で行列操作（status-246）
+            # CSR で行ゼロ化（indptr直接アクセス）
+            K_csr = K_csc.tocsr()
             for d in fixed:
-                K_eff[d, :] = 0.0
-            K_eff[fixed, :] = 0.0
+                K_csr.data[K_csr.indptr[d] : K_csr.indptr[d + 1]] = 0.0
+            # CSC で列ゼロ化（indptr直接アクセス）
+            K_csc = K_csr.tocsc()
             for d in fixed:
-                K_eff[d, d] = 1.0
-            # 列方向のゼロ化は lil では高コストなので CSC 変換後にマスク
-            K_csc = K_eff.tocsc()
-            for d in fixed:
-                K_csc[:, d] = 0.0
-                K_csc[d, d] = 1.0
+                K_csc.data[K_csc.indptr[d] : K_csc.indptr[d + 1]] = 0.0
+            # 対角要素を1に
+            K_csc = K_csc.tocsr()
+            diag_vals = K_csc.diagonal()
+            diag_vals[fixed] = 1.0
+            K_csc.setdiag(diag_vals)
+            K_csc = K_csc.tocsc()
             K_csc.eliminate_zeros()
             _rhs[fixed] = 0.0
-        else:
-            K_csc = K_eff.tocsc()
 
         try:
-            from scipy.sparse.linalg import spsolve
-
-            du = spsolve(K_csc, _rhs)
+            du = _sparse_solve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
@@ -560,27 +576,25 @@ class LinearSolveProcess(
                 fixed_reduced.append(rd)
         fixed_reduced = np.array(fixed_reduced, dtype=int)
 
-        # 縮退系にBC適用
-        K_red_lil = K_red.tolil()
+        # 縮退系にBC適用（status-311: tolil排除、CSR/CSC直接操作）
+        K_red_csc = K_red.tocsc()
         if len(fixed_reduced) > 0:
+            K_red_csr = K_red_csc.tocsr()
             for d in fixed_reduced:
-                K_red_lil[d, :] = 0.0
-            K_red_lil[fixed_reduced, :] = 0.0
+                K_red_csr.data[K_red_csr.indptr[d] : K_red_csr.indptr[d + 1]] = 0.0
+            K_red_csc = K_red_csr.tocsc()
             for d in fixed_reduced:
-                K_red_lil[d, d] = 1.0
-            K_red_csc = K_red_lil.tocsc()
-            for d in fixed_reduced:
-                K_red_csc[:, d] = 0.0
-                K_red_csc[d, d] = 1.0
+                K_red_csc.data[K_red_csc.indptr[d] : K_red_csc.indptr[d + 1]] = 0.0
+            K_red_csc = K_red_csc.tocsr()
+            diag_vals = K_red_csc.diagonal()
+            diag_vals[fixed_reduced] = 1.0
+            K_red_csc.setdiag(diag_vals)
+            K_red_csc = K_red_csc.tocsc()
             K_red_csc.eliminate_zeros()
             _rhs_red[fixed_reduced] = 0.0
-        else:
-            K_red_csc = K_red_lil.tocsc()
 
         try:
-            from scipy.sparse.linalg import spsolve
-
-            du_red = spsolve(K_red_csc, _rhs_red)
+            du_red = _sparse_solve(K_red_csc, _rhs_red)
             # 全体系に復元
             du_full = (T @ du_red).A.ravel() if sp.issparse(T @ du_red) else T @ du_red
             return LinearSolveOutput(du=du_full, success=True)
