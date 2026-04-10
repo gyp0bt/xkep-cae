@@ -74,7 +74,10 @@ class ParameterSweepBenchmarkResult:
         cases: 各ケースの BenchmarkRunResult。`param_values` と同じ順序。
         summary_rows: ケースごとの集約行。YAML にもそのまま保存される。
             各行のキー: `param_name`, `value`, `elapsed_seconds`,
-            `dominant_process`, `dominant_pct`, `manifest_path`。
+            `dominant_process`, `dominant_pct`, `dominant_leaf_process`,
+            `dominant_leaf_pct`, `manifest_path`。
+            `dominant_leaf_process` は `profile_breakdown` 内で
+            `is_wrapper=False` の先頭エントリ。該当なしなら空文字 / 0.0。
         summary_yaml_path: 集約 YAML の保存先。失敗時 None。
     """
 
@@ -155,6 +158,17 @@ class ParameterSweepBenchmarkProcess(
                 dominant_name = ""
                 dominant_pct = 0.0
 
+            # status-317: wrapper（親 Process）を除外して先頭の葉 Process を
+            # 取得する。dominant_process は入れ子 wrapper を指しがちなため、
+            # 実質的な計算負荷を判断するには葉 Process を見る必要がある。
+            leaf_name = ""
+            leaf_pct = 0.0
+            for entry in breakdown:
+                if not bool(entry.get("is_wrapper", False)):
+                    leaf_name = str(entry.get("name", ""))
+                    leaf_pct = float(entry.get("pct", 0.0))
+                    break
+
             summary_rows.append(
                 {
                     "param_name": input_data.param_name,
@@ -162,6 +176,8 @@ class ParameterSweepBenchmarkProcess(
                     "elapsed_seconds": case_result.manifest.elapsed_seconds,
                     "dominant_process": dominant_name,
                     "dominant_pct": round(dominant_pct, 3),
+                    "dominant_leaf_process": leaf_name,
+                    "dominant_leaf_pct": round(leaf_pct, 3),
                     "manifest_path": case_result.manifest_path,
                 }
             )

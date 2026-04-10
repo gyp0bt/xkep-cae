@@ -17,7 +17,7 @@ from typing import ClassVar
 from xkep_cae.core import binds_to
 from xkep_cae.core.base import ProcessMeta
 from xkep_cae.core.benchmark import BenchmarkRunResult
-from xkep_cae.core.categories import PreProcess
+from xkep_cae.core.categories import BatchProcess, PreProcess
 from xkep_cae.numerical_tests.parameter_sweep_benchmark import (
     ParameterSweepBenchmarkInput,
     ParameterSweepBenchmarkProcess,
@@ -56,6 +56,44 @@ class _SweepTargetProcess(PreProcess[_SweepConfig, _SweepResult]):
         # n に比例した微小スリープで profile 差分を確実に生む
         time.sleep(0.001 * max(1, input_data.n))
         return _SweepResult(value=input_data.n * 2, label=input_data.label)
+
+
+class _SweepInnerLeafProcess(PreProcess[_SweepConfig, _SweepResult]):
+    """`_SweepWrapperTargetProcess` から呼び出される葉 Process."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_SweepInnerLeafProcess",
+        module="pre",
+        version="0.1.0",
+        document_path="../docs/parameter_sweep_benchmark.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: _SweepConfig) -> _SweepResult:
+        # 葉側に十分な負荷を積んで dominant_process（wrapper）より支配的にする
+        time.sleep(0.005 * max(1, input_data.n))
+        return _SweepResult(value=input_data.n * 2, label=input_data.label)
+
+
+class _SweepWrapperTargetProcess(BatchProcess[_SweepConfig, _SweepResult]):
+    """`_SweepInnerLeafProcess` を子として呼び出す wrapper ダミー."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_SweepWrapperTargetProcess",
+        module="batch",
+        version="0.1.0",
+        document_path="../docs/parameter_sweep_benchmark.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+    uses: ClassVar[list] = [_SweepInnerLeafProcess]
+
+    def process(self, input_data: _SweepConfig) -> _SweepResult:
+        leaf = _SweepInnerLeafProcess()
+        return leaf.process(input_data)
 
 
 # --- API テスト --------------------------------------------------------------
@@ -247,3 +285,77 @@ class TestParameterSweepBenchmarkProcessAPI:
         )
         with pytest.raises(TypeError, match="frozen dataclass"):
             ParameterSweepBenchmarkProcess().process(sweep_input)
+
+    # ----------------------------------------------------------------
+    # status-317: dominant_leaf_process フィールドのテスト
+    # ----------------------------------------------------------------
+
+    def test_leaf_only_target_has_leaf_equal_to_dominant(self) -> None:
+        """葉 Process を直接 target にした場合、dominant と leaf は同一."""
+        cfg = _SweepConfig()
+        proc = _SweepTargetProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sweep_input = ParameterSweepBenchmarkInput(
+                target_process=proc,
+                base_config=cfg,
+                param_name="n",
+                param_values=(2,),
+                output_dir=tmpdir,
+            )
+            result = ParameterSweepBenchmarkProcess().process(sweep_input)
+
+            row = result.summary_rows[0]
+            assert "dominant_leaf_process" in row
+            assert "dominant_leaf_pct" in row
+            # 単一葉 Process なので両者とも _SweepTargetProcess
+            assert row["dominant_process"] == "_SweepTargetProcess"
+            assert row["dominant_leaf_process"] == "_SweepTargetProcess"
+            assert row["dominant_leaf_pct"] >= 0.0
+
+    def test_wrapper_target_resolves_to_inner_leaf(self) -> None:
+        """wrapper target を掃引すると dominant_leaf_process は内部葉を指す."""
+        cfg = _SweepConfig()
+        proc = _SweepWrapperTargetProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sweep_input = ParameterSweepBenchmarkInput(
+                target_process=proc,
+                base_config=cfg,
+                param_name="n",
+                param_values=(1,),
+                output_dir=tmpdir,
+            )
+            result = ParameterSweepBenchmarkProcess().process(sweep_input)
+
+            row = result.summary_rows[0]
+            # wrapper の葉は _SweepInnerLeafProcess のはず
+            assert row["dominant_leaf_process"] == "_SweepInnerLeafProcess"
+            assert row["dominant_leaf_pct"] > 0.0
+            # wrapper は is_wrapper=True → 先頭は wrapper だが leaf はそれを
+            # スキップして内部葉を選んでいる
+            breakdown = result.cases[0].manifest.profile_breakdown
+            wrapper_entry = next(e for e in breakdown if e["name"] == "_SweepWrapperTargetProcess")
+            assert wrapper_entry["is_wrapper"] is True
+            leaf_entry = next(e for e in breakdown if e["name"] == "_SweepInnerLeafProcess")
+            assert leaf_entry["is_wrapper"] is False
+
+    def test_summary_yaml_contains_dominant_leaf_process(self) -> None:
+        """集約 YAML に dominant_leaf_process キーが書き出される."""
+        cfg = _SweepConfig()
+        proc = _SweepWrapperTargetProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            sweep_input = ParameterSweepBenchmarkInput(
+                target_process=proc,
+                base_config=cfg,
+                param_name="n",
+                param_values=(1,),
+                output_dir=tmpdir,
+            )
+            result = ParameterSweepBenchmarkProcess().process(sweep_input)
+
+            assert result.summary_yaml_path is not None
+            content = Path(result.summary_yaml_path).read_text()
+            assert "dominant_leaf_process" in content
+            assert "_SweepInnerLeafProcess" in content
