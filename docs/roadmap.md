@@ -12,7 +12,7 @@
 
 ---
 
-## 現在地（2026-04-09）
+## 現在地（2026-04-10）
 
 **459 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
@@ -79,7 +79,8 @@
 | 高速化第2弾完了 | **Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + adj_node_map配列化 + K_st性能測定(69-208x高速化)**: 接触力アセンブリ全体のforループ排除完了。9テスト追加 — status-310 |
 | 高速化第3弾+adj | **adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合**: tolil排除(83s→0.004s)。摩擦K_st隣接ノード完全バッチ化。3テスト追加 — status-311 |
 | BC+責務修正 | **BC forループNumPyベクトル化 + MPC forループ排除 + strand_bending_oscillation責務分離違反修正**: _zero_sparse_rows実装。5テスト追加 — status-312 |
-| **次** | **1000本撚線プロファイリング + 被膜幾何接線剛性** → 1000本6時間 |
+| ファイバー梁設計 | **撚線ファイバー梁モデル設計仕様策定**: `xkep_cae/elements/docs/fiber_beam_strand.md` 新規作成。`work/beam_hysteresis/` Stage 01-08（N=150 多層摩擦＋β=0.25 接触劣化＋繊維断面でティアドロップ再現）を正式設計化。Strategy Protocol、状態 dataclass、積分 Process、テスト計画、F1-F6 実装フェーズを明文化。コード実装は後続で段階的に — status-313 |
+| **次** | **1000本撚線プロファイリング + 被膜幾何接線剛性**（S6）／**ファイバー梁 Phase F1**（Elastic1D + BilinearKH 実装） |
 
 ---
 
@@ -238,7 +239,7 @@ S6のボトルネックに応じたGPU化（CuPy/JAX）。
 | Phase | 内容 | 状態 |
 |-------|------|------|
 | 4.3 | von Mises 3D 塑性 | 凍結（45件テスト済） |
-| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | 未実装 |
+| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | 未実装。撚線ファイバー梁（[fiber_beam_strand.md](../xkep_cae/elements/docs/fiber_beam_strand.md)）が先行候補として設計策定済み（status-313） |
 | 6.1-6.3 | NN構成則、PI制約、ハイブリッド | 未実装 |
 | 7-8 | モデルレジストリ、FE² | 未実装 |
 
