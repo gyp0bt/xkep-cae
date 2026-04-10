@@ -79,7 +79,8 @@
 | 高速化第2弾完了 | **Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + adj_node_map配列化 + K_st性能測定(69-208x高速化)**: 接触力アセンブリ全体のforループ排除完了。9テスト追加 — status-310 |
 | 高速化第3弾+adj | **adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合**: tolil排除(83s→0.004s)。摩擦K_st隣接ノード完全バッチ化。3テスト追加 — status-311 |
 | BC+責務修正 | **BC forループNumPyベクトル化 + MPC forループ排除 + strand_bending_oscillation責務分離違反修正**: _zero_sparse_rows実装。5テスト追加 — status-312 |
-| **次** | **1000本撚線プロファイリング + 被膜幾何接線剛性** → 1000本6時間 |
+| プロファイルAPI | **ProcessMetaclass構造化プロファイル統計API強化 + BenchmarkRunnerへのprofile_breakdown自動キャプチャ**: snapshot_profile/get_profile_stats/get_profile_report（sort_by/top_n/since）+ RunManifestへYAML出力。13テスト追加 — status-313 |
+| **次** | **1000本撚線プロファイリング実測 + 被膜幾何接線剛性** → 1000本6時間 |
 
 ---
 
