@@ -307,6 +307,9 @@ class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResu
                     "max": round(float(row["max"]), 6),
                     "median": round(float(row["median"]), 6),
                     "pct": round(float(row["pct"]), 3),
+                    # status-317: 実行時に他 Process を呼び出した履歴がある Process
+                    # （親）は dominant_leaf_process 算出時に除外する。
+                    "is_wrapper": bool(row.get("is_wrapper", False)),
                 }
                 for row in stats
             )

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from xkep_cae.core.base import ProcessMeta, ProcessMetaclass
-from xkep_cae.core.categories import PreProcess
+from xkep_cae.core.categories import BatchProcess, PreProcess
 from xkep_cae.core.testing import binds_to
 
 # --- テスト用ダミープロセス（異なる滞在時間を持つ3種） ---
@@ -178,3 +178,96 @@ class TestProfileReportAPI:
         # スナップショット時点で _FastProcess は既存 → 以降は 0 件 → レポート非登場
         assert "_SlowProcess" in report
         assert "_FastProcess" not in report
+
+
+# --- wrapper / leaf 分類テスト（status-317） -----------------------------------
+
+
+class _LeafWorkerProcess(PreProcess["_SleepConfig", "_SleepResult"]):
+    """子プロセスを一切呼ばない葉 Process."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_LeafWorkerProcess",
+        module="pre",
+        version="0.1.0",
+        document_path="../xkep_cae/core/docs/benchmark_runner.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: _SleepConfig) -> _SleepResult:
+        time.sleep(input_data.seconds)
+        return _SleepResult(slept=input_data.seconds)
+
+
+class _WrapperBatchProcess(BatchProcess["_SleepConfig", "_SleepResult"]):
+    """`_LeafWorkerProcess` を内部で呼び出す wrapper Process."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_WrapperBatchProcess",
+        module="batch",
+        version="0.1.0",
+        document_path="../xkep_cae/core/docs/benchmark_runner.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+    uses: ClassVar[list] = [_LeafWorkerProcess]
+
+    def process(self, input_data: _SleepConfig) -> _SleepResult:
+        leaf = _LeafWorkerProcess()
+        return leaf.process(input_data)
+
+
+@binds_to(_LeafWorkerProcess)
+class TestProfileWrapperClassification:
+    """`is_wrapper` フラグと `_wrapper_classes` 追跡のテスト."""
+
+    def test_leaf_only_call_has_no_wrapper(self) -> None:
+        """葉 Process を単独呼び出しすると wrapper 判定は False."""
+        ProcessMetaclass.reset_profile()
+        _LeafWorkerProcess().process(_SleepConfig(seconds=0.001))
+
+        stats = ProcessMetaclass.get_profile_stats()
+        row = next(s for s in stats if s["name"] == "_LeafWorkerProcess")
+        assert "is_wrapper" in row
+        assert row["is_wrapper"] is False
+
+    def test_wrapper_calling_leaf_marks_wrapper_true(self) -> None:
+        """wrapper → leaf の呼び出しで wrapper は is_wrapper=True、leaf は False."""
+        ProcessMetaclass.reset_profile()
+        _WrapperBatchProcess().process(_SleepConfig(seconds=0.001))
+
+        stats = ProcessMetaclass.get_profile_stats()
+        wrapper_row = next(s for s in stats if s["name"] == "_WrapperBatchProcess")
+        leaf_row = next(s for s in stats if s["name"] == "_LeafWorkerProcess")
+
+        assert wrapper_row["is_wrapper"] is True
+        assert leaf_row["is_wrapper"] is False
+
+    def test_reset_profile_clears_wrapper_classes(self) -> None:
+        """reset_profile で wrapper 集合もクリアされる."""
+        ProcessMetaclass.reset_profile()
+        _WrapperBatchProcess().process(_SleepConfig(seconds=0.001))
+        assert "_WrapperBatchProcess" in ProcessMetaclass._wrapper_classes
+
+        ProcessMetaclass.reset_profile()
+        assert "_WrapperBatchProcess" not in ProcessMetaclass._wrapper_classes
+
+        # reset 後に葉だけ呼び出せば wrapper 集合は空のまま
+        _LeafWorkerProcess().process(_SleepConfig(seconds=0.001))
+        assert "_LeafWorkerProcess" not in ProcessMetaclass._wrapper_classes
+
+    def test_wrapper_flag_sticks_across_snapshots(self) -> None:
+        """`is_wrapper` は一度立てば `since` snapshot 以降でも True のまま."""
+        ProcessMetaclass.reset_profile()
+        # 最初の wrapper 呼び出しで _WrapperBatchProcess を wrapper 認定
+        _WrapperBatchProcess().process(_SleepConfig(seconds=0.001))
+        snap = ProcessMetaclass.snapshot_profile()
+        # snap 以降で再度 wrapper を呼ぶ
+        _WrapperBatchProcess().process(_SleepConfig(seconds=0.001))
+
+        stats = ProcessMetaclass.get_profile_stats(since=snap)
+        wrapper_row = next(s for s in stats if s["name"] == "_WrapperBatchProcess")
+        assert wrapper_row["is_wrapper"] is True

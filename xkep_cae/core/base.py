@@ -50,6 +50,10 @@ class ProcessMetaclass(type(ABC)):
 
     _call_stack: ClassVar[list[str]] = []
     _profile_data: ClassVar[dict[str, list[float]]] = {}
+    # status-317: 実行時に子プロセス呼び出しを包含したクラス名の集合。
+    # 集約プロファイルの dominant_leaf_process 算出で wrapper を除外するための
+    # ランタイムフラグ。traced_process 開始時に _call_stack の top を記録する。
+    _wrapper_classes: ClassVar[set[str]] = set()
 
     def __new__(mcs, name: str, bases: tuple, namespace: dict, **kwargs: Any):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
@@ -80,6 +84,10 @@ class ProcessMetaclass(type(ABC)):
                 if log.enabled:
                     ctx = log.record_start(cls_name)
 
+                # status-317: 親（スタック top）が居れば、その親は子を抱える
+                # wrapper として記録する。dominant_leaf_process の葉判定に使う。
+                if ProcessMetaclass._call_stack:
+                    ProcessMetaclass._wrapper_classes.add(ProcessMetaclass._call_stack[-1])
                 ProcessMetaclass._call_stack.append(cls_name)
                 t0 = time.perf_counter()
                 warning_type = None
@@ -140,7 +148,7 @@ class ProcessMetaclass(type(ABC)):
         mcs,
         since: dict[str, int] | None = None,
         sort_by: str = "total",
-    ) -> list[dict[str, float | int | str]]:
+    ) -> list[dict[str, float | int | str | bool]]:
         """全プロセスのプロファイル統計を構造化 dict のリストで返す.
 
         Args:
@@ -150,11 +158,14 @@ class ProcessMetaclass(type(ABC)):
                 | "n" (呼び出し回数降順) | "name" (名前昇順)
 
         Returns:
-            各要素: {"name", "n", "total", "avg", "min", "max", "median", "pct"}
-            `pct` は対象合計時間に占める割合 (0-100%)。
+            各要素: {"name", "n", "total", "avg", "min", "max", "median",
+            "pct", "is_wrapper"}。`pct` は対象合計時間に占める割合 (0-100%)。
+            `is_wrapper` は実行時に他 Process を呼び出した履歴がある場合 True
+            （status-317: 集約プロファイルで dominant_leaf_process を決める
+            ための分類フラグ）。
         """
         snapshot = since or {}
-        stats: list[dict[str, float | int | str]] = []
+        stats: list[dict[str, float | int | str | bool]] = []
         for name, times in mcs._profile_data.items():
             start = snapshot.get(name, 0)
             delta = times[start:]
@@ -175,6 +186,10 @@ class ProcessMetaclass(type(ABC)):
                     "max": sorted_delta[-1],
                     "median": median,
                     "pct": 0.0,  # 後で正規化
+                    # status-317: 実行中に子 Process を呼び出したかどうか。
+                    # True の場合はネストした集計値なので dominant_leaf の
+                    # 候補から除外する。
+                    "is_wrapper": name in mcs._wrapper_classes,
                 }
             )
 
@@ -233,6 +248,7 @@ class ProcessMetaclass(type(ABC)):
         """プロファイルデータをリセット."""
         mcs._profile_data.clear()
         mcs._call_stack.clear()
+        mcs._wrapper_classes.clear()
 
 
 class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
