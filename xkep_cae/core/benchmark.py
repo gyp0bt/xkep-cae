@@ -21,7 +21,7 @@ from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
 
-from xkep_cae.core.base import AbstractProcess, ProcessMeta
+from xkep_cae.core.base import AbstractProcess, ProcessMeta, ProcessMetaclass
 from xkep_cae.core.categories import BatchProcess
 
 TIn = TypeVar("TIn")
@@ -155,6 +155,7 @@ class RunManifest:
     results_summary: dict[str, Any]
     elapsed_seconds: float
     status_file: str | None = None
+    profile_breakdown: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         """YAML/JSON 出力用の dict."""
@@ -176,6 +177,7 @@ class RunManifest:
             "results": self.results_summary,
             "elapsed_seconds": self.elapsed_seconds,
             "status_file": self.status_file,
+            "profile_breakdown": [dict(row) for row in self.profile_breakdown],
         }
 
     def to_yaml(self) -> str:
@@ -229,6 +231,9 @@ class BenchmarkRunInput(Generic[TIn]):
     result_extractors: dict[str, Callable] = field(default_factory=dict)
     status_file: str | None = None
     output_dir: str | None = None  # None → docs/benchmarks/
+    capture_profile: bool = True  # ProcessMetaclass._profile_data を採取
+    profile_sort_by: str = "total"  # "total" | "avg" | "n" | "name"
+    profile_top_n: int | None = None  # 上位 N 件のみ保存（None=全件）
 
 
 @dataclass(frozen=True)
@@ -276,10 +281,35 @@ class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResu
         if not isinstance(config_params, dict):
             config_params = {"__config__": config_params}
 
-        # 3. プロセス実行
+        # 3. プロセス実行（profile スナップショット → 実行 → delta）
+        profile_snapshot = (
+            ProcessMetaclass.snapshot_profile() if input_data.capture_profile else None
+        )
         t0 = time.perf_counter()
         result = proc.process(config)
         elapsed = time.perf_counter() - t0
+
+        profile_breakdown: tuple[dict[str, Any], ...] = ()
+        if profile_snapshot is not None:
+            stats = ProcessMetaclass.get_profile_stats(
+                since=profile_snapshot,
+                sort_by=input_data.profile_sort_by,
+            )
+            if input_data.profile_top_n is not None:
+                stats = stats[: input_data.profile_top_n]
+            profile_breakdown = tuple(
+                {
+                    "name": str(row["name"]),
+                    "n": int(row["n"]),
+                    "total": round(float(row["total"]), 6),
+                    "avg": round(float(row["avg"]), 6),
+                    "min": round(float(row["min"]), 6),
+                    "max": round(float(row["max"]), 6),
+                    "median": round(float(row["median"]), 6),
+                    "pct": round(float(row["pct"]), 3),
+                }
+                for row in stats
+            )
 
         # 4. 結果サマリー抽出
         results_summary: dict[str, Any] = {}
@@ -300,6 +330,7 @@ class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResu
             results_summary=results_summary,
             elapsed_seconds=round(elapsed, 3),
             status_file=input_data.status_file,
+            profile_breakdown=profile_breakdown,
         )
 
         # 6. YAML ファイル保存

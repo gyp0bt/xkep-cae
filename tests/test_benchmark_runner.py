@@ -304,3 +304,80 @@ class TestBenchmarkRunnerProcessAPI:
             env = run_result.manifest.environment
             assert env.python_version
             assert env.timestamp
+
+    def test_profile_breakdown_captured(self):
+        """capture_profile=True で profile_breakdown が記録される."""
+        cfg = _DummyConfig(x=1.0, n=3)
+        proc = _DummyProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                capture_profile=True,
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+
+        breakdown = run_result.manifest.profile_breakdown
+        assert len(breakdown) >= 1
+        row = next(r for r in breakdown if r["name"] == "_DummyProcess")
+        # このベンチマーク走査で記録された _DummyProcess の呼び出しは 1 回
+        assert row["n"] == 1
+        assert row["total"] >= 0.0
+        assert row["pct"] >= 0.0
+        # 一括記録フィールドが全て揃っていること
+        for key in ("name", "n", "total", "avg", "min", "max", "median", "pct"):
+            assert key in row
+
+    def test_profile_breakdown_disabled(self):
+        """capture_profile=False で profile_breakdown が空."""
+        cfg = _DummyConfig()
+        proc = _DummyProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                capture_profile=False,
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+
+        assert run_result.manifest.profile_breakdown == ()
+
+    def test_profile_top_n(self):
+        """profile_top_n で記録件数を制限."""
+        cfg = _DummyConfig()
+        proc = _DummyProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                capture_profile=True,
+                profile_top_n=1,
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+
+        assert len(run_result.manifest.profile_breakdown) == 1
+
+    def test_profile_breakdown_in_yaml(self):
+        """profile_breakdown がマニフェスト YAML に出力される."""
+        cfg = _DummyConfig()
+        proc = _DummyProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                capture_profile=True,
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+            path = Path(run_result.manifest_path)
+            content = path.read_text()
+
+        assert "profile_breakdown:" in content
+        assert "_DummyProcess" in content
