@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13 テスト** — 2026-04-10時点 | **プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ**（status-314） ／ **撚線ファイバー梁モデル 設計仕様策定**（status-313） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+23 テスト** — 2026-04-10時点 | **ParameterSweepBenchmarkProcess 追加 + manifest 連番衝突回避**（status-315） ／ **プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ**（status-314） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

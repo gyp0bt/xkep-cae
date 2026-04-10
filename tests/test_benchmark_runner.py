@@ -381,3 +381,29 @@ class TestBenchmarkRunnerProcessAPI:
 
         assert "profile_breakdown:" in content
         assert "_DummyProcess" in content
+
+    def test_manifest_filename_collision_avoided(self):
+        """同一秒内に複数回走っても manifest ファイル名が衝突せず連番で退避される.
+
+        status-315: パラメータスイープで 1 秒以内に N ケース走ると、
+        タイムスタンプ [:15] が同じになり上書きされていた。
+        `_save_manifest` の連番フォールバックでユニーク化される。
+        """
+        cfg = _DummyConfig()
+        proc = _DummyProcess()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths: list[str] = []
+            for _ in range(3):
+                run_input = BenchmarkRunInput(
+                    process=proc,
+                    config=cfg,
+                    output_dir=tmpdir,
+                )
+                run_result = BenchmarkRunnerProcess().process(run_input)
+                assert run_result.manifest_path is not None
+                paths.append(run_result.manifest_path)
+
+            # 全 path が存在し、かつ一意
+            assert all(Path(p).exists() for p in paths)
+            assert len(set(paths)) == 3

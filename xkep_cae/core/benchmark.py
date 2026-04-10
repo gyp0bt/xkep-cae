@@ -355,6 +355,13 @@ class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResu
             name = manifest.process_name
             filename = f"{name}_{ts}.yaml"
             path = base / filename
+            # status-315: パラメータスイープ等で同一秒内に複数ケースが走ると
+            # タイムスタンプが衝突する。既存ファイルを上書きしないよう連番で回避。
+            counter = 1
+            while path.exists():
+                filename = f"{name}_{ts}_{counter:02d}.yaml"
+                path = base / filename
+                counter += 1
 
             path.write_text(manifest.to_yaml(), encoding="utf-8")
             return str(path)
