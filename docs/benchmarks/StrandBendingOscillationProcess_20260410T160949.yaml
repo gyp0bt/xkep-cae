@@ -1,0 +1,147 @@
+process:
+  name: StrandBendingOscillationProcess
+  version: 1.0.0
+environment:
+  git_commit: ba4305f08da5726b4347a4ec7f17c66b7ea1eb9d
+  git_branch: claude/check-status-todos-t5Ckj
+  git_dirty: true
+  python_version: 3.11.15
+  numpy_version: 2.4.4
+  timestamp: "2026-04-10T16:09:49.372662+00:00"
+config:
+  n_strands: 37
+  wire_radius: 0.5
+  pitch_length: 100.0
+  gap: 0.0
+  n_elements_per_pitch: 16
+  n_pitches: 0.25
+  E: 130000.0
+  nu: 0.3
+  rho: 8.96e-09
+  bending_curvature: 0.0005
+  n_cycles: 1
+  n_increments_per_cycle: 4
+  rho_inf: 0.9
+  mu: 0.15
+  k_pen: 0.0
+  max_nr_attempts: 50
+  tol_force: 1e-08
+  max_increments: 200
+  lumped_mass: true
+  exclude_same_strand: true
+  exclude_end_elements: 0
+  tangent_fd_diagnostic: false
+  smoothing_delta: 0.0
+  huber_delta_h: 0.0
+  du_norm_cap: 0.0
+  resume_checkpoint: 
+  free_end_mode: false
+  contact_enabled: true
+  loading_mode: rotation
+  penalty_exponent: 1.0
+  checkpoint_path: 
+  n_oscillation_cycles: 0
+  oscillation_amplitude: 0.0
+  coating_stiffness: 0.0
+  coating_damping: 0.0
+  coating_mu: 0.0
+  coating_k_t_ratio: 0.5
+  coating_thickness: 0.0
+  coating_barrier: false
+results:
+  n_increments: 5
+  converged: true
+  total_ndof: 1122
+elapsed_seconds: 85.865
+status_file: docs/status/status-316.md
+profile_breakdown:
+  -
+    name: StrandBendingOscillationProcess
+    n: 1
+    total: 85.860292
+    avg: 85.860292
+    min: 85.860292
+    max: 85.860292
+    median: 85.860292
+    pct: 24.492
+  -
+    name: ContactFrictionProcess
+    n: 1
+    total: 85.717243
+    avg: 85.717243
+    min: 85.717243
+    max: 85.717243
+    median: 85.717243
+    pct: 24.451
+  -
+    name: NewtonDynamicProcess
+    n: 5
+    total: 84.921279
+    avg: 16.984256
+    min: 5.914811
+    max: 34.298751
+    median: 15.92469
+    pct: 24.224
+  -
+    name: LinearSolveProcess
+    n: 47
+    total: 64.535426
+    avg: 1.373094
+    min: 1.118303
+    max: 1.763947
+    median: 1.314529
+    pct: 18.409
+  -
+    name: TangentAssemblyProcess
+    n: 47
+    total: 12.552064
+    avg: 0.267065
+    min: 0.04473
+    max: 0.433347
+    median: 0.303419
+    pct: 3.581
+  -
+    name: ContactForceStStiffnessProcess
+    n: 47
+    total: 4.541318
+    avg: 0.096624
+    min: 0.002434
+    max: 0.175564
+    median: 0.107428
+    pct: 1.295
+  -
+    name: FrictionStStiffnessProcess
+    n: 41
+    total: 4.37451
+    avg: 0.106695
+    min: 0.001278
+    max: 0.179106
+    median: 0.128747
+    pct: 1.248
+  -
+    name: ContactForceAssemblyProcess
+    n: 59
+    total: 4.103519
+    avg: 0.069551
+    min: 0.061305
+    max: 0.093854
+    median: 0.067
+    pct: 1.171
+  -
+    name: UpdateGeometryProcess
+    n: 64
+    total: 1.738335
+    avg: 0.027161
+    min: 0.022977
+    max: 0.05268
+    median: 0.025924
+    pct: 0.496
+  -
+    name: TangentFDDiagnosticProcess
+    n: 3
+    total: 1.015885
+    avg: 0.338628
+    min: 0.295521
+    max: 0.373203
+    median: 0.347162
+    pct: 0.29

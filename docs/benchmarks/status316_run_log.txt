@@ -1,0 +1,338 @@
+  [f_ref] Incr 1: f_ref=9.350e+01 (dynamic_ref)
+  Incr 1 (frac=0.2500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 2.483e+02, ||R_w||/||f||=1.086e+00, active=0, R(x=1.1e+01/8%,y=6.9e+00/5%,z=1.3e+02/96%)
+  Incr 1 (frac=0.2500), attempt 2, energy = 1.505e-11 (energy converged)
+  [f_ref] Incr 2: f_ref=1.688e+02 (dynamic_ref), atol=9.35e-07
+  Incr 2 (frac=0.5000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 3.225e+02, ||R_w||/||f||=1.046e+00, active=0, R(x=1.9e+01/9%,y=1.2e+01/5%,z=2.1e+02/97%)
+  Incr 2 (frac=0.5000), attempt 3, ||du||/||u|| = 2.951e-09 (disp converged, 0 active)
+  [f_ref] Incr 3: f_ref=2.274e+02 (dynamic_ref), atol=1.16e-06
+  Incr 3 (frac=0.7500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 5.355e+02, ||R_w||/||f||=1.068e+00, active=0, R(x=2.6e+01/8%,y=1.6e+01/5%,z=3.0e+02/96%)
+  Incr 3 (frac=0.7500), attempt 3, ||du||/||u|| = 5.975e-09 (disp converged, 0 active)
+  [f_ref] Incr 4: f_ref=2.765e+02 (dynamic_ref), atol=1.49e-06
+  Incr 4 (frac=1.0000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 5.473e+02, ||R_w||/||f||=1.049e+00, active=9, R(x=3.1e+01/9%,y=1.9e+01/5%,z=3.4e+02/96%)
+  Incr 4 (frac=1.0000), attempt 3, energy = 1.214e-15 (energy converged)
+==================================================
+  エネルギー収支サマリ
+==================================================
+  ステップ数: 4
+  初期 KE: 3.799006e-09
+  初期 SE: 7.639517e-02
+  初期 Total: 7.639517e-02
+  最終 KE: 5.217460e-12
+  最終 SE: 3.045306e-01
+  最終 Total: 3.045306e-01
+  エネルギー減衰率: 3.9863
+==================================================
+  [収束型統計] disp=2(50%), energy=2(50%), total=4
+  [f_ref] Incr 1: f_ref=2.805e+02 (dynamic_ref)
+  Incr 1 (frac=0.2500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 1.668e+03, ||R_w||/||f||=1.376e+00, active=0, R(x=2.6e+01/7%,y=3.9e+01/10%,z=3.8e+02/98%)
+  Incr 1 (frac=0.2500), attempt 3, ||du||/||u|| = 4.222e-09 (disp converged, 0 active)
+  [f_ref] Incr 2: f_ref=5.039e+02 (dynamic_ref), atol=2.80e-06
+  Incr 2 (frac=0.5000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 2.439e+03, ||R_w||/||f||=1.262e+00, active=6, R(x=4.6e+01/7%,y=6.7e+01/10%,z=6.3e+02/98%)
+  Incr 2 (frac=0.5000), attempt 3, ||du||/||u|| = 9.871e-09 (disp converged, 0 active)
+  [f_ref] Incr 3: f_ref=6.809e+02 (dynamic_ref), atol=3.48e-06
+  Incr 3 (frac=0.7500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 3.759e+03, ||R_w||/||f||=1.331e+00, active=0, R(x=6.2e+01/7%,y=9.3e+01/10%,z=8.9e+02/98%)
+  Incr 3 (frac=0.7500), attempt 5 [C+D.stall], ||R_t||/||f|| = 1.105e-02, ||R_r|| = 2.353e+02, ||R_w||/||f||=5.606e-02, rate=1.000, active=4, R(x=2.4e+00/5%,y=3.5e+00/7%,z=4.2e+01/86%)
+  Incr 3 (frac=0.7500), attempt 5, energy = 1.116e-10 (energy converged)
+  [f_ref] Incr 4: f_ref=8.250e+02 (dynamic_ref), atol=4.48e-06
+  Incr 4 (frac=1.0000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 4.073e+03, ||R_w||/||f||=1.271e+00, active=15, R(x=7.5e+01/7%,y=1.1e+02/10%,z=1.0e+03/98%)
+  Incr 4 (frac=1.0000), attempt 5 [C+D.stall], ||R_t||/||f|| = 9.292e-03, ||R_r|| = 2.374e+02, ||R_w||/||f||=4.671e-02, rate=1.000, active=5, R(x=2.5e+00/5%,y=3.6e+00/7%,z=4.2e+01/87%)
+============================================================
+接線剛性FD方向診断（status-256）
+============================================================
+  ||du|| = 2.8813e-04
+  ||R_u|| = 4.8447e+01
+  ||R_red|| = 2.3751e+02
+  ||K_red @ du|| = 1.4329e-02
+  cos(R_red, K_red@du) = -0.1963
+  ⚠ 方向不整合: cos=-0.1963 (期待: ≈-1.0)
+  ⚠ R_u vs compute_residual(u) 乖離: 1.1147e-03 (リラクゼーション/動的項の差異)
+  ||R_base|| = 4.8447e+01
+  ||R(u+eps*du)|| = 4.8447e+01
+  方向有効性: ||R(u+eps*du)||/||R(u)|| = 1.000000
+  ⚠ du方向で残差が増加 — Newton方向が無効
+  FD方向微分 = -1.8928e+03
+  解析方向微分 = 1.0043e-02
+  全体系 K@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ 全体系で接線剛性不整合 — K_c自体が不正確
+  全体系不整合DOF上位5件:
+    dof=42 (node=7, comp=0): FD=1.1696e+03, analytical=-6.6310e-03, diff=1.1697e+03
+    dof=43 (node=7, comp=1): FD=-1.1696e+03, analytical=5.7391e-03, diff=-1.1696e+03
+    dof=312 (node=52, comp=0): FD=-1.1690e+03, analytical=6.6264e-03, diff=-1.1690e+03
+    dof=313 (node=52, comp=1): FD=1.1689e+03, analytical=-5.7296e-03, diff=1.1689e+03
+    dof=44 (node=7, comp=2): FD=-1.5031e+02, analytical=1.5269e-03, diff=-1.5031e+02
+  comp別不整合: [x:1.65e+03(70%), y:1.65e+03(70%), z:2.13e+02(9%), θx:3.23e-05(0%), θy:1.92e-05(0%), θz:4.34e-05(0%)]
+  接触DOF不整合: 2.35e+03 (60 DOFs), 構造DOF不整合: 2.52e-03 (522 DOFs)
+  活性DOF K@du: FD vs 解析 相対誤差 = 1.0000e+00 (60 DOFs)
+  ⚠ 活性DOFで接線剛性不整合
+  MPC縮退系 K_red@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)
+  不整合DOF上位5件（縮退系index）:
+    red_dof=24: FD=1.1696e+03, analytical=-6.6310e-03, diff=1.1697e+03
+    red_dof=25: FD=-1.1696e+03, analytical=5.7391e-03, diff=1.1696e+03
+    red_dof=186: FD=-1.1690e+03, analytical=6.6264e-03, diff=1.1690e+03
+    red_dof=187: FD=1.1689e+03, analytical=-5.7296e-03, diff=1.1689e+03
+    red_dof=26: FD=-1.5031e+02, analytical=1.5269e-03, diff=1.5031e+02
+  方向微分整合度: |FD-解析|/max = 1.0000e+00
+------------------------------------------------------------
+  f_c 単独FD検証（K_c精度）
+  ||∂f_c/∂u·du (FD)|| = 1.1446e+02
+  ||K_c @ du|| = 5.6166e-03
+  f_c FD相対誤差 = 9.9995e-01
+  ⚠ K_c自体が不正確（f_c単独で10%超の不整合）
+  f_c comp別不整合: [x=8.1e+01/70%, y=8.1e+01/70%, z=1.0e+01/9%, θx=0.0e+00/0%, θy=0.0e+00/0%, θz=0.0e+00/0%]
+  f_c不整合DOF上位5件:
+    dof=42 (node=7, comp=0): FD=5.7012e+01, K_c=2.3603e-03, diff=5.7010e+01
+    dof=312 (node=52, comp=0): FD=-5.6991e+01, K_c=-2.3584e-03, diff=-5.6988e+01
+    dof=43 (node=7, comp=1): FD=-5.6983e+01, K_c=-3.1697e-03, diff=-5.6980e+01
+    dof=313 (node=52, comp=1): FD=5.6962e+01, K_c=3.1679e-03, diff=5.6959e+01
+    dof=44 (node=7, comp=2): FD=-7.1104e+00, K_c=-4.0583e-04, diff=-7.1100e+00
+============================================================
+  [Type D対策] FD診断: Newton方向精度不良 (dir_ratio=1.000), NR上限拡張→50
+  Incr 4 (frac=1.0000), attempt 10 [C+D.stall], ||R_t||/||f|| = 9.292e-03, ||R_r|| = 2.374e+02, ||R_w||/||f||=4.671e-02, rate=1.000, active=5, R(x=2.5e+00/5%,y=3.6e+00/7%,z=4.2e+01/87%)
+  Incr 4 (frac=1.0000), 低残差停滞[C+D] → Type D対策: NR上限拡張→50 (att=15, ||R||/||f||=9.292e-03, rate=1.000, R_c=1.49e-03, R_s=4.84e+01, active=5)
+  Incr 4 (frac=1.0000), attempt 15 [C+D.stall], ||R_t||/||f|| = 9.292e-03, ||R_r|| = 2.374e+02, ||R_w||/||f||=4.671e-02, rate=1.000, active=5, R(x=2.5e+00/5%,y=3.6e+00/7%,z=4.2e+01/87%)
+  Incr 4 (frac=1.0000), attempt 17, energy = 2.901e-09 (energy converged)
+  [NR診断] Incr 4 (frac=1.0000), 収束 att=18, Type分布[C:3(17%), C+D.stall:15(83%)], 直近10[C+D.stall:10], R_c=3.98e-04, R_s=4.84e+01, active=5, sliding=15, activated=0, deactivated=0, stick→slide=0, slide→stick=0, comp(x=2.5e+00/5%,y=3.6e+00/7%,z=4.2e+01/87%,θx=8.6e+00/18%,θy=2.2e+01/46%,θz=2.0e+00/4%)
+==================================================
+  エネルギー収支サマリ
+==================================================
+  ステップ数: 4
+  初期 KE: 4.813527e-08
+  初期 SE: 3.252016e-01
+  初期 Total: 3.252016e-01
+  最終 KE: 1.729169e-10
+  最終 SE: 1.299712e+00
+  最終 Total: 1.299712e+00
+  エネルギー減衰率: 3.9966
+==================================================
+  [収束型統計] disp=2(50%), energy=2(50%), total=4
+  [f_ref] Incr 1: f_ref=5.630e+02 (dynamic_ref)
+  Incr 1 (frac=0.2500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 6.056e+03, ||R_w||/||f||=1.973e+00, active=0, R(x=6.6e+01/9%,y=1.1e+02/15%,z=7.4e+02/98%)
+  Incr 1 (frac=0.2500), attempt 3, ||du||/||u|| = 1.051e-08 (disp converged, 0 active)
+  [f_ref] Incr 2: f_ref=1.011e+03 (dynamic_ref), atol=5.63e-06
+  Incr 2 (frac=0.5000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 9.531e+03, ||R_w||/||f||=1.795e+00, active=29, R(x=1.2e+02/9%,y=1.9e+02/15%,z=1.3e+03/98%)
+  Incr 2 (frac=0.5000), attempt 4, energy = 3.210e-11 (energy converged)
+  [f_ref] Incr 3: f_ref=1.367e+03 (dynamic_ref), atol=6.97e-06
+  Incr 3 (frac=0.7500), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 1.402e+04, ||R_w||/||f||=1.905e+00, active=0, R(x=1.6e+02/9%,y=2.6e+02/15%,z=1.8e+03/98%)
+  Incr 3 (frac=0.7500), attempt 5 [C+D.stall], ||R_t||/||f|| = 1.014e-02, ||R_r|| = 5.329e+02, ||R_w||/||f||=6.248e-02, rate=1.000, active=14, R(x=4.7e+00/7%,y=7.2e+00/10%,z=5.8e+01/82%)
+============================================================
+接線剛性FD方向診断（status-256）
+============================================================
+  ||du|| = 4.3729e-05
+  ||R_u|| = 7.0601e+01
+  ||R_red|| = 5.3309e+02
+  ||K_red @ du|| = 3.9328e-03
+  cos(R_red, K_red@du) = 0.0093
+  ⚠ 方向不整合: cos=0.0093 (期待: ≈-1.0)
+  ⚠ R_u vs compute_residual(u) 乖離: 1.1963e-04 (リラクゼーション/動的項の差異)
+  ||R_base|| = 7.0601e+01
+  ||R(u+eps*du)|| = 7.0601e+01
+  方向有効性: ||R(u+eps*du)||/||R(u)|| = 1.000000
+  ✓ du方向で残差が減少 — Newton方向は有効
+  FD方向微分 = -2.2269e+02
+  解析方向微分 = 1.7577e-03
+  全体系 K@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ 全体系で接線剛性不整合 — K_c自体が不正確
+  全体系不整合DOF上位5件:
+    dof=552 (node=92, comp=0): FD=-1.3623e+02, analytical=1.3515e-03, diff=-1.3623e+02
+    dof=972 (node=162, comp=0): FD=9.3869e+01, analytical=-2.7793e-04, diff=9.3869e+01
+    dof=516 (node=86, comp=0): FD=-9.2201e+01, analytical=3.3852e-04, diff=-9.2201e+01
+    dof=936 (node=156, comp=0): FD=8.5957e+01, analytical=-2.6873e-04, diff=8.5957e+01
+    dof=942 (node=157, comp=0): FD=8.5479e+01, analytical=-1.2028e-03, diff=8.5480e+01
+  comp別不整合: [x:2.58e+02(93%), y:9.25e+01(33%), z:3.37e+01(12%), θx:2.88e-05(0%), θy:3.35e-05(0%), θz:5.46e-06(0%)]
+  接触DOF不整合: 2.76e+02 (144 DOFs), 構造DOF不整合: 5.02e-03 (978 DOFs)
+  活性DOF K@du: FD vs 解析 相対誤差 = 1.0000e+00 (144 DOFs)
+  ⚠ 活性DOFで接線剛性不整合
+  MPC縮退系 K_red@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)
+  不整合DOF上位5件（縮退系index）:
+    red_dof=330: FD=-1.3623e+02, analytical=1.3515e-03, diff=1.3623e+02
+    red_dof=582: FD=9.3869e+01, analytical=-2.7793e-04, diff=9.3869e+01
+    red_dof=306: FD=-9.2201e+01, analytical=3.3852e-04, diff=9.2201e+01
+    red_dof=558: FD=8.5957e+01, analytical=-2.6873e-04, diff=8.5957e+01
+    red_dof=564: FD=8.5479e+01, analytical=-1.2028e-03, diff=8.5480e+01
+  方向微分整合度: |FD-解析|/max = 1.0000e+00
+------------------------------------------------------------
+  f_c 単独FD検証（K_c精度）
+  ||∂f_c/∂u·du (FD)|| = 2.5002e+01
+  ||K_c @ du|| = 4.5786e-04
+  f_c FD相対誤差 = 9.9999e-01
+  ⚠ K_c自体が不正確（f_c単独で10%超の不整合）
+  f_c comp別不整合: [x=2.3e+01/92%, y=8.9e+00/36%, z=3.3e+00/13%, θx=0.0e+00/0%, θy=0.0e+00/0%, θz=0.0e+00/0%]
+  f_c不整合DOF上位5件:
+    dof=552 (node=92, comp=0): FD=-1.0603e+01, K_c=-2.5724e-04, diff=-1.0603e+01
+    dof=972 (node=162, comp=0): FD=1.0119e+01, K_c=3.6353e-05, diff=1.0119e+01
+    dof=516 (node=86, comp=0): FD=-8.5643e+00, K_c=-7.8291e-05, diff=-8.5643e+00
+    dof=936 (node=156, comp=0): FD=8.4052e+00, K_c=6.3724e-05, diff=8.4052e+00
+    dof=546 (node=91, comp=0): FD=-8.0249e+00, K_c=4.8468e-07, diff=-8.0249e+00
+============================================================
+  [Type D対策] FD診断: Newton方向精度不良 (dir_ratio=1.000), NR上限拡張→50
+  Incr 3 (frac=0.7500), attempt 8, energy = 8.838e-09 (energy converged)
+  [f_ref] Incr 4: f_ref=5.472e+02 (dynamic_ref), atol=8.98e-06
+  Incr 4 (frac=0.8750), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 5.142e+03, ||R_w||/||f||=1.791e+00, active=28, R(x=6.2e+01/9%,y=1.0e+02/15%,z=6.8e+02/98%)
+  Incr 4 (frac=0.8750), attempt 5 [C+D.stall], ||R_t||/||f|| = 1.338e-02, ||R_r|| = 2.733e+02, ||R_w||/||f||=8.009e-02, rate=1.000, active=19, R(x=2.5e+00/7%,y=3.7e+00/10%,z=3.0e+01/83%)
+============================================================
+接線剛性FD方向診断（status-256）
+============================================================
+  ||du|| = 4.1327e-05
+  ||R_u|| = 3.5961e+01
+  ||R_red|| = 2.7338e+02
+  ||K_red @ du|| = 5.4555e-03
+  cos(R_red, K_red@du) = -0.1183
+  ⚠ 方向不整合: cos=-0.1183 (期待: ≈-1.0)
+  ⚠ R_u vs compute_residual(u) 乖離: 1.7237e-04 (リラクゼーション/動的項の差異)
+  ||R_base|| = 3.5961e+01
+  ||R(u+eps*du)|| = 3.5961e+01
+  方向有効性: ||R(u+eps*du)||/||R(u)|| = 1.000000
+  ✓ du方向で残差が減少 — Newton方向は有効
+  FD方向微分 = -5.4200e+02
+  解析方向微分 = 1.5653e-03
+  全体系 K@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ 全体系で接線剛性不整合 — K_c自体が不正確
+  全体系不整合DOF上位5件:
+    dof=552 (node=92, comp=0): FD=-2.6368e+02, analytical=1.0474e-03, diff=-2.6368e+02
+    dof=516 (node=86, comp=0): FD=-2.6100e+02, analytical=4.8799e-04, diff=-2.6100e+02
+    dof=966 (node=161, comp=0): FD=2.3228e+02, analytical=-3.8705e-04, diff=2.3228e+02
+    dof=546 (node=91, comp=0): FD=-2.2843e+02, analytical=3.9624e-04, diff=-2.2843e+02
+    dof=972 (node=162, comp=0): FD=2.0860e+02, analytical=-3.1606e-04, diff=2.0860e+02
+  comp別不整合: [x:6.21e+02(91%), y:2.59e+02(38%), z:1.07e+02(16%), θx:3.35e-05(0%), θy:3.62e-05(0%), θz:4.98e-06(0%)]
+  接触DOF不整合: 6.81e+02 (228 DOFs), 構造DOF不整合: 4.54e-03 (894 DOFs)
+  活性DOF K@du: FD vs 解析 相対誤差 = 1.0000e+00 (228 DOFs)
+  ⚠ 活性DOFで接線剛性不整合
+  MPC縮退系 K_red@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)
+  不整合DOF上位5件（縮退系index）:
+    red_dof=330: FD=-2.6368e+02, analytical=1.0474e-03, diff=2.6368e+02
+    red_dof=306: FD=-2.6100e+02, analytical=4.8799e-04, diff=2.6100e+02
+    red_dof=576: FD=2.3228e+02, analytical=-3.8705e-04, diff=2.3228e+02
+    red_dof=324: FD=-2.2843e+02, analytical=3.9624e-04, diff=2.2843e+02
+    red_dof=582: FD=2.0860e+02, analytical=-3.1606e-04, diff=2.0860e+02
+  方向微分整合度: |FD-解析|/max = 1.0000e+00
+------------------------------------------------------------
+  f_c 単独FD検証（K_c精度）
+  ||∂f_c/∂u·du (FD)|| = 1.4548e+02
+  ||K_c @ du|| = 5.4249e-04
+  f_c FD相対誤差 = 1.0000e+00
+  ⚠ K_c自体が不正確（f_c単独で10%超の不整合）
+  f_c comp別不整合: [x=1.3e+02/91%, y=5.7e+01/39%, z=1.9e+01/13%, θx=0.0e+00/0%, θy=0.0e+00/0%, θz=0.0e+00/0%]
+  f_c不整合DOF上位5件:
+    dof=552 (node=92, comp=0): FD=-5.5328e+01, K_c=-2.7544e-04, diff=-5.5327e+01
+    dof=972 (node=162, comp=0): FD=5.3263e+01, K_c=7.7424e-05, diff=5.3263e+01
+    dof=516 (node=86, comp=0): FD=-5.3202e+01, K_c=-1.5575e-04, diff=-5.3202e+01
+    dof=966 (node=161, comp=0): FD=4.9401e+01, K_c=1.1557e-04, diff=4.9401e+01
+    dof=546 (node=91, comp=0): FD=-4.8914e+01, K_c=-7.3059e-05, diff=-4.8914e+01
+============================================================
+  [Type D対策] FD診断: Newton方向精度不良 (dir_ratio=1.000), NR上限拡張→50
+  Incr 4 (frac=0.8750), attempt 10 [C+D.stall], ||R_t||/||f|| = 1.338e-02, ||R_r|| = 2.733e+02, ||R_w||/||f||=8.009e-02, rate=1.000, active=19, R(x=2.5e+00/7%,y=3.7e+00/10%,z=3.0e+01/83%)
+  Incr 4 (frac=0.8750), attempt 10, energy = 5.598e-10 (energy converged)
+  [f_ref] Incr 5: f_ref=7.082e+02 (dynamic_ref), atol=7.93e-06
+  Incr 5 (frac=1.0000), attempt 0 [C], ||R_t||/||f|| = 1.000e+00, ||R_r|| = 7.228e+03, ||R_w||/||f||=1.898e+00, active=0, R(x=8.2e+01/9%,y=1.4e+02/15%,z=9.1e+02/98%)
+  Incr 5 (frac=1.0000), attempt 5 [C+D.stall], ||R_t||/||f|| = 1.046e-02, ||R_r|| = 2.749e+02, ||R_w||/||f||=6.225e-02, rate=1.000, active=22, R(x=2.6e+00/7%,y=3.8e+00/10%,z=3.0e+01/83%)
+============================================================
+接線剛性FD方向診断（status-256）
+============================================================
+  ||du|| = 3.6589e-04
+  ||R_u|| = 3.6151e+01
+  ||R_red|| = 2.7496e+02
+  ||K_red @ du|| = 2.6154e-02
+  cos(R_red, K_red@du) = -0.1172
+  ⚠ 方向不整合: cos=-0.1172 (期待: ≈-1.0)
+  ⚠ R_u vs compute_residual(u) 乖離: 1.7406e-03 (リラクゼーション/動的項の差異)
+  ||R_base|| = 3.6151e+01
+  ||R(u+eps*du)|| = 3.6151e+01
+  方向有効性: ||R(u+eps*du)||/||R(u)|| = 1.000000
+  ⚠ du方向で残差が増加 — Newton方向が無効
+  FD方向微分 = -4.1914e+03
+  解析方向微分 = 1.2614e-02
+  全体系 K@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ 全体系で接線剛性不整合 — K_c自体が不正確
+  全体系不整合DOF上位5件:
+    dof=1033 (node=172, comp=1): FD=3.0557e+03, analytical=-1.0247e-02, diff=3.0557e+03
+    dof=253 (node=42, comp=1): FD=-2.8737e+03, analytical=9.9518e-03, diff=-2.8737e+03
+    dof=516 (node=86, comp=0): FD=-1.2436e+03, analytical=1.3148e-03, diff=-1.2436e+03
+    dof=936 (node=156, comp=0): FD=1.1761e+03, analytical=-1.0074e-03, diff=1.1761e+03
+    dof=552 (node=92, comp=0): FD=-1.1112e+03, analytical=1.5581e-03, diff=-1.1112e+03
+  comp別不整合: [x:3.23e+03(58%), y:4.48e+03(80%), z:8.15e+02(15%), θx:4.37e-05(0%), θy:3.05e-05(0%), θz:3.87e-05(0%)]
+  接触DOF不整合: 5.58e+03 (228 DOFs), 構造DOF不整合: 2.62e-03 (894 DOFs)
+  活性DOF K@du: FD vs 解析 相対誤差 = 1.0000e+00 (228 DOFs)
+  ⚠ 活性DOFで接線剛性不整合
+  MPC縮退系 K_red@du: FD vs 解析 相対誤差 = 1.0000e+00
+  ⚠ MPC縮退系で接線剛性不整合 (rel_err > 10%)
+  不整合DOF上位5件（縮退系index）:
+    red_dof=619: FD=3.0557e+03, analytical=-1.0247e-02, diff=3.0557e+03
+    red_dof=151: FD=-2.8737e+03, analytical=9.9518e-03, diff=2.8737e+03
+    red_dof=306: FD=-1.2436e+03, analytical=1.3148e-03, diff=1.2436e+03
+    red_dof=558: FD=1.1761e+03, analytical=-1.0074e-03, diff=1.1761e+03
+    red_dof=330: FD=-1.1112e+03, analytical=1.5581e-03, diff=1.1112e+03
+  方向微分整合度: |FD-解析|/max = 1.0000e+00
+------------------------------------------------------------
+  f_c 単独FD検証（K_c精度）
+  ||∂f_c/∂u·du (FD)|| = 9.1852e+02
+  ||K_c @ du|| = 6.5735e-03
+  f_c FD相対誤差 = 1.0000e+00
+  ⚠ K_c自体が不正確（f_c単独で10%超の不整合）
+  f_c comp別不整合: [x=7.6e+02/83%, y=5.0e+02/55%, z=1.1e+02/12%, θx=0.0e+00/0%, θy=0.0e+00/0%, θz=0.0e+00/0%]
+  f_c不整合DOF上位5件:
+    dof=516 (node=86, comp=0): FD=-3.1619e+02, K_c=-3.6724e-04, diff=-3.1619e+02
+    dof=936 (node=156, comp=0): FD=3.0585e+02, K_c=2.2685e-04, diff=3.0585e+02
+    dof=552 (node=92, comp=0): FD=-2.8690e+02, K_c=-3.7783e-04, diff=-2.8690e+02
+    dof=972 (node=162, comp=0): FD=2.7968e+02, K_c=1.6879e-04, diff=2.7968e+02
+    dof=1033 (node=172, comp=1): FD=2.6555e+02, K_c=4.3979e-03, diff=2.6555e+02
+============================================================
+  [Type D対策] FD診断: Newton方向精度不良 (dir_ratio=1.000), NR上限拡張→50
+  Incr 5 (frac=1.0000), attempt 10 [C+D.stall], ||R_t||/||f|| = 1.046e-02, ||R_r|| = 2.749e+02, ||R_w||/||f||=6.225e-02, rate=1.000, active=22, R(x=2.6e+00/7%,y=3.8e+00/10%,z=3.0e+01/83%)
+  Incr 5 (frac=1.0000), 低残差停滞[C+D] → Type D対策: NR上限拡張→50 (att=15, ||R||/||f||=1.046e-02, rate=1.000, R_c=1.07e+01, R_s=3.45e+01, active=22)
+  Incr 5 (frac=1.0000), attempt 15 [C+D.stall], ||R_t||/||f|| = 1.046e-02, ||R_r|| = 2.749e+02, ||R_w||/||f||=6.225e-02, rate=1.000, active=22, R(x=2.6e+00/7%,y=3.8e+00/10%,z=3.0e+01/83%)
+  Incr 5 (frac=1.0000), attempt 17, energy = 2.485e-09 (energy converged)
+  [NR診断] Incr 5 (frac=1.0000), 収束 att=18, Type分布[C:3(17%), C+D.stall:15(83%)], 直近10[C+D.stall:10], R_c=1.07e+01, R_s=3.45e+01, active=22, sliding=30, activated=0, deactivated=0, stick→slide=0, slide→stick=0, comp(x=2.6e+00/7%,y=3.8e+00/10%,z=3.0e+01/83%,θx=6.6e+00/18%,θy=1.8e+01/51%,θz=2.5e+00/7%)
+==================================================
+  エネルギー収支サマリ
+==================================================
+  ステップ数: 5
+  初期 KE: 1.464118e-07
+  初期 SE: 7.724334e-01
+  初期 Total: 7.724335e-01
+  最終 KE: 1.454270e-07
+  最終 SE: 1.562227e+00
+  最終 Total: 1.562227e+00
+  エネルギー減衰率: 2.0225
+==================================================
+  [収束型統計] disp=1(20%), energy=4(80%), total=5
+/home/user/xkep-cae/xkep_cae/mesh/process.py:58: UserWarning: 指定ギャップ 0.000000 < 最小安全ギャップ 0.031769（弦近似誤差）。自動的に 0.031769 に引き上げます。
+  mesh = _make_twisted_wire_mesh(
+/home/user/xkep-cae/xkep_cae/mesh/process.py:58: UserWarning: 指定ギャップ 0.000000 < 最小安全ギャップ 0.031769（弦近似誤差）。自動的に 0.031769 に引き上げます。
+  mesh = _make_twisted_wire_mesh(
+/home/user/xkep-cae/xkep_cae/mesh/process.py:58: UserWarning: 指定ギャップ 0.000000 < 最小安全ギャップ 0.031769（弦近似誤差）。自動的に 0.031769 に引き上げます。
+  mesh = _make_twisted_wire_mesh(
+======================================================================
+ParameterSweepBenchmark 完了: 総実行時間 = 162.74 s
+集約サマリ YAML: docs/benchmarks/ParameterSweepBenchmark_20260410T161115.yaml
+----------------------------------------------------------------------
+ n_strands   ndof  inc   elapsed[s] dominant_process                   pct[%]
+----------------------------------------------------------------------
+         7    222    4        22.39 StrandBendingOscillationProcess    25.49
+        19    582    4        53.85 StrandBendingOscillationProcess    24.94
+        37   1122    5        85.86 StrandBendingOscillationProcess    24.49
+----------------------------------------------------------------------
+
+[n_strands=7] profile_breakdown (top 5):
+  1. StrandBendingOscillationProcess          total=22.385s calls=    0 pct=25.49%
+  2. ContactFrictionProcess                   total=22.274s calls=    0 pct=25.37%
+  3. NewtonDynamicProcess                     total=21.840s calls=    0 pct=24.87%
+  4. LinearSolveProcess                       total=20.078s calls=    0 pct=22.86%
+  5. ContactForceAssemblyProcess              total=0.391s calls=    0 pct=0.45%
+
+[n_strands=19] profile_breakdown (top 5):
+  1. StrandBendingOscillationProcess          total=53.844s calls=    0 pct=24.94%
+  2. ContactFrictionProcess                   total=53.755s calls=    0 pct=24.90%
+  3. NewtonDynamicProcess                     total=53.279s calls=    0 pct=24.68%
+  4. LinearSolveProcess                       total=45.152s calls=    0 pct=20.92%
+  5. TangentAssemblyProcess                   total=4.386s calls=    0 pct=2.03%
+
+[n_strands=37] profile_breakdown (top 5):
+  1. StrandBendingOscillationProcess          total=85.860s calls=    0 pct=24.49%
+  2. ContactFrictionProcess                   total=85.717s calls=    0 pct=24.45%
+  3. NewtonDynamicProcess                     total=84.921s calls=    0 pct=24.22%
+  4. LinearSolveProcess                       total=64.535s calls=    0 pct=18.41%
+  5. TangentAssemblyProcess                   total=12.552s calls=    0 pct=3.58%
+[ProcessDiagnostics] レポート出力: /home/user/xkep-cae/docs/generated/process_usage_report.md

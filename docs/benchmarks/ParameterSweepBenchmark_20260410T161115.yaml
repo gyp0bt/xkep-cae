@@ -1,0 +1,33 @@
+process: ParameterSweepBenchmarkProcess
+target_process: StrandBendingOscillationProcess
+base_config_type: StrandBendingOscillationConfig
+param_name: n_strands
+param_values:
+  - 7
+  - 19
+  - 37
+profile_sort_by: total
+profile_top_n: 10
+status_file: docs/status/status-316.md
+cases:
+  -
+    param_name: n_strands
+    value: 7
+    elapsed_seconds: 22.394
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 25.492
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260410T160832.yaml
+  -
+    param_name: n_strands
+    value: 19
+    elapsed_seconds: 53.849
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 24.943
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260410T160855.yaml
+  -
+    param_name: n_strands
+    value: 37
+    elapsed_seconds: 85.865
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 24.492
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260410T160949.yaml
