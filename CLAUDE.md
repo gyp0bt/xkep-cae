@@ -116,7 +116,8 @@
 - ~~撚線ファイバー梁モデル 設計仕様策定（work/beam_hysteresis 統合）~~ ← status-313で完了（`xkep_cae/elements/docs/fiber_beam_strand.md` 新規作成、Phase F1-F6 計画）
 - ~~プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ~~ ← status-314で完了（snapshot_profile/get_profile_stats/profile_breakdown YAML統合）
 - ~~ParameterSweepBenchmarkProcess 新設 + manifest 連番衝突回避~~ ← status-315で完了（汎用 1 フィールド掃引 BatchProcess、`BenchmarkRunnerProcess._save_manifest` の同一秒衝突バグも同時修正）
-- **次**: **1000本撚線プロファイリング実測 — `ParameterSweepBenchmarkProcess` × `StrandBendingOscillationProcess` で n_strands=7/19/37 掃引し dominant Process の推移をデータ取得 + 被膜幾何接線剛性**
+- ~~n_strands=7/19/37 掃引初回実測（dominant Process 推移データ取得）~~ ← status-316で完了（軽量構成 162.74s 完走、**LinearSolve 75% 占有だが avg/call ほぼ定数**、**TangentAssembly/接触剛性が n² 成長（n=37/n=7 で 34.6x/94.6x）→1000本ではアセンブリ支配の示唆**）
+- **次**: **100/200/500本掃引拡張（TangentAssembly 転換点特定）+ 被膜 ON プロファイル + 被膜幾何接線剛性**
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
