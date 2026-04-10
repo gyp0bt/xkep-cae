@@ -123,14 +123,109 @@ class ProcessMetaclass(type(ABC)):
         return list(mcs._call_stack)
 
     @classmethod
-    def get_profile_report(mcs) -> str:
-        """全プロセスのプロファイルレポート."""
-        lines = ["Process Profile Report", "=" * 40]
-        for name, times in sorted(mcs._profile_data.items()):
-            n = len(times)
-            total = sum(times)
-            avg = total / n if n > 0 else 0
-            lines.append(f"  {name}: {n} calls, total={total:.3f}s, avg={avg:.3f}s")
+    def snapshot_profile(mcs) -> dict[str, int]:
+        """現時点の呼び出し回数スナップショット.
+
+        `get_profile_stats(since=...)` や `get_profile_report(since=...)`
+        に渡すことで、スナップショット以降に記録された呼び出しだけを
+        集計対象とできる。非破壊的（`_profile_data` をリセットしない）。
+
+        Returns:
+            プロセスクラス名 -> スナップショット時点の呼び出し回数。
+        """
+        return {name: len(times) for name, times in mcs._profile_data.items()}
+
+    @classmethod
+    def get_profile_stats(
+        mcs,
+        since: dict[str, int] | None = None,
+        sort_by: str = "total",
+    ) -> list[dict[str, float | int | str]]:
+        """全プロセスのプロファイル統計を構造化 dict のリストで返す.
+
+        Args:
+            since: `snapshot_profile()` の戻り値。指定された場合は
+                スナップショット以降に追加された呼び出しだけを集計する。
+            sort_by: "total" (合計時間降順) | "avg" (平均時間降順)
+                | "n" (呼び出し回数降順) | "name" (名前昇順)
+
+        Returns:
+            各要素: {"name", "n", "total", "avg", "min", "max", "median", "pct"}
+            `pct` は対象合計時間に占める割合 (0-100%)。
+        """
+        snapshot = since or {}
+        stats: list[dict[str, float | int | str]] = []
+        for name, times in mcs._profile_data.items():
+            start = snapshot.get(name, 0)
+            delta = times[start:]
+            if not delta:
+                continue
+            n = len(delta)
+            total = sum(delta)
+            avg = total / n
+            sorted_delta = sorted(delta)
+            median = sorted_delta[n // 2]
+            stats.append(
+                {
+                    "name": name,
+                    "n": n,
+                    "total": total,
+                    "avg": avg,
+                    "min": sorted_delta[0],
+                    "max": sorted_delta[-1],
+                    "median": median,
+                    "pct": 0.0,  # 後で正規化
+                }
+            )
+
+        total_all = sum(float(s["total"]) for s in stats)
+        for s in stats:
+            s["pct"] = 100.0 * float(s["total"]) / total_all if total_all > 0 else 0.0
+
+        sort_keys = {
+            "total": lambda x: -float(x["total"]),
+            "avg": lambda x: -float(x["avg"]),
+            "n": lambda x: -int(x["n"]),
+            "name": lambda x: str(x["name"]),
+        }
+        stats.sort(key=sort_keys.get(sort_by, sort_keys["total"]))
+        return stats
+
+    @classmethod
+    def get_profile_report(
+        mcs,
+        since: dict[str, int] | None = None,
+        sort_by: str = "total",
+        top_n: int | None = None,
+    ) -> str:
+        """全プロセスのプロファイルレポート（テキスト形式）.
+
+        デフォルトで合計時間降順にソートし、各行に割合（%）を出力する。
+
+        Args:
+            since: `snapshot_profile()` 結果。指定時は以降の呼び出しのみ集計。
+            sort_by: "total" | "avg" | "n" | "name"
+            top_n: 表示する上位件数（None = 全件）。
+        """
+        stats = mcs.get_profile_stats(since=since, sort_by=sort_by)
+        if top_n is not None:
+            stats = stats[:top_n]
+        total_all = sum(float(s["total"]) for s in stats)
+
+        lines = [
+            "Process Profile Report",
+            "=" * 78,
+            f"  {'process':<40s} {'n':>5s} {'total':>10s} {'avg':>10s} {'pct':>6s}",
+            "-" * 78,
+        ]
+        for s in stats:
+            lines.append(
+                f"  {str(s['name']):<40s} {int(s['n']):5d} "
+                f"{float(s['total']):9.3f}s {float(s['avg']):9.4f}s "
+                f"{float(s['pct']):5.1f}%"
+            )
+        lines.append("-" * 78)
+        lines.append(f"  合計: {total_all:.3f}s ({len(stats)} プロセス)")
         return "\n".join(lines)
 
     @classmethod
