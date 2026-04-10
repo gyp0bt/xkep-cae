@@ -113,7 +113,8 @@
 - ~~摩擦K_stベクトル化 + Hermite dpA/dpBバッチ化~~ ← status-310で完了（K_st性能69-208x高速化確認）
 - ~~adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合~~ ← status-311で完了
 - ~~BC forループNumPyベクトル化 + MPC forループ排除 + 責務分離違反修正~~ ← status-312で完了
-- ~~プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ~~ ← status-313で完了（snapshot_profile/get_profile_stats/profile_breakdown YAML統合）
+- ~~撚線ファイバー梁モデル 設計仕様策定（work/beam_hysteresis 統合）~~ ← status-313で完了（`xkep_cae/elements/docs/fiber_beam_strand.md` 新規作成、Phase F1-F6 計画）
+- ~~プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ~~ ← status-314で完了（snapshot_profile/get_profile_stats/profile_breakdown YAML統合）
 - **次**: **1000本撚線プロファイリング実測（profile_breakdown活用） + 被膜幾何接線剛性**
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 

@@ -1,175 +1,151 @@
-# status-313: プロファイル統計 API 強化 + BenchmarkRunner プロファイル自動キャプチャ
+# status-313: 撚線ファイバー梁モデル 設計仕様策定（work/beam_hysteresis 結果の統合）
 
 [← README](../../README.md) | [← status-index](status-index.md) | [← roadmap](../roadmap.md)
 
 - **日時**: 2026-04-10
-- **ブランチ**: `claude/check-status-todos-CtBHe`
-- **テスト数**: 13 件追加（`TestProfileStatsAPI` 6 + `TestProfileReportAPI` 3 + `TestBenchmarkRunnerProcessAPI` 4）
-- **契約違反**: **0 件**
-- **条例違反**: **0 件**
+- **ブランチ**: `claude/merge-fiber-beam-model-tFcuM`
+- **テスト数**: 459 passed（変更なし。設計ドキュメントのみの追加）
+- **契約違反**: **0件**
+- **条例違反**: 0件
 
 ---
 
 ## 概要
 
-status-312 の TODO のうち **「1000 本撚線プロファイリング」** の準備基盤として、`ProcessMetaclass._profile_data` を活用した構造化プロファイル統計 API を整備し、`BenchmarkRunnerProcess` の走査マニフェストに `profile_breakdown` を自動記録するようにした。
+`work/beam_hysteresis/` ディレクトリで蓄積された撚線ヒステリシスの概念検証結果を
+master にマージするための **設計仕様ドキュメント** を新規作成した。
 
-これにより「ベンチマーク 1 回の YAML マニフェストから、どの Process が合計時間の何 % を占めたか」を即座に読み取れるようになり、大規模ケースの熱い経路特定が手動計測無しで完結する。
+コード実装は本 status ではまだ行わず、後続の Phase F1〜F6 で段階的に実装する計画。
+本 status では以下を成果物とする：
 
----
-
-## 実施内容
-
-### 1. `ProcessMetaclass` 構造化プロファイル API（`xkep_cae/core/base.py`）
-
-既存の `_profile_data: dict[str, list[float]]` を活かしたまま、以下のクラスメソッドを追加/強化:
-
-| メソッド | 役割 |
-|----------|------|
-| `snapshot_profile()` | 現時点の呼び出し回数 dict を返す（非破壊的スナップショット） |
-| `get_profile_stats(since, sort_by)` | 構造化統計 `[{name, n, total, avg, min, max, median, pct}, ...]` |
-| `get_profile_report(since, sort_by, top_n)` | ソート済みテキストレポート（デフォルト: total 降順、全件、%付き） |
-
-**デルタ集計の原理**: `_profile_data` はグローバルアキュムレータのため、ベンチマーク前後を切り出すには呼び出し回数をスナップショットしておき、後で `times[snapshot_count:]` に対して統計を取る。これにより既存データを破壊せずベンチマーク単位の集計が可能。
-
-**ソート軸**:
-- `"total"`（デフォルト）: 合計時間降順 — ボトルネック特定用
-- `"avg"`: 平均時間降順 — 1 呼び出しが重い処理の検出
-- `"n"`: 呼び出し回数降順 — 内側ループ候補の検出
-- `"name"`: 名前昇順 — 差分比較用
-
-### 2. `BenchmarkRunnerProcess` へのプロファイル統合（`xkep_cae/core/benchmark.py`）
-
-| 項目 | 旧実装 | 新実装 |
-|------|--------|--------|
-| `BenchmarkRunInput` | `capture_profile` 無し | `capture_profile=True`（デフォルト ON）+ `profile_sort_by`/`profile_top_n` |
-| `RunManifest` | `profile_breakdown` 無し | `profile_breakdown: tuple[dict, ...]` 追加（YAML 出力にも反映） |
-| `BenchmarkRunnerProcess.process()` | プロファイル未捕捉 | 実行前後で `snapshot_profile()` → `get_profile_stats(since=...)` を実行して delta を記録 |
-
-**YAML 出力例**（抜粋）:
-```yaml
-profile_breakdown:
-  -
-    name: ContactFrictionProcess
-    n: 1
-    total: 612.543
-    avg: 612.543
-    min: 612.543
-    max: 612.543
-    median: 612.543
-    pct: 81.4
-  -
-    name: ComputeStJacobianProcess
-    n: 5840
-    total: 72.188
-    avg: 0.012
-    ...
-    pct: 9.6
-```
-
-### 3. テスト追加（13 件）
-
-| ファイル | クラス | テスト数 | 内容 |
-|----------|--------|---------|------|
-| `tests/test_profile_stats.py` | `TestProfileStatsAPI` | 6 | snapshot/stats の基本 API、`since` フィルタ、ソート軸、pct 正規化 |
-| `tests/test_profile_stats.py` | `TestProfileReportAPI` | 3 | テキストレポートのヘッダ、`top_n`、`since` 絞り込み |
-| `tests/test_benchmark_runner.py` | `TestBenchmarkRunnerProcessAPI` | 4 | `profile_breakdown` の記録、`capture_profile=False`、`profile_top_n`、YAML 出力 |
-
-`@binds_to` は 1:1 制約のため、プロファイル API 用ダミープロセスは `_FastProcess`（Stats 用）と `_SlowProcess`（Report 用）の 2 つに分離。
+1. **設計仕様書** `xkep_cae/elements/docs/fiber_beam_strand.md` 新規作成
+2. **work/beam_hysteresis/README.md** 新規作成（概念検証の結論要約）
+3. **docs/design/README.md** に設計文書リンク追加
+4. **README.md / docs/status/status-index.md / docs/roadmap.md** 更新
 
 ---
 
-## 変更ファイル
+## 背景
 
-- `xkep_cae/core/base.py`: `snapshot_profile` / `get_profile_stats` / `get_profile_report` 強化（+73 行）
-- `xkep_cae/core/benchmark.py`: `BenchmarkRunInput` 3 フィールド追加 + `RunManifest.profile_breakdown` + `process()` へのプロファイル統合（+40 行）
-- `tests/test_profile_stats.py`: 新規作成（9 テスト）
-- `tests/test_benchmark_runner.py`: 4 テスト追加
+`work/beam_hysteresis/` では Stage 01〜08 で以下が確認済みだった：
+
+| Stage | 結論 |
+|-------|------|
+| 01 | 1D 移動硬化 ≡ 1D 撚線摩擦（数学的同型） |
+| 02-03 | 傾き非対称 U/L < 1 には接触剛性劣化（β ≈ 0.25）が必要 |
+| 04-05 | N=150 多層摩擦＋繊維断面で角のない丸いティアドロップ |
+| 06 | ジグ摩擦は乗算的、内部摩擦は加算的。分離同定可能 |
+| 07 | 劣化ありモデルは Cycle 2 以降シェイクダウン |
+| 08 | 7本撚線陽接触解析で散逸ループを確認（キャリブレーション目標） |
+
+この知見を **1本のファイバー梁要素** に落とし込み、
+現行の陽接触モデル（`StrandBendingOscillationProcess` 等）と相補する
+高速近似モデルを追加するのが本設計の狙い。
+
+---
+
+## 成果物
+
+### 1. `xkep_cae/elements/docs/fiber_beam_strand.md`（新規 457行）
+
+以下の節を含む正式な設計仕様：
+
+- **背景**: `work/beam_hysteresis/` Stage 01〜08 の数値的裏付けを数式付きで要約
+- **スコープ / 非スコープ**
+- **モジュール構成**: `xkep_cae/elements/fiber/` 配下の 5 ファイル構成
+- **Strategy Protocol**: `Fiber1DMaterialStrategy` 追加（既存 Penalty/Friction と同作法）
+- **状態 dataclass**: `Fiber1DState` / `SectionState`（frozen、C17 準拠）
+- **ファイバー断面ジェネレータ**: `CircularFiberSection.strip / polar`
+- **セクション積分 Process**: `FiberSectionIntegratorProcess`（軸–曲げカップリング接線行列込み）
+- **梁要素ラッパ**: `StrandFiberBeamProcess`（CR Timoshenko に差し替え可能な材料層）
+- **既存コードへの組み込みポイント**: `_beam_assembler.ULCRBeamAssembler` の分岐追加
+- **テスト計画**: 4 クラス（API / Physics / Convergence / Integration）
+- **実装フェーズ F1〜F6**
+- **既知のリスク**: 接線 FD、状態肥大化、同定非一意性、動的積分結合
+
+### 2. `work/beam_hysteresis/README.md`（新規）
+
+- 概念検証の結論要約（6 項目）
+- スクリプト一覧と主図の対応表
+- キー方程式（撚線摩擦、剛性劣化、ジグ摩擦補正）
+- キャリブレーション対象パラメータ表（自由度 3 に限定）
+- 実行方法
+
+### 3. `docs/design/README.md`
+
+`fiber_beam_strand.md` を索引表に追加（状態: **仕様策定**）。
+
+### 4. `README.md`
+
+- 現在の状態バナーを status-313 に更新
+- ドキュメント表に撚線ファイバー梁の 2 つのリンクを追加
+
+### 5. `docs/status/status-index.md`（本ファイル）
+
+- status-313 エントリ追加
+
+### 6. `docs/roadmap.md`
+
+- Phase 4.4–4.6 欄に進捗メモ追加
+- 完了済み表に本 status を接続
+
+---
+
+## 実装計画（未着手）
+
+本 status はドキュメントのみ。コードは **Phase F1〜F6** で段階実装：
+
+| Phase | 内容 | 完了判定 |
+|-------|------|---------|
+| **F1** | `Elastic1D`, `BilinearKinematicHardening1D` | Physics テスト 6 件合格 |
+| **F2** | `MultiLayerFrictionDegrading1D`（frozen 化） | `05_smooth_teardrop.py` rtol 1% |
+| **F3** | `CircularFiberSection` + `FiberSectionIntegratorProcess` | FD 接線 atol 1e-5 |
+| **F4** | `StrandFiberBeamProcess` + `_beam_assembler` 配線 | 弾性 EI 一致 < 0.1% |
+| **F5** | `StrandBendingOscillationProcess` に `use_fiber_beam` | 散逸エネルギー一致 < 10% |
+| **F6** | キャリブレーション Process（`tuning/`） | BenchmarkRunnerProcess マニフェスト |
 
 ---
 
 ## 再現手順
 
 ```bash
-# ブランチ
-git checkout claude/check-status-todos-CtBHe
+# 設計ドキュメントのプレビュー
+cat xkep_cae/elements/docs/fiber_beam_strand.md
+cat work/beam_hysteresis/README.md
 
-# 新規テスト単体
-python -m pytest tests/test_profile_stats.py -v
+# 概念検証スクリプトの再実行（裏付けの確認）
+cd work/beam_hysteresis
+python 05_smooth_teardrop.py 2>&1 | tee /tmp/log-$(date +%s).log
+python 06_jig_friction.py 2>&1 | tee /tmp/log-$(date +%s).log
 
-# Benchmark 統合テスト
-python -m pytest tests/test_benchmark_runner.py::TestBenchmarkRunnerProcessAPI -v
-
-# 全 xkep_cae/ サブテスト（pre-existing stress_contour 1 件のみ FAIL）
-python -m pytest xkep_cae/ -q 2>&1 | tee /tmp/log-$(date +%s).log
-
-# lint / format
-ruff check xkep_cae/ tests/
-ruff format --check xkep_cae/ tests/
-
-# 契約チェック
-python contracts/validate_process_contracts.py
+# テストスイート（回帰がないことの確認）
+pytest tests/ -v -m "not slow and not external"
 ```
 
 ---
 
-## 使い方（大規模ベンチマーク向け）
+## 次にやること
 
-```python
-from xkep_cae.core.benchmark import BenchmarkRunInput, BenchmarkRunnerProcess
-from xkep_cae.core.base import ProcessMetaclass
+1. **Phase F1 開始**: `xkep_cae/elements/fiber/` を切って
+   `Elastic1D` / `BilinearKinematicHardening1D` 実装＋Physics テスト
+2. `docs/design/README.md` の状態を **仕様策定 → 実装中** に更新
+3. 既存の 7本撚線 `StrandBendingOscillationProcess` 結果を
+   キャリブレーション真値として `tests/fixtures/` に固定化
 
-# ベンチマーク対象 Process を BenchmarkRunner で包むだけ
-run_input = BenchmarkRunInput(
-    process=my_process,
-    config=my_config,
-    status_file="docs/status/status-314.md",
-    output_dir="docs/benchmarks/",
-    capture_profile=True,      # ← デフォルト ON
-    profile_sort_by="total",    # ← 合計時間降順
-    profile_top_n=20,           # ← 上位 20 件のみ保存
-)
-run_result = BenchmarkRunnerProcess().process(run_input)
+---
 
-# YAML マニフェストに profile_breakdown が自動記録される
-print(run_result.manifest_path)
+## コミットメッセージ（予定）
 
-# 手動でテキストレポートも取得可能
-print(ProcessMetaclass.get_profile_report(top_n=20))
 ```
+feat(design): 撚線ファイバー梁モデル設計仕様策定 (status-313)
 
----
+- xkep_cae/elements/docs/fiber_beam_strand.md 新規作成
+  (Strategy/状態/積分/テスト計画/F1-F6 フェーズ)
+- work/beam_hysteresis/README.md 新規作成（Stage 01-08 結論要約）
+- docs/design/README.md に設計文書リンク追加
+- README.md / status-index.md / roadmap.md 更新
 
-## TODO
-
-- [ ] **1000 本撚線ベンチマーク実測** — 今回の `profile_breakdown` を使って実際に 100〜1000 本ケースでどの Process が支配的かを定量測定し、次の最適化対象を特定
-- [ ] 被膜幾何接線剛性（∂n/∂u, ∂s/∂u）の実装
-- [ ] シース-素線接触統合（旧 SheathModel/HEX8 の Process 化）
-- [ ] リスタート解析方式への移行 — `(u, v, a, 接触ペア)` I/O 整理
-- [ ] `get_profile_stats` の階層集計（親子プロセスのネスト時間計上） — 現状はフラットな classname 単位。`ProcessMetaclass._call_stack` を活かせば cProfile 風のツリーも可能
-
----
-
-## 次の担当者向け
-
-### 重要ポイント
-
-1. **`BenchmarkRunInput.capture_profile` はデフォルト ON** — 既存ベンチマークコードを変更せずに `run_result.manifest.profile_breakdown` でボトルネック内訳を取得できる
-2. **delta 集計**: プロファイルはグローバル累積なのでベンチマーク前後の `snapshot_profile()` を取り、`get_profile_stats(since=...)` で差分だけ集計している（既存データは破壊しない）
-3. **ソート軸**: bottleneck 特定には `sort_by="total"`、内側ループ候補には `sort_by="n"` を使い分ける
-4. **`@binds_to` 1:1 制約**: Stats/Report で同じダミープロセスを使えないため `_FastProcess` と `_SlowProcess` に分離している点に注意
-5. **既存の `reset_profile()` は温存** — CI 並列実行や個別テストで分離したい場合は引き続きリセット可能
-
-### 開発運用で発見した点
-
-- **効果的**: `ProcessMetaclass._profile_data` は status-265 で既に全 Process を自動計測済み。今回の改修は「集計の読み方」を整備しただけで、計測の仕掛けは不要だった。過去の基盤投資が活きた例。
-- **注意**: `_profile_data` はクラス変数でグローバル累積のため、並列テストや長時間セッションでは肥大化する。必要に応じて `reset_profile()` を呼ぶこと。
-
----
-
-## STA2 準拠チェック
-
-- [x] **数値の捏造なし**: テスト結果をそのまま記録（13 件追加、全合格）
-- [x] **再現手順記載**: 上記「再現手順」セクション
-- [x] **ベースライン維持**: `xkep_cae/` 534 passed + 10 skipped + 1 xfailed + 1 pre-existing FAIL（stress_contour、status-312 でも既知）
-- [x] **回帰なし**: 契約違反 0 件、lint 全通過
+概念検証（N=150 多層摩擦 + β=0.25 接触劣化 + 繊維断面）で確認済みの
+ヒステリシスを 1 本のファイバー梁要素に等価化し、陽接触モデルと
+相補する高速近似モデルを追加する設計。コード実装は F1-F6 で段階的に行う。
+```
