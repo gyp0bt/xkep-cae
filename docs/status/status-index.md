@@ -146,6 +146,7 @@
 | [310](status-310.md) | 2026-04-08 | Hermite dpA/dpBバッチ化 + 摩擦K_stベクトル化 + K_st性能69-208x | 442+20+14+6+3+6 passed |
 | [311](status-311.md) | 2026-04-08 | adj batchバッチ化 + BC適用20,000x高速化 + pypardiso統合 | 445+20+14+6+3+6 passed |
 | [312](status-312.md) | 2026-04-09 | BC適用ベクトル化 + 責務分離違反修正 + MPC forループ排除 | 459 passed |
+| [313](status-313.md) | 2026-04-10 | 撚線ファイバー梁モデル 設計仕様策定（work/beam_hysteresis 統合） | 459 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 

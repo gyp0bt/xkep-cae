@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459 テスト** — 2026-04-09時点 | **BC適用ベクトル化+MPC forループ排除+責務分離違反修正**（status-312） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459 テスト** — 2026-04-10時点 | **撚線ファイバー梁モデル 設計仕様策定**（status-313） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
@@ -60,6 +60,8 @@ xkep_cae/
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集 |
+| [撚線ファイバー梁 設計仕様](xkep_cae/elements/docs/fiber_beam_strand.md) | 内部摩擦ヒステリシスを1本の梁で等価化する設計 |
+| [beam_hysteresis 概念検証](work/beam_hysteresis/README.md) | 上記設計の裏付け数値実験 |
 
 ## インストール
 
