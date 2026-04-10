@@ -62,6 +62,36 @@ snapshot_profile()` のデルタとして単独に取得するため、ケース
 | `summary_rows` | `tuple[dict[str, Any], ...]` | 集約サマリー（YAML 保存に使用） |
 | `summary_yaml_path` | `str \| None` | 集約 YAML の保存先 |
 
+### サマリー行のキー
+
+各 `summary_rows` エントリは次のキーを持つ（`ParameterSweepBenchmarkResult.summary_rows`
+と集約 YAML の両方で同じスキーマ）:
+
+| キー | 内容 |
+|------|------|
+| `param_name` | 掃引フィールド名 |
+| `value` | そのケースの差し替え値（`_scalarize` でプリミティブ化） |
+| `elapsed_seconds` | BenchmarkRunnerProcess が計測したケース全体秒 |
+| `dominant_process` | profile_breakdown 先頭（inclusive 時間最大。wrapper 込み） |
+| `dominant_pct` | `dominant_process` の pct |
+| `dominant_leaf_process` | **status-317 追加** — `uses` が空の葉プロセスの先頭。真のボトルネック |
+| `dominant_leaf_pct` | `dominant_leaf_process` の pct |
+| `dominant_leaf_total` | `dominant_leaf_process` の total 秒 |
+| `manifest_path` | そのケースの個別 manifest YAML パス |
+
+### `dominant_process` と `dominant_leaf_process` の違い（status-317）
+
+`ProcessMetaclass._profile_data` は各 Process の *inclusive* 時間（ネストした
+子プロセスの時間も含む壁時計）を記録する。このため `StrandBendingOscillationProcess`
+→ `ContactFrictionProcess` → `NewtonDynamicProcess` のように wrapper が
+1:1 で子を呼び出す階層では、各層が同じ elapsed を記録して breakdown 先頭を
+占めてしまう（status-316 n=37 ケースで 3 wrapper が ~25% ずつ並んだ現象）。
+
+`dominant_leaf_process` は `target_process` の `uses` グラフを再帰走査し、
+`uses` が空のクラスを「葉」として先頭から抽出することで、wrapper 占有を
+読み飛ばして本当にコストを使っている Process を指す。レジストリに依存せず
+static に判定するため、`_skip_registry=True` のテストフィクスチャでも機能する。
+
 ### サマリー YAML 例
 
 ```yaml
@@ -72,16 +102,24 @@ param_values:
   - 19
 cases:
   -
-    n_strands: 7
-    elapsed_seconds: 215.3
-    dominant_process: ContactFrictionProcess
-    dominant_pct: 81.4
+    param_name: n_strands
+    value: 7
+    elapsed_seconds: 22.39
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 25.1
+    dominant_leaf_process: LinearSolve
+    dominant_leaf_pct: 22.5
+    dominant_leaf_total: 20.08
     manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260410T....yaml
   -
-    n_strands: 19
-    elapsed_seconds: 1104.8
-    dominant_process: ContactFrictionProcess
-    dominant_pct: 86.2
+    param_name: n_strands
+    value: 19
+    elapsed_seconds: 53.85
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 25.0
+    dominant_leaf_process: LinearSolve
+    dominant_leaf_pct: 21.0
+    dominant_leaf_total: 45.15
     manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260410T....yaml
 ```
 
@@ -133,3 +171,10 @@ for row in sweep.summary_rows:
 ### status-315
 
 ParameterSweepBenchmarkProcess 新規実装。
+
+### status-317
+
+- `summary_rows` に `dominant_leaf_process` / `dominant_leaf_pct` /
+  `dominant_leaf_total` を追加。`uses` グラフ再帰走査で静的に葉判定。
+- `parameter_sweep_benchmark.py` module docstring に `BenchmarkRunResult`
+  の正しい属性参照サンプル（`case.manifest.results_summary`）を追記。
