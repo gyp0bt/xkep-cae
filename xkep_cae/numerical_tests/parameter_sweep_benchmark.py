@@ -294,7 +294,18 @@ def _collect_uses_graph(root_cls: type) -> dict[str, type]:
     クラスから宣言上到達可能な全 Process クラスを name 引きできるよう集約する。
     ProcessRegistry には依存しないので、テスト用 `_skip_registry=True` の
     ダミープロセス（registry に載らない）でも正しく葉判定できる。
+
+    status-320: `StrategySlot.default_types` も静的依存として扱い、Strategy 経由
+    で注入される Process（例: `ContactFrictionProcess.contact_force_slot` →
+    `HuberContactForceProcess` → `ContactForceStStiffnessProcess`）まで到達可能に
+    拡張した。インスタンス化しなくても宣言上の uses グラフから n² スケーリング
+    プロセスを dominant_leaf_process 側が抽出できる。
     """
+    try:
+        from xkep_cae.core.slots import StrategySlot
+    except Exception:  # pragma: no cover - safety net
+        StrategySlot = None  # type: ignore[assignment]
+
     visited: dict[str, type] = {}
     stack: list[type] = [root_cls]
     while stack:
@@ -306,21 +317,50 @@ def _collect_uses_graph(root_cls: type) -> dict[str, type]:
         for dep in getattr(cls, "uses", []):
             if dep.__name__ not in visited:
                 stack.append(dep)
+        # status-320: StrategySlot の default_types をクラスレベルで展開する。
+        # `collect_strategy_slots(cls)` は MRO を遡って全 StrategySlot を集める
+        # ので、サブクラスで上書きされた宣言も正しく拾える。
+        if StrategySlot is not None:
+            for klass in reversed(cls.__mro__):
+                for attr in vars(klass).values():
+                    if not isinstance(attr, StrategySlot):
+                        continue
+                    for dep_type in attr.default_types:
+                        if dep_type.__name__ not in visited:
+                            stack.append(dep_type)
     return visited
 
 
 def _is_leaf_process(name: str, known_classes: dict[str, type]) -> bool:
     """profile_breakdown の name エントリを葉プロセス判定.
 
-    - `known_classes` に載っていて `uses` が空 → 葉
+    - `known_classes` に載っていて `uses` が空かつ StrategySlot の
+      `default_types` も空 → 葉
     - `known_classes` に載っていない → 保守的に葉扱い（未知の非 Process 経路を
       誤って wrapper 扱いしないため）
-    - `known_classes` に載っていて `uses` が非空 → wrapper（非葉）
+    - `known_classes` に載っていて `uses` が非空 or StrategySlot 経由依存あり
+      → wrapper（非葉）
+
+    status-320: StrategySlot.default_types が非空のクラスは、静的 `uses` が空でも
+    Strategy 経由で他 Process を呼び出すため wrapper 扱いする。これにより
+    `ContactFrictionProcess` を target にしても dominant_leaf_process が本当の葉
+    （例: `ContactForceStStiffnessProcess` の uses 先 `ComputeStJacobianProcess`）
+    まで降りられる。
     """
     cls = known_classes.get(name)
     if cls is None:
         return True
-    return not getattr(cls, "uses", [])
+    if getattr(cls, "uses", []):
+        return False
+    try:
+        from xkep_cae.core.slots import StrategySlot
+    except Exception:  # pragma: no cover - safety net
+        return True
+    for klass in cls.__mro__:
+        for attr in vars(klass).values():
+            if isinstance(attr, StrategySlot) and attr.default_types:
+                return False
+    return True
 
 
 def _first_leaf_breakdown_entry(
