@@ -142,13 +142,16 @@ def _assemble_friction_tangent_stiffness(
     friction_tangents: dict[int, np.ndarray],
     ndof_total: int,
     ndof_per_node: int = 6,
-) -> sp.csr_matrix:
+) -> sp.coo_matrix:
     """摩擦接線剛性行列（材料項）バッチ化版（status-246）.
 
     K_fric = Σ D_t[a1,a2] * g_t[a1] ⊗ g_t[a2]
+
+    status-321: 戻り値型を sp.coo_matrix に変更（tocsr() を skip）。呼び出し側
+    （CoulombReturnMappingProcess.tangent）で 1 度だけ COO concat → CSR 変換する。
     """
     if not friction_tangents:
-        return sp.csr_matrix((ndof_total, ndof_total))
+        return sp.coo_matrix((ndof_total, ndof_total))
 
     idx_list = sorted(friction_tangents.keys())
     n = len(idx_list)
@@ -196,17 +199,14 @@ def _assemble_friction_tangent_stiffness(
         for d in range(3):
             gdofs[:, k * 3 + d] = nodes_arr[:, k] * ndof_per_node + d
 
-    # COO 構築
+    # COO 構築（status-321: mask filter を skip し、tocsr() も skip）
     row_idx = np.broadcast_to(gdofs[:, :, None], (n, 12, 12)).ravel()
     col_idx = np.broadcast_to(gdofs[:, None, :], (n, 12, 12)).ravel()
     val_arr = K_local.ravel()
-    mask = np.abs(val_arr) > 1e-30
-    if not mask.any():
-        return sp.csr_matrix((ndof_total, ndof_total))
     return sp.coo_matrix(
-        (val_arr[mask], (row_idx[mask], col_idx[mask])),
+        (val_arr, (row_idx, col_idx)),
         shape=(ndof_total, ndof_total),
-    ).tocsr()
+    )
 
 
 def _assemble_friction_geometric_stiffness(
@@ -216,14 +216,16 @@ def _assemble_friction_geometric_stiffness(
     ndof_per_node: int = 6,
     *,
     use_hermite: bool = False,
-) -> sp.csr_matrix:
+) -> sp.coo_matrix:
     """摩擦接線幾何剛性行列（バッチ化版: status-246）.
 
     M_{ij} = -q₁·n_i·t1_j + q₂·ε_{ijk}·t1_k - q₂·t2_i·n_j
     K_geo_fric = Σ_{ki,kj} c_ki·c_kj/dist · M
+
+    status-321: 戻り値型を sp.coo_matrix に変更（tocsr() を skip）。
     """
     if not friction_forces_local:
-        return sp.csr_matrix((ndof_total, ndof_total))
+        return sp.coo_matrix((ndof_total, ndof_total))
 
     # アクティブペアのデータ抽出
     idx_list = sorted(friction_forces_local.keys())
@@ -312,16 +314,14 @@ def _assemble_friction_geometric_stiffness(
         for d in range(3):
             gdofs[:, k * 3 + d] = nodes_v[:, k] * ndof_per_node + d
 
+    # status-321: mask filter を skip し、tocsr() も skip。COO のまま返す。
     row_idx = np.broadcast_to(gdofs[:, :, None], (nv_count, 12, 12)).ravel()
     col_idx = np.broadcast_to(gdofs[:, None, :], (nv_count, 12, 12)).ravel()
     val_arr = K_local.ravel()
-    mask = np.abs(val_arr) > 1e-30
-    if not mask.any():
-        return sp.csr_matrix((ndof_total, ndof_total))
     return sp.coo_matrix(
-        (val_arr[mask], (row_idx[mask], col_idx[mask])),
+        (val_arr, (row_idx, col_idx)),
         shape=(ndof_total, ndof_total),
-    ).tocsr()
+    )
 
 
 def _assemble_friction_st_stiffness(
@@ -348,57 +348,55 @@ def _assemble_friction_st_stiffness(
     zero = sp.csr_matrix((ndof_total, ndof_total))
 
     # ── アクティブペア抽出 ──
-    n_pairs = len(contact_pairs)
-    if n_pairs == 0:
+    if not contact_pairs:
         return zero
 
-    # friction_forces_localに存在し、stateを持つペアを抽出
-    act_indices = []
+    # status-321: 単一パスで active ペアを抽出（state/q を pre-bind）.
+    # 旧実装は (1) act_indices を作る for + (2) bulk 抽出 for の 2 パス構造
+    # だったが、(1) の Python ループを 1 回に集約しつつ Python 属性アクセスを
+    # キャッシュする。これにより per-pair 定数項が縮む。
+    act_pairs: list = []
+    act_q_list: list = []
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
             continue
-        if pair_idx not in friction_forces_local:
+        q = friction_forces_local.get(pair_idx)
+        if q is None:
             continue
-        q = friction_forces_local[pair_idx]
         if abs(q[0]) < 1e-30 and abs(q[1]) < 1e-30:
             continue
-        act_indices.append(pair_idx)
+        act_pairs.append(pair)
+        act_q_list.append(q)
 
-    n_act = len(act_indices)
+    n_act = len(act_pairs)
     if n_act == 0:
         return zero
 
-    # ── ペアデータをNumPy配列に一括抽出 ──
-    s_arr = np.zeros(n_act)
-    t_arr = np.zeros(n_act)
-    s_unc_arr = np.zeros(n_act)
-    t_unc_arr = np.zeros(n_act)
-    nodes = np.zeros((n_act, 4), dtype=int)
-    elem_a_arr = np.full(n_act, -1, dtype=int)
-    elem_b_arr = np.full(n_act, -1, dtype=int)
-    q1_arr = np.zeros(n_act)
-    q2_arr = np.zeros(n_act)
-    t1_arr = np.zeros((n_act, 3))
-    t2_arr = np.zeros((n_act, 3))
-
-    for i, pair_idx in enumerate(act_indices):
-        pair = contact_pairs[pair_idx]
-        st = pair.state
-        s_arr[i] = st.s
-        t_arr[i] = st.t
-        s_unc_arr[i] = getattr(st, "s_unclamped", st.s) or st.s
-        t_unc_arr[i] = getattr(st, "t_unclamped", st.t) or st.t
-        nodes[i, 0] = pair.nodes_a[0]
-        nodes[i, 1] = pair.nodes_a[1]
-        nodes[i, 2] = pair.nodes_b[0]
-        nodes[i, 3] = pair.nodes_b[1]
-        elem_a_arr[i] = getattr(pair, "elem_a", -1)
-        elem_b_arr[i] = getattr(pair, "elem_b", -1)
-        q = friction_forces_local[pair_idx]
-        q1_arr[i] = q[0]
-        q2_arr[i] = q[1]
-        t1_arr[i] = st.tangent1
-        t2_arr[i] = st.tangent2
+    # ── ペアデータをNumPy配列に一括抽出（active 数比例） ──
+    states = [p.state for p in act_pairs]
+    s_arr = np.fromiter((st.s for st in states), dtype=float, count=n_act)
+    t_arr = np.fromiter((st.t for st in states), dtype=float, count=n_act)
+    s_unc_arr = np.fromiter(
+        (getattr(st, "s_unclamped", st.s) or st.s for st in states),
+        dtype=float,
+        count=n_act,
+    )
+    t_unc_arr = np.fromiter(
+        (getattr(st, "t_unclamped", st.t) or st.t for st in states),
+        dtype=float,
+        count=n_act,
+    )
+    nodes = np.array(
+        [(p.nodes_a[0], p.nodes_a[1], p.nodes_b[0], p.nodes_b[1]) for p in act_pairs],
+        dtype=int,
+    )
+    elem_a_arr = np.fromiter((getattr(p, "elem_a", -1) for p in act_pairs), dtype=int, count=n_act)
+    elem_b_arr = np.fromiter((getattr(p, "elem_b", -1) for p in act_pairs), dtype=int, count=n_act)
+    q_arr = np.asarray(act_q_list, dtype=float)  # (N, 2)
+    q1_arr = q_arr[:, 0]
+    q2_arr = q_arr[:, 1]
+    t1_arr = np.array([st.tangent1 for st in states], dtype=float)
+    t2_arr = np.array([st.tangent2 for st in states], dtype=float)
 
     # ── 座標抽出 ──
     nc = node_coords
@@ -512,7 +510,8 @@ def _assemble_friction_st_stiffness(
     df_dt[:, 9:12] = -qt_ds  # k=3: dc_dt=-1
 
     # ── K_st_local = outer(df_ds, ds_du) + outer(df_dt, dt_du): (N, 12, 12) ──
-    K_st_local = np.einsum("ni,nj->nij", df_ds, ds_du) + np.einsum("ni,nj->nij", df_dt, dt_du)
+    # status-321: einsum → 直接ブロードキャスト（外積は broadcasting の方が速い）。
+    K_st_local = df_ds[:, :, None] * ds_du[:, None, :] + df_dt[:, :, None] * dt_du[:, None, :]
 
     # ── DOF インデックス (N, 12) ──
     ndpn = ndof_per_node
@@ -522,13 +521,12 @@ def _assemble_friction_st_stiffness(
             gdofs[:, k * 3 + d] = nodes[:, k] * ndpn + d
 
     # ── COO 構築 ──
+    # status-321: mask filter を skip。零エントリは CSR 統合時に集約される。
     row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
     col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
-    val_arr = K_st_local.ravel()
-    mask = np.abs(val_arr) > 1e-30
-    rows_np = row_idx[mask]
-    cols_np = col_idx[mask]
-    vals_np = val_arr[mask]
+    rows_np = row_idx
+    cols_np = col_idx
+    vals_np = K_st_local.ravel()
 
     # ── 隣接ノードDOF拡張（status-311: バッチ化） ──
     adj_rows_np = np.array([], dtype=int)
@@ -536,8 +534,9 @@ def _assemble_friction_st_stiffness(
     adj_vals_np = np.array([], dtype=float)
     if ds_du_adj is not None and adj_node_map is not None and n_act > 0:
         # K_fric_adj = outer(df_ds, ds_du_adj) + outer(df_dt, dt_du_adj): (N, 12, 12)
-        K_adj_local = np.einsum("ni,nj->nij", df_ds, ds_du_adj) + np.einsum(
-            "ni,nj->nij", df_dt, dt_du_adj
+        # status-321: einsum → broadcasting
+        K_adj_local = (
+            df_ds[:, :, None] * ds_du_adj[:, None, :] + df_dt[:, :, None] * dt_du_adj[:, None, :]
         )
 
         # 隣接ノードグローバルインデックス (N, 4): [A-1, A+2, B-1, B+2]
@@ -589,10 +588,13 @@ def _assemble_friction_st_stiffness(
 
     if len(all_vals) == 0:
         return zero
+    # status-321: tocsr() を skip し COO のまま返す（往復変換削減）。呼び出し側
+    # （CoulombReturnMappingProcess.assemble_tangent_stiffness）で sparse 加算
+    # 経由で 1 度だけ CSR 化される。
     return sp.coo_matrix(
         (all_vals, (all_rows, all_cols)),
         shape=(ndof_total, ndof_total),
-    ).tocsr()
+    )
 
 
 def _friction_return_mapping_loop(
