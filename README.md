@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22 テスト** — 2026-04-10時点 | **ParameterSweepBenchmark `dominant_leaf_process` 追加 — wrapper 占有を読み飛ばす真のボトルネック抽出**（status-317） ／ **n_strands 掃引プロファイリング初回実測（n=7/19/37）**（status-316） ／ **ParameterSweepBenchmarkProcess 追加 + manifest 連番衝突回避**（status-315） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22 テスト** — 2026-04-11時点 | **n_strands 掃引 バイアス補正版 — gap 固定 + 大曲率で ContactForceStStiffness/FrictionStStiffness が α≈2.07 の n² scaling を実測、status-318 の「TangentAssembly 線形」は小曲率限定と確認**（status-319） ／ **n_strands 掃引 6 ケース拡張（7/19/37/61/91/127）— TangentAssembly が全範囲で dominant leaf、avg/call 線形〜準線形（ただし接触ほぼ未活性化）**（status-318） ／ **ParameterSweepBenchmark `dominant_leaf_process` 追加**（status-317） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
