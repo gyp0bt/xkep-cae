@@ -1,0 +1,75 @@
+process: ParameterSweepBenchmarkProcess
+target_process: StrandBendingOscillationProcess
+base_config_type: StrandBendingOscillationConfig
+param_name: n_strands
+param_values:
+  - 7
+  - 19
+  - 37
+  - 61
+  - 91
+  - 127
+profile_sort_by: total
+profile_top_n: 10
+status_file: docs/status/status-316.md
+cases:
+  -
+    param_name: n_strands
+    value: 7
+    elapsed_seconds: 2.075
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 30.522
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 4.824
+    dominant_leaf_total: 0.327146
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002213.yaml
+  -
+    param_name: n_strands
+    value: 19
+    elapsed_seconds: 7.757
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 24.593
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 12.302
+    dominant_leaf_total: 3.87791
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002215.yaml
+  -
+    param_name: n_strands
+    value: 37
+    elapsed_seconds: 18.661
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 23.088
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 13.487
+    dominant_leaf_total: 10.897706
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002223.yaml
+  -
+    param_name: n_strands
+    value: 61
+    elapsed_seconds: 73.219
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 23.042
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 12.587
+    dominant_leaf_total: 39.994414
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002242.yaml
+  -
+    param_name: n_strands
+    value: 91
+    elapsed_seconds: 75.653
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 23.199
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 12.444
+    dominant_leaf_total: 40.577926
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002355.yaml
+  -
+    param_name: n_strands
+    value: 127
+    elapsed_seconds: 20.078
+    dominant_process: StrandBendingOscillationProcess
+    dominant_pct: 24.965
+    dominant_leaf_process: TangentAssemblyProcess
+    dominant_leaf_pct: 12.302
+    dominant_leaf_total: 9.891307
+    manifest_path: docs/benchmarks/StrandBendingOscillationProcess_20260411T002511.yaml

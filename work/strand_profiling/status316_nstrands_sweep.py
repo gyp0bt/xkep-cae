@@ -1,10 +1,16 @@
-"""status-316: n_strands 掃引プロファイリング実測スクリプト.
+"""status-316/318: n_strands 掃引プロファイリング実測スクリプト.
 
 status-315 で整備した `ParameterSweepBenchmarkProcess` ×
-`StrandBendingOscillationProcess` を使い、n_strands = 7 / 19 / 37 の
-3 ケースで dominant Process の推移を実測する。
+`StrandBendingOscillationProcess` を使い、n_strands を六角充填の系列
+(7, 19, 37, 61, 91, 127) で掃引し、dominant Process（status-317 で追加した
+`dominant_leaf_process`）の推移を実測する。
 
-[← README](../../README.md) | [← status-316](../../docs/status/status-316.md)
+status-318 で `SWEEP_VALUES` を 3 ケース → 6 ケースに拡張し、
+**TangentAssembly が LinearSolve を抜く転換点**の所在を明らかにする。
+status-317 の `dominant_leaf_process` フィールドにより、wrapper（
+`StrandBendingOscillationProcess` 等）でなく葉プロセスを直接読める。
+
+[← README](../../README.md) | [← status-316](../../docs/status/status-316.md) | [← status-318](../../docs/status/status-318.md)
 
 使い方::
 
@@ -56,7 +62,7 @@ BASE = StrandBendingOscillationConfig(
     coating_barrier=False,
 )
 
-SWEEP_VALUES: tuple[int, ...] = (7, 19, 37)
+SWEEP_VALUES: tuple[int, ...] = (7, 19, 37, 61, 91, 127)
 
 
 def main() -> None:
@@ -79,15 +85,15 @@ def main() -> None:
     result = ParameterSweepBenchmarkProcess().process(sweep_input)
     elapsed_total = time.time() - t0
 
-    print("=" * 70)
+    print("=" * 100)
     print(f"ParameterSweepBenchmark 完了: 総実行時間 = {elapsed_total:.2f} s")
     print(f"集約サマリ YAML: {result.summary_yaml_path}")
-    print("-" * 70)
+    print("-" * 100)
     print(
         f"{'n_strands':>10} {'ndof':>6} {'inc':>4} {'elapsed[s]':>12} "
-        f"{'dominant_process':<32} {'pct[%]':>8}"
+        f"{'dominant_leaf_process':<32} {'leaf_pct[%]':>11} {'leaf_total[s]':>13}"
     )
-    print("-" * 70)
+    print("-" * 100)
     for row, case in zip(result.summary_rows, result.cases, strict=True):
         extras = case.manifest.results_summary
         ndof = extras.get("total_ndof", "?")
@@ -95,9 +101,11 @@ def main() -> None:
         print(
             f"{row['value']:>10} {ndof:>6} {n_inc:>4} "
             f"{row['elapsed_seconds']:>12.2f} "
-            f"{row['dominant_process'][:32]:<32} {row['dominant_pct']:>7.2f}"
+            f"{row['dominant_leaf_process'][:32]:<32} "
+            f"{row['dominant_leaf_pct']:>10.2f} "
+            f"{row['dominant_leaf_total']:>13.3f}"
         )
-    print("-" * 70)
+    print("-" * 100)
 
     # 各ケースの profile_breakdown 上位 5 件を表示
     for value, case in zip(SWEEP_VALUES, result.cases, strict=True):
