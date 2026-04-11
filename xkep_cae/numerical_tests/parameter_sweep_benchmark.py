@@ -7,6 +7,52 @@ status-315: BenchmarkRunnerProcess（status-314 で profile_breakdown 自動記�
 を直列実行し、ケースごとの manifest + dominant process を集約サマリ YAML に
 まとめる。
 
+status-317: wrapper/nested process に隠された真のボトルネックを特定するため
+`summary_rows` に `dominant_leaf_process` / `dominant_leaf_pct` /
+`dominant_leaf_total` を追加。`uses` グラフを `target_process` から再帰走査
+し、`uses` が空のクラスを葉とみなす（registry 非依存）。
+
+## 使い方
+
+`BenchmarkRunResult` の各ケースから欲しい情報を取り出すサンプル。
+**`BenchmarkRunResult` の属性名は `result` / `manifest` / `manifest_path`** で、
+結果サマリは `case.manifest.results_summary` に入る（`case.extracted` ではない）。
+
+```python
+from xkep_cae.numerical_tests.parameter_sweep_benchmark import (
+    ParameterSweepBenchmarkInput,
+    ParameterSweepBenchmarkProcess,
+)
+
+sweep = ParameterSweepBenchmarkProcess().process(
+    ParameterSweepBenchmarkInput(
+        target_process=my_process,
+        base_config=my_config,
+        param_name="n_strands",
+        param_values=(7, 19, 37),
+        result_extractors={
+            "n_incr": lambda r: r.n_increments,
+            "converged": lambda r: r.converged,
+        },
+    )
+)
+
+# 集約 summary 表示（dominant_leaf_process が真のボトルネックを示す）
+for row in sweep.summary_rows:
+    print(
+        f"{row['param_name']}={row['value']}: "
+        f"elapsed={row['elapsed_seconds']:.2f}s  "
+        f"dominant={row['dominant_process']}({row['dominant_pct']:.1f}%)  "
+        f"leaf={row['dominant_leaf_process']}"
+        f"({row['dominant_leaf_pct']:.1f}%, "
+        f"{row['dominant_leaf_total']:.2f}s)"
+    )
+
+# ケース個別の詳細（extractors 値は case.manifest.results_summary）
+for case in sweep.cases:
+    print(case.manifest_path, case.manifest.results_summary)
+```
+
 [← README](../../README.md)
 """
 
@@ -74,7 +120,12 @@ class ParameterSweepBenchmarkResult:
         cases: 各ケースの BenchmarkRunResult。`param_values` と同じ順序。
         summary_rows: ケースごとの集約行。YAML にもそのまま保存される。
             各行のキー: `param_name`, `value`, `elapsed_seconds`,
-            `dominant_process`, `dominant_pct`, `manifest_path`。
+            `dominant_process`, `dominant_pct`, `dominant_leaf_process`,
+            `dominant_leaf_pct`, `dominant_leaf_total`, `manifest_path`。
+
+            `dominant_process` は `profile_breakdown` 先頭（wrapper 含む
+            inclusive 時間最大）、`dominant_leaf_process` は `uses` が空の
+            葉プロセスのうち先頭（真のボトルネック）。status-317 で追加。
         summary_yaml_path: 集約 YAML の保存先。失敗時 None。
     """
 
@@ -125,6 +176,10 @@ class ParameterSweepBenchmarkProcess(
                 f"({type(input_data.base_config).__name__}) のフィールドではありません"
             )
 
+        # status-317: target_process の uses グラフを再帰走査して
+        # 「葉プロセス」判定用のクラス辞書を作る（registry 非依存）。
+        known_classes = _collect_uses_graph(type(input_data.target_process))
+
         runner = BenchmarkRunnerProcess()
         cases: list[BenchmarkRunResult] = []
         summary_rows: list[dict[str, Any]] = []
@@ -155,6 +210,9 @@ class ParameterSweepBenchmarkProcess(
                 dominant_name = ""
                 dominant_pct = 0.0
 
+            # status-317: dominant 葉プロセス抽出（wrapper を読み飛ばす）
+            leaf_name, leaf_pct, leaf_total = _first_leaf_breakdown_entry(breakdown, known_classes)
+
             summary_rows.append(
                 {
                     "param_name": input_data.param_name,
@@ -162,6 +220,9 @@ class ParameterSweepBenchmarkProcess(
                     "elapsed_seconds": case_result.manifest.elapsed_seconds,
                     "dominant_process": dominant_name,
                     "dominant_pct": round(dominant_pct, 3),
+                    "dominant_leaf_process": leaf_name,
+                    "dominant_leaf_pct": round(leaf_pct, 3),
+                    "dominant_leaf_total": round(leaf_total, 6),
                     "manifest_path": case_result.manifest_path,
                 }
             )
@@ -224,3 +285,62 @@ def _scalarize(value: Any) -> Any:
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     return repr(value)
+
+
+def _collect_uses_graph(root_cls: type) -> dict[str, type]:
+    """root_cls の `uses` グラフを再帰走査し class_name -> class の辞書を返す.
+
+    status-317: `dominant_leaf_process` 判定のために、target_process の
+    クラスから宣言上到達可能な全 Process クラスを name 引きできるよう集約する。
+    ProcessRegistry には依存しないので、テスト用 `_skip_registry=True` の
+    ダミープロセス（registry に載らない）でも正しく葉判定できる。
+    """
+    visited: dict[str, type] = {}
+    stack: list[type] = [root_cls]
+    while stack:
+        cls = stack.pop()
+        key = cls.__name__
+        if key in visited:
+            continue
+        visited[key] = cls
+        for dep in getattr(cls, "uses", []):
+            if dep.__name__ not in visited:
+                stack.append(dep)
+    return visited
+
+
+def _is_leaf_process(name: str, known_classes: dict[str, type]) -> bool:
+    """profile_breakdown の name エントリを葉プロセス判定.
+
+    - `known_classes` に載っていて `uses` が空 → 葉
+    - `known_classes` に載っていない → 保守的に葉扱い（未知の非 Process 経路を
+      誤って wrapper 扱いしないため）
+    - `known_classes` に載っていて `uses` が非空 → wrapper（非葉）
+    """
+    cls = known_classes.get(name)
+    if cls is None:
+        return True
+    return not getattr(cls, "uses", [])
+
+
+def _first_leaf_breakdown_entry(
+    breakdown: tuple[dict[str, Any], ...],
+    known_classes: dict[str, type],
+) -> tuple[str, float, float]:
+    """profile_breakdown の先頭葉プロセスを抽出.
+
+    Returns:
+        `(name, pct, total)` のタプル。breakdown が空 or 葉未検出の場合は
+        `("", 0.0, 0.0)`。breakdown は事前に `total` 降順でソート済み想定。
+    """
+    for entry in breakdown:
+        ename = str(entry.get("name", ""))
+        if not ename:
+            continue
+        if _is_leaf_process(ename, known_classes):
+            return (
+                ename,
+                float(entry.get("pct", 0.0)),
+                float(entry.get("total", 0.0)),
+            )
+    return ("", 0.0, 0.0)

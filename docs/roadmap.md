@@ -83,6 +83,7 @@
 | プロファイルAPI | **ProcessMetaclass構造化プロファイル統計API強化 + BenchmarkRunnerへのprofile_breakdown自動キャプチャ**: snapshot_profile/get_profile_stats/get_profile_report（sort_by/top_n/since）+ RunManifestへYAML出力。13テスト追加 — status-314 |
 | スイープ基盤 | **ParameterSweepBenchmarkProcess 新設 + manifest 連番衝突回避**: 任意 frozen dataclass の 1 フィールドを掃引し、ケースごとの `profile_breakdown` を集約 YAML 化する汎用 BatchProcess。`BenchmarkRunnerProcess._save_manifest` に連番フォールバックを追加し、同一秒内の複数ケースで manifest が上書きされる bug も同時修正。10+1 テスト追加 — status-315 |
 | 掃引実測#1 | **n_strands=7/19/37 掃引初回実測完了**: 軽量構成（n_pitches=0.25, contact ON, 被膜 OFF）で 162.74s 完走。LinearSolve 占有率 75%（NR 反復数線形成長が主因）、TangentAssembly/接触剛性が **n² スケール**（n=37/n=7 で 34.6x/94.6x）。1000 本では接触アセンブリが支配的になる示唆 — status-316 |
+| 葉プロセス抽出 | **`ParameterSweepBenchmarkProcess.summary_rows` に `dominant_leaf_process` 追加**: wrapper process が占めて真のボトルネックが見えなくなる status-316 の問題に対応。`target_process` の `uses` グラフを再帰走査して `uses=[]` のクラスを葉として先頭から抽出。registry 非依存で `_skip_registry=True` のテストフィクスチャでも機能。`parameter_sweep_benchmark.py` docstring に `case.manifest.results_summary` 参照の stdout サンプルも追記。11 テスト追加 — status-317 |
 | **次** | **100/200/500 本への掃引拡張（TangentAssembly 転換点特定）+ 被膜 ON 掃引 + 被膜幾何接線剛性**（S6）／**ファイバー梁 Phase F1**（Elastic1D + BilinearKH 実装） → 1000本6時間 |
 
 ---

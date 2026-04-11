@@ -150,6 +150,7 @@
 | [314](status-314.md) | 2026-04-10 | プロファイル統計API強化 + BenchmarkRunnerプロファイル自動キャプチャ | 459+13 passed |
 | [315](status-315.md) | 2026-04-10 | ParameterSweepBenchmarkProcess 新設 + manifest 連番衝突回避 | 459+13+11 passed |
 | [316](status-316.md) | 2026-04-10 | n_strands 掃引プロファイリング初回実測（7/19/37）+ ボトルネック順位付け | 459+13+11 passed |
+| [317](status-317.md) | 2026-04-10 | ParameterSweepBenchmark `dominant_leaf_process` — wrapper 占有を読み飛ばす真のボトルネック抽出 | 459+13+22 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -314,6 +315,7 @@ BC+責務修正:            200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14
 プロファイルAPI:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13(新) (2026-04-10) ← status-314（ProcessMetaclassプロファイル統計API強化+BenchmarkRunnerプロファイル自動キャプチャ）
 スイープ基盤:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11(新) (2026-04-10) ← status-315（ParameterSweepBenchmarkProcess新設+manifest連番衝突回避bugfix）
 掃引実測#1:             200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11(新) (2026-04-10) ← status-316（n_strands=7/19/37 掃引実測+ボトルネック順位付け、テスト数変更なし）
+葉プロセス抽出:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11(新) (2026-04-10) ← status-317（ParameterSweepBenchmark dominant_leaf_process 追加+_collect_uses_graph/_is_leaf_process/_first_leaf_breakdown_entry+11テスト）
 ```
 
 ## 備考
