@@ -32,6 +32,9 @@ from xkep_cae.contact._manager_process import (
     UpdateGeometryInput,
     UpdateGeometryProcess,
 )
+from xkep_cae.contact.contact_force.strategy import HuberContactForceProcess
+from xkep_cae.contact.friction.strategy import CoulombReturnMappingProcess
+from xkep_cae.contact.geometry.strategy import LineToLineGaussProcess
 from xkep_cae.contact.solver._adaptive_stepping import (
     StepAction,
 )
@@ -79,6 +82,7 @@ from xkep_cae.core import (
 )
 from xkep_cae.core.data import default_strategies as _default_strategies
 from xkep_cae.core.slots import StrategySlot
+from xkep_cae.time_integration.strategy import GeneralizedAlphaProcess
 
 
 class ContactFrictionProcess(
@@ -111,12 +115,32 @@ class ContactFrictionProcess(
         RebuildMPCTransformProcess,
     ]
 
-    # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）
+    # StrategySlot 宣言（Protocol は importlib 経由で取得するため object 型）.
+    # status-320: `default_types` に `default_strategies()` が注入する具象 Process
+    # 型を宣言することで、`ParameterSweepBenchmarkProcess._collect_uses_graph()` が
+    # StrategySlot 経由の依存（ContactForceStStiffnessProcess 等の n² 成長プロセス）
+    # もクラスレベルで到達できる。penalty_slot は同じ protocol を満たす複数の具象
+    # （AutoBeamEIPenalty / ConstantPenalty）があり、どちらも `uses=[]` の葉なので
+    # default_types 宣言は省略している。
     penalty_slot = StrategySlot(object)
-    friction_slot = StrategySlot(object)
-    time_integration_slot = StrategySlot(object)
-    contact_force_slot = StrategySlot(object, required=False)
-    contact_geometry_slot = StrategySlot(object, required=False)
+    friction_slot = StrategySlot(
+        object,
+        default_types=(CoulombReturnMappingProcess,),
+    )
+    time_integration_slot = StrategySlot(
+        object,
+        default_types=(GeneralizedAlphaProcess,),
+    )
+    contact_force_slot = StrategySlot(
+        object,
+        required=False,
+        default_types=(HuberContactForceProcess,),
+    )
+    contact_geometry_slot = StrategySlot(
+        object,
+        required=False,
+        default_types=(LineToLineGaussProcess,),
+    )
 
     def __init__(self, strategies: object | None = None) -> None:
         if strategies is None:

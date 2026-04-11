@@ -82,7 +82,7 @@
 
 ## 現在の状態
 
-**459+13+22 テスト** — 2026-04-11 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5 テスト** — 2026-04-11 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -120,7 +120,8 @@
 - ~~`ParameterSweepBenchmarkProcess.dominant_leaf_process` 追加~~ ← status-317で完了（`uses` グラフ再帰走査で wrapper 占有を読み飛ばして真のボトルネック抽出、registry 非依存、11 テスト）
 - ~~n_strands=7/19/37/61/91/127 6 ケース掃引拡張 + dominant_leaf_process 実測検証~~ ← status-318で完了（**全ケースで dominant_leaf=TangentAssemblyProcess** を抽出、avg/call ベースで n=19 以降**線形〜準線形スケール**を確認、198.32s 完走、scipy spsolve 環境）
 - ~~status-318 の 3 点バイアス補正掃引（gap 自動補正 / 曲げ角 0.7° / n_inc=4）~~ ← status-319で完了（gap=0.07 固定、κ=0.005 → 7.16°、n_inc=10。**n=7/19/37 取得後 n=61 以降は Type D stall で中断**。scaling 分析 n=19→37: **ContactForceStStiffness α≈2.07（n²）、FrictionStStiffness α≈2.04（n²）、TangentAssembly α≈1.65（K_st 混合）、ContactForceAssembly α≈0.98（線形）**。status-318 の「TangentAssembly 線形」は**小曲率・接触未活性化の狭義結論**と判定）
-- **次**: **ContactForceStStiffness / FrictionStStiffness の n² 成長抑制**（空間ブロック分離 / 距離カット / ML 削減）／**K_st の TangentAssembly からの計測分離**（scaling 混合排除）／**status-299/301-equivalent proven setup での n=7/19/37 再測定**（収束保証下でのスケール再取得）／**`uses` グラフ拡張（StrategySlot uses 宣言で ContactForceStStiffness/FrictionStStiffness を到達可能化）+ 被膜 ON プロファイル + pypardiso 環境再ベンチ**
+- ~~`uses` グラフ拡張（`StrategySlot.default_types`）— `ContactFrictionProcess` から `ContactForceStStiffness/FrictionStStiffness` 等 8 Process をクラスレベル到達可能化~~ ← status-320で完了（`_is_leaf_process` も StrategySlot 併合判定に拡張、5 テスト追加）
+- **次**: **ContactForceStStiffness / FrictionStStiffness の n² 成長抑制**（空間ブロック分離 / 距離カット / ML 削減）／**K_st の TangentAssembly からの計測分離**（scaling 混合排除）／**status-299/301-equivalent proven setup での n=7/19/37 再測定**（収束保証下でのスケール再取得）／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**ファイバー梁 Phase F1 着手**
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:

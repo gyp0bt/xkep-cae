@@ -18,6 +18,7 @@ from xkep_cae.core import binds_to
 from xkep_cae.core.base import ProcessMeta
 from xkep_cae.core.benchmark import BenchmarkRunResult
 from xkep_cae.core.categories import PreProcess
+from xkep_cae.core.slots import StrategySlot
 from xkep_cae.numerical_tests.parameter_sweep_benchmark import (
     ParameterSweepBenchmarkInput,
     ParameterSweepBenchmarkProcess,
@@ -82,6 +83,69 @@ class _SweepWrapperProcess(PreProcess[_SweepConfig, _SweepResult]):
         # wrapper 自身も若干時間を使うが、子プロセスの方がほぼ全時間を占める
         time.sleep(0.0005)
         return self._inner.process(input_data)
+
+
+# status-320: StrategySlot default_types 経由の uses グラフ拡張テスト用ダミー
+
+
+class _SweepLeafProcess(PreProcess[_SweepConfig, _SweepResult]):
+    """Strategy 経由で到達する葉プロセス（仮想の K_st 相当）."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_SweepLeafProcess",
+        module="pre",
+        version="0.1.0",
+        document_path="../docs/parameter_sweep_benchmark.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: _SweepConfig) -> _SweepResult:
+        return _SweepResult(value=input_data.n, label=input_data.label)
+
+
+class _SweepStrategyProcess(PreProcess[_SweepConfig, _SweepResult]):
+    """StrategySlot 経由で注入される中間 Strategy Process（HuberContactForce 相当）."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_SweepStrategyProcess",
+        module="pre",
+        version="0.1.0",
+        document_path="../docs/parameter_sweep_benchmark.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    uses: ClassVar[list[type]] = [_SweepLeafProcess]
+    _skip_registry = True
+
+    def process(self, input_data: _SweepConfig) -> _SweepResult:
+        return _SweepResult(value=input_data.n, label=input_data.label)
+
+
+class _SweepSolverProcess(PreProcess[_SweepConfig, _SweepResult]):
+    """StrategySlot で Strategy を注入する Solver 相当（ContactFrictionProcess の縮小版）."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_SweepSolverProcess",
+        module="pre",
+        version="0.1.0",
+        document_path="../docs/parameter_sweep_benchmark.md",
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    uses: ClassVar[list[type]] = []
+    _skip_registry = True
+
+    # status-320: default_types 宣言で Strategy 経由依存をクラスレベルで到達可能にする。
+    strategy_slot = StrategySlot(
+        object,
+        required=False,
+        default_types=(_SweepStrategyProcess,),
+    )
+
+    def process(self, input_data: _SweepConfig) -> _SweepResult:
+        return _SweepResult(value=input_data.n, label=input_data.label)
 
 
 # --- API テスト --------------------------------------------------------------
@@ -402,3 +466,87 @@ class TestDominantLeafHelpers:
         assert name == ""
         assert pct == 0.0
         assert total == 0.0
+
+
+# --- status-320: StrategySlot.default_types 経由の uses グラフ拡張テスト ---------
+
+
+class TestUsesGraphStrategySlotExpansion:
+    """`_collect_uses_graph` が `StrategySlot.default_types` を展開することを検証.
+
+    status-319 TODO: `ContactFrictionProcess.contact_force_slot` から
+    `ContactForceStStiffnessProcess` に到達できるようにする。本テストは同構造を
+    軽量ダミー（`_SweepSolverProcess` → `_SweepStrategyProcess` → `_SweepLeafProcess`）
+    で検証する。
+    """
+
+    def test_strategy_slot_default_types_are_reachable(self) -> None:
+        graph = _collect_uses_graph(_SweepSolverProcess)
+        assert "_SweepSolverProcess" in graph
+        assert "_SweepStrategyProcess" in graph, (
+            "StrategySlot.default_types に宣言した Strategy が到達不能"
+        )
+        assert "_SweepLeafProcess" in graph, (
+            "Strategy.uses 経由の葉が到達不能 — 再帰走査が StrategySlot 経由で続いていない"
+        )
+
+    def test_strategy_leaf_is_leaf(self) -> None:
+        graph = _collect_uses_graph(_SweepSolverProcess)
+        assert _is_leaf_process("_SweepLeafProcess", graph) is True
+        assert _is_leaf_process("_SweepStrategyProcess", graph) is False
+
+    def test_first_leaf_skips_wrapper_and_strategy(self) -> None:
+        graph = _collect_uses_graph(_SweepSolverProcess)
+        breakdown = (
+            {"name": "_SweepSolverProcess", "pct": 80.0, "total": 0.08},
+            {"name": "_SweepStrategyProcess", "pct": 50.0, "total": 0.05},
+            {"name": "_SweepLeafProcess", "pct": 30.0, "total": 0.03},
+        )
+        name, pct, total = _first_leaf_breakdown_entry(breakdown, graph)
+        assert name == "_SweepLeafProcess"
+        assert pct == 30.0
+        assert total == 0.03
+
+    def test_default_types_empty_is_no_op(self) -> None:
+        """default_types 未指定の StrategySlot は従来通り到達不能."""
+
+        class _NoDefaultsSolver(PreProcess[_SweepConfig, _SweepResult]):
+            meta: ClassVar[ProcessMeta] = ProcessMeta(
+                name="_NoDefaultsSolver",
+                module="pre",
+                version="0.1.0",
+                document_path="../docs/parameter_sweep_benchmark.md",
+                stability="experimental",
+                support_tier="dev-only",
+            )
+            _skip_registry = True
+            empty_slot = StrategySlot(object, required=False)
+
+            def process(self, input_data: _SweepConfig) -> _SweepResult:
+                return _SweepResult(value=0, label="")
+
+        graph = _collect_uses_graph(_NoDefaultsSolver)
+        assert "_NoDefaultsSolver" in graph
+        assert "_SweepStrategyProcess" not in graph
+
+    def test_contact_friction_reaches_k_st_processes(self) -> None:
+        """実機検証: `ContactFrictionProcess` から status-319 TODO の Process へ到達."""
+        from xkep_cae.contact.solver.process import ContactFrictionProcess
+
+        graph = _collect_uses_graph(ContactFrictionProcess)
+        # status-320 の核目的: 以下の n² スケーリング系プロセスを到達可能化
+        assert "HuberContactForceProcess" in graph
+        assert "ContactForceStStiffnessProcess" in graph
+        assert "CoulombReturnMappingProcess" in graph
+        assert "FrictionStStiffnessProcess" in graph
+        assert "FrictionTangentStiffnessProcess" in graph
+        assert "FrictionGeometricStiffnessProcess" in graph
+        # 時間積分・幾何戦略も到達できていること
+        assert "GeneralizedAlphaProcess" in graph
+        assert "LineToLineGaussProcess" in graph
+        # 葉判定: K_st 系は `uses=[ComputeStJacobianProcess]` なので wrapper 側
+        assert _is_leaf_process("ContactForceStStiffnessProcess", graph) is False
+        assert _is_leaf_process("FrictionStStiffnessProcess", graph) is False
+        # ComputeStJacobianProcess が葉として到達していること
+        assert "ComputeStJacobianProcess" in graph
+        assert _is_leaf_process("ComputeStJacobianProcess", graph) is True

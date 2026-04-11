@@ -153,6 +153,7 @@
 | [317](status-317.md) | 2026-04-10 | ParameterSweepBenchmark `dominant_leaf_process` — wrapper 占有を読み飛ばす真のボトルネック抽出 | 459+13+22 passed |
 | [318](status-318.md) | 2026-04-11 | n_strands 掃引 6 ケース拡張（7/19/37/61/91/127）+ dominant_leaf_process 実測検証 + TangentAssembly avg/call 線形性確認（小曲率限定） | 459+13+22 passed |
 | [319](status-319.md) | 2026-04-11 | 初期ギャップ固定 + 大曲率でのバイアス補正掃引 — ContactForceStStiffness/FrictionStStiffness α≈2.07 の n² scaling 実測、status-318 結論の scaling 視点再解釈 | 459+13+22 passed |
+| [320](status-320.md) | 2026-04-11 | `uses` グラフ拡張 — `StrategySlot.default_types` で `ContactFrictionProcess` から接触/摩擦 K_st 系 8 Process をクラスレベルで到達可能化、`_is_leaf_process` も StrategySlot 併合判定、5 テスト追加 | 459+13+22+5 passed |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -320,6 +321,7 @@ BC+責務修正:            200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14
 葉プロセス抽出:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11(新) (2026-04-10) ← status-317（ParameterSweepBenchmark dominant_leaf_process 追加+_collect_uses_graph/_is_leaf_process/_first_leaf_breakdown_entry+11テスト）
 掃引6ケース拡張:        200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11(新) (2026-04-11) ← status-318（n_strands=7/19/37/61/91/127 掃引拡張+dominant_leaf_process 実測検証+TangentAssembly avg/call 線形性確認、テスト数変更なし）
 バイアス補正掃引:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11(新) (2026-04-11) ← status-319（初期gap固定+大曲率での補正掃引 n=7/19/37、ContactForceStStiffness/FrictionStStiffness α≈2.07 の n² scaling 実測、status-318 の線形性結論を小曲率限定と判定、テスト数変更なし）
+usesグラフ拡張:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-11) ← status-320（`StrategySlot.default_types` 追加+`_collect_uses_graph`/`_is_leaf_process` StrategySlot 対応+`ContactFrictionProcess` から K_st 系 8 Process 到達可能化+5 テスト追加）
 ```
 
 ## 備考

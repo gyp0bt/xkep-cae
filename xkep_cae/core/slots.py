@@ -9,6 +9,13 @@
 
 Phase 9-B で _runtime_uses は廃止。effective_uses() が collect_strategy_types() を
 直接呼び出し、StrategySlot に設定された具象クラスの型を動的依存として収集する。
+
+status-320: `default_types` パラメータを追加。StrategySlot 宣言時に「このスロット
+に default_strategies() で注入される具象 Process 型」をクラスレベルで宣言できる
+ようになった。`ParameterSweepBenchmarkProcess._collect_uses_graph` はこの情報を
+読み取り、インスタンス化しなくても `uses` グラフを Strategy 経由で静的に拡張でき
+る（ContactForceStStiffnessProcess / FrictionStStiffnessProcess 等の n² 成長プ
+ロセスを dominant_leaf_process で検出するために必要）。
 """
 
 from __future__ import annotations
@@ -25,19 +32,38 @@ class StrategySlot(Generic[T]):
 
     クラス変数として宣言し、インスタンスで具象 Strategy を設定する。
 
+    Args:
+        protocol: 受け入れ可能な Strategy の Protocol 型（isinstance 検証用）。
+        required: True の場合、未設定アクセス時に AttributeError を送出。
+        default_types: `default_strategies()` がこのスロットに注入し得る具象
+            Process 型のタプル。`_collect_uses_graph()` / `effective_class_uses()`
+            がクラスレベルで uses グラフを拡張する際に参照する。
+            未指定時は動的に解決できないため、grapher は到達不能とみなす。
+
     Usage:
         class MySolver(SolverProcess[...]):
             penalty = StrategySlot(PenaltyStrategy)
-            friction = StrategySlot(FrictionStrategy, required=False)
+            friction = StrategySlot(
+                FrictionStrategy,
+                required=False,
+                default_types=(CoulombReturnMappingProcess,),
+            )
 
             def __init__(self, strategies):
                 self.penalty = strategies.penalty    # __set__ で Protocol 検証
                 self.friction = strategies.friction
     """
 
-    def __init__(self, protocol: type[T], *, required: bool = True) -> None:
+    def __init__(
+        self,
+        protocol: type[T],
+        *,
+        required: bool = True,
+        default_types: tuple[type, ...] = (),
+    ) -> None:
         self.protocol = protocol
         self.required = required
+        self.default_types: tuple[type, ...] = tuple(default_types)
         self._attr_name: str = ""
         self._public_name: str = ""
 
