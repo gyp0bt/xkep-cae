@@ -1,0 +1,147 @@
+process:
+  name: StrandBendingOscillationProcess
+  version: 1.0.0
+environment:
+  git_commit: 421c677a288b4bcdbe28b6e4a87e1cff3778ee69
+  git_branch: claude/execute-status-todos-YvRwF
+  git_dirty: true
+  python_version: 3.11.15
+  numpy_version: 2.4.4
+  timestamp: "2026-04-12T11:21:53.660903+00:00"
+config:
+  n_strands: 7
+  wire_radius: 0.5
+  pitch_length: 100.0
+  gap: 0.07
+  n_elements_per_pitch: 16
+  n_pitches: 0.25
+  E: 130000.0
+  nu: 0.3
+  rho: 8.96e-09
+  bending_curvature: 0.005
+  n_cycles: 1
+  n_increments_per_cycle: 10
+  rho_inf: 0.9
+  mu: 0.15
+  k_pen: 0.0
+  max_nr_attempts: 50
+  tol_force: 1e-08
+  max_increments: 400
+  lumped_mass: true
+  exclude_same_strand: true
+  exclude_end_elements: 0
+  tangent_fd_diagnostic: false
+  smoothing_delta: 0.0
+  huber_delta_h: 0.0
+  du_norm_cap: 0.0
+  resume_checkpoint: 
+  free_end_mode: false
+  contact_enabled: true
+  loading_mode: rotation
+  penalty_exponent: 1.0
+  checkpoint_path: 
+  n_oscillation_cycles: 0
+  oscillation_amplitude: 0.0
+  coating_stiffness: 0.0
+  coating_damping: 0.0
+  coating_mu: 0.0
+  coating_k_t_ratio: 0.5
+  coating_thickness: 0.0
+  coating_barrier: false
+results:
+  n_increments: 36
+  converged: true
+  total_ndof: 222
+elapsed_seconds: 8.041
+status_file: docs/status/status-326.md
+profile_breakdown:
+  -
+    name: StrandBendingOscillationProcess
+    n: 1
+    total: 8.039471
+    avg: 8.039471
+    min: 8.039471
+    max: 8.039471
+    median: 8.039471
+    pct: 22.942
+  -
+    name: ContactFrictionProcess
+    n: 1
+    total: 8.006292
+    avg: 8.006292
+    min: 8.006292
+    max: 8.006292
+    median: 8.006292
+    pct: 22.848
+  -
+    name: NewtonDynamicProcess
+    n: 36
+    total: 7.753881
+    avg: 0.215386
+    min: 0.063089
+    max: 0.438086
+    median: 0.215194
+    pct: 22.127
+  -
+    name: TangentAssemblyProcess
+    n: 392
+    total: 3.145861
+    avg: 0.008025
+    min: 0.00379
+    max: 0.030241
+    median: 0.008071
+    pct: 8.977
+  -
+    name: ContactForceAssemblyProcess
+    n: 516
+    total: 2.878366
+    avg: 0.005578
+    min: 0.004481
+    max: 0.009497
+    median: 0.005436
+    pct: 8.214
+  -
+    name: UpdateGeometryProcess
+    n: 552
+    total: 1.583368
+    avg: 0.002868
+    min: 0.002421
+    max: 0.004307
+    median: 0.002804
+    pct: 4.518
+  -
+    name: LinearSolveProcess
+    n: 392
+    total: 0.766641
+    avg: 0.001956
+    min: 0.001327
+    max: 0.0524
+    median: 0.001683
+    pct: 2.188
+  -
+    name: TangentFDDiagnosticProcess
+    n: 31
+    total: 0.720828
+    avg: 0.023253
+    min: 0.021111
+    max: 0.032101
+    median: 0.022738
+    pct: 2.057
+  -
+    name: FrictionStStiffnessProcess
+    n: 364
+    total: 0.4592
+    avg: 0.001262
+    min: 0.000685
+    max: 0.002203
+    median: 0.001231
+    pct: 1.31
+  -
+    name: ContactForceStStiffnessProcess
+    n: 392
+    total: 0.409204
+    avg: 0.001044
+    min: 5.9e-05
+    max: 0.002981
+    median: 0.001074
+    pct: 1.168
