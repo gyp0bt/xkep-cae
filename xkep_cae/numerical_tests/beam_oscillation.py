@@ -298,20 +298,15 @@ class BeamOscillationProcess(
         omega1 = 2.0 * math.pi * f1
         t_total = cfg.n_periods * T1
 
-        # 初速度: モーダル質量補正付き
-        # 単一DOF系では v₀ = ω₁ * δ だが、梁の集中質量では
-        # 節点質量 m_mid ≠ モーダル質量 M₁ のため補正が必要:
-        #   v₀ = ω₁ * δ * M₁ / m_mid
-        # M₁ = φ₁ᵀ M φ₁, m_mid = M[mid_y_dof, mid_y_dof]
-        wire_mid_y_dof = 6 * wire_mid_node + 1
-        phi1 = np.zeros(ndof)
+        # 初速度: 1次モード形状に比例した分布初速度
+        # v(x) = -ω₁ * amplitude * sin(πx/L) で1次モードのみを励起。
+        # 集中加振（中央1節点）では高次モード混入で振幅比が不安定。
+        # モード形状分布ならq̇₁(0)=ω₁*amplitude, δ₁_max=amplitude。
+        v0 = omega1 * cfg.amplitude
+        velocity = np.zeros(ndof)
         for i in range(n_nodes):
             x_i = mesh_data.node_coords[i, 0]
-            phi1[6 * i + 1] = math.sin(math.pi * x_i / cfg.wire_length)
-        M_modal = float(phi1 @ mass_matrix @ phi1)
-        m_mid = float(mass_matrix[wire_mid_y_dof, wire_mid_y_dof])
-        modal_ratio = M_modal / m_mid if m_mid > 1e-30 else 1.0
-        v0 = omega1 * cfg.amplitude * modal_ratio
+            velocity[6 * i + 1] = -v0 * math.sin(math.pi * x_i / cfg.wire_length)
 
         # 時間増分パラメータ（小さめ）
         dt_initial = cfg.dt_initial if cfg.dt_initial > 0 else T1 / 100.0
@@ -320,10 +315,6 @@ class BeamOscillationProcess(
         # load_frac ベースの時間増分設定
         dt_initial_frac = dt_initial / t_total
         dt_min_frac = dt_min / t_total
-
-        # 4. 初速度ベクトル
-        velocity = np.zeros(ndof)
-        velocity[6 * wire_mid_node + 1] = -v0  # 下向き初速度
 
         # 5. 境界条件（支持のみ、外力なし）
         fixed_dofs = set()
@@ -364,7 +355,7 @@ class BeamOscillationProcess(
             callbacks=AssembleCallbacks(
                 assemble_tangent=assembler.assemble_tangent,
                 assemble_internal_force=assembler.assemble_internal_force,
-                ul_assembler=assembler,
+                ul_assembler=None,  # 自由振動では参照配置更新不要（復元力保持）
             ),
             mass_matrix=mass_matrix,
             dt_physical=t_total,
@@ -378,7 +369,14 @@ class BeamOscillationProcess(
         wire_mid_y_dof = 6 * wire_mid_node + 1
         disp_hist = solver_result.displacement_history
         n_hist = len(disp_hist)
-        time_arr = np.linspace(0, t_total, n_hist) if n_hist > 0 else np.array([0.0])
+        # load_history はアダプティブ時間増分の実際の load_frac を記録
+        load_hist = solver_result.load_history
+        if len(load_hist) == n_hist:
+            time_arr = np.array(load_hist) * t_total
+        elif n_hist > 0:
+            time_arr = np.linspace(0, t_total, n_hist)
+        else:
+            time_arr = np.array([0.0])
 
         # 符号付き変位（下向きが負）
         defl_arr = np.array([d[wire_mid_y_dof] for d in disp_hist] if n_hist > 0 else [0.0])

@@ -290,6 +290,7 @@ class TestStrainContour3DRendering:
 
     def test_render_produces_images(self, tmp_path):
         """レンダリングが PNG ファイルを出力する."""
+        pytest.importorskip("matplotlib")
         # 小振幅・少要素で高速実行
         cfg = _default_config(
             amplitude=0.5,
