@@ -35,6 +35,41 @@ status-319 の TODO「ContactForceStStiffness / FrictionStStiffness の n² 成�
 ※ friction 戦略レベル（K_mat+K_geo+K_st の単一 concat）の改善はこの単体ベンチでは
 捕捉されない。実 NR ループではさらに 2 回の sparse + sparse 加算削減が上乗せされる。
 
+### 補足実測（再走査、synthetic direct-assembly bench, 2026-04-12）
+
+status-321 コミット作成後に、独立の synthetic bench
+（`/tmp/bench_kst_direct.py`, `_assemble_friction_*` を直接呼び出し、n_nodes=200,
+ndof=1200, min-of-20 + warmup=5）で before/after を再測定した結果:
+
+| 関数 | n=500 | n=1000 | n=2000 |
+|---|---|---|---|
+| `_assemble_friction_tangent_stiffness` **before** | 9.19ms | 7.52ms | 15.71ms |
+| `_assemble_friction_tangent_stiffness` **after**  | 6.14ms | 4.08ms | 8.70ms |
+| 改善（K_mat）                                       | **33%** | **46%** | **45%** |
+| `_assemble_friction_geometric_stiffness` **before** | 5.56ms | 6.15ms | 12.71ms |
+| `_assemble_friction_geometric_stiffness` **after**  | 2.46ms | 2.76ms | 5.39ms |
+| 改善（K_geo）                                       | **56%** | **55%** | **58%** |
+| `_assemble_friction_st_stiffness` **before** | 110.54ms | 251.40ms | 472.88ms |
+| `_assemble_friction_st_stiffness` **after**  | 105.34ms | 233.24ms | 437.45ms |
+| 改善（K_st）                                 | 4.7% | 7.2% | 7.5% |
+
+読み取り:
+
+- **K_mat / K_geo が 33〜58% 高速化**: tocsr skip + mask filter skip の純粋な
+  効果。K_st に比べて per-call の sparse construction 比重が高く、改善が効く。
+- **K_st は 5〜8% に留まる**: synthetic bench では StJacobian バッチ計算
+  （隣接ノード Hermite + s/t 連鎖微分）が per-call の大半を占め、CSR 系の
+  改善は相対的に小さい。ただしマイナスにはならず、7.5% は誤差範囲ではない。
+- **戦略レベル（`CoulombReturnMappingProcess.tangent`）では 3 アセンブリが直列で
+  呼ばれる**ため、K_mat (45%) + K_geo (58%) + K_st (7%) の加重和 ≈ 15〜20%
+  が tangent() 全体の実効改善。status-321 本文トップの 33% は同じ Process
+  ラッパ (`FrictionStStiffnessProcess.process`) 計測（active 抽出ループの
+  2 段圧縮を含む）の値で、ラッパ側の Python 属性アクセス削減も寄与している。
+
+**再現スクリプト（トラッキング用途で保存推奨）**: `/tmp/bench_kst_direct.py`。
+保存形式は `work/benches/bench_kst_direct.py` への昇格を次担当者判断とする
+（status-321 は tmp 位置で完結）。
+
 ## 背景 — n² は止められない、だが定数は削れる
 
 status-319 で実測された n² スケーリング（α≈2.07）自体は **active ペア数自体が
@@ -301,14 +336,22 @@ K_st_local は (n_act, 12, 12) で nnz 密度は 50% 前後（構造的ゼロで
 
 - [x] **数値の捏造なし**: FrictionSt 33% 高速化は `/tmp/bench_kst_extraction.py`
   で同一 benchmark script を前後実行した実測値。ベースライン 17.84ms（status-320
-  状態）も同じスクリプトで計測。
+  状態）も同じスクリプトで計測。加えて独立の direct-assembly bench
+  （`/tmp/bench_kst_direct.py`）で K_mat 33-46% / K_geo 55-58% / K_st 5-8% 改善を
+  再確認（「補足実測」セクション参照）。
 - [x] **再現手順記載**: 上記「検証手順」5 ステップのコマンド列。
 - [x] **テスト数記載**: 459+13+22+5（status-320 から不変、K_st 型緩和対応で
   isinstance チェックを緩めただけ）。
-- [x] **契約違反 0 件維持**: `validate_process_contracts.py` 実行済み。
-- [x] **lint/format 検証**: `ruff check` + `ruff format` 全 OK。
-- [x] **ベースライン比較**: status-320 ブランチでの `git stash` 比較を
-  `/tmp/bench-status321-*.log` に保存。
+- [x] **契約違反 0 件維持**: `validate_process_contracts.py` 実行済み
+  （2026-04-11 コミット後 + 2026-04-12 再検証）。
+- [x] **lint/format 検証**: `ruff check xkep_cae/contact/ tests/` +
+  `ruff format --check xkep_cae/contact/` 全 OK。
+- [x] **ベースライン比較**: HEAD~1（status-320）への
+  `git checkout HEAD~1 -- <3 files>` 一時差し戻しで同一 bench を再走査し、
+  補足実測表を取得。ログは `/tmp/status321/direct-{before,after}-*.log` に保存。
+- [x] **contact 回帰 376 passed**: `/tmp/status321/contact-test-*.log`
+- [x] **広回帰 546 passed, 1 pre-existing failed**: `/tmp/status321/wide-test-*.log`
 - [x] **無関係テスト失敗の切り分け**: `xkep_cae/output/tests/test_stress_contour.py`
-  の 1 件は `git stash` で本変更を退避しても再現するため、本 status とは無関係の
-  pre-existing failure（3D rendering display backend）と確認。
+  の 1 件は HEAD~1 チェックアウトしても再現するため、本 status とは無関係の
+  pre-existing failure（3D rendering display backend）と確認
+  （2026-04-12 再確認済み）。
