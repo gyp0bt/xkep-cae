@@ -14,7 +14,7 @@
 
 ## 現在地（2026-04-12）
 
-**459+13+22+5+8 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -91,7 +91,8 @@
 | 診断ログ高速化 | **`ProcessExecutionLog._find_caller()` の `sys._getframe()` 化 + `lru_cache` メモ化**: status-321 TODO「ContactForceSt の 3% 止まり分析」の**根本原因特定 + 修正**。cProfile で `ContactForceStStiffnessProcess._process_batch` を計測し、**`_find_caller()` の `inspect.stack()` が per-call ~3.6ms（全体 18%）を占有**していることを発見。`inspect.stack()` は全フレームを `FrameInfo` に materialize するため極めて遅く、さらに `Path(filename).resolve()` が `posix.stat()` を連鎖する。`sys._getframe()` によるフレーム単体走査に置換し、`_find_repo_root` / `_resolve_rel_path` を `functools.lru_cache` 化。**全 `AbstractProcess.process()` 呼び出しに効く**ため、contact 以外の静的ソルバーでも大幅な速度改善（`test_beam_oscillation` で 18 分+ → 63 秒 ≈ 17x 高速化を実測）。併せて ContactForceSt `_process_batch` の抽出/幾何微分/g_shape/df/gdofs をベクトル化。**実測（n_active=2000, 300 iter）: ContactForceSt 16.8ms → 14.4ms（14% 高速化）**、diagnostics overhead 2.53ms → ≈0ms — status-322 |
 | beam振動修復 | **beam oscillation 物理テスト修復**: UL `update_reference()` が自由振動の復元力を消失させる問題を `ul_assembler=None` で回避。集中加振→モード形状分布初速度に変更で amplitude_ratio 安定化。5 FAILED → 0 FAILED + 1 SKIPPED（matplotlib）。_find_caller skip list 評価（拡張不要）、distance culling/symbolic factor reuse 調査 — status-323 |
 | distance culling | **K_st distance culling 実装**: Huber 遷移幅ベース gap pre-filter（Contact K_st 自動閾値計算 + Friction K_st パイプライン貫通）。gap > delta_h/k_pen のペアを step 1 で除外し、遠方ペアの overhead 削減。8 テスト追加 — status-324 |
-| **次** | **n=37 掃引で culling 効果定量計測**／**symbolic factorization reuse**（pypardiso analyze() キャッシュ）／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）／**被膜 ON 掃引**／**ファイバー梁 Phase F1** → 1000本6時間 |
+| symbolic fact cache | **symbolic factorization reuse**: `_SolverCache` で pypardiso `PyPardisoSolver` インスタンスを保持。スパースパターン不変時は symbolic analysis (phase 11) スキップ。`(shape, indptr)` 比較でパターン検出。scipy fallback は従来通り。12 テスト追加 — status-325 |
+| **次** | **n=37 掃引で culling + cache 効果定量計測**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）／**被膜 ON 掃引**／**ファイバー梁 Phase F1** → 1000本6時間 |
 
 ---
 
