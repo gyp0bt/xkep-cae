@@ -66,9 +66,15 @@ class FrictionTangentStiffnessInput:
 
 @dataclass(frozen=True)
 class FrictionTangentStiffnessOutput:
-    """摩擦接線剛性行列（材料項）の出力."""
+    """摩擦接線剛性行列（材料項）の出力.
 
-    K_mat: sp.csr_matrix
+    status-321: K_mat の型を `sp.csr_matrix | sp.coo_matrix` に緩めた。内部
+    `tocsr()` を skip し COO 形式のまま返すことで、呼び出し側で K_mat / K_geo /
+    K_st をまとめて 1 度だけ COO concat → CSR 化する fast path を可能にした
+    （3 個別 sparse 加算 + 3 tocsr の往復を削減）。
+    """
+
+    K_mat: sp.csr_matrix | sp.coo_matrix
 
 
 class FrictionTangentStiffnessProcess(
@@ -113,9 +119,13 @@ class FrictionGeometricStiffnessInput:
 
 @dataclass(frozen=True)
 class FrictionGeometricStiffnessOutput:
-    """摩擦接線幾何剛性の出力."""
+    """摩擦接線幾何剛性の出力.
 
-    K_geo: sp.csr_matrix
+    status-321: K_geo の型を `sp.csr_matrix | sp.coo_matrix` に緩めた（FrictionTangent
+    と同様、戦略側 1 回 concat fast path のため）。
+    """
+
+    K_geo: sp.csr_matrix | sp.coo_matrix
 
 
 class FrictionGeometricStiffnessProcess(
@@ -165,9 +175,14 @@ class FrictionStStiffnessInput:
 
 @dataclass(frozen=True)
 class FrictionStStiffnessOutput:
-    """摩擦 K_st（接触点滑り剛性）の出力."""
+    """摩擦 K_st（接触点滑り剛性）の出力.
 
-    K_st: sp.csr_matrix
+    status-321: K_st の型を `sp.csr_matrix | sp.coo_matrix` に緩めた。内部
+    `tocsr()` を skip し COO 形式のまま返すことで、呼び出し側で 1 度だけ CSR
+    化する fast path を可能にした（往復変換削減）。
+    """
+
+    K_st: sp.csr_matrix | sp.coo_matrix
 
 
 class FrictionStStiffnessProcess(
@@ -320,7 +335,13 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
         consistent_st_tangent: bool = False,
         **kwargs: object,
     ) -> sp.csr_matrix:
-        """摩擦接線剛性行列（材料項 + 幾何項 + K_st）."""
+        """摩擦接線剛性行列（材料項 + 幾何項 + K_st）.
+
+        status-321: 3 個の K_mat / K_geo / K_st をすべて COO 出力で受け取り、
+        rows/cols/data を 1 度だけ concat → CSR 化することで、従来の
+        `K_mat + K_geo + K_st` 型 sparse 加算（内部で 2 回の tocsr + 2 回の
+        symbolic merge）を eliminate する。
+        """
         b4 = FrictionTangentStiffnessProcess()
         K_mat = b4.process(
             FrictionTangentStiffnessInput(
@@ -341,7 +362,14 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
             )
         ).K_geo
 
-        K = K_mat + K_geo
+        # status-321: 全 COO を flat 配列に concat → 1 回だけ CSR 化。
+        parts: list[sp.coo_matrix] = []
+        K_mat_coo = K_mat if isinstance(K_mat, sp.coo_matrix) else K_mat.tocoo()
+        if K_mat_coo.nnz > 0:
+            parts.append(K_mat_coo)
+        K_geo_coo = K_geo if isinstance(K_geo, sp.coo_matrix) else K_geo.tocoo()
+        if K_geo_coo.nnz > 0:
+            parts.append(K_geo_coo)
 
         if consistent_st_tangent and node_coords is not None:
             b3 = FrictionStStiffnessProcess()
@@ -358,9 +386,23 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
                     adj_node_map=kwargs.get("adj_node_map"),
                 )
             ).K_st
-            K = K + K_st
+            K_st_coo = K_st if isinstance(K_st, sp.coo_matrix) else K_st.tocoo()
+            if K_st_coo.nnz > 0:
+                parts.append(K_st_coo)
 
-        return K
+        if not parts:
+            return sp.csr_matrix((self._ndof, self._ndof))
+
+        if len(parts) == 1:
+            return parts[0].tocsr()
+
+        all_rows = np.concatenate([p.row for p in parts])
+        all_cols = np.concatenate([p.col for p in parts])
+        all_vals = np.concatenate([p.data for p in parts])
+        return sp.coo_matrix(
+            (all_vals, (all_rows, all_cols)),
+            shape=(self._ndof, self._ndof),
+        ).tocsr()
 
     def process(self, input_data: FrictionInput) -> FrictionOutput:
         f, r = self.evaluate(input_data.u, input_data.contact_pairs, input_data.mu)

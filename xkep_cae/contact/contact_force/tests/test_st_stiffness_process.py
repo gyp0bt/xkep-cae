@@ -60,7 +60,9 @@ class TestContactForceStStiffnessProcess:
                 ndof_total=24,
             )
         )
-        assert isinstance(out.K_st, sp.csr_matrix)
+        # status-321: tocsr() を skip し COO のまま返すようになったため、
+        # csr_matrix と coo_matrix のどちらも許容する。
+        assert isinstance(out.K_st, (sp.csr_matrix, sp.coo_matrix))
         assert out.K_st.shape == (24, 24)
         assert out.K_st.nnz == 0
 
@@ -180,7 +182,11 @@ class TestKstNonlocalFD:
                 adj_node_map=adj_node_map,
             )
         )
-        return out.K_st
+        # status-321: 戻り値が COO のため、テスト側で要素アクセス用に CSR 化。
+        K_st = out.K_st
+        if not isinstance(K_st, sp.csr_matrix):
+            K_st = K_st.tocsr()
+        return K_st
 
     def test_kst_adj_disabled_status294(self):
         """K_st_adj は status-294 で無効化（K_c_adj に統合）.
