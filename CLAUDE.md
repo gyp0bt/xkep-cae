@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12 テスト** — 2026-04-12 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12 テスト** — 2026-04-12 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -126,7 +126,9 @@
 - ~~`ProcessExecutionLog._find_caller` 高速化（status-321 の ContactForceSt 3% 止まり分析）— 全 Process 呼び出しの ~2.5ms 固定オーバーヘッド eliminate、ContactForceSt 16.8ms→14.4ms 14% 高速化~~ ← status-322で完了（`sys._getframe()` + `lru_cache` 化、ContactForceSt のローカルベクトル化併用）
 - ~~K_st distance culling（Huber遷移幅ベース gap pre-filter + Friction パイプライン貫通）~~ ← status-324で完了（ContactForceStStiffnessProcess gap 自動閾値計算 + FrictionStStiffnessInput gap_cull_threshold + TangentAssemblyProcess→friction tangent パイプライン + 8テスト）
 - ~~symbolic factorization reuse（pypardiso analyze() キャッシュ）~~ ← status-325で完了（`_SolverCache` クラス新設、`LinearSolveProcess` v1.2.0、パターン検出+factorize reuse、12テスト追加）
-- **次**: **n=37 掃引で culling + cache 効果定量計測**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**ファイバー梁 Phase F1 着手**
+- ~~n=37 掃引で culling + cache 効果定量計測~~ ← status-326で完了（**ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24**）
+- ~~ファイバー梁 Phase F1 着手~~ ← status-326で完了（`Elastic1D` + `BilinearKinematicHardening1D` + `Fiber1DMaterialStrategy` Protocol + 12テスト）
+- **次**: **被膜 ON プロファイル + pypardiso 環境再ベンチ**／**ファイバー梁 Phase F2（MultiLayerFrictionDegrading1D）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:

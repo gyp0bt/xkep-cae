@@ -251,7 +251,7 @@ S6のボトルネックに応じたGPU化（CuPy/JAX）。
 | Phase | 内容 | 状態 |
 |-------|------|------|
 | 4.3 | von Mises 3D 塑性 | 凍結（45件テスト済） |
-| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | 未実装。撚線ファイバー梁（[fiber_beam_strand.md](../xkep_cae/elements/docs/fiber_beam_strand.md)）が先行候補として設計策定済み（status-313） |
+| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | **Phase F1 完了**（status-326: `Elastic1D` + `BilinearKinematicHardening1D` + 12テスト）。設計仕様: [fiber_beam_strand.md](../xkep_cae/elements/docs/fiber_beam_strand.md)（status-313）。次: Phase F2（`MultiLayerFrictionDegrading1D`） |
 | 6.1-6.3 | NN構成則、PI制約、ハイブリッド | 未実装 |
 | 7-8 | モデルレジストリ、FE² | 未実装 |
 
