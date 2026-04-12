@@ -16,6 +16,7 @@
 - `docs/status/status-{index}.md` に記録（index最大が現在の状況）
 - `docs/status/status-index.md` に一覧管理
 - status に書いた内容は **commit メッセージと整合**を取る
+- **アーカイブルール**: アクティブ status は最大 **50 件**（status-{最新-49} 以降）を維持。超過時は最古バッチを `docs/status/archive/` へ移動し、`status-index.md` にマイルストーン要約行を残す（STA2 トレーサビリティ維持）
 
 ### 作業完了時の必須手順
 
