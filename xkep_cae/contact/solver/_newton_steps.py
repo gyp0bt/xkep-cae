@@ -419,7 +419,12 @@ class TangentAssemblyProcess(
                 and inp.manager.config.consistent_st_tangent
             )
             # Hermite隣接ノード拡張パラメータ（status-274）
+            # status-324: gap culling threshold を摩擦 K_st にも適用
             _fric_kw: dict = {}
+            if hasattr(inp.contact_force_strategy, "compute_gap_cull_threshold"):
+                _fric_kw["gap_cull_threshold"] = (
+                    inp.contact_force_strategy.compute_gap_cull_threshold(inp.k_pen)
+                )
             if _use_st:
                 _fric_use_hermite = (
                     hasattr(inp.manager, "config")

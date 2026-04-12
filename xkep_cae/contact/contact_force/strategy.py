@@ -289,8 +289,16 @@ class ContactForceStStiffnessProcess(
         if not inp.pairs:
             return ContactForceStStiffnessOutput(K_st=zero)
 
-        # Step 1: state を持つペアのみ単一パスで抽出
-        has_state_pairs = [p for p in inp.pairs if hasattr(p, "state")]
+        # Distance culling threshold (status-324):
+        # Huber derivative = 0 when gap > delta_h / k_pen → K_st 寄与ゼロ。
+        # この gap を超えるペアを step 1 で除外し、p_n 抽出・StJacobian 計算を
+        # スキップする。1e-8 は浮動小数点境界のマージン。
+        _gap_cull = float("inf")
+        if inp.k_pen > 0:
+            _gap_cull = (inp.delta_h / inp.k_pen if inp.delta_h > 0 else 0.0) + 1e-8
+
+        # Step 1: state + gap < _gap_cull pre-filter（status-324 distance culling）
+        has_state_pairs = [p for p in inp.pairs if hasattr(p, "state") and p.state.gap < _gap_cull]
         if not has_state_pairs:
             return ContactForceStStiffnessOutput(K_st=zero)
 
@@ -605,6 +613,18 @@ class HuberContactForceProcess(
         elif self._smoothing_delta > 0.0:
             base = k_pen / self._smoothing_delta
         return base * self._delta_h_boost
+
+    def compute_gap_cull_threshold(self, k_pen: float) -> float:
+        """K_st distance culling の gap 閾値を返す (status-324).
+
+        Huber 遷移幅から gap 閾値を自動計算。この gap を超えるペアは
+        K_st 寄与がゼロなのでアセンブリをスキップできる。
+        摩擦 K_st にも同一の閾値を適用する。
+        """
+        if k_pen <= 0:
+            return float("inf")
+        delta_h = self._resolve_delta_h(k_pen)
+        return (delta_h / k_pen if delta_h > 0 else 0.0) + 1e-8
 
     @staticmethod
     def _huber(x: float, delta: float) -> float:

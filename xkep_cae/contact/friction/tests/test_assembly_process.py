@@ -381,3 +381,82 @@ class TestFrictionStStiffnessAdjFD:
                 col = n * ndpn + d
                 col_vals = K_st[:, col].toarray().ravel() if sp.issparse(K_st) else K_st[:, col]
                 assert np.allclose(col_vals, 0.0), f"Node {n} d={d} should have zero K_st column"
+
+
+# ── 摩擦 K_st distance culling テスト（status-324） ─────────
+
+
+class TestFrictionStStiffnessDistanceCulling:
+    """摩擦 K_st の distance culling 検証（status-324）."""
+
+    def test_far_pair_culled(self):
+        """gap >= gap_cull_threshold のペアは摩擦 K_st に寄与しない."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        pair = _make_pair(gap=0.5)
+        q = np.array([0.5, 0.3])
+        proc = FrictionStStiffnessProcess()
+        out = proc.process(
+            FrictionStStiffnessInput(
+                contact_pairs=[pair],
+                friction_forces_local={0: q},
+                ndof_total=24,
+                node_coords=coords,
+                gap_cull_threshold=0.01,
+            )
+        )
+        assert out.K_st.nnz == 0
+
+    def test_near_pair_kept(self):
+        """gap < gap_cull_threshold のペアは摩擦 K_st に寄与する."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        pair = _make_pair(gap=-0.01)
+        q = np.array([0.5, 0.3])
+        proc = FrictionStStiffnessProcess()
+        out = proc.process(
+            FrictionStStiffnessInput(
+                contact_pairs=[pair],
+                friction_forces_local={0: q},
+                ndof_total=24,
+                node_coords=coords,
+                gap_cull_threshold=0.1,
+            )
+        )
+        assert out.K_st.nnz > 0
+
+    def test_default_inf_no_culling(self):
+        """デフォルト(inf)では全ペアが処理される."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        pair = _make_pair(gap=100.0)
+        q = np.array([0.5, 0.3])
+        proc = FrictionStStiffnessProcess()
+        out = proc.process(
+            FrictionStStiffnessInput(
+                contact_pairs=[pair],
+                friction_forces_local={0: q},
+                ndof_total=24,
+                node_coords=coords,
+                # gap_cull_threshold は省略（デフォルト inf）
+            )
+        )
+        assert out.K_st.nnz > 0
