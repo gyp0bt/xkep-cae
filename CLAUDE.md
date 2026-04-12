@@ -16,6 +16,7 @@
 - `docs/status/status-{index}.md` に記録（index最大が現在の状況）
 - `docs/status/status-index.md` に一覧管理
 - status に書いた内容は **commit メッセージと整合**を取る
+- **アーカイブルール**: アクティブ status は最大 **50 件**（status-{最新-49} 以降）を維持。超過時は最古バッチを `docs/status/archive/` へ移動し、`status-index.md` にマイルストーン要約行を残す（STA2 トレーサビリティ維持）
 
 ### 作業完了時の必須手順
 
@@ -121,6 +122,8 @@
 - ~~n_strands=7/19/37/61/91/127 6 ケース掃引拡張 + dominant_leaf_process 実測検証~~ ← status-318で完了（**全ケースで dominant_leaf=TangentAssemblyProcess** を抽出、avg/call ベースで n=19 以降**線形〜準線形スケール**を確認、198.32s 完走、scipy spsolve 環境）
 - ~~status-318 の 3 点バイアス補正掃引（gap 自動補正 / 曲げ角 0.7° / n_inc=4）~~ ← status-319で完了（gap=0.07 固定、κ=0.005 → 7.16°、n_inc=10。**n=7/19/37 取得後 n=61 以降は Type D stall で中断**。scaling 分析 n=19→37: **ContactForceStStiffness α≈2.07（n²）、FrictionStStiffness α≈2.04（n²）、TangentAssembly α≈1.65（K_st 混合）、ContactForceAssembly α≈0.98（線形）**。status-318 の「TangentAssembly 線形」は**小曲率・接触未活性化の狭義結論**と判定）
 - ~~`uses` グラフ拡張（`StrategySlot.default_types`）— `ContactFrictionProcess` から `ContactForceStStiffness/FrictionStStiffness` 等 8 Process をクラスレベル到達可能化~~ ← status-320で完了（`_is_leaf_process` も StrategySlot 併合判定に拡張、5 テスト追加）
+- ~~K_st アセンブリ CSR/COO 経路最適化 — FrictionStStiffness per-call 17.84ms→11.91ms 33% 高速化~~ ← status-321で完了（tocsr skip + einsum→broadcasting + mask filter skip + 抽出ループ active 比例化）
+- ~~`ProcessExecutionLog._find_caller` 高速化（status-321 の ContactForceSt 3% 止まり分析）— 全 Process 呼び出しの ~2.5ms 固定オーバーヘッド eliminate、ContactForceSt 16.8ms→14.4ms 14% 高速化~~ ← status-322で完了（`sys._getframe()` + `lru_cache` 化、ContactForceSt のローカルベクトル化併用）
 - **次**: **ContactForceStStiffness / FrictionStStiffness の n² 成長抑制**（空間ブロック分離 / 距離カット / ML 削減）／**K_st の TangentAssembly からの計測分離**（scaling 混合排除）／**status-299/301-equivalent proven setup での n=7/19/37 再測定**（収束保証下でのスケール再取得）／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**ファイバー梁 Phase F1 着手**
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 

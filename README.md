@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5 テスト** — 2026-04-11時点 | **K_st アセンブリ CSR/COO 経路最適化 — tocsr() skip + einsum→broadcasting + mask filter skip + friction 戦略単一 COO concat、FrictionStStiffness per-call 17.84ms→11.91ms 33% 高速化**（status-321） ／ **`uses` グラフ拡張（`StrategySlot.default_types`）**（status-320） ／ **n_strands 掃引 バイアス補正版 — α≈2.07 の n² scaling 実測**（status-319） ／ **n_strands 掃引 6 ケース拡張**（status-318） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5 テスト** — 2026-04-12時点 | **`ProcessExecutionLog._find_caller` を `sys._getframe()`+`lru_cache` 化 — 全 Process 呼び出しの ~2.5ms 固定オーバーヘッドを eliminate、ContactForceSt per-call 16.8ms→14.4ms 14% 高速化**（status-322） ／ **K_st アセンブリ CSR/COO 経路最適化 — FrictionStStiffness 33% 高速化**（status-321） ／ **`uses` グラフ拡張（`StrategySlot.default_types`）**（status-320） ／ **n_strands 掃引 バイアス補正版 — α≈2.07 の n² scaling 実測**（status-319） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

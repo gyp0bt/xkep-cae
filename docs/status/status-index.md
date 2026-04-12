@@ -4,110 +4,10 @@
 
 > 本ファイルはステータスファイルの一覧メモです。新規status作成時に必ず更新すること。
 
-## アクティブ status（175〜 — 新 xkep_cae）
+## アクティブ status（275〜 — 接触完走・高速化フェーズ）
 
 | # | 日付 | タイトル | テスト数 |
 |---|------|---------|---------|
-| [175](status-175.md) | 2026-03-15 | 脱出ポット計画 Phase 1 — xkep_cae リネーム + PenaltyStrategy 完全書き直し | ~2260+34p(新) |
-| [176](status-176.md) | 2026-03-15 | C16 純粋関数違反の追加 | ~2260+34p(新) |
-| [177](status-177.md) | 2026-03-15 | ドキュメント再編 — 新xkep_cae用にドキュメント全体を再構成 | ~2260+34p(新) |
-| [178](status-178.md) | 2026-03-15 | モジュール再編 + FrictionStrategy 移行 | ~2260+86p(新) |
-| [179](status-179.md) | 2026-03-15 | Phase 2 後半 — Strategy 全移行 + 契約違反ゼロ | ~2260+186p(新) |
-| [180](status-180.md) | 2026-03-15 | C16 契約ギャップ修正 — __init__.py re-export チェック強化 | ~2260+186p(新) |
-| [181](status-181.md) | 2026-03-15 | Penalty/Coating ファクトリ完備 — default_strategies() 7軸全生成 | ~2260+204p(新) |
-| [182](status-182.md) | 2026-03-16 | C16 スコープ拡大 + time_integration 移動 + process/ 削除 | ~2260+204p(新) |
-| [183](status-183.md) | 2026-03-16 | Phase 3 — concrete プロセス移行 + BatchProcess フル実装 | ~2260+266p(新) |
-| [184](status-184.md) | 2026-03-16 | Phase 4 — ContactFrictionProcess 移行 + 完全ワークフロー実現 | ~2260+279p(新) |
-| [185](status-185.md) | 2026-03-16 | Phase 5 — ソルバー結果連携 + output re-export クリーンアップ | ~2260+275p(新) |
-| [186](status-186.md) | 2026-03-16 | Phase 6 — C14 強化 + ソルバー deprecated 依存除去 | ~2260+275p(新) |
-| [187](status-187.md) | 2026-03-16 | Phase 7 開始 — mesh/output C14 除去 + C16 クリア | ~2260+284p(新) |
-| [188](status-188.md) | 2026-03-16 | Phase 7 完了 — ContactManager 移植 + C14/C16 違反ゼロ | ~2260+284p(新) |
-| [189](status-189.md) | 2026-03-16 | Phase 8 完了 — C14 抜け道修正 + friction/geometry 実装完成 | ~2260+284p(新) |
-| [190](status-190.md) | 2026-03-16 | solver Process 化完了 + NewtonUzawa Static/Dynamic 分離 | ~2260+301p(新) |
-| [191](status-191.md) | 2026-03-16 | process.py Process API 移行 + ContactManager Process 分割 | ~2260+315p(新) |
-| [192](status-192.md) | 2026-03-16 | Process 内部プライベート関数移行 + Strategy 公開 API + O1 条例検知 | ~2260+315p(新) |
-| [193](status-193.md) | 2026-03-16 | deprecated 参照テスト無効化 + 状態操作ユーティリティ維持判断 | ~2260+315p(新) |
-| [194](status-194.md) | 2026-03-17 | xkep_cae_deprecated → __xkep_cae_deprecated リネーム（C14 実効性強化） | ~2260+315p(新) |
-| [195](status-195.md) | 2026-03-17 | numerical_tests モジュール新 xkep_cae 移植（BackendRegistry パターン） | ~2260+315p(新) |
-| [196](status-196.md) | 2026-03-17 | S3 xfail テスト Process API 対応の前提条件調査 | ~2260+315p(新) |
-| [197](status-197.md) | 2026-03-17 | Phase 13 完了 — ビームアセンブラ新 xkep_cae 移植 | ~2260+347p(新) |
-| [198](status-198.md) | 2026-03-17 | Phase 14 — S3 xfail テスト Process API 対応版 | ~2260+358p(新) |
-| [199](status-199.md) | 2026-03-17 | Process 実行診断インフラ — 警告・エラー・使用レポート | ~2260+374p(新) |
-| [200](status-200.md) | 2026-03-17 | Process Architecture 監査 — elements/numerical_tests 不遵守検出強化 | ~2260+374p(新) |
-| [201](status-201.md) | 2026-03-17 | Phase 15 完了 — C16 違反ゼロ達成 | ~2260+374p(新) |
-| [202](status-202.md) | 2026-03-17 | C17 dataclass 衛生チェック + 命名規約修正（82ファイル） | ~2260+374p(新) |
-| [203](status-203.md) | 2026-03-18 | C17 例外リスト廃止 + replace() 検知追加 | ~2260+374p(新) |
-| [204](status-204.md) | 2026-03-18 | C17 違反ゼロ達成 — frozen dataclass 完全移行 | ~2260+374p(新) |
-| [205](status-205.md) | 2026-03-18 | ContactManager Process 分割 — dataclass メソッド完全除去 | ~2260+374p(新) |
-| [206](status-206.md) | 2026-03-18 | 旧API呼び出し元整合 + 旧テスト一掃 — 契約違反0件 | 248p(新) |
-| [207](status-207.md) | 2026-03-18 | deprecated コード完全削除 + コンテキスト大掃除 | 248p(新) |
-| [208](status-208.md) | 2026-03-18 | BackendRegistry 完全廃止 + 被膜モデル物理検証テスト | 412p(新) |
-| [209](status-209.md) | 2026-03-18 | 単線の剛体支え＋押しジグ三点曲げ解析解一致 | 412+14p(新) |
-| [210](status-210.md) | 2026-03-18 | smooth_penalty ソルバー復元 + HEX8 連続体要素ジグ基盤 | 412+14p(新) |
-| [211](status-211.md) | 2026-03-18 | smooth_penalty 正定値接線 + 動的三点曲げ Process 基盤 | 431+3x(新) |
-| [212](status-212.md) | 2026-03-19 | slow テスト見直し — 接触収束テスト全削除 + slow 分離 | 506(新) |
-| [213](status-213.md) | 2026-03-19 | 接触なし梁揺動解析 + 3D応力コンターレンダリング | 506+5p(新) |
-| [214](status-214.md) | 2026-03-20 | 複数フィールドコンター(S11/LE11/SK1) + C16修正 + 銅材料 | 518(新) |
-| [215](status-215.md) | 2026-03-20 | UL+GeneralizedAlpha動的解析の振動修正 | 468+14s(新) |
-| [216](status-216.md) | 2026-03-20 | 動的ソルバー強化 — エネルギー診断・統一時間増分・発散検知 | 496(新) |
-| [217](status-217.md) | 2026-03-20 | 動的ソルバー解析解一致・統一時間増分統合・rho_inf評価 | 499(新) |
-| [218](status-218.md) | 2026-03-20 | 動的三点曲げ接触k_pen根本原因特定 | 499(新) |
-| [219](status-219.md) | 2026-03-20 | 動的三点曲げ接触k_pen適正化+ペア別診断+k_pen上書きバグ修正 | 499(新) |
-| [220](status-220.md) | 2026-03-20 | 動的三点曲げ押し下げ変換+準静的ソルバー自動検知+接触力符号問題特定 | 499(新) |
-| [221](status-221.md) | 2026-03-21 | CI修正+接触力符号修正+動的接触三点曲げ収束+診断強化 | 499(新) |
-| [222](status-222.md) | 2026-03-21 | 接触ソルバー完全一本化 — Huber ペナルティ統一 | 499(新) |
-| [223](status-223.md) | 2026-03-22 | 接触接線剛性の幾何項追加 + 摩擦接線符号修正 | 499(新) |
-| [224](status-224.md) | 2026-03-22 | 三点曲げワークスペース整備 + 不収束原因確定 | 499(新) |
-| [225](status-225.md) | 2026-03-22 | 摩擦接線幾何剛性の追加 + smooth_clip_01 revert | 175+10s(新) |
-| [226](status-226.md) | 2026-03-22 | 整合接線剛性 ∂(s,t)/∂u の実装 | 175+11(新) |
-| [227](status-227.md) | 2026-03-22 | 条件数スペクトル分析 + NR内幾何凍結検証 | 186+10s(新) |
-| [228](status-228.md) | 2026-03-23 | smooth_clamp C1連続化 frac=0.96到達（再現不能） | 186+10s(新) |
-| [229](status-229.md) | 2026-03-24 | ε=0.02 完全統一 frac=0.86 + Hermite 根本問題特定 | 100+10s(新) |
-| [230](status-230.md) | 2026-03-24 | ComputeStJacobian Hermite対応 frac=0.98達成 | 100+14s(新) |
-| [231](status-231.md) | 2026-03-24 | incrementカウント修正 frac=1.0達成（STA2防止） | 100+14s(新) |
-| [232](status-232.md) | 2026-03-24 | n_periods=30結果+dt比較分析+Hermite後回し判断 | 100+14s(新) |
-| [233](status-233.md) | 2026-03-24 | SDI排除 — 全候補ペア評価+力ベースdt制御+g_offワイド化 | 190+10s(新) |
-| [234](status-234.md) | 2026-03-24 | n_periods=30 frac=1.0到達 208.6N — SDI排除効果検証 | 190+10s(新) |
-| [235](status-235.md) | 2026-03-25 | 三点曲げdt小問題の根本原因調査+adaptive stepping改善 | 190+10s(新) |
-| [236](status-236.md) | 2026-03-25 | Phase A完全無効化 — n_periods=30で逆効果確認+リバート | 190+10s(新) |
-| [237](status-237.md) | 2026-03-25 | 梁メッシュ粗化+解析的剛体円柱表面 | 190+10s+8(新) |
-| [238](status-238.md) | 2026-03-25 | n_periods=30収束検証+接線剛性FD整合性診断 | 190+10s+8(新) |
-| [239](status-239.md) | 2026-03-26 | LM正則化実装+回転慣性調査+freeze/K_st相互排他発見 | 190+10s+8+9(新) |
-| [240](status-240.md) | 2026-03-26 | 収束判定力/モーメント分離+E=200e3鉄鋼K_st+LM検証 | 190+10s+8+9+7(新) |
-| [241](status-241.md) | 2026-03-26 | NR収束改善基盤 — λ自動推定・重み付きノルム・DOFスケーリング | 190+10s+8+9+7+10(新) |
-| [242](status-242.md) | 2026-03-26 | λ検証+dof_scale_rot調査+K_st ∂p_n/∂s+凍結接線問題特定 | 190+10s+8+9+7+10(新) |
-| [243](status-243.md) | 2026-03-26 | frozen-m解消+λ自動推定定数設定可能化 | 190+10s+8+9+7+10(新) |
-| [244](status-244.md) | 2026-03-26 | LM正則化完全削除 | 200+10s(新) |
-| [245](status-245.md) | 2026-03-26 | Hermiteデフォルト ON + n_periods=30検証 | 200+10s(新) |
-| [246](status-246.md) | 2026-03-26 | 接触力・摩擦アセンブリのバッチベクトル化（30%高速化） | 200+10s(新) |
-| [247](status-247.md) | 2026-03-27 | NR接触チャタリング対策 — 接触力リラクゼーションでn_periods=30完走 | 200+10s(新) |
-| [248](status-248.md) | 2026-03-27 | NRリラクゼーション早期脱出 + omega回復リバート | 200+10s(新) |
-| [249](status-249.md) | 2026-03-27 | 同素線除外修正 + 7本撚線メッシュ作成（貫入ゼロ）+ 脱法摘発 | 200+10s(新) |
-| [250](status-250.md) | 2026-03-27 | アセンブラProcess化（A1-A3完了）| 200+10s+16(新) |
-| [251](status-251.md) | 2026-03-27 | STA2総摘発 — frozen偽装/uses未宣言/mutableDC/Process未包装修正 | 200+10s+16+3(新) |
-| [252](status-252.md) | 2026-03-27 | STA2再摘発 — C3完全解消+tolerance正当化+脱法検出レポート | 200+10s+16+3(新) |
-| [253](status-253.md) | 2026-03-27 | DOF消去MPC実装 + 7本撚線曲げ揺動Process | 200+10s+16+3+23(新) |
-| [254](status-254.md) | 2026-03-28 | 7本撚線曲げ揺動収束テスト + MPC力残差整合性確認 | 200+10s+16+3+23+1(新) |
-| [255](status-255.md) | 2026-03-28 | MPC縮退系残差判定 + C2-C3幾何計算Process化 | 200+10s+16+3+23+1+6(新) |
-| [256](status-256.md) | 2026-03-28 | B1-B4摩擦アセンブリProcess化 + MPC接線FD診断 | 200+10s+16+3+23+1+6+18(新) |
-| [257](status-257.md) | 2026-03-28 | FD診断compute_residual実装 + K_c不整合特定 | 200+10s+16+3+23+1+6+18+2(新) |
-| [258](status-258.md) | 2026-03-28 | K_c不整合再解析 + consistent_st_tangent=TrueデフォルトON + STA2 T2厳格化 | 200+10s+16+3+23+1+6+18+2(新) |
-| [259](status-259.md) | 2026-03-28 | Huber smoothing_deltaパイプライン貫通 + 自動推定有効化 | 200+10s+16+3+23+1+6+18+2+4(新) |
-| [260](status-260.md) | 2026-03-28 | smoothing_deltaチューニング + FD診断活性DOFフィルタリング | 200+10s+16+3+23+1+6+18+2+4+3(新) |
-| [261](status-261.md) | 2026-03-28 | δ=1000完走テスト + active_contact_dofs NR結合 + delta_h直接指定API | 200+10s+16+3+23+1+6+18+2+4+3+9(新) |
-| [262](status-262.md) | 2026-03-28 | delta_h最適値探索 + three_point_bend huber_delta_h貫通 + 3Dパイプ | 200+10s+16+3+23+1+6+18+2+4+3+9+4(新) |
-| [263](status-263.md) | 2026-03-29 | delta_hデフォルト値検���（0.0維持）+ three_point_bend E=25回帰���見 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
-| [264](status-264.md) | 2026-03-29 | E=25回帰修正: frozen_hermite_tangent + _cur_ratio統一 + n_elems=8 | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
-| [265](status-265.md) | 2026-03-29 | BenchmarkRunnerProcess — STA2自動記録基盤 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) |
-| [266](status-266.md) | 2026-03-29 | frozen_hermite_tangent=False安定化 + 契約違反修正 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
-| [267](status-267.md) | 2026-03-29 | チャタリング対策分析 + リラクゼーションdivergedフラグ修正 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
-| [268](status-268.md) | 2026-03-29 | チャタリング対策delta_hブースト + NR反復動的拡張 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
-| [269](status-269.md) | 2026-03-29 | NR残差最小値リストア（過修正防止） | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
-| [270](status-270.md) | 2026-03-29 | E=25 frac=1.0回帰修正 — n_elems_wire=20復元 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18 |
-| [271](status-271.md) | 2026-03-30 | frozen=False検証(35%高速化) + Hermite非局所∂g/∂u Step1 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2(新) |
-| [272](status-272.md) | 2026-03-30 | Hermite非局所∂g/∂u Step2 — K_st隣接ノードDOF拡張 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2(新) |
-| [273](status-273.md) | 2026-03-30 | Hermite非局所∂g/∂u Step3 — K_c隣接ノードDOF拡張 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2(新) |
-| [274](status-274.md) | 2026-03-31 | 摩擦K_st隣接ノードDOF拡張（Hermite非局所Step4） | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3(新) |
 | [275](status-275.md) | 2026-03-31 | テスト品質改善 + frozen_hermite_tangent回帰修正(0.38→0.41) | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 |
 | [276](status-276.md) | 2026-03-31 | NR収束改善調査 — 接線不整合特定・対策方針策定 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 |
 | [277](status-277.md) | 2026-03-31 | NR収束壁の根本原因特定 — dm不整合 + NR制御改善 | 600 passed |
@@ -155,6 +55,26 @@
 | [319](status-319.md) | 2026-04-11 | 初期ギャップ固定 + 大曲率でのバイアス補正掃引 — ContactForceStStiffness/FrictionStStiffness α≈2.07 の n² scaling 実測、status-318 結論の scaling 視点再解釈 | 459+13+22 passed |
 | [320](status-320.md) | 2026-04-11 | `uses` グラフ拡張 — `StrategySlot.default_types` で `ContactFrictionProcess` から接触/摩擦 K_st 系 8 Process をクラスレベルで到達可能化、`_is_leaf_process` も StrategySlot 併合判定、5 テスト追加 | 459+13+22+5 passed |
 | [321](status-321.md) | 2026-04-11 | K_st アセンブリ CSR/COO 経路最適化 — tocsr skip + einsum→broadcasting + mask filter skip + friction 戦略単一 COO concat + 抽出ループ active 比例化、**FrictionStStiffness per-call 33% 高速化** | 459+13+22+5 passed |
+| [322](status-322.md) | 2026-04-12 | `ProcessExecutionLog._find_caller` を `sys._getframe()` + `lru_cache` 化 — **全 Process 呼び出しの ~2.5ms 固定オーバーヘッド eliminate**、ContactForceSt per-call 16.8ms→14.4ms（14% 高速化）、test_beam_oscillation 実行時間 17x 改善、ContactForceSt ローカルベクトル化併用 | 459+13+22+5 passed |
+
+## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
+
+status-175〜274 は [archive/](archive/) に移動済み（status-322 で実施）。
+
+| # | 日付 | マイルストーン | テスト数 |
+|---|------|--------------|---------|
+| [175](archive/status-175.md) | 2026-03-15 | 脱出ポット計画 Phase 1 — xkep_cae リネーム + PenaltyStrategy 書き直し | ~2260+34p |
+| [179](archive/status-179.md) | 2026-03-15 | Phase 2 後半 — Strategy 全移行 + 契約違反ゼロ | ~2260+186p |
+| [188](archive/status-188.md) | 2026-03-16 | R1 Phase 7 完了 — C14/C16 違反ゼロ | ~2260+284p |
+| [207](archive/status-207.md) | 2026-03-18 | deprecated コード完全削除 + コンテキスト大掃除 | 248p |
+| [210](archive/status-210.md) | 2026-03-18 | smooth_penalty ソルバー復元 + HEX8 基盤 | 412+14p |
+| [222](archive/status-222.md) | 2026-03-21 | Huber ペナルティ統一（ソルバー一本化） | 499 |
+| [226](archive/status-226.md) | 2026-03-22 | K_st 実装 — ∂(s,t)/∂u 整合接線 + FD 検証 11 件 | 175+11 |
+| [253](archive/status-253.md) | 2026-03-26 | DOF 消去 MPC 実装 + StrandBendingOscillation | 200+10s+16+3+23+1+6+18 |
+| [258](archive/status-258.md) | 2026-03-28 | K_c 不整合再解析 + consistent_st_tangent ON | 200+10s+16+3+23+1+6+18+2+4+3+9 |
+| [264](archive/status-264.md) | 2026-03-29 | E=25 回帰修正（frozen_hermite_tangent + n_elems=8） | 200+10s+16+3+23+1+6+18+2+4+3+9+4 |
+| [271](archive/status-271.md) | 2026-03-30 | frozen=False 検証 + Hermite 非局所 ∂g/∂u Step1 | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2 |
+| [274](archive/status-274.md) | 2026-03-31 | 摩擦 K_st 隣接ノード拡張（Hermite 非局所 Step4 完了） | 200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+3 |
 
 ## アーカイブ（097〜174 — 旧 xkep_cae S3/R1 フェーズ）
 
@@ -162,19 +82,11 @@ status-097〜174 は [archive/](archive/) に移動済み。
 
 | # | 日付 | マイルストーン | テスト数 |
 |---|------|--------------|---------|
-| [097](archive/status-097.md) | 2026-03-01 | S3開始 — xfailテスト根本対策 | 1906 |
-| [101](archive/status-101.md) | 2026-03-02 | ドキュメント大整理（status-100記念） | 1916 |
-| [112](archive/status-112.md) | 2026-03-05 | 19本NCP収束達成 | 2122 |
-| [121](archive/status-121.md) | 2026-03-06 | 37本NCP収束 + 摩擦ヒステリシス移行 | 2261 |
-| [130](archive/status-130.md) | 2026-03-07 | UL+CR梁 — 7本90°曲げ収束達成 | 2271 |
-| [132](archive/status-132.md) | 2026-03-07 | NCP 6x高速化 + 揺動Phase2収束 | 2271 |
-| [134](archive/status-134.md) | 2026-03-07 | ソルバー一本化（12.6x要素バッチ化） | 2271 |
-| [147](archive/status-147.md) | 2026-03-09 | smooth penalty摩擦曲げ揺動収束達成 | 2271 |
-| [150](archive/status-150.md) | 2026-03-10 | R1開始 — プロセスアーキテクチャ設計仕様策定 | 2271 |
-| [162](archive/status-162.md) | 2026-03-13 | R1 Phase 7完遂 — 契約違反0件 | 2477 |
-| [164](archive/status-164.md) | 2026-03-13 | R1 Phase 8完了 — ProcessRunner/StrategySlot/Preset | 2477+314p |
-| [167](archive/status-167.md) | 2026-03-14 | AL完全削除 — NCP一本化 | ~2260+327p |
-| [173](archive/status-173.md) | 2026-03-15 | deprecated プロセス完全削除 | ~2260+343p |
+| [097](archive/status-097.md) | 2026-03-01 | S3 開始 — xfail テスト根本対策 | 1906 |
+| [112](archive/status-112.md) | 2026-03-05 | 19 本 NCP 収束達成 | 2122 |
+| [130](archive/status-130.md) | 2026-03-07 | UL+CR 梁 — 7 本 90° 曲げ収束達成 | 2271 |
+| [147](archive/status-147.md) | 2026-03-09 | smooth penalty 摩擦曲げ揺動収束達成 | 2271 |
+| [162](archive/status-162.md) | 2026-03-13 | R1 Phase 7 完遂 — 契約違反 0 件 | 2477 |
 | [174](archive/status-174.md) | 2026-03-15 | solver_smooth_penalty.py 分解 → Process 実体化 | ~2260+343p |
 
 ## アーカイブ（001〜096 — Phase 1〜S2）
@@ -184,18 +96,11 @@ status-001〜096 は [archive/](archive/) に移動済み。
 | # | 日付 | マイルストーン | テスト数 |
 |---|------|--------------|---------|
 | [001](archive/status-001.md) | 2026-02-12 | プロジェクト棚卸し・ロードマップ策定 | — |
-| [003](archive/status-003.md) | 2026-02-12 | **Phase 1 完了** — Protocol/ABC アーキテクチャ | 16 |
-| [015](archive/status-015.md) | 2026-02-14 | **Phase 2 完了** — 空間梁要素（EB/Timo/Cosserat/数値試験） | 374 |
-| [020](archive/status-020.md) | 2026-02-14 | **Phase 3 完了** — 幾何学的非線形（NR/弧長/CR/TL/UL） | 407 |
-| [023](archive/status-023.md) | 2026-02-16 | **Phase 4.1-4.2 完了** — 弾塑性+ファイバーモデル | 471 |
-| [030](archive/status-030.md) | 2026-02-18 | **Phase 5 完了** — 動的解析+接触骨格 | 615 |
-| [046](archive/status-046.md) | 2026-02-21 | **Phase C0-C5 完了** — 梁–梁接触基盤 | 993 |
-| [056](archive/status-056.md) | 2026-02-25 | **Phase 4.7 L0 完了** — 撚線基礎（7本撚り+被膜+シース） | 1311 |
-| [064](archive/status-064.md) | 2026-02-26 | **Phase 4.7 L0.5 完了** — シースFourier近似 | 1516 |
-| [069](archive/status-069.md) | 2026-02-26 | **Phase 6.0 完了** — GNN/PINNサロゲートPoC | 1629 |
-| [081](archive/status-081.md) | 2026-02-28 | **Phase C6 完了** — Line contact+NCP+Mortar+摩擦 | 1850 |
-| [087](archive/status-087.md) | 2026-02-28 | **Phase S1-S2 完了** — 同層除外+NCP+CPU並列化基盤 | 1822 |
-| [096](archive/status-096.md) | 2026-03-01 | **S2++/S3基盤 完了** — COO/CSR高速化+ベンチマーク基盤 | 1886 |
+| [015](archive/status-015.md) | 2026-02-14 | Phase 2 完了 — 空間梁要素 | 374 |
+| [030](archive/status-030.md) | 2026-02-18 | Phase 5 完了 — 動的解析+接触骨格 | 615 |
+| [046](archive/status-046.md) | 2026-02-21 | Phase C0-C5 完了 — 梁–梁接触基盤 | 993 |
+| [081](archive/status-081.md) | 2026-02-28 | Phase C6 完了 — Line contact+NCP+摩擦 | 1850 |
+| [096](archive/status-096.md) | 2026-03-01 | S2++/S3 基盤完了 — COO/CSR 高速化 | 1886 |
 
 ## テスト数推移（主要マイルストーン）
 
@@ -214,94 +119,15 @@ Phase C6:       1850  (2026-02-28)
 S1-S2:          1822  (2026-02-28)
 S2++/S3基盤:    1886  (2026-03-01)
 R1 Phase 7:    2477+314p (2026-03-13)
-脱出ポット Phase 1: ~2260+34p(新) (2026-03-15) ← 新xkep_cae開始
-Phase 2 前半:   ~2260+86p(新) (2026-03-15) ← core移行+Friction
-Phase 2 後半:   ~2260+186p(新) (2026-03-15) ← Strategy全移行+契約違反0
-Phase 2 完了:   ~2260+186p(新) (2026-03-15) ← status-179（契約違反ゼロ達成）
-Phase 2 完備:   ~2260+204p(新) (2026-03-15) ← status-181（7軸ファクトリ完備）
-C16拡大:        ~2260+204p(新) (2026-03-16) ← status-182（C16拡大+process/削除）
-Phase 3完了:     ~2260+266p(新) (2026-03-16) ← status-183（Phase 3 concrete移行）
-Phase 4完了:     ~2260+279p(新) (2026-03-16) ← status-184（Phase 4 Solver移行）
-Phase 5完了:     ~2260+275p(新) (2026-03-16) ← status-185（Phase 5 ソルバー結果連携）
-Phase 6完了:     ~2260+275p(新) (2026-03-16) ← status-186（Phase 6 C14強化+deprecated除去）
-Phase 7進行:     ~2260+284p(新) (2026-03-16) ← status-187（Phase 7 mesh/output C14除去）
-Phase 7完了:     ~2260+284p(新) (2026-03-16) ← status-188（Phase 7 完了 C14/C16=0）
-Phase 8完了:     ~2260+284p(新) (2026-03-16) ← status-189（Phase 8 完了 friction/geometry実装）
-Phase 9進行:     ~2260+301p(新) (2026-03-16) ← status-190（solver Process化+NUzawa分離）
-Phase 9続:      ~2260+315p(新) (2026-03-16) ← status-191（Process API移行+CM Process分割）
-Phase 9完了:     ~2260+315p(新) (2026-03-16) ← status-192（プライベート関数移行+Strategy公開API+O1条例検知）
-Phase 10完了:    ~2260+315p(新) (2026-03-16) ← status-193（deprecated参照テスト無効化+状態ユーティリティ維持判断）
-Phase 11完了:    ~2260+315p(新) (2026-03-17) ← status-194（deprecated→__deprecatedリネーム）
-Phase 12進行:    ~2260+315p(新) (2026-03-17) ← status-195（numerical_tests移植）
-Phase 13調査:    ~2260+315p(新) (2026-03-17) ← status-196（S3 xfail前提条件調査）
-Phase 13完了:    ~2260+347p(新) (2026-03-17) ← status-197（ビームアセンブラ移植）
-Phase 14完了:    ~2260+358p(新) (2026-03-17) ← status-198（S3 xfail Process API版）
-診断インフラ:    ~2260+374p(新) (2026-03-17) ← status-199（Process実行診断）
-Phase 15完了:    ~2260+374p(新) (2026-03-17) ← status-201（C16違反ゼロ）
-C17例外廃止:     ~2260+374p(新) (2026-03-18) ← status-203（C17違反3件正規報告）
-C17違反ゼロ:     ~2260+374p(新) (2026-03-18) ← status-204（frozen dataclass完全移行）
-CM Process分割:  ~2260+374p(新) (2026-03-18) ← status-205（ContactManager メソッド完全除去→Process化）
-旧テスト一掃:    248p(新) (2026-03-18) ← status-206（呼び出し元整合+旧テスト89件削除+契約違反0件）
-大掃除:          248p(新) (2026-03-18) ← status-207（deprecated完全削除+scripts/examples/docs/旧テスト一掃）
-Phase 17:        412p(新) (2026-03-18) ← status-208（BackendRegistry廃止+被膜物理テスト）
-三点曲げ解析:    412+14p(新) (2026-03-18) ← status-209（三点曲げジグ解析解一致）
-ソルバー復元:    412+14p(新) (2026-03-18) ← status-210（smooth_penalty復元+HEX8基盤）
-正定値接線:      431+3x(新) (2026-03-18) ← status-211（正定値接線+動的三点曲げ基盤）
-slowテスト整理:  506(新) (2026-03-19) ← status-212（接触収束テスト全削除+slow分離）
-梁揺動解析:      506+5p(新) (2026-03-19) ← status-213（BeamOscillation+StressContour3D）
-コンター拡張:    518(新) (2026-03-20) ← status-214（複数フィールドコンター+C16修正+銅材料）
-振動修正:        468+14s(新) (2026-03-20) ← status-215（UL+GeneralizedAlpha振動修正）
-ソルバー強化:    496(新) (2026-03-20) ← status-216（エネルギー診断+統一時間増分+発散検知）
-解析解一致:      499(新) (2026-03-20) ← status-217（解析解一致+Unified統合+rho_inf評価）
-k_pen診断:       499(新) (2026-03-20) ← status-218（動的三点曲げ接触k_pen根本原因特定）
-k_pen適正化:     499(新) (2026-03-20) ← status-219（k_pen適正化+ペア別診断+上書きバグ修正）
-CI修正+診断:     499(新) (2026-03-21) ← status-221（CI修正+診断強化+3Dレンダリング）
-ソルバー一本化:  499(新) (2026-03-21) ← status-222（Huberペナルティ統一）
-幾何剛性:        499(新) (2026-03-22) ← status-223（接触接線幾何項+摩擦符号修正）
-不収束診断:      499(新) (2026-03-22) ← status-224（三点曲げWS整備+不収束原因確定）
-smooth_clip:     499(新) (2026-03-22) ← status-225（最近接点C1平滑化+接線不足確認）
-K_st実装:        175+11(新) (2026-03-22) ← status-226（∂(s,t)/∂u整合接線+FD検証11件）
-スペクトル分析:  186+10s(新) (2026-03-22) ← status-227（条件数分析+NR幾何凍結+壁原因特定）
-C1連続化:        186+10s(新) (2026-03-23) ← status-228（smooth_clamp frac=0.96到達→再現不能）
-ε統一+法線連続:  100+10s(新) (2026-03-24) ← status-229（ε=0.02完全統一 frac=0.86+Hermite根本問題特定）
-Hermite対応:      100+14s(新) (2026-03-24) ← status-230（StJacobian Hermite+frac=0.98達成）
-incr修正:          100+14s(新) (2026-03-24) ← status-231（incrementカウント修正+frac=1.0達成）
-dt分析:             100+14s(新) (2026-03-24) ← status-232（n_periods=30結果+dt比較+Hermite後回し）
-SDI排除:            190+10s(新) (2026-03-24) ← status-233（全候補ペア評価+力ベースdt制御+g_off拡大）
-np30完走:           190+10s(新) (2026-03-24) ← status-234（n_periods=30 frac=1.0 208.6N達成）
-PhaseAリバート:     190+10s(新) (2026-03-25) ← status-236（Phase A逆効果確認+完全リバート）
-剛体表面:           190+10s+8(新) (2026-03-25) ← status-237（梁メッシュ粗化+解析的剛体円柱表面）
-FD診断:              190+10s+8(新) (2026-03-25) ← status-238（np30検証+接線剛性FD診断）
-LM正則化:             190+10s+8+9(新) (2026-03-26) ← status-239（LM正則化+freeze/K_st相互排他）
-力/モーメント分離:     190+10s+8+9+7(新) (2026-03-26) ← status-240（収束判定分離+鉄鋼検証）
-NR改善基盤:            190+10s+8+9+7+10(新) (2026-03-26) ← status-241（λ自動推定+重み付きノルム+DOFスケーリング）
-凍結接線特定:           190+10s+8+9+7+10(新) (2026-03-26) ← status-242（λ検証+dof_scale_rot+∂p_n/∂s+frozen-m特定）
-frozen-m解消:            190+10s+8+9+7+10(新) (2026-03-26) ← status-243（frozen-m解消+λ定数設定可能化）
-LM削除:                  200+10s(新) (2026-03-26) ← status-244（LM正則化完全削除）
-Hermite ON:               200+10s(新) (2026-03-26) ← status-245（HermiteデフォルトON+np30検証）
-NR安定化:            200+10s(新) (2026-03-27) ← status-247（NR接触チャタリング対策+n_periods=30完走）
-早期脱出:            200+10s(新) (2026-03-27) ← status-248（NRリラクゼーション早期脱出+omega回復リバート）
-MPC+揺動:            200+10s+16+3+23(新) (2026-03-27) ← status-253（DOF消去MPC+7本撚線曲げ揺動Process）
-MPC収束:             200+10s+16+3+23+1(新) (2026-03-28) ← status-254（MPC u伝搬修正+NR再射影+frac=0.35到達）
-MPC残差+C2C3:         200+10s+16+3+23+1+6(新) (2026-03-28) ← status-255（MPC縮退系残差判定+C2-C3 Process化）
-B1-B4+FD診断:          200+10s+16+3+23+1+6+18(新) (2026-03-28) ← status-256（B1-B4摩擦Process化+MPC接線FD診断）
-K_c特定:               200+10s+16+3+23+1+6+18+2(新) (2026-03-28) ← status-257（FD compute_residual+K_c不整合特定）
-K_c再解析:             200+10s+16+3+23+1+6+18+2(新) (2026-03-28) ← status-258（K_c正確確認+consistent_st_tangent=True+STA2 T2厳格化）
-smoothing_delta:       200+10s+16+3+23+1+6+18+2+4(新) (2026-03-28) ← status-259（Huber smoothing_deltaパイプライン貫通+自動推定有効化）
-δチューニング:         200+10s+16+3+23+1+6+18+2+4+3(新) (2026-03-28) ← status-260（δ=1000/rでfrac0.35→0.59改善+FD診断活性DOFフィルタ）
-delta_h API:           200+10s+16+3+23+1+6+18+2+4+3+9(新) (2026-03-28) ← status-261（δ=1000完走テスト+active_contact_dofs NR結合+delta_h直接指定API）
-delta_h探索:           200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-28) ← status-262（delta_h=0.025最適+three_point_bend貫通+3Dパイプ貫入なし）
-E=25回帰修正:          200+10s+16+3+23+1+6+18+2+4+3+9+4(新) (2026-03-29) ← status-264（frozen_hermite_tangent+_cur_ratio統一+n_elems=8）
-STA2自動記録:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18(新) (2026-03-29) ← status-265（BenchmarkRunnerProcess+RunManifest+serialize_config）
-frozen_hm安定化:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-266（frozen_hermite_tangent=False安定化+契約修正）
-チャタリング分析:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-267（チャタリング帯域分析+リラクゼーションdivergedフラグ修正+frac0.4837→0.4950）
-delta_hブースト:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-268（チャタリング時delta_hブースト+NR反復動的拡張+frac0.4950→0.4978）
-NRリストア:            200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-269（NR残差最小値リストア+過修正防止+frac0.4978→0.5408）
-frac1回帰修正:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18 (2026-03-29) ← status-270（n_elems_wire=20復元+パラメータbisectで主因特定）
-非局所Step1:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2(新) (2026-03-30) ← status-271（Hermite非局所∂g/∂u Step1+frozen=False 35%高速化）
-非局所Step2:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2(新) (2026-03-30) ← status-272（K_st隣接ノードDOF拡張+FD検証）
-非局所Step3:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2(新) (2026-03-30) ← status-273（K_c隣接ノードDOF拡張+FD検証）
-C16+Hertz:             200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15(新) (2026-04-03) ← status-285（C16修正+凍結テスト+Hertz型ペナルティ）
+新xkep_cae開始:  ~2260+34p(新) (2026-03-15) ← status-175（脱出ポット計画Phase1）
+R1完遂+契約0:    ~2260+284p(新) (2026-03-16) ← status-188（C14/C16違反ゼロ）
+deprecated全削除: 248p(新) (2026-03-18) ← status-207（コンテキスト大掃除）
+Huber統一:        499(新) (2026-03-21) ← status-222（ソルバー一本化）
+K_st実装:         175+11(新) (2026-03-22) ← status-226（∂(s,t)/∂u整合接線+FD検証）
+MPC+NR改善開始:  200+10s+16+3+23+1+6+18 (2026-03-26) ← status-253（DOF消去MPC）
+Hermite非局所完了: 200+10s+16+3+23+1+6+18+2+2+2+3 (2026-03-31) ← status-274（Step4完了）
+                   ↑ status-229〜274 の詳細は archive/ 参照
+Hertz+frac=1.0:    200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-06) ← status-298（frac=1.0完走）
 smooth遷移帯:          200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4(新) (2026-04-04) ← status-293（StJacobian smooth blending+unclamped IFT+frozen-m検証）
 K_c_adj mat-only:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-05) ← status-295（K_c_adj mat-only化+MPC+contact調査）
 ベースライン検証:      200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4 (2026-04-06) ← status-298（Hertz+atol_force frac=1.0完走確認）
@@ -324,6 +150,7 @@ BC+責務修正:            200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14
 バイアス補正掃引:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11(新) (2026-04-11) ← status-319（初期gap固定+大曲率での補正掃引 n=7/19/37、ContactForceStStiffness/FrictionStStiffness α≈2.07 の n² scaling 実測、status-318 の線形性結論を小曲率限定と判定、テスト数変更なし）
 usesグラフ拡張:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-11) ← status-320（`StrategySlot.default_types` 追加+`_collect_uses_graph`/`_is_leaf_process` StrategySlot 対応+`ContactFrictionProcess` から K_st 系 8 Process 到達可能化+5 テスト追加）
 K_st経路最適化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-11) ← status-321（K_st/K_mat/K_geo の tocsr() skip + einsum→broadcasting + mask filter skip + friction 戦略単一 COO concat + 抽出ループ active 比例化、FrictionStStiffness per-call 17.84ms→11.91ms 33% 高速化、テスト数変更なし）
+診断ログ高速化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-322（ProcessExecutionLog._find_caller を sys._getframe()+lru_cache 化、全 Process の ~2.5ms 固定オーバーヘッド eliminate、ContactForceSt 16.8ms→14.4ms 14% 高速化、ContactForceSt のベクトル化ローカル最適化併用、テスト数変更なし）
 ```
 
 ## 備考
@@ -331,6 +158,8 @@ K_st経路最適化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+1
 - テスト数「—」はドキュメント更新・計画策定のみのステータス
 - status-001〜096 は `docs/status/archive/` に移動（status-100 で実施）
 - status-097〜174 は `docs/status/archive/` に移動（status-177 で実施）
-- status-175〜 は新 xkep_cae（脱出ポット計画）のステータス
+- status-175〜274 は `docs/status/archive/` に移動（status-322 で実施）
+- status-275〜 がアクティブ status（接触完走・高速化フェーズ）
+- **アーカイブ方針**: アクティブ 50 件超過時に最古バッチを archive/ へ移動
 
 ---
