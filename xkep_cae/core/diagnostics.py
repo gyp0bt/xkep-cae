@@ -4,19 +4,26 @@
 どのプロセスがどこから（ファイル・関数・行番号）呼ばれたかをレポートする。
 
 主要機能:
-- ProcessExecutionLog: シングルトン実行ログ（inspect.stack() で呼び出し元自動検知）
+- ProcessExecutionLog: シングルトン実行ログ（sys._getframe() 走査で呼び出し元検知）
 - deprecated プロセス実行時のエラー検知
 - 静的ソルバー使用時の警告検知
 - レポート生成（docs/generated/process_usage_report.md）
 
 設計仕様: docs/process_diagnostics.md
+
+実装メモ (status-322): `_find_caller()` は旧実装で `inspect.stack()` を使用していたが、
+全フレームを materialize するため Process 呼び出しあたり ~3.6ms の固定コストが発生
+していた（cProfile 計測で ContactForceStStiffnessProcess の 18% を占有）。
+`sys._getframe()` によるフレーム単体走査 + `lru_cache` による
+repo_root / rel_path 解決のメモ化で 100x 以上高速化。
 """
 
 from __future__ import annotations
 
 import atexit
-import inspect
+import functools
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -244,48 +251,67 @@ class _CallContext:
     t0: float
 
 
+# --- 呼び出し元検知の高速パス ---
+#
+# `inspect.stack()` は全フレームを materialize するため極めて遅い。
+# ContactForceStStiffnessProcess の cProfile 計測では
+# 30 calls / 0.107s = 3.6ms/call を占有していた（全体の 18%）。
+# `sys._getframe()` による f_back 走査 + ファイル名の frozenset 照合で
+# 数 μs/call まで削減できる。相対パス解決は `functools.lru_cache` で
+# キャッシュする（同一ファイルからの呼び出しは再計算しない）。
+
+_SKIP_BASENAMES: frozenset[str] = frozenset({"base.py", "diagnostics.py", "runner.py"})
+_SKIP_MODULES: frozenset[str] = frozenset(
+    {"xkep_cae.core.base", "xkep_cae.core.diagnostics", "xkep_cae.core.runner"}
+)
+
+
 def _find_caller() -> tuple[str, str, int]:
-    """inspect.stack() から AbstractProcess 外の最初の呼び出し元を返す.
+    """sys._getframe() で AbstractProcess 外の最初の呼び出し元を返す.
 
     Returns:
         (file_path, function_name, line_number)
     """
-    # base.py, diagnostics.py, runner.py 自体をスキップ
-    skip_files = {"base.py", "diagnostics.py", "runner.py"}
-    skip_modules = {"xkep_cae.core.base", "xkep_cae.core.diagnostics", "xkep_cae.core.runner"}
-
     try:
-        stack = inspect.stack()
-    except Exception:
+        # 0=_find_caller 自体。`f_back` で呼び出し元へ遡る。
+        frame = sys._getframe(1)
+    except ValueError:
         return ("<unknown>", "<unknown>", 0)
 
-    for frame_info in stack[2:]:  # 0=_find_caller, 1=record_start
-        filename = frame_info.filename
+    while frame is not None:
+        code = frame.f_code
+        filename = code.co_filename
         basename = os.path.basename(filename)
 
-        # フレームワーク内部はスキップ
-        if basename in skip_files:
+        # フレームワーク内部 (base.py/diagnostics.py/runner.py) はスキップ
+        if basename in _SKIP_BASENAMES:
+            frame = frame.f_back
             continue
 
-        # モジュール名でもフィルタ
-        module = frame_info.frame.f_globals.get("__name__", "")
-        if module in skip_modules:
+        # モジュール名でも念のためフィルタ（埋め込みソースの別名対策）
+        module = frame.f_globals.get("__name__", "")
+        if module in _SKIP_MODULES:
+            frame = frame.f_back
             continue
 
-        # リポジトリルートからの相対パスに変換
-        try:
-            repo_root = _find_repo_root()
-            rel_path = str(Path(filename).resolve().relative_to(repo_root))
-        except (ValueError, RuntimeError):
-            rel_path = filename
-
-        return (rel_path, frame_info.function, frame_info.lineno)
+        return (_resolve_rel_path(filename), code.co_name, frame.f_lineno)
 
     return ("<unknown>", "<unknown>", 0)
 
 
+@functools.lru_cache(maxsize=4096)
+def _resolve_rel_path(filename: str) -> str:
+    """filename をリポジトリルートからの相対パスに変換（メモ化）."""
+    try:
+        repo_root = _find_repo_root()
+        return str(Path(filename).resolve().relative_to(repo_root))
+    except (ValueError, RuntimeError):
+        return filename
+
+
+@functools.lru_cache(maxsize=1)
 def _find_repo_root() -> Path:
-    """リポジトリルートを検索する."""
+    """リポジトリルートを検索する（メモ化）."""
     current = Path(__file__).resolve().parent
     for parent in [current] + list(current.parents):
         if (parent / ".git").exists() or (parent / "pyproject.toml").exists():
