@@ -56,6 +56,7 @@
 | [320](status-320.md) | 2026-04-11 | `uses` グラフ拡張 — `StrategySlot.default_types` で `ContactFrictionProcess` から接触/摩擦 K_st 系 8 Process をクラスレベルで到達可能化、`_is_leaf_process` も StrategySlot 併合判定、5 テスト追加 | 459+13+22+5 passed |
 | [321](status-321.md) | 2026-04-11 | K_st アセンブリ CSR/COO 経路最適化 — tocsr skip + einsum→broadcasting + mask filter skip + friction 戦略単一 COO concat + 抽出ループ active 比例化、**FrictionStStiffness per-call 33% 高速化** | 459+13+22+5 passed |
 | [322](status-322.md) | 2026-04-12 | `ProcessExecutionLog._find_caller` を `sys._getframe()` + `lru_cache` 化 — **全 Process 呼び出しの ~2.5ms 固定オーバーヘッド eliminate**、ContactForceSt per-call 16.8ms→14.4ms（14% 高速化）、test_beam_oscillation 実行時間 17x 改善、ContactForceSt ローカルベクトル化併用 | 459+13+22+5 passed |
+| [323](status-323.md) | 2026-04-12 | beam oscillation 物理テスト修復（UL参照更新無効化 + モード形状分布初速度）— 5 failed→0 failed + 1 skip + `_find_caller` skip list 評価（拡張不要）+ distance culling/symbolic factor reuse 調査 | 459+13+22+5 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 
@@ -151,6 +152,7 @@ BC+責務修正:            200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14
 usesグラフ拡張:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-11) ← status-320（`StrategySlot.default_types` 追加+`_collect_uses_graph`/`_is_leaf_process` StrategySlot 対応+`ContactFrictionProcess` から K_st 系 8 Process 到達可能化+5 テスト追加）
 K_st経路最適化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-11) ← status-321（K_st/K_mat/K_geo の tocsr() skip + einsum→broadcasting + mask filter skip + friction 戦略単一 COO concat + 抽出ループ active 比例化、FrictionStStiffness per-call 17.84ms→11.91ms 33% 高速化、テスト数変更なし）
 診断ログ高速化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-322（ProcessExecutionLog._find_caller を sys._getframe()+lru_cache 化、全 Process の ~2.5ms 固定オーバーヘッド eliminate、ContactForceSt 16.8ms→14.4ms 14% 高速化、ContactForceSt のベクトル化ローカル最適化併用、テスト数変更なし）
+beam振動修復:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-323（beam oscillation 5件失敗修復: UL参照更新無効化+モード形状分布初速度+time_arr修正+matplotlib skipif、_find_caller skip list評価（拡張不要）、distance culling/symbolic factor reuse調査、テスト数変更なし）
 ```
 
 ## 備考
