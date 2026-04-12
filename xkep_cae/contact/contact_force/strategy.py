@@ -277,61 +277,57 @@ class ContactForceStStiffnessProcess(
         2. p_n > 0 で active filter
         3. active ペアのみ NumPy 配列に bulk 抽出
         これにより total ペア数ではなく active ペア数に比例した forループになる。
+
+        status-322: 抽出ブロックを friction 側と同様の pre-bound states パターンに
+        統一。`state_pairs = [(i, p) ...]` の tuple 二重アクセスを排除し、`hasattr`
+        の重複チェックも省く。加えて P_perp の (N,3,3) 中間配列・g_shape/df の
+        for-k ループ・gdofs の二重ループをブロードキャスト一発に置き換え。
         """
         zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
 
-        # ── ペアデータ抽出（status-321: active 比例に圧縮） ──
+        # ── ペアデータ抽出（status-322: pre-bound states パターン） ──
         if not inp.pairs:
             return ContactForceStStiffnessOutput(K_st=zero)
 
-        # Step 1: state を持つペアのみ抽出（total に比例だが軽量）
-        state_pairs = [(i, p) for i, p in enumerate(inp.pairs) if hasattr(p, "state")]
-        if not state_pairs:
+        # Step 1: state を持つペアのみ単一パスで抽出
+        has_state_pairs = [p for p in inp.pairs if hasattr(p, "state")]
+        if not has_state_pairs:
             return ContactForceStStiffnessOutput(K_st=zero)
 
-        # Step 2: p_n > 0 で active filter
+        # Step 2: p_n > 0 で active filter（state を一度だけ bind）
+        states_all = [p.state for p in has_state_pairs]
         p_n_state = np.fromiter(
-            (sp_pair[1].state.p_n for sp_pair in state_pairs),
+            (st.p_n for st in states_all),
             dtype=float,
-            count=len(state_pairs),
+            count=len(states_all),
         )
         active_local = p_n_state > 1e-30
         n_act = int(np.sum(active_local))
         if n_act == 0:
             return ContactForceStStiffnessOutput(K_st=zero)
 
-        # Step 3: active ペアのみ抽出（active 数比例の Python ループ）
-        act_pairs = [state_pairs[k][1] for k in np.where(active_local)[0]]
+        # Step 3: active ペア + state を pre-bind
+        act_idx = np.where(active_local)[0]
+        act_pairs = [has_state_pairs[k] for k in act_idx]
+        states = [states_all[k] for k in act_idx]
 
         p_n_act = p_n_state[active_local]
-        gaps_act = np.fromiter((p.state.gap for p in act_pairs), dtype=float, count=n_act)
-        s_act = np.fromiter((p.state.s for p in act_pairs), dtype=float, count=n_act)
-        t_act = np.fromiter((p.state.t for p in act_pairs), dtype=float, count=n_act)
-
-        def _unc(val: float | None, fallback: float) -> float:
-            return val if val is not None else fallback
-
+        gaps_act = np.fromiter((st.gap for st in states), dtype=float, count=n_act)
+        s_act = np.fromiter((st.s for st in states), dtype=float, count=n_act)
+        t_act = np.fromiter((st.t for st in states), dtype=float, count=n_act)
+        # `getattr(st, 's_unclamped', st.s) or st.s` で None/0.0 どちらも st.s に
+        # フォールバック（friction/_assembly.py と同一パターン）
         s_unc_act = np.fromiter(
-            (
-                _unc(getattr(p.state, "s_unclamped", None), p.state.s)
-                if hasattr(p.state, "s_unclamped")
-                else p.state.s
-                for p in act_pairs
-            ),
+            (getattr(st, "s_unclamped", st.s) or st.s for st in states),
             dtype=float,
             count=n_act,
         )
         t_unc_act = np.fromiter(
-            (
-                _unc(getattr(p.state, "t_unclamped", None), p.state.t)
-                if hasattr(p.state, "t_unclamped")
-                else p.state.t
-                for p in act_pairs
-            ),
+            (getattr(st, "t_unclamped", st.t) or st.t for st in states),
             dtype=float,
             count=n_act,
         )
-        n_act_v = np.array([p.state.normal for p in act_pairs], dtype=float)
+        n_act_v = np.array([st.normal for st in states], dtype=float)
         nodes_act = np.array(
             [(p.nodes_a[0], p.nodes_a[1], p.nodes_b[0], p.nodes_b[1]) for p in act_pairs],
             dtype=int,
@@ -468,46 +464,48 @@ class ContactForceStStiffnessProcess(
             dc_ds = np.tile([-1.0, 1.0, 0.0, 0.0], (n_act, 1))
             dc_dt = np.tile([0.0, 0.0, 1.0, -1.0], (n_act, 1))
 
-        # ── ∂n/∂s, ∂n/∂t のバッチ計算 ──
+        # ── ∂n/∂s, ∂n/∂t および ∂p_n/∂s, ∂p_n/∂t のバッチ計算 ──
+        # status-322: P_perp の (N,3,3) 明示形成を回避。
+        #   P_perp @ v = v - n * (n · v)
+        # つまり dgap/ds = n·dpA を先に計算すれば、dn/ds は 1 回の軸ブロードキャスト
+        # 差分だけで求まる。einsum("nij,nj->ni") 2 回分のコストが消える。
         dist = gaps_act + ra_act + rb_act  # (N,)
-        safe_dist = np.where(dist > 1e-15, dist, 1.0)
-        inv_dist = np.where(dist > 1e-15, 1.0 / safe_dist, 0.0)  # (N,)
+        dist_valid = dist > 1e-15
+        inv_dist = np.where(dist_valid, 1.0 / np.where(dist_valid, dist, 1.0), 0.0)
 
-        # P_perp = I - n⊗n: (N, 3, 3)
-        I3 = np.eye(3)[None, :, :]
-        nn = n_act_v[:, :, None] * n_act_v[:, None, :]
-        P_perp = I3 - nn
+        # dgap/ds = n·dpA, dgap/dt = -(n·dpB)
+        n_dot_dpA = np.einsum("ij,ij->i", n_act_v, dpA_arr)  # (N,)
+        n_dot_dpB = np.einsum("ij,ij->i", n_act_v, dpB_arr)
+        dgap_ds = n_dot_dpA
+        dgap_dt = -n_dot_dpB
 
-        # dn/ds = (1/dist) * P_perp @ dpA: (N, 3)
-        dn_ds = inv_dist[:, None] * np.einsum("nij,nj->ni", P_perp, dpA_arr)
-        dn_dt = -inv_dist[:, None] * np.einsum("nij,nj->ni", P_perp, dpB_arr)
+        # P_perp @ dpA = dpA - n * (n·dpA)  (broadcasting で (N,3) 直接)
+        dn_ds = inv_dist[:, None] * (dpA_arr - n_act_v * n_dot_dpA[:, None])
+        dn_dt = -inv_dist[:, None] * (dpB_arr - n_act_v * n_dot_dpB[:, None])
 
-        # ── ∂p_n/∂s, ∂p_n/∂t のバッチ計算 ──
-        # dgap/ds = dot(n, dpA), dgap/dt = -dot(n, dpB)
-        dgap_ds = np.sum(n_act_v * dpA_arr, axis=1)  # (N,)
-        dgap_dt = -np.sum(n_act_v * dpB_arr, axis=1)
         dpn_ds = h_deriv * inp.k_pen * (-dgap_ds)
         dpn_dt = h_deriv * inp.k_pen * (-dgap_dt)
         # h_deriv が小さい場合はゼロに
-        dpn_ds = np.where(h_deriv > 1e-30, dpn_ds, 0.0)
-        dpn_dt = np.where(h_deriv > 1e-30, dpn_dt, 0.0)
+        h_active = h_deriv > 1e-30
+        dpn_ds = np.where(h_active, dpn_ds, 0.0)
+        dpn_dt = np.where(h_active, dpn_dt, 0.0)
 
-        # ── g_shape (N, 12) ──
-        g_shape = np.zeros((n_act, 12))
-        for k in range(4):
-            g_shape[:, k * 3 : k * 3 + 3] = coeffs[:, k][:, None] * n_act_v
+        # ── g_shape (N, 4, 3) をブロードキャスト一発で構築 ──
+        # g_shape[:, k, d] = coeffs[:, k] * n_act_v[:, d]
+        g_shape_3d = coeffs[:, :, None] * n_act_v[:, None, :]  # (N, 4, 3)
+        g_shape = g_shape_3d.reshape(n_act, 12)
 
         # ── df_ds, df_dt (N, 12) ──
-        # df_ds = dpn_ds * g_shape + p_n * (dc_ds[k]*n + coeffs[k]*dn_ds)
-        df_ds = dpn_ds[:, None] * g_shape
-        df_dt = dpn_dt[:, None] * g_shape
-        for k in range(4):
-            df_ds[:, k * 3 : k * 3 + 3] += p_n_act[:, None] * (
-                dc_ds[:, k][:, None] * n_act_v + coeffs[:, k][:, None] * dn_ds
-            )
-            df_dt[:, k * 3 : k * 3 + 3] += p_n_act[:, None] * (
-                dc_dt[:, k][:, None] * n_act_v + coeffs[:, k][:, None] * dn_dt
-            )
+        # df_ds[:, k, d] = dpn_ds * g_shape + p_n * (dc_ds[:,k] * n[:,d] + coeffs[:,k] * dn_ds[:,d])
+        # status-322: for-k ループを broadcasting に置換
+        df_ds_inner = p_n_act[:, None, None] * (
+            dc_ds[:, :, None] * n_act_v[:, None, :] + coeffs[:, :, None] * dn_ds[:, None, :]
+        )  # (N, 4, 3)
+        df_dt_inner = p_n_act[:, None, None] * (
+            dc_dt[:, :, None] * n_act_v[:, None, :] + coeffs[:, :, None] * dn_dt[:, None, :]
+        )
+        df_ds = dpn_ds[:, None] * g_shape + df_ds_inner.reshape(n_act, 12)
+        df_dt = dpn_dt[:, None] * g_shape + df_dt_inner.reshape(n_act, 12)
 
         # ── K_st_local = -(outer(df_ds, ds_du) + outer(df_dt, dt_du)): (N, 12, 12) ──
         # status-321: einsum → 直接ブロードキャスト（外積は broadcasting の方が
@@ -517,11 +515,12 @@ class ContactForceStStiffnessProcess(
         )
 
         # ── DOF インデックス (N, 12) ──
+        # status-322: 二重 for-k/for-d ループを単一ブロードキャスト式へ
+        # gdofs[:, k, d] = nodes_act[:, k] * ndpn + d
         ndpn = inp.ndof_per_node
-        gdofs = np.zeros((n_act, 12), dtype=int)
-        for k in range(4):
-            for d in range(3):
-                gdofs[:, k * 3 + d] = nodes_act[:, k] * ndpn + d
+        gdofs = (nodes_act[:, :, None] * ndpn + np.arange(3, dtype=int)[None, None, :]).reshape(
+            n_act, 12
+        )
 
         # ── COO 構築 ──
         # status-321: mask filter を skip。零エントリは CSR 統合時に自動で
