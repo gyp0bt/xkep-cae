@@ -335,6 +335,7 @@ def _assemble_friction_st_stiffness(
     node_tangents: np.ndarray | None = None,
     node_counts: np.ndarray | None = None,
     adj_node_map: dict | None = None,
+    gap_cull_threshold: float = float("inf"),
 ) -> sp.csr_matrix:
     """摩擦の K_st（接触点滑り剛性）をバッチ計算で組み立て.
 
@@ -344,6 +345,7 @@ def _assemble_friction_st_stiffness(
 
     status-274: Hermite隣接ノードDOF拡張。
     status-310: ペアforループを排除しNumPyバッチ化。
+    status-324: gap_cull_threshold で遠方ペアをスキップ。
     """
     zero = sp.csr_matrix((ndof_total, ndof_total))
 
@@ -355,10 +357,14 @@ def _assemble_friction_st_stiffness(
     # 旧実装は (1) act_indices を作る for + (2) bulk 抽出 for の 2 パス構造
     # だったが、(1) の Python ループを 1 回に集約しつつ Python 属性アクセスを
     # キャッシュする。これにより per-pair 定数項が縮む。
+    # status-324: gap >= gap_cull_threshold のペアは K_st 寄与ゼロなのでスキップ。
     act_pairs: list = []
     act_q_list: list = []
+    _gcull = gap_cull_threshold
     for pair_idx, pair in enumerate(contact_pairs):
         if not hasattr(pair, "state"):
+            continue
+        if pair.state.gap >= _gcull:
             continue
         q = friction_forces_local.get(pair_idx)
         if q is None:

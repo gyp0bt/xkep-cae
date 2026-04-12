@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5 テスト** — 2026-04-12時点 | **beam oscillation 物理テスト修復（UL参照更新無効化+モード形状分布初速度で5失敗→0失敗）**（status-323） ／ **`ProcessExecutionLog._find_caller` `sys._getframe()`+`lru_cache` 化 — 全 Process 14% 高速化**（status-322） ／ **K_st CSR/COO 経路最適化 — FrictionStStiffness 33% 高速化**（status-321） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8 テスト** — 2026-04-12時点 | **K_st distance culling（Huber遷移幅ベース gap pre-filter + Friction パイプライン貫通）**（status-324） ／ **beam oscillation 物理テスト修復**（status-323） ／ **`_find_caller` 高速化 — 全 Process 14% 改善**（status-322） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

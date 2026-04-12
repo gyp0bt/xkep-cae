@@ -171,6 +171,7 @@ class FrictionStStiffnessInput:
     node_tangents: np.ndarray | None = None
     node_counts: np.ndarray | None = None
     adj_node_map: dict | None = None  # status-274: 隣接ノードマップ
+    gap_cull_threshold: float = float("inf")  # status-324: distance culling
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ class FrictionStStiffnessProcess(
             node_tangents=inp.node_tangents,
             node_counts=inp.node_counts,
             adj_node_map=inp.adj_node_map,
+            gap_cull_threshold=inp.gap_cull_threshold,
         )
         return FrictionStStiffnessOutput(K_st=K_st)
 
@@ -384,6 +386,7 @@ class CoulombReturnMappingProcess(SolverProcess[FrictionInput, FrictionOutput]):
                     node_tangents=kwargs.get("node_tangents"),
                     node_counts=kwargs.get("node_counts"),
                     adj_node_map=kwargs.get("adj_node_map"),
+                    gap_cull_threshold=float(kwargs.get("gap_cull_threshold", float("inf"))),
                 )
             ).K_st
             K_st_coo = K_st if isinstance(K_st, sp.coo_matrix) else K_st.tocoo()

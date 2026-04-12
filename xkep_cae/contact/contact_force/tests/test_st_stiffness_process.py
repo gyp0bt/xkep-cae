@@ -634,3 +634,144 @@ class TestKstAssemblyBenchmark:
 
         t_min = min(times)
         print(f"\n[K_st batch] n_pairs={n_pairs}: {t_min:.4f}s (min of 3)")
+
+
+# ── Distance culling テスト（status-324） ────────────────────
+
+
+class TestDistanceCulling:
+    """ContactForceStStiffnessProcess の distance culling 検証（status-324）."""
+
+    def test_far_pair_culled(self):
+        """gap > delta_h / k_pen のペアは K_st に寄与しない."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [1.0, 1.0, 0.0],
+            ]
+        )
+        # gap=0.1, k_pen=1e4, delta_h=100 → threshold = 100/1e4 = 0.01
+        # gap=0.1 > 0.01 → culled
+        pair = _make_pair(gap=0.1, p_n=1.0)
+        proc = ContactForceStStiffnessProcess()
+        out = proc.process(
+            ContactForceStStiffnessInput(
+                pairs=[pair],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert out.K_st.nnz == 0
+
+    def test_near_pair_kept(self):
+        """gap < delta_h / k_pen のペアは K_st に寄与する."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        # gap=-0.01, k_pen=1e4, delta_h=100 → threshold = 0.01
+        # gap=-0.01 < 0.01 → kept
+        pair = _make_pair(gap=-0.01, p_n=1.0)
+        proc = ContactForceStStiffnessProcess()
+        out = proc.process(
+            ContactForceStStiffnessInput(
+                pairs=[pair],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert out.K_st.nnz > 0
+
+    def test_threshold_auto_computed(self):
+        """delta_h=0 のとき gap > 0 のペアは全て culled."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        # delta_h=0, gap=0.001 → threshold = 0.0 + 1e-8
+        # gap=0.001 > 1e-8 → culled
+        pair = _make_pair(gap=0.001, p_n=1.0)
+        proc = ContactForceStStiffnessProcess()
+        out = proc.process(
+            ContactForceStStiffnessInput(
+                pairs=[pair],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=0.0,
+                ndof_total=24,
+            )
+        )
+        assert out.K_st.nnz == 0
+
+    def test_mixed_pairs_only_near_contributes(self):
+        """近接ペアと遠方ペアの混合: 近接ペアのみ K_st に寄与."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+                [0.0, 2.0, 0.0],
+                [1.0, 2.0, 0.0],
+            ]
+        )
+        near = _make_pair(gap=-0.01, p_n=1.0, nodes_a=(0, 1), nodes_b=(2, 3))
+        far = _make_pair(gap=0.5, p_n=0.5, nodes_a=(0, 1), nodes_b=(4, 5))
+        proc = ContactForceStStiffnessProcess()
+
+        # 両ペアを入力
+        out_both = proc.process(
+            ContactForceStStiffnessInput(
+                pairs=[near, far],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=36,
+            )
+        )
+        # 近接ペアのみを入力
+        out_near = proc.process(
+            ContactForceStStiffnessInput(
+                pairs=[near],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=36,
+            )
+        )
+        # far ペアは culled なので、結果は近接ペアのみと同一
+        K_both = out_both.K_st.toarray() if hasattr(out_both.K_st, "toarray") else out_both.K_st
+        K_near = out_near.K_st.toarray() if hasattr(out_near.K_st, "toarray") else out_near.K_st
+        np.testing.assert_allclose(K_both, K_near, atol=1e-12)
+
+    def test_huber_gap_cull_threshold_method(self):
+        """HuberContactForceProcess.compute_gap_cull_threshold の検証."""
+        from xkep_cae.contact.contact_force.strategy import HuberContactForceProcess
+
+        # delta_h > 0
+        proc = HuberContactForceProcess(ndof=24, huber_delta_h=100.0)
+        threshold = proc.compute_gap_cull_threshold(k_pen=1e4)
+        assert abs(threshold - (100.0 / 1e4 + 1e-8)) < 1e-12
+
+        # delta_h = 0
+        proc2 = HuberContactForceProcess(ndof=24, huber_delta_h=0.0)
+        threshold2 = proc2.compute_gap_cull_threshold(k_pen=1e4)
+        assert abs(threshold2 - 1e-8) < 1e-12
+
+        # k_pen = 0 → inf
+        threshold3 = proc2.compute_gap_cull_threshold(k_pen=0.0)
+        assert threshold3 == float("inf")
