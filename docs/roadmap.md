@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-04-10）
+## 現在地（2026-04-12）
 
-**459 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -89,7 +89,8 @@
 | usesグラフ拡張 | **`StrategySlot.default_types` 追加 + `_collect_uses_graph`/`_is_leaf_process` の StrategySlot 対応**: status-319 TODO「`ContactForceStStiffness`/`FrictionStStiffness` 到達可能化」を実装。`StrategySlot` に `default_types: tuple[type, ...]` キーワード引数を追加し、`default_strategies()` 注入の具象 Process 型をクラスレベル宣言可能に。`ParameterSweepBenchmarkProcess._collect_uses_graph()` が MRO 経由で StrategySlot 経由依存を再帰走査。`ContactFrictionProcess` の 4 slot に宣言を入れることで、グラフサイズ **10→30**（HuberContactForce/ContactForceStStiffness/CoulombReturnMapping/FrictionStStiffness/FrictionTangentStiffness/FrictionGeometricStiffness/GeneralizedAlpha/LineToLineGauss/ComputeStJacobian に到達）。**`_is_leaf_process` も静的 `uses=[]` + StrategySlot.default_types 非空なら wrapper 判定**に拡張。5 テスト追加 — status-320 |
 | K_st経路最適化 | **K_st アセンブリ CSR/COO 経路最適化（定数項削減フェーズ）**: status-319 TODO「n² 成長抑制」の前段として per-call 定数を削減。(1) K_st / K_mat / K_geo の `tocsr()` を skip し raw COO を返す出力型に緩和、(2) `np.einsum("ni,nj->nij", ...)` を直接ブロードキャスト `a[:,:,None] * b[:,None,:]` に置換、(3) K_st COO 構築の mask filter を skip、(4) `CoulombReturnMappingProcess.tangent()` で K_mat + K_geo + K_st を COO concat → 1 回 tocsr() する fast path、(5) ペア抽出ループを total-pair 比例から active-pair 比例に圧縮。**実測（n_active=2000）: FrictionStStiffness 17.84ms → 11.91ms（33% 高速化）**、ContactForceSt 15.48ms → 14.97ms（3%）— status-321 |
 | 診断ログ高速化 | **`ProcessExecutionLog._find_caller()` の `sys._getframe()` 化 + `lru_cache` メモ化**: status-321 TODO「ContactForceSt の 3% 止まり分析」の**根本原因特定 + 修正**。cProfile で `ContactForceStStiffnessProcess._process_batch` を計測し、**`_find_caller()` の `inspect.stack()` が per-call ~3.6ms（全体 18%）を占有**していることを発見。`inspect.stack()` は全フレームを `FrameInfo` に materialize するため極めて遅く、さらに `Path(filename).resolve()` が `posix.stat()` を連鎖する。`sys._getframe()` によるフレーム単体走査に置換し、`_find_repo_root` / `_resolve_rel_path` を `functools.lru_cache` 化。**全 `AbstractProcess.process()` 呼び出しに効く**ため、contact 以外の静的ソルバーでも大幅な速度改善（`test_beam_oscillation` で 18 分+ → 63 秒 ≈ 17x 高速化を実測）。併せて ContactForceSt `_process_batch` の抽出/幾何微分/g_shape/df/gdofs をベクトル化。**実測（n_active=2000, 300 iter）: ContactForceSt 16.8ms → 14.4ms（14% 高速化）**、diagnostics overhead 2.53ms → ≈0ms — status-322 |
-| **次** | **broadphase 距離カット**（n² → n log n の本丸）／**K_st の TangentAssembly からの分離計測**／**status-299/301-equivalent proven setup での n=7/19/37 再測定**／**status-318 データに status-320 walker を当て直し dominant_leaf 再計算**／**被膜 ON 掃引**／**ファイバー梁 Phase F1**／**test_beam_oscillation の pre-existing 5 失敗の物理回帰修復** → 1000本6時間 |
+| beam振動修復 | **beam oscillation 物理テスト修復**: UL `update_reference()` が自由振動の復元力を消失させる問題を `ul_assembler=None` で回避。集中加振→モード形状分布初速度に変更で amplitude_ratio 安定化。5 FAILED → 0 FAILED + 1 SKIPPED（matplotlib）。_find_caller skip list 評価（拡張不要）、distance culling/symbolic factor reuse 調査 — status-323 |
+| **次** | **broadphase 距離カット**（n² → n log n の本丸）／**symbolic factorization reuse**（pypardiso analyze() キャッシュ）／**K_st の TangentAssembly からの分離計測**／**status-299/301-equivalent proven setup での n=7/19/37 再測定**／**被膜 ON 掃引**／**ファイバー梁 Phase F1** → 1000本6時間 |
 
 ---
 

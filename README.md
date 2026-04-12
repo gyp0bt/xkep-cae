@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5 テスト** — 2026-04-12時点 | **`ProcessExecutionLog._find_caller` を `sys._getframe()`+`lru_cache` 化 — 全 Process 呼び出しの ~2.5ms 固定オーバーヘッドを eliminate、ContactForceSt per-call 16.8ms→14.4ms 14% 高速化**（status-322） ／ **K_st アセンブリ CSR/COO 経路最適化 — FrictionStStiffness 33% 高速化**（status-321） ／ **`uses` グラフ拡張（`StrategySlot.default_types`）**（status-320） ／ **n_strands 掃引 バイアス補正版 — α≈2.07 の n² scaling 実測**（status-319） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5 テスト** — 2026-04-12時点 | **beam oscillation 物理テスト修復（UL参照更新無効化+モード形状分布初速度で5失敗→0失敗）**（status-323） ／ **`ProcessExecutionLog._find_caller` `sys._getframe()`+`lru_cache` 化 — 全 Process 14% 高速化**（status-322） ／ **K_st CSR/COO 経路最適化 — FrictionStStiffness 33% 高速化**（status-321） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
