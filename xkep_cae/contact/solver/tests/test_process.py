@@ -52,6 +52,7 @@ from xkep_cae.contact.solver._newton_steps import (
     LineSearchUpdateOutput,
     LineSearchUpdateProcess,
     TangentAssemblyProcess,
+    _SolverCache,
     _zero_sparse_rows,
 )
 from xkep_cae.contact.solver._solver_state import (
@@ -745,6 +746,217 @@ class TestLinearSolveProcessAPI:
         assert abs(out.du[2]) < 1e-12
         # 自由DOF: K[1,1]*du[1] = -R[1] → 3*du[1] = -2 → du[1] = -2/3
         assert abs(out.du[1] - (-2.0 / 3.0)) < 1e-12
+
+
+class TestSolverCache:
+    """_SolverCache のユニットテスト（status-325）."""
+
+    def test_scipy_fallback_solve(self):
+        """pypardiso 不在時は scipy spsolve で正しく求解."""
+        cache = _SolverCache()
+        cache._use_pardiso = False  # 強制 scipy
+        K = sp.eye(3, format="csc") * 2.0
+        rhs = np.array([1.0, 2.0, 3.0])
+        x = cache.solve(K, rhs)
+        np.testing.assert_allclose(x, [0.5, 1.0, 1.5])
+
+    def test_pattern_changed_initial(self):
+        """初回は常に pattern_changed = True."""
+        cache = _SolverCache()
+        K = sp.eye(3, format="csc")
+        assert cache._pattern_changed(K) is True
+
+    def test_pattern_changed_same_pattern(self):
+        """同一パターンの行列で False."""
+        cache = _SolverCache()
+        K = sp.eye(3, format="csc") * 2.0
+        cache._solver = object()  # non-None sentinel
+        cache._cache_pattern(K)
+        # 同じパターン、異なる値
+        K2 = sp.eye(3, format="csc") * 5.0
+        assert cache._pattern_changed(K2) is False
+
+    def test_pattern_changed_different_shape(self):
+        """異なるサイズの行列で True."""
+        cache = _SolverCache()
+        K3 = sp.eye(3, format="csc")
+        cache._solver = object()
+        cache._cache_pattern(K3)
+        K4 = sp.eye(4, format="csc")
+        assert cache._pattern_changed(K4) is True
+
+    def test_pattern_changed_different_structure(self):
+        """同じサイズだがパターン異なる行列で True."""
+        cache = _SolverCache()
+        K1 = sp.eye(3, format="csc")
+        cache._solver = object()
+        cache._cache_pattern(K1)
+        # オフダイアゴナル要素を追加
+        K2 = sp.eye(3, format="csc") + sp.csc_matrix(([1.0], ([0], [1])), shape=(3, 3))
+        assert cache._pattern_changed(K2) is True
+
+    def test_invalidate(self):
+        """invalidate() でキャッシュクリア."""
+        cache = _SolverCache()
+        K = sp.eye(3, format="csc")
+        cache._solver = object()
+        cache._cache_pattern(K)
+        cache.invalidate()
+        assert cache._solver is None
+        assert cache._indptr is None
+        assert cache._shape is None
+
+    def test_stats_counters_scipy(self):
+        """scipy path ではカウンタは変化しない."""
+        cache = _SolverCache()
+        cache._use_pardiso = False
+        K = sp.eye(3, format="csc") * 2.0
+        rhs = np.array([1.0, 2.0, 3.0])
+        cache.solve(K, rhs)
+        cache.solve(K, rhs)
+        assert cache.n_symbolic == 0
+        assert cache.n_numeric_only == 0
+
+    def test_repeated_solve_same_proc_correctness(self):
+        """同一 LinearSolveProcess で連続ソルブが正確."""
+        proc = LinearSolveProcess()
+        empty_fixed = np.array([], dtype=int)
+        # Solve 1
+        K1 = sp.eye(3, format="csr") * 2.0
+        R1 = np.array([2.0, 4.0, 6.0])
+        out1 = proc.process(LinearSolveInput(K_T=K1, R_u=R1, fixed_dofs=empty_fixed))
+        assert out1.success
+        np.testing.assert_allclose(out1.du, [-1.0, -2.0, -3.0])
+        # Solve 2: 同じパターン、異なる値
+        K2 = sp.eye(3, format="csr") * 4.0
+        R2 = np.array([4.0, 8.0, 12.0])
+        out2 = proc.process(LinearSolveInput(K_T=K2, R_u=R2, fixed_dofs=empty_fixed))
+        assert out2.success
+        np.testing.assert_allclose(out2.du, [-1.0, -2.0, -3.0])
+
+    def test_repeated_solve_pattern_change(self):
+        """パターン変化しても正しく求解."""
+        proc = LinearSolveProcess()
+        empty_fixed = np.array([], dtype=int)
+        # 3x3 対角行列
+        K1 = sp.eye(3, format="csr") * 2.0
+        R1 = np.array([2.0, 4.0, 6.0])
+        out1 = proc.process(LinearSolveInput(K_T=K1, R_u=R1, fixed_dofs=empty_fixed))
+        assert out1.success
+        # 4x4 対角行列（パターン変化）
+        K2 = sp.eye(4, format="csr") * 3.0
+        R2 = np.array([3.0, 6.0, 9.0, 12.0])
+        out2 = proc.process(LinearSolveInput(K_T=K2, R_u=R2, fixed_dofs=empty_fixed))
+        assert out2.success
+        np.testing.assert_allclose(out2.du, [-1.0, -2.0, -3.0, -4.0])
+
+
+class TestSolverCacheMock:
+    """_SolverCache の pypardiso mock テスト（status-325）."""
+
+    def _make_mock_pardiso_module(self):
+        """pypardiso モック: factorize/solve を追跡."""
+        from types import ModuleType
+        from unittest.mock import MagicMock
+
+        mock_mod = ModuleType("pypardiso")
+
+        class MockPyPardisoSolver:
+            def __init__(self):
+                self.factorize_count = 0
+                self.solve_count = 0
+                self._A = None
+
+            def factorize(self, A):
+                self.factorize_count += 1
+                self._A = A.copy()
+
+            def solve(self, A, b):
+                self.solve_count += 1
+                # scipy fallback for actual computation
+                from scipy.sparse.linalg import spsolve
+
+                return spsolve(A, b)
+
+        mock_mod.PyPardisoSolver = MockPyPardisoSolver
+        mock_mod.spsolve = MagicMock(
+            side_effect=lambda A, b: __import__("scipy").sparse.linalg.spsolve(A, b)
+        )
+        return mock_mod, MockPyPardisoSolver
+
+    def test_pardiso_symbolic_reuse(self, monkeypatch):
+        """同一パターンで factorize() が1回だけ呼ばれる."""
+        import sys
+
+        mock_mod, MockCls = self._make_mock_pardiso_module()
+        monkeypatch.setitem(sys.modules, "pypardiso", mock_mod)
+
+        cache = _SolverCache()
+        cache._use_pardiso = True
+
+        K = sp.eye(3, format="csc") * 2.0
+        rhs = np.array([1.0, 2.0, 3.0])
+
+        # 1st solve: full factorization
+        x1 = cache.solve(K, rhs)
+        np.testing.assert_allclose(x1, [0.5, 1.0, 1.5])
+        assert cache.n_symbolic == 1
+        assert cache.n_numeric_only == 0
+
+        # 2nd solve: same pattern → reuse
+        K2 = sp.eye(3, format="csc") * 4.0
+        rhs2 = np.array([4.0, 8.0, 12.0])
+        x2 = cache.solve(K2, rhs2)
+        np.testing.assert_allclose(x2, [1.0, 2.0, 3.0])
+        assert cache.n_symbolic == 1
+        assert cache.n_numeric_only == 1
+
+        # factorize called only once
+        solver = cache._solver
+        assert solver.factorize_count == 1
+
+    def test_pardiso_pattern_change_refactorize(self, monkeypatch):
+        """パターン変化で factorize() が再呼出し."""
+        import sys
+
+        mock_mod, MockCls = self._make_mock_pardiso_module()
+        monkeypatch.setitem(sys.modules, "pypardiso", mock_mod)
+
+        cache = _SolverCache()
+        cache._use_pardiso = True
+
+        # 3x3
+        K1 = sp.eye(3, format="csc") * 2.0
+        cache.solve(K1, np.array([1.0, 2.0, 3.0]))
+        assert cache.n_symbolic == 1
+
+        # 4x4 → pattern change → re-factorize
+        K2 = sp.eye(4, format="csc") * 3.0
+        x2 = cache.solve(K2, np.array([3.0, 6.0, 9.0, 12.0]))
+        np.testing.assert_allclose(x2, [1.0, 2.0, 3.0, 4.0])
+        assert cache.n_symbolic == 2
+        assert cache.n_numeric_only == 0
+
+    def test_pardiso_structure_change_refactorize(self, monkeypatch):
+        """同サイズでも構造変化で factorize() 再呼出し."""
+        import sys
+
+        mock_mod, MockCls = self._make_mock_pardiso_module()
+        monkeypatch.setitem(sys.modules, "pypardiso", mock_mod)
+
+        cache = _SolverCache()
+        cache._use_pardiso = True
+
+        K1 = sp.eye(3, format="csc") * 2.0
+        cache.solve(K1, np.array([1.0, 2.0, 3.0]))
+        assert cache.n_symbolic == 1
+
+        # オフダイアゴナル追加 → 構造変化
+        K2 = sp.eye(3, format="csc") * 2.0 + sp.csc_matrix(
+            ([0.5, 0.5], ([0, 1], [1, 0])), shape=(3, 3)
+        )
+        cache.solve(K2, np.array([1.0, 2.0, 3.0]))
+        assert cache.n_symbolic == 2
 
 
 @binds_to(LineSearchUpdateProcess)

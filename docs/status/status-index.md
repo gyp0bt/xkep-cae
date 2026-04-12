@@ -58,6 +58,7 @@
 | [322](status-322.md) | 2026-04-12 | `ProcessExecutionLog._find_caller` を `sys._getframe()` + `lru_cache` 化 — **全 Process 呼び出しの ~2.5ms 固定オーバーヘッド eliminate**、ContactForceSt per-call 16.8ms→14.4ms（14% 高速化）、test_beam_oscillation 実行時間 17x 改善、ContactForceSt ローカルベクトル化併用 | 459+13+22+5 passed |
 | [323](status-323.md) | 2026-04-12 | beam oscillation 物理テスト修復（UL参照更新無効化 + モード形状分布初速度）— 5 failed→0 failed + 1 skip + `_find_caller` skip list 評価（拡張不要）+ distance culling/symbolic factor reuse 調査 | 459+13+22+5 passed |
 | [324](status-324.md) | 2026-04-12 | K_st distance culling 実装 — Huber 遷移幅ベースの gap pre-filter（Contact K_st 自動閾値計算 + Friction K_st パイプライン貫通 + `compute_gap_cull_threshold()` 公開メソッド + 8 テスト追加） | 459+13+22+5+8 passed |
+| [325](status-325.md) | 2026-04-12 | symbolic factorization reuse — `_SolverCache` で pypardiso symbolic 分析キャッシュ（パターン検出 + `factorize()` reuse + `LinearSolveProcess` v1.2.0 + 12 テスト追加） | 459+13+22+5+8+12 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 
@@ -155,6 +156,7 @@ K_st経路最適化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+1
 診断ログ高速化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-322（ProcessExecutionLog._find_caller を sys._getframe()+lru_cache 化、全 Process の ~2.5ms 固定オーバーヘッド eliminate、ContactForceSt 16.8ms→14.4ms 14% 高速化、ContactForceSt のベクトル化ローカル最適化併用、テスト数変更なし）
 beam振動修復:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-323（beam oscillation 5件失敗修復: UL参照更新無効化+モード形状分布初速度+time_arr修正+matplotlib skipif、_find_caller skip list評価（拡張不要）、distance culling/symbolic factor reuse調査、テスト数変更なし）
 distance culling:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5+8(新) (2026-04-12) ← status-324（Contact K_st gap pre-filter + Friction K_st gap_cull_threshold パイプライン貫通 + compute_gap_cull_threshold() 公開メソッド + 8テスト追加）
+symbolic fact cache:    200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5+8+12(新) (2026-04-12) ← status-325（_SolverCache クラス新設、LinearSolveProcess v1.2.0、パターン検出+factorize reuse、12テスト追加）
 ```
 
 ## 備考

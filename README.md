@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8 テスト** — 2026-04-12時点 | **K_st distance culling（Huber遷移幅ベース gap pre-filter + Friction パイプライン貫通）**（status-324） ／ **beam oscillation 物理テスト修復**（status-323） ／ **`_find_caller` 高速化 — 全 Process 14% 改善**（status-322） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12 テスト** — 2026-04-12時点 | **symbolic factorization reuse — _SolverCache で pypardiso symbolic 分析キャッシュ**（status-325） ／ **K_st distance culling（Huber遷移幅ベース gap pre-filter）**（status-324） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

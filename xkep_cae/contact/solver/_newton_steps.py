@@ -483,8 +483,102 @@ class LinearSolveOutput:
     success: bool
 
 
+class _SolverCache:
+    """Sparse solver cache — symbolic factorization reuse (status-325).
+
+    pypardiso 使用時:
+        PyPardisoSolver インスタンスを保持。スパースパターン変化時のみ
+        factorize() (phase 12 = analysis + numerical) を実行し、パターン
+        不変時は solve() 内部で numerical refactorization (phase 22) +
+        solve (phase 33) のみ走る。
+
+    scipy fallback 時:
+        毎回 spsolve（symbolic/numerical 分離不可）。
+    """
+
+    __slots__ = (
+        "_solver",
+        "_indptr",
+        "_shape",
+        "_use_pardiso",
+        "n_symbolic",
+        "n_numeric_only",
+    )
+
+    def __init__(self) -> None:
+        self._solver: object | None = None  # PyPardisoSolver
+        self._indptr: np.ndarray | None = None
+        self._shape: tuple[int, int] | None = None
+        self._use_pardiso: bool | None = None
+        self.n_symbolic: int = 0
+        self.n_numeric_only: int = 0
+
+    # ------------------------------------------------------------------
+    def solve(self, K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+        """K @ x = rhs を求解（factorization cache あり）."""
+        if self._use_pardiso is None:
+            try:
+                import pypardiso  # noqa: F401
+
+                self._use_pardiso = True
+            except ImportError:
+                self._use_pardiso = False
+
+        if self._use_pardiso:
+            return self._solve_pardiso(K_csc, rhs)
+
+        from scipy.sparse.linalg import spsolve
+
+        return spsolve(K_csc, rhs)
+
+    # ------------------------------------------------------------------
+    def _pattern_changed(self, K_csc: sp.spmatrix) -> bool:
+        """スパースパターンが前回と異なるか判定."""
+        if self._solver is None or self._shape is None:
+            return True
+        if self._shape != K_csc.shape:
+            return True
+        if self._indptr is None or len(self._indptr) != len(K_csc.indptr):
+            return True
+        return not np.array_equal(self._indptr, K_csc.indptr)
+
+    def _cache_pattern(self, K_csc: sp.spmatrix) -> None:
+        self._shape = K_csc.shape
+        self._indptr = K_csc.indptr.copy()
+
+    # ------------------------------------------------------------------
+    def _solve_pardiso(self, K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
+        """pypardiso solve with symbolic factorization reuse.
+
+        パターン変化時: factorize() で phase 12 (analysis + numerical)。
+        パターン不変時: solve() 内部が data 変化を検知し phase 22 + 33 のみ。
+        """
+        from pypardiso import PyPardisoSolver
+
+        if self._pattern_changed(K_csc):
+            if self._solver is None:
+                self._solver = PyPardisoSolver()
+            self._solver.factorize(K_csc)
+            self._cache_pattern(K_csc)
+            self.n_symbolic += 1
+        else:
+            self.n_numeric_only += 1
+
+        return self._solver.solve(K_csc, rhs)
+
+    # ------------------------------------------------------------------
+    def invalidate(self) -> None:
+        """Clear cache."""
+        self._solver = None
+        self._indptr = None
+        self._shape = None
+
+
 def _sparse_solve(K_csc: sp.spmatrix, rhs: np.ndarray) -> np.ndarray:
-    """スパース線形ソルブ: pypardiso → scipy fallback（status-311）."""
+    """スパース線形ソルブ: pypardiso → scipy fallback（status-311）.
+
+    後方互換用。LinearSolveProcess は _SolverCache を使用。
+    """
     try:
         import pypardiso
 
@@ -519,14 +613,23 @@ def _zero_sparse_rows(K: sp.spmatrix, dofs: np.ndarray) -> None:
 class LinearSolveProcess(
     SolverProcess[LinearSolveInput, LinearSolveOutput],
 ):
-    """境界条件適用 + 線形ソルブ."""
+    """境界条件適用 + 線形ソルブ.
+
+    status-325: _SolverCache により pypardiso 使用時の symbolic
+    factorization reuse を実現。NR 反復間でスパースパターンが
+    不変なら analysis (phase 11) をスキップ。
+    """
 
     meta = ProcessMeta(
         name="LinearSolve",
         module="solve",
-        version="1.1.0",
+        version="1.2.0",
         document_path="docs/newton_solver.md",
     )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._cache = _SolverCache()
 
     def process(self, inp: LinearSolveInput) -> LinearSolveOutput:
         _mpc = inp.mpc_transform
@@ -561,7 +664,7 @@ class LinearSolveProcess(
             _rhs[fixed] = 0.0
 
         try:
-            du = _sparse_solve(K_csc, _rhs)
+            du = self._cache.solve(K_csc, _rhs)
             return LinearSolveOutput(du=du, success=True)
         except Exception:
             return LinearSolveOutput(du=None, success=False)
@@ -606,7 +709,7 @@ class LinearSolveProcess(
             _rhs_red[fixed_reduced] = 0.0
 
         try:
-            du_red = _sparse_solve(K_red_csc, _rhs_red)
+            du_red = self._cache.solve(K_red_csc, _rhs_red)
             # 全体系に復元
             du_full = (T @ du_red).A.ravel() if sp.issparse(T @ du_red) else T @ du_red
             return LinearSolveOutput(du=du_full, success=True)
