@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25 テスト** — 2026-04-13時点 | **ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**（status-328） ／ **断面ファイバー離散化 + 断面積分 Process、FD接線検証合格** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26 テスト** — 2026-04-13時点 | **ファイバー梁 Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**（status-329） ／ **CR Timoshenko 梁ファイバー積分統合 + UL アセンブラ配線、弾性内力 < 0.2%** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
