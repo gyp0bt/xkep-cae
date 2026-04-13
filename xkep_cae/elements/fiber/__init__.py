@@ -7,6 +7,7 @@
 from xkep_cae.elements.fiber.materials import (
     BilinearKinematicHardening1D,
     Elastic1D,
+    MultiLayerFrictionDegrading1D,
 )
 from xkep_cae.elements.fiber.state import Fiber1DState, SectionState
 
@@ -14,5 +15,6 @@ __all__ = [
     "BilinearKinematicHardening1D",
     "Elastic1D",
     "Fiber1DState",
+    "MultiLayerFrictionDegrading1D",
     "SectionState",
 ]
