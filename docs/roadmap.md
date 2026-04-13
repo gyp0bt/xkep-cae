@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-04-12）
+## 現在地（2026-04-13）
 
-**459+13+22+5+8+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -92,7 +92,9 @@
 | beam振動修復 | **beam oscillation 物理テスト修復**: UL `update_reference()` が自由振動の復元力を消失させる問題を `ul_assembler=None` で回避。集中加振→モード形状分布初速度に変更で amplitude_ratio 安定化。5 FAILED → 0 FAILED + 1 SKIPPED（matplotlib）。_find_caller skip list 評価（拡張不要）、distance culling/symbolic factor reuse 調査 — status-323 |
 | distance culling | **K_st distance culling 実装**: Huber 遷移幅ベース gap pre-filter（Contact K_st 自動閾値計算 + Friction K_st パイプライン貫通）。gap > delta_h/k_pen のペアを step 1 で除外し、遠方ペアの overhead 削減。8 テスト追加 — status-324 |
 | symbolic fact cache | **symbolic factorization reuse**: `_SolverCache` で pypardiso `PyPardisoSolver` インスタンスを保持。スパースパターン不変時は symbolic analysis (phase 11) スキップ。`(shape, indptr)` 比較でパターン検出。scipy fallback は従来通り。12 テスト追加 — status-325 |
-| **次** | **n=37 掃引で culling + cache 効果定量計測**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）／**被膜 ON 掃引**／**ファイバー梁 Phase F1** → 1000本6時間 |
+| ファイバー梁F1+計測 | **Phase F1（Elastic1D/BilinearKH）+ culling/cache 効果定量計測**: ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24 — status-326 |
+| ファイバー梁F2 | **Phase F2（MultiLayerFrictionDegrading1D）**: N 層並列摩擦+弾性バックボーン+接触剛性劣化。frozen dataclass C17 準拠。05_smooth_teardrop.py 完全再現 rtol<1%。KH 等価性検証。12 テスト追加 — status-327 |
+| **次** | **ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 
