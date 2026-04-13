@@ -187,6 +187,37 @@ class LinearSolverStrategy(Protocol):
 
 
 @runtime_checkable
+class Fiber1DMaterialStrategy(Protocol):
+    """ファイバー1材料点の応力則.
+
+    入力: 軸ひずみ ε と現在状態
+    出力: 応力 σ、接線 dσ/dε、更新後の状態
+    状態は frozen dataclass として返す（C17 準拠: no mutation）
+
+    実装:
+    - Elastic1D: 線形弾性（参照用）
+    - BilinearKinematicHardening1D: Prager 移動硬化
+    - MultiLayerFrictionDegrading1D: 多層摩擦+劣化（Phase F2）
+    """
+
+    def evaluate(
+        self,
+        eps: float,
+        state: object,
+    ) -> tuple[float, float, object]:
+        """応力・接線・新状態を返す.
+
+        Args:
+            eps: 軸ひずみ
+            state: 現在の Fiber1DState
+
+        Returns:
+            (sigma, dsigma_deps, new_state)
+        """
+        ...
+
+
+@runtime_checkable
 class CoatingStrategy(Protocol):
     """被膜接触モデルの評価方法を規定する.
 

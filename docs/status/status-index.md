@@ -59,6 +59,7 @@
 | [323](status-323.md) | 2026-04-12 | beam oscillation 物理テスト修復（UL参照更新無効化 + モード形状分布初速度）— 5 failed→0 failed + 1 skip + `_find_caller` skip list 評価（拡張不要）+ distance culling/symbolic factor reuse 調査 | 459+13+22+5 passed |
 | [324](status-324.md) | 2026-04-12 | K_st distance culling 実装 — Huber 遷移幅ベースの gap pre-filter（Contact K_st 自動閾値計算 + Friction K_st パイプライン貫通 + `compute_gap_cull_threshold()` 公開メソッド + 8 テスト追加） | 459+13+22+5+8 passed |
 | [325](status-325.md) | 2026-04-12 | symbolic factorization reuse — `_SolverCache` で pypardiso symbolic 分析キャッシュ（パターン検出 + `factorize()` reuse + `LinearSolveProcess` v1.2.0 + 12 テスト追加） | 459+13+22+5+8+12 passed |
+| [326](status-326.md) | 2026-04-12 | ファイバー梁 Phase F1 実装（`Elastic1D` / `BilinearKinematicHardening1D` + 12 テスト）+ culling/cache 効果定量計測（ContactForceStStiffness **96-99% 高速化**、scaling α=2.07→1.24） | 459+13+22+5+8+12+12 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 

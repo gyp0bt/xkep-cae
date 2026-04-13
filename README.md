@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12 テスト** — 2026-04-12時点 | **symbolic factorization reuse — _SolverCache で pypardiso symbolic 分析キャッシュ**（status-325） ／ **K_st distance culling（Huber遷移幅ベース gap pre-filter）**（status-324） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12 テスト** — 2026-04-12時点 | **ファイバー梁 Phase F1（Elastic1D / BilinearKinematicHardening1D）**（status-326） ／ **culling/cache 効果計測: ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24**（status-326） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
