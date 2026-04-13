@@ -61,6 +61,7 @@
 | [325](status-325.md) | 2026-04-12 | symbolic factorization reuse — `_SolverCache` で pypardiso symbolic 分析キャッシュ（パターン検出 + `factorize()` reuse + `LinearSolveProcess` v1.2.0 + 12 テスト追加） | 459+13+22+5+8+12 passed |
 | [326](status-326.md) | 2026-04-12 | ファイバー梁 Phase F1 実装（`Elastic1D` / `BilinearKinematicHardening1D` + 12 テスト）+ culling/cache 効果定量計測（ContactForceStStiffness **96-99% 高速化**、scaling α=2.07→1.24） | 459+13+22+5+8+12+12 passed |
 | [327](status-327.md) | 2026-04-13 | ファイバー梁 Phase F2 実装（`MultiLayerFrictionDegrading1D` — N 層並列摩擦+弾性バックボーン+接触剛性劣化、`05_smooth_teardrop.py` 完全再現 rtol<1%、KH 等価性検証、12 テスト追加） | 459+13+22+5+8+12+12 passed |
+| [328](status-328.md) | 2026-04-13 | ファイバー梁 Phase F3 実装（`CircularFiberSection` + `FiberSectionIntegratorProcess` — 断面ファイバー離散化 strip/polar + 断面積分 Process、FD 接線検証 Elastic/BilinearKH/MultiLayerFriction 3 材料合格、弾性 EI 誤差 < 1%、25 テスト追加） | 459+13+22+5+8+12+12+25 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 

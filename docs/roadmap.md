@@ -94,7 +94,8 @@
 | symbolic fact cache | **symbolic factorization reuse**: `_SolverCache` で pypardiso `PyPardisoSolver` インスタンスを保持。スパースパターン不変時は symbolic analysis (phase 11) スキップ。`(shape, indptr)` 比較でパターン検出。scipy fallback は従来通り。12 テスト追加 — status-325 |
 | ファイバー梁F1+計測 | **Phase F1（Elastic1D/BilinearKH）+ culling/cache 効果定量計測**: ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24 — status-326 |
 | ファイバー梁F2 | **Phase F2（MultiLayerFrictionDegrading1D）**: N 層並列摩擦+弾性バックボーン+接触剛性劣化。frozen dataclass C17 準拠。05_smooth_teardrop.py 完全再現 rtol<1%。KH 等価性検証。12 テスト追加 — status-327 |
-| **次** | **ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| ファイバー梁F3 | **Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**: 円形断面ファイバー離散化（strip/polar）+ 断面積分 Process。FD 接線検証合格（Elastic/BilinearKH/MultiLayerFriction 3 材料）。弾性 EI 誤差 < 1%。25 テスト追加 — status-328 |
+| **次** | **ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 
@@ -253,7 +254,7 @@ S6のボトルネックに応じたGPU化（CuPy/JAX）。
 | Phase | 内容 | 状態 |
 |-------|------|------|
 | 4.3 | von Mises 3D 塑性 | 凍結（45件テスト済） |
-| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | **Phase F1 完了**（status-326: `Elastic1D` + `BilinearKinematicHardening1D` + 12テスト）。設計仕様: [fiber_beam_strand.md](../xkep_cae/elements/docs/fiber_beam_strand.md)（status-313）。次: Phase F2（`MultiLayerFrictionDegrading1D`） |
+| 4.4-4.6 | ヒステリシス減衰、粘弾性、異方性 | **Phase F3 完了**（status-328: `CircularFiberSection` + `FiberSectionIntegratorProcess` + 25テスト）。設計仕様: [fiber_beam_strand.md](../xkep_cae/elements/docs/fiber_beam_strand.md)（status-313）。次: Phase F4（`StrandFiberBeamProcess`） |
 | 6.1-6.3 | NN構成則、PI制約、ハイブリッド | 未実装 |
 | 7-8 | モデルレジストリ、FE² | 未実装 |
 
