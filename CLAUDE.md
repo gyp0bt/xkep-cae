@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12 テスト** — 2026-04-12 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12+25 テスト** — 2026-04-13 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -128,7 +128,9 @@
 - ~~symbolic factorization reuse（pypardiso analyze() キャッシュ）~~ ← status-325で完了（`_SolverCache` クラス新設、`LinearSolveProcess` v1.2.0、パターン検出+factorize reuse、12テスト追加）
 - ~~n=37 掃引で culling + cache 効果定量計測~~ ← status-326で完了（**ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24**）
 - ~~ファイバー梁 Phase F1 着手~~ ← status-326で完了（`Elastic1D` + `BilinearKinematicHardening1D` + `Fiber1DMaterialStrategy` Protocol + 12テスト）
-- **次**: **被膜 ON プロファイル + pypardiso 環境再ベンチ**／**ファイバー梁 Phase F2（MultiLayerFrictionDegrading1D）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
+- ~~ファイバー梁 Phase F2（MultiLayerFrictionDegrading1D）~~ ← status-327で完了
+- ~~ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）~~ ← status-328で完了（FD接線検証合格、弾性EI誤差<1%、25テスト追加）
+- **次**: **ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）**／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
