@@ -14,7 +14,7 @@
 
 ## 現在地（2026-04-13）
 
-**459+13+22+5+8+12+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -95,7 +95,8 @@
 | ファイバー梁F1+計測 | **Phase F1（Elastic1D/BilinearKH）+ culling/cache 効果定量計測**: ContactForceStStiffness 96-99% 高速化、scaling α=2.07→1.24 — status-326 |
 | ファイバー梁F2 | **Phase F2（MultiLayerFrictionDegrading1D）**: N 層並列摩擦+弾性バックボーン+接触剛性劣化。frozen dataclass C17 準拠。05_smooth_teardrop.py 完全再現 rtol<1%。KH 等価性検証。12 テスト追加 — status-327 |
 | ファイバー梁F3 | **Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**: 円形断面ファイバー離散化（strip/polar）+ 断面積分 Process。FD 接線検証合格（Elastic/BilinearKH/MultiLayerFriction 3 材料）。弾性 EI 誤差 < 1%。25 テスト追加 — status-328 |
-| **次** | **ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| ファイバー梁F4 | **Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**: CR Timoshenko 梁にファイバー断面積分を統合。Battini & Pacoste 解析的接線（K_mat+K_geo）。UL マルチ要素アセンブラ配線（checkpoint/rollback 対応）。弾性内力 < 0.2%、接線対角 < 1%、FD 自己整合検証合格。26 テスト追加 — status-329 |
+| **次** | **ファイバー梁 Phase F5（ContactFrictionProcess 統合）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 

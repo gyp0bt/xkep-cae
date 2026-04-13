@@ -16,6 +16,11 @@ from xkep_cae.elements.fiber.materials import (
 )
 from xkep_cae.elements.fiber.section import CircularFiberSection
 from xkep_cae.elements.fiber.state import Fiber1DState, SectionState
+from xkep_cae.elements.fiber.strand_beam import (
+    StrandFiberBeamConfig,
+    StrandFiberBeamProcess,
+    StrandFiberBeamResult,
+)
 
 __all__ = [
     "BilinearKinematicHardening1D",
@@ -27,4 +32,7 @@ __all__ = [
     "FiberSectionIntegratorProcess",
     "MultiLayerFrictionDegrading1D",
     "SectionState",
+    "StrandFiberBeamConfig",
+    "StrandFiberBeamProcess",
+    "StrandFiberBeamResult",
 ]
