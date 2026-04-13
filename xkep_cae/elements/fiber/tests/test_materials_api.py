@@ -1,19 +1,21 @@
 """TestFiber1DMaterialAPI — Protocol 準拠・型・frozen 性検査.
 
 設計仕様: xkep_cae/elements/docs/fiber_beam_strand.md
-Phase F1 完了判定テスト（6件の一部）。
+Phase F1 完了判定テスト（6件）+ Phase F2 追加テスト。
 
 [← README](../../../../README.md)
 """
 
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from xkep_cae.core.strategies.protocols import Fiber1DMaterialStrategy
 from xkep_cae.elements.fiber.materials import (
     BilinearKinematicHardening1D,
     Elastic1D,
+    MultiLayerFrictionDegrading1D,
 )
 from xkep_cae.elements.fiber.state import Fiber1DState, SectionState
 
@@ -64,3 +66,64 @@ class TestFiber1DMaterialAPI:
             assert sigma == pytest.approx(E * eps, abs=1e-10)
             assert E_t == pytest.approx(E, abs=1e-10)
             assert new_state is state  # 状態不変
+
+
+class TestMultiLayerFrictionDegradingAPI:
+    """MultiLayerFrictionDegrading1D の API 準拠テスト."""
+
+    @staticmethod
+    def _make_simple(n: int = 5) -> MultiLayerFrictionDegrading1D:
+        """テスト用の簡易モデルを生成."""
+        k_virgin = np.ones(n) * 1000.0
+        return MultiLayerFrictionDegrading1D(
+            E_base=1500.0,
+            k_virgin=k_virgin,
+            k_degraded=k_virgin * 0.25,
+            f_y=np.linspace(10.0, 100.0, n),
+        )
+
+    def test_protocol_compliance(self) -> None:
+        """MultiLayerFrictionDegrading1D は Fiber1DMaterialStrategy を満たす."""
+        mat = self._make_simple()
+        assert isinstance(mat, Fiber1DMaterialStrategy)
+
+    def test_evaluate_return_types(self) -> None:
+        """evaluate() は (float, float, Fiber1DState) を返す."""
+        mat = self._make_simple()
+        state = mat.initial_state()
+        sigma, E_t, new_state = mat.evaluate(0.001, state)
+        assert isinstance(sigma, float)
+        assert isinstance(E_t, float)
+        assert isinstance(new_state, Fiber1DState)
+
+    def test_initial_state_factory(self) -> None:
+        """initial_state() は正しい長さの slip/slipped を生成."""
+        n = 10
+        mat = self._make_simple(n=n)
+        state = mat.initial_state()
+        assert len(state.slip) == n
+        assert len(state.slipped) == n
+        assert all(s == 0.0 for s in state.slip)
+        assert all(not f for f in state.slipped)
+
+    def test_n_layers_property(self) -> None:
+        """n_layers は層数を返す."""
+        mat = self._make_simple(n=7)
+        assert mat.n_layers == 7
+
+    def test_frozen_state_immutable(self) -> None:
+        """evaluate() 後の状態が frozen（mutation 不可）."""
+        mat = self._make_simple(n=3)
+        state = mat.initial_state()
+        # 大きなひずみでスリップを発生させる
+        _, _, new_state = mat.evaluate(1.0, state)
+        with pytest.raises(AttributeError):
+            new_state.slip = (0.0, 0.0, 0.0)  # type: ignore[misc]
+
+    def test_elastic_range_state_unchanged(self) -> None:
+        """弾性域（全層スリップなし）では state オブジェクトが同一."""
+        mat = self._make_simple(n=5)
+        state = mat.initial_state()
+        # f_y 最小が 10.0、k_virgin=1000 → 降伏ひずみ ≈ 0.01
+        _, _, new_state = mat.evaluate(1e-5, state)
+        assert new_state is state
