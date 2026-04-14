@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+9 テスト** — 2026-04-14時点 | **C16 契約違反 12 件解消**（status-334） ／ `cable_dissipation.py` / `strand_cross_section_model.py` の純粋関数 12 本を `_` prefix で private 化。次: 7本撚線でM-κヒステリシスループ実測 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10 テスト** — 2026-04-14時点 | **2本撚線 M-κ ヒステリシスループ直接観測**（status-335） ／ `n_oscillation_cycles=1` 統合モードで load+unload を 6.88 秒で完走、κ 下降 14 回・loop_area=1.17e-2 を確認。次: 7本撚線 load+unload 実測 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
