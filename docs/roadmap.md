@@ -14,7 +14,7 @@
 
 ## 現在地（2026-04-14）
 
-**459+13+22+5+8+12+12+25+26+10+15 テスト** | 契約違反**4件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+9 テスト** | 契約違反**12件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -99,7 +99,8 @@
 | ファイバー梁F5 | **Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**: use_fiber_beam フラグで素線メッシュ→ファイバー梁切替。直線梁メッシュ+断面積分+TL定式化（非線形材料のCR UL f_int=0問題回避）。弾性先端変位0.02%一致、BilinearKH/MultiLayerFriction NR収束合格。10 テスト追加 — status-330 |
 | F5散逸検証 | **Phase F5 散逸エネルギー検証（CableDissipationProcess）**: M-κ ヒステリシス追跡 + ループ面積計算。散逸 ∝ κ^1.9（超線形）、n_strands 超線形（EI比駆動）、β=0.10-0.50 でティアドロップ非対称性。checkpoint bugfix（TL mode section state commit）。15 テスト追加 — status-331 |
 | 解析モデル | **断面接触点統計モデル（Papailiou 1997 + 分布閾値拡張）**: 単層 W∝κ^1.0 → 分布閾値 W∝κ^(α+1) でκ冪1.85完全再現。n≥7で±10%精度。ピッチ非依存性を解析的に証明。**ただしキャリブレーション先がファイバー梁（近似モデル同士の比較）のため、CR梁接触動解析での直接検証が必要** — status-332 |
-| **次** | **Phase F6 キャリブレーション**／**BilinearKH 除荷NR改善**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| M-κ直接観測基盤 | **CR梁接触動解析でM-κ追跡 + 接触ペアスナップショット**: ContactFrictionProcess に `track_mk` / `track_contact_pairs` 追加、`mk_moment_dofs` 合算で f_int から曲げモーメント取得、`mk_curvature_func` で load_frac→κ 変換。StrandBendingOscillationProcess free-end モード配線（combined/2-phase 両対応）。軽量 ContactPairSnapshotEntry（elem_a/elem_b/p_n/gap/slip_s/slip_t/stick/dissipation）。2本撚線で M-κ 単調増加＋非ゼロM検証合格。**近似モデル循環論法解消の基盤完成。次: 7本撚線ヒステリシスループ＋ピッチ依存性の直接計測** — status-333 |
+| **次** | **7本撚線 M-κ ヒステリシスループ直接取得（ティアドロップ形状観測）**／**κ_cr 分布実測（ファイバー梁キャリブレーションデータ）**／**ピッチ依存性検証（p=50/100/200 の散逸差）**／**Papailiou キャリブレーション → 予測モデル完成**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 
