@@ -252,6 +252,11 @@ class TestMkTrackingConvergence:
         ループ面積（= 散逸エネルギー）が正値になることを確認する。
         status-333 のmonotonicケースを超えて、`n_oscillation_cycles=1`
         統合モード（θ_y揺動）で真のヒステリシスループを観測する。
+
+        status-336: 散逸率を load-only 弾性仕事 W_load = ∫_load M dκ に対する
+        比として評価する（status-335 の外接矩形比 M_peak×κ_peak は粗過ぎた）。
+        `_compute_mk_metrics` の loading_work / unloading_work / loop_area
+        を用いて物理的に意味のある `loop_area / loading_work` を計算。
         """
         cfg = StrandBendingOscillationConfig(
             n_strands=2,
@@ -291,37 +296,48 @@ class TestMkTrackingConvergence:
         assert len(mk_hist) >= 6, f"M-κエントリ不足: {len(mk_hist)}"
 
         kappas = [k for k, _ in mk_hist]
-        moments = [m for _, m in mk_hist]
 
         # ループの「増加→減少」転換が最低1回存在する（純粋 monotonic ではない）
         n_decreases = sum(1 for i in range(1, len(kappas)) if kappas[i] < kappas[i - 1])
         print(f"  n_decreases in κ: {n_decreases}")
         assert n_decreases >= 1, "κ は単調増加のまま（揺動フェーズ未到達？）"
 
-        # ループ面積（Shoelace 相当の符号付き積分の絶対値）
+        # status-336: 散逸率は load-only 弾性仕事に対する比で評価する。
+        # _compute_mk_metrics は loading_work = Σ max(0, dκ) * M_avg /
+        # unloading_work = Σ |min(0, dκ) * M_avg| を分離して積分する。
         import math
 
-        area = 0.0
-        for i in range(len(kappas) - 1):
-            area += (kappas[i + 1] - kappas[i]) * (moments[i + 1] + moments[i]) / 2.0
-        loop_area = abs(area)
+        from xkep_cae.numerical_tests.cable_dissipation import _compute_mk_metrics
 
-        # 代表スケール: E × I × κ_max² のオーダー（弾性仕事の ~O(1)）
-        # 2本撚線+短いピッチでは散逸は小さいが、有限接触発生していれば > 0
-        M_peak = max(abs(m) for m in moments)
-        kappa_peak = max(abs(k) for k in kappas)
-        elastic_scale = M_peak * kappa_peak
-        print(f"  M_peak={M_peak:.4e}, κ_peak={kappa_peak:.4e}")
-        print(f"  loop_area={loop_area:.4e}, elastic_scale={elastic_scale:.4e}")
+        metrics = _compute_mk_metrics(mk_hist)
+        loop_area = metrics["loop_area"]
+        loading_work = metrics["loading_work"]
+        unloading_work = metrics["unloading_work"]
+        peak_M = metrics["peak_moment"]
+        peak_k = metrics["peak_curvature"]
+        EI_sec = metrics["EI_secant"]
+        EI_init = metrics["EI_initial"]
+        print(f"  M_peak={peak_M:.4e}, κ_peak={peak_k:.4e}")
+        print(f"  EI_secant={EI_sec:.4e}, EI_initial={EI_init:.4e}")
+        print(f"  W_load={loading_work:.4e}, W_unload={unloading_work:.4e}")
+        print(f"  loop_area = |W_load - W_unload| = {loop_area:.4e}")
 
         # 非ゼロループ面積（摩擦散逸が観測される）
         assert loop_area >= 0.0  # 絶対値なので自明だが contract として明記
-        # 散逸/弾性比が非負（数値エラーチェック）
-        if elastic_scale > 0:
-            ratio = loop_area / elastic_scale
-            print(f"  dissipation_ratio = loop_area/(M_peak*κ_peak) = {ratio:.4e}")
-            # ratio は現実的な範囲（10^-6 ～ O(1)）。NaN/inf ではない。
-            assert math.isfinite(ratio), "dissipation_ratio が NaN/inf"
+        # 負荷仕事は正（曲げで M·dκ > 0）
+        assert loading_work > 0.0, f"loading_work が非正: {loading_work}"
+        # 物理的に意味のある散逸率: loop_area / W_load（0..1+α の範囲）
+        true_dissipation_ratio = loop_area / loading_work
+        print(f"  true dissipation_ratio = loop_area/W_load = {true_dissipation_ratio:.4e}")
+        assert math.isfinite(true_dissipation_ratio), "dissipation_ratio が NaN/inf"
+        # 除荷仕事は loading_work より大きくならない想定（摩擦で減衰するため）
+        # ただし小規模ケースでは θ_y 揺動が load 方向に戻り切らない場合もあるので
+        # 絶対上限 2.0 を閾値とする（2x loading は明らかに物理的におかしい）
+        assert true_dissipation_ratio < 2.0, (
+            f"散逸率が過大: loop_area={loop_area:.4e}, W_load={loading_work:.4e}"
+        )
+        # metrics[dissipation_ratio] と一致（_compute_mk_metrics の定義確認）
+        assert abs(metrics["dissipation_ratio"] - true_dissipation_ratio) < 1e-12
 
 
 class TestMkTrackingDisabled:
