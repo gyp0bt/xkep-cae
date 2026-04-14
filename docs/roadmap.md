@@ -102,6 +102,7 @@
 | M-κ直接観測基盤 | **CR梁接触動解析でM-κ追跡 + 接触ペアスナップショット**: ContactFrictionProcess に `track_mk` / `track_contact_pairs` 追加、`mk_moment_dofs` 合算で f_int から曲げモーメント取得、`mk_curvature_func` で load_frac→κ 変換。StrandBendingOscillationProcess free-end モード配線（combined/2-phase 両対応）。軽量 ContactPairSnapshotEntry（elem_a/elem_b/p_n/gap/slip_s/slip_t/stick/dissipation）。2本撚線で M-κ 単調増加＋非ゼロM検証合格。**近似モデル循環論法解消の基盤完成。次: 7本撚線ヒステリシスループ＋ピッチ依存性の直接計測** — status-333 |
 | 契約整理 | **C16 契約違反 12 件解消**: `cable_dissipation.py` 4 関数 + `strand_cross_section_model.py` 8 関数を `_` prefix で private 化。内部 Process 呼び出し・テスト・`work/beam_hysteresis` スクリプト import を整合。契約違反 12→0、ruff/contracts 全 OK、既存 15 テスト全 pass — status-334 |
 | M-κループ検証 | **2本撚線 M-κ ヒステリシスループ直接観測（infra 検証）**: status-333 基盤 + `n_oscillation_cycles=1` 統合モードで load+unload を 6.88 秒で完走、M-κ entries=41、κ 下降 14 回、loop_area=1.17e-2 を観測。CI 時間内で closed-loop と非零散逸を検証。7本撚線は `@pytest.mark.slow` + work/ スクリプトで後続対応 — status-335 |
+| 散逸率厳格化 | **M-κ ループ散逸率を load-only 弾性仕事基準に厳格化**: status-335 の外接矩形比 `loop_area/(M_peak·κ_peak)` は弾性スケールの粗近似で物理解釈不能だったため、`_compute_mk_metrics` の `loading_work = Σ max(0,dκ)·M_avg` を分母に採用。2本撚線ケースで `W_load=6.99e-3, W_unload=4.75e-3, loop_area=2.24e-3, dissipation_ratio=0.32` を検証。散逸率上限（<2.0）および `metrics["dissipation_ratio"]` 一致を assert 化 — status-336 |
 | **次** | **7本撚線 M-κ ヒステリシスループ直接取得（ティアドロップ形状観測）**／**κ_cr 分布実測（ファイバー梁キャリブレーションデータ）**／**ピッチ依存性検証（p=50/100/200 の散逸差）**／**Papailiou キャリブレーション → 予測モデル完成**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---

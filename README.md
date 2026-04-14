@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10 テスト** — 2026-04-14時点 | **2本撚線 M-κ ヒステリシスループ直接観測**（status-335） ／ `n_oscillation_cycles=1` 統合モードで load+unload を 6.88 秒で完走、κ 下降 14 回・loop_area=1.17e-2 を確認。次: 7本撚線 load+unload 実測 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10 テスト** — 2026-04-14時点 | **M-κ ループ散逸率を load-only 弾性仕事基準に厳格化**（status-336） ／ 2本撚線ケース `W_load=6.99e-3, W_unload=4.75e-3, loop_area=2.24e-3, dissipation_ratio=0.32` を観測（旧 M_peak×κ_peak 外接矩形比 0.86 を廃止）。次: 7本撚線 load+unload 実測 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
