@@ -361,8 +361,13 @@ class ULCRFiberBeamAssembler:
         # 要素ごとのセクション状態（1積分点/要素）
         n_elems = len(connectivity)
         n_fiber = section.n_fiber
+        # material に initial_state() があれば使用（MultiLayerFriction 等）
+        if hasattr(material, "initial_state"):
+            fiber_init = material.initial_state()
+        else:
+            fiber_init = Fiber1DState()
         init_state = SectionState(
-            fibers=tuple(Fiber1DState() for _ in range(n_fiber)),
+            fibers=tuple(fiber_init for _ in range(n_fiber)),
         )
         self._section_states: list[SectionState] = [init_state] * n_elems
         self._section_states_trial: list[SectionState] = list(self._section_states)

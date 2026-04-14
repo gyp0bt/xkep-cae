@@ -63,6 +63,7 @@
 | [327](status-327.md) | 2026-04-13 | ファイバー梁 Phase F2 実装（`MultiLayerFrictionDegrading1D` — N 層並列摩擦+弾性バックボーン+接触剛性劣化、`05_smooth_teardrop.py` 完全再現 rtol<1%、KH 等価性検証、12 テスト追加） | 459+13+22+5+8+12+12 passed |
 | [328](status-328.md) | 2026-04-13 | ファイバー梁 Phase F3 実装（`CircularFiberSection` + `FiberSectionIntegratorProcess` — 断面ファイバー離散化 strip/polar + 断面積分 Process、FD 接線検証 Elastic/BilinearKH/MultiLayerFriction 3 材料合格、弾性 EI 誤差 < 1%、25 テスト追加） | 459+13+22+5+8+12+12+25 passed |
 | [329](status-329.md) | 2026-04-13 | ファイバー梁 Phase F4 実装（`StrandFiberBeamProcess` + `ULCRFiberBeamAssembler` — CR Timoshenko 梁要素ファイバー積分統合 + UL マルチ要素アセンブラ配線、弾性内力 < 0.2%・接線対角 < 1%・FD 自己整合検証合格、26 テスト追加） | 459+13+22+5+8+12+12+25+26 passed |
+| [330](status-330.md) | 2026-04-14 | ファイバー梁 Phase F5 実装（`StrandBendingOscillationProcess` に `use_fiber_beam` フラグ — 直線梁メッシュ+ファイバー断面積分+TL定式化、弾性先端変位0.02%・BilinearKH/MultiLayerFriction NR収束合格、10テスト追加） | 459+13+22+5+8+12+12+25+26+10 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 
@@ -161,6 +162,7 @@ K_st経路最適化:         200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+1
 beam振動修復:           200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5(新) (2026-04-12) ← status-323（beam oscillation 5件失敗修復: UL参照更新無効化+モード形状分布初速度+time_arr修正+matplotlib skipif、_find_caller skip list評価（拡張不要）、distance culling/symbolic factor reuse調査、テスト数変更なし）
 distance culling:       200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5+8(新) (2026-04-12) ← status-324（Contact K_st gap pre-filter + Friction K_st gap_cull_threshold パイプライン貫通 + compute_gap_cull_threshold() 公開メソッド + 8テスト追加）
 symbolic fact cache:    200+10s+16+3+23+1+6+18+2+4+3+9+4+18+2+2+2+15+4+13+14+6+9+3+5+13+11+11+5+8+12(新) (2026-04-12) ← status-325（_SolverCache クラス新設、LinearSolveProcess v1.2.0、パターン検出+factorize reuse、12テスト追加）
+ファイバー梁F5統合:     459+13+22+5+8+12+12+25+26+10(新) (2026-04-14) ← status-330（StrandBendingOscillationProcess use_fiber_beam フラグ + TL定式化 + 弾性0.02%/BilinearKH/MultiLayerFriction収束 + 10テスト追加）
 ```
 
 ## 備考

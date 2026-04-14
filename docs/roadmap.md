@@ -96,7 +96,8 @@
 | ファイバー梁F2 | **Phase F2（MultiLayerFrictionDegrading1D）**: N 層並列摩擦+弾性バックボーン+接触剛性劣化。frozen dataclass C17 準拠。05_smooth_teardrop.py 完全再現 rtol<1%。KH 等価性検証。12 テスト追加 — status-327 |
 | ファイバー梁F3 | **Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**: 円形断面ファイバー離散化（strip/polar）+ 断面積分 Process。FD 接線検証合格（Elastic/BilinearKH/MultiLayerFriction 3 材料）。弾性 EI 誤差 < 1%。25 テスト追加 — status-328 |
 | ファイバー梁F4 | **Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**: CR Timoshenko 梁にファイバー断面積分を統合。Battini & Pacoste 解析的接線（K_mat+K_geo）。UL マルチ要素アセンブラ配線（checkpoint/rollback 対応）。弾性内力 < 0.2%、接線対角 < 1%、FD 自己整合検証合格。26 テスト追加 — status-329 |
-| **次** | **ファイバー梁 Phase F5（ContactFrictionProcess 統合）**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| ファイバー梁F5 | **Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**: use_fiber_beam フラグで素線メッシュ→ファイバー梁切替。直線梁メッシュ+断面積分+TL定式化（非線形材料のCR UL f_int=0問題回避）。弾性先端変位0.02%一致、BilinearKH/MultiLayerFriction NR収束合格。10 テスト追加 — status-330 |
+| **次** | **Phase F5 散逸エネルギー検証**（完了判定: 7本撚線 < 10%）／**Phase F6 キャリブレーション**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 

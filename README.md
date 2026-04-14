@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26 テスト** — 2026-04-13時点 | **ファイバー梁 Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**（status-329） ／ **CR Timoshenko 梁ファイバー積分統合 + UL アセンブラ配線、弾性内力 < 0.2%** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10 テスト** — 2026-04-14時点 | **ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**（status-330） ／ **弾性先端変位 0.02%・BilinearKH/MultiLayerFriction NR収束合格** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
