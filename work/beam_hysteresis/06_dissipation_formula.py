@@ -54,7 +54,7 @@ from scipy.optimize import curve_fit
 from xkep_cae.numerical_tests.cable_dissipation import (
     CableDissipationConfig,
     CableDissipationProcess,
-    cable_geometry,
+    _cable_geometry,
 )
 
 
@@ -65,7 +65,7 @@ from xkep_cae.numerical_tests.cable_dissipation import (
 
 def delta_EI(n_strands: int, wire_radius: float = 0.5) -> float:
     """Steiner 寄与 ΔEI = EI_max - EI_min [mm⁴]."""
-    geom = cable_geometry(n_strands, wire_radius, pitch_length=100.0)
+    geom = _cable_geometry(n_strands, wire_radius, pitch_length=100.0)
     return geom["EI_max"] - geom["EI_min"]
 
 
@@ -139,7 +139,7 @@ def run_sweep():
                     result = proc.process(cfg)
 
                     dEI = delta_EI(n)
-                    geom = cable_geometry(n, 0.5, p)
+                    geom = _cable_geometry(n, 0.5, p)
                     gp = helix_factor(p, geom["helix_radius"])
 
                     entry = {

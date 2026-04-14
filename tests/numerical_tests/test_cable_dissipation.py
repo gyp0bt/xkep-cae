@@ -24,10 +24,10 @@ from xkep_cae.numerical_tests.cable_dissipation import (
     CableDissipationConfig,
     CableDissipationProcess,
     CableDissipationResult,
-    cable_geometry,
-    compute_mk_loop_area,
-    compute_mk_metrics,
-    make_cable_material,
+    _cable_geometry,
+    _compute_mk_loop_area,
+    _compute_mk_metrics,
+    _make_cable_material,
 )
 
 
@@ -55,7 +55,7 @@ class TestCableDissipationAPI:
 
     def test_cable_geometry_7strand(self) -> None:
         """7本撚線の幾何計算が正しい."""
-        geom = cable_geometry(n_strands=7, wire_radius=0.5, pitch_length=100.0)
+        geom = _cable_geometry(n_strands=7, wire_radius=0.5, pitch_length=100.0)
 
         assert geom["cable_diameter"] == pytest.approx(3.0, rel=1e-10)
         assert geom["helix_radius"] == pytest.approx(1.0, rel=1e-10)
@@ -63,12 +63,12 @@ class TestCableDissipationAPI:
 
     def test_cable_geometry_single_wire(self) -> None:
         """単線の EI_ratio = 1."""
-        geom = cable_geometry(n_strands=1, wire_radius=0.5, pitch_length=100.0)
+        geom = _cable_geometry(n_strands=1, wire_radius=0.5, pitch_length=100.0)
         assert geom["EI_ratio"] == pytest.approx(1.0, rel=1e-10)
 
     def test_make_cable_material_returns_valid(self) -> None:
         """自動材料生成が有効な MultiLayerFriction を返す."""
-        material, info = make_cable_material(n_strands=7, n_layers=10)
+        material, info = _make_cable_material(n_strands=7, n_layers=10)
 
         assert isinstance(material, MultiLayerFrictionDegrading1D)
         assert material.n_layers == 10
@@ -80,7 +80,7 @@ class TestCableDissipationAPI:
         """閉ループの面積が正しく計算される."""
         # 単位正方形ループ: 面積 = 1.0
         mk = [(0.0, 0.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)]
-        area = compute_mk_loop_area(mk)
+        area = _compute_mk_loop_area(mk)
         assert area == pytest.approx(0.5, abs=0.01)
 
     def test_compute_mk_metrics_elastic(self) -> None:
@@ -92,7 +92,7 @@ class TestCableDissipationAPI:
         mk_unload = [(k, EI * k) for k in kappas[::-1]]
         mk_full = mk_load + mk_unload[1:]
 
-        metrics = compute_mk_metrics(mk_full)
+        metrics = _compute_mk_metrics(mk_full)
         assert metrics["loop_area"] < 1e-10  # 散逸ゼロ
         assert metrics["EI_secant"] == pytest.approx(EI, rel=0.01)
 

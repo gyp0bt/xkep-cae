@@ -29,13 +29,13 @@ from xkep_cae.numerical_tests.cable_dissipation import (
     CableDissipationProcess,
 )
 from xkep_cae.numerical_tests.strand_cross_section_model import (
-    calibrate_distributed_model,
-    calibrate_pretension,
-    dissipation_energy_bending,
-    dissipation_energy_bending_distributed,
-    dissipation_energy_combined,
-    make_cable_section,
-    mk_curve_analytical,
+    _calibrate_distributed_model as calibrate_distributed_model,
+    _calibrate_pretension as calibrate_pretension,
+    _dissipation_energy_bending as dissipation_energy_bending,
+    _dissipation_energy_bending_distributed as dissipation_energy_bending_distributed,
+    _dissipation_energy_combined as dissipation_energy_combined,
+    _make_cable_section as make_cable_section,
+    _mk_curve_analytical as mk_curve_analytical,
 )
 
 
