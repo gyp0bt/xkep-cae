@@ -231,6 +231,11 @@ class StrandBendingOscillationConfig:
     fiber_n_fiber: int = 60
     # polar 離散化の周方向分割数
     fiber_n_theta: int = 16
+    # M-κ追跡 + 接触ペア履歴記録（status-333: CR梁接触動解析のM-κヒステリシス直接取得）
+    # track_contact_mk=True で各収束インクリメントの (κ, M) を記録。
+    # track_contact_pairs=True で各収束インクリメントの接触ペア状態をスナップショット保存。
+    track_contact_mk: bool = False
+    track_contact_pairs: bool = False
 
 
 @dataclass(frozen=True)
@@ -1116,6 +1121,19 @@ class StrandBendingOscillationProcess(
             print(f"  [RESUME] 曲げcheckpointロード: ||u||={np.linalg.norm(_u_bend):.4e}")
             solver_result_bend = None
         else:
+            # status-333: M-κ追跡用曲率関数
+            # κ = θ / L（曲げフェーズ: θ = bending_angle * frac / frac_bend）
+            _strand_length = strand_length
+            _ba = bending_angle
+            _fb = _frac_bend
+
+            def _mk_curvature_func(frac: float) -> float:
+                if _combined_prescribed_func is not None:
+                    _theta = float(_combined_prescribed_func(frac)[0])
+                else:
+                    _theta = _ba * frac
+                return _theta / _strand_length
+
             # 曲げフェーズ実行
             solver_input = ContactFrictionInputData(
                 mesh=mesh,
@@ -1133,6 +1151,10 @@ class StrandBendingOscillationProcess(
                 penalty_exponent=cfg.penalty_exponent,
                 checkpoint_path=cfg.checkpoint_path,
                 checkpoint_frac=0.99,
+                track_mk=cfg.track_contact_mk,
+                mk_moment_dofs=tuple(prescribed_dofs_list),
+                mk_curvature_func=_mk_curvature_func if cfg.track_contact_mk else None,
+                track_contact_pairs=cfg.track_contact_pairs,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1257,6 +1279,28 @@ class StrandBendingOscillationProcess(
                 ul_assembler=_asm_osc,
             )
 
+            # status-333: 揺動フェーズのM-κ曲率関数
+            if cfg.track_contact_mk:
+                if cfg.oscillation_amplitude > 0.0:
+                    # u_z揺動: θ_y固定 → κ = θ_bend / L
+                    _osc_kappa_base = bending_angle / strand_length
+
+                    def _mk_curvature_func_osc(frac: float) -> float:
+                        return _osc_kappa_base
+
+                    _osc_mk_dofs = tuple(d for d in _osc_prescribed_dofs if d % 6 == 4)
+                else:
+                    # θ_y揺動: κ = θ(frac) / L
+                    _sl = strand_length
+
+                    def _mk_curvature_func_osc(frac: float) -> float:
+                        return float(_oscillation_func(frac)[0]) / _sl
+
+                    _osc_mk_dofs = tuple(int(d) for d in _osc_prescribed_dofs)
+            else:
+                _mk_curvature_func_osc = None
+                _osc_mk_dofs = ()
+
             solver_input_osc = ContactFrictionInputData(
                 mesh=mesh,
                 boundary=boundary_osc,
@@ -1275,6 +1319,10 @@ class StrandBendingOscillationProcess(
                 du_norm_cap=cfg.du_norm_cap,
                 penalty_exponent=cfg.penalty_exponent,
                 skip_initial_detection=False,
+                track_mk=cfg.track_contact_mk,
+                mk_moment_dofs=_osc_mk_dofs,
+                mk_curvature_func=_mk_curvature_func_osc,
+                track_contact_pairs=cfg.track_contact_pairs,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

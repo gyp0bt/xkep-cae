@@ -308,15 +308,11 @@ def compute_section_response(
         u_torsion = tau * R_h * ca * p / (2.0 * math.pi)
 
         # 合計相対滑り量
-        u_total = math.sqrt(
-            (u_bend_y + u_bend_z) ** 2 + u_torsion**2
-        )
+        u_total = math.sqrt((u_bend_y + u_bend_z) ** 2 + u_torsion**2)
 
         # === 接触法線力と摩擦容量 ===
         # 初期張力のみから摩擦力を計算（Papailiou標準定式化）
-        f_friction, kappa_cr = _wire_friction_and_kappa_cr(
-            w, section, T_per_wire, mu
-        )
+        f_friction, kappa_cr = _wire_friction_and_kappa_cr(w, section, T_per_wire, mu)
 
         # === スティック/スリップ判定 ===
         # 弾性域: u < f/k_wire, k_wire = E×A×cos(α)/p
@@ -431,9 +427,7 @@ def _wire_friction_and_kappa_cr(
     # k_wire = E × A × cos(α) / p  (ワイヤ軸方向剛性/ピッチ長)
     # κ_cr = f × 2π / (E × A × |y| × sin(α) × cos²(α) × p)
     #       = f / (E × A × |y| × sin(α) × cos²(α) × p / (2π))
-    kappa_cr = f_friction * 2.0 * math.pi / (
-        E * A * abs(y) * sa * ca**2 * p
-    )
+    kappa_cr = f_friction * 2.0 * math.pi / (E * A * abs(y) * sa * ca**2 * p)
 
     return f_friction, kappa_cr
 
@@ -491,9 +485,7 @@ def dissipation_energy_bending(
         EI_min += E * section.I_wire
         EI_max += E * (section.I_wire + A * y**2)
 
-        f_friction, kappa_cr = _wire_friction_and_kappa_cr(
-            w, section, T_per_wire, mu
-        )
+        f_friction, kappa_cr = _wire_friction_and_kappa_cr(w, section, T_per_wire, mu)
 
         if kappa_cr == float("inf"):
             continue
@@ -551,14 +543,10 @@ def calibrate_pretension(
     """
     # まず T の範囲で W(T) を評価し、ピークを見つける
     n_scan = 40
-    T_scan = np.logspace(
-        np.log10(max(T_range[0], 0.01)), np.log10(T_range[1]), n_scan
-    )
+    T_scan = np.logspace(np.log10(max(T_range[0], 0.01)), np.log10(T_range[1]), n_scan)
     W_scan = np.zeros(n_scan)
     for i, T in enumerate(T_scan):
-        result = dissipation_energy_bending(
-            section, kappa_max=kappa_ref, mu=mu, T_pretension=T
-        )
+        result = dissipation_energy_bending(section, kappa_max=kappa_ref, mu=mu, T_pretension=T)
         W_scan[i] = result["dissipation_energy"]
 
     W_peak = W_scan.max()
@@ -573,9 +561,7 @@ def calibrate_pretension(
 
     for _ in range(max_iter):
         T_mid = (T_lo + T_hi) / 2.0
-        result = dissipation_energy_bending(
-            section, kappa_max=kappa_ref, mu=mu, T_pretension=T_mid
-        )
+        result = dissipation_energy_bending(section, kappa_max=kappa_ref, mu=mu, T_pretension=T_mid)
         W_mid = result["dissipation_energy"]
 
         if abs(W_mid - W_target) / max(W_target, 1e-20) < tol:
@@ -652,9 +638,7 @@ def dissipation_energy_bending_distributed(
         EI_max += E * (section.I_wire + A * y**2)
 
         # 摩擦容量（初期張力由来）
-        f_friction, _ = _wire_friction_and_kappa_cr(
-            w, section, T_per_wire, mu
-        )
+        f_friction, _ = _wire_friction_and_kappa_cr(w, section, T_per_wire, mu)
         if f_friction < 1e-15:
             continue
 
@@ -667,13 +651,16 @@ def dissipation_energy_bending_distributed(
         if kappa_max <= 0:
             continue
         elif kappa_max <= K:
-            W_wire = 4.0 * f_friction * c * alpha / (alpha + 1.0) * (
-                kappa_max ** (alpha + 1.0) / K**alpha
+            W_wire = (
+                4.0
+                * f_friction
+                * c
+                * alpha
+                / (alpha + 1.0)
+                * (kappa_max ** (alpha + 1.0) / K**alpha)
             )
         else:
-            W_wire = 4.0 * f_friction * c * (
-                kappa_max - K / (alpha + 1.0)
-            )
+            W_wire = 4.0 * f_friction * c * (kappa_max - K / (alpha + 1.0))
 
         W_total += W_wire
 
@@ -730,13 +717,19 @@ def calibrate_distributed_model(
 
     for K in np.logspace(-3, -1, 30):
         for T in np.logspace(-1, 3, 30):
-            W_pred = np.array([
-                dissipation_energy_bending_distributed(
-                    section, kappa_max=k, mu=mu, T_pretension=T,
-                    kappa_cr_max=K, threshold_exponent=alpha,
-                )["dissipation_energy"]
-                for k in kappas
-            ])
+            W_pred = np.array(
+                [
+                    dissipation_energy_bending_distributed(
+                        section,
+                        kappa_max=k,
+                        mu=mu,
+                        T_pretension=T,
+                        kappa_cr_max=K,
+                        threshold_exponent=alpha,
+                    )["dissipation_energy"]
+                    for k in kappas
+                ]
+            )
             err = np.sum(((W_pred - W_targets) / np.maximum(W_targets, 1e-20)) ** 2)
             if err < best_err:
                 best_err = err
@@ -802,9 +795,7 @@ def dissipation_energy_combined(
             continue
 
         # 摩擦容量（初期張力のみ）
-        f_friction, _ = _wire_friction_and_kappa_cr(
-            w, section, T_per_wire, mu
-        )
+        f_friction, _ = _wire_friction_and_kappa_cr(w, section, T_per_wire, mu)
 
         if f_friction < 1e-15:
             continue
@@ -887,8 +878,7 @@ def mk_curve_analytical(
 
         # 全素線の EI_max
         EI_max_full = sum(
-            section.E * (section.I_wire + section.A_wire * w.y**2)
-            for w in section.wires
+            section.E * (section.I_wire + section.A_wire * w.y**2) for w in section.wires
         )
         M_unloading[idx] = M_at_max - EI_max_full * delta_kappa
 
