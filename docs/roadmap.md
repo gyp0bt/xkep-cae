@@ -12,9 +12,9 @@
 
 ---
 
-## 現在地（2026-04-13）
+## 現在地（2026-04-14）
 
-**459+13+22+5+8+12+12+25+26 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15 テスト** | 契約違反**4件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -97,7 +97,9 @@
 | ファイバー梁F3 | **Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）**: 円形断面ファイバー離散化（strip/polar）+ 断面積分 Process。FD 接線検証合格（Elastic/BilinearKH/MultiLayerFriction 3 材料）。弾性 EI 誤差 < 1%。25 テスト追加 — status-328 |
 | ファイバー梁F4 | **Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**: CR Timoshenko 梁にファイバー断面積分を統合。Battini & Pacoste 解析的接線（K_mat+K_geo）。UL マルチ要素アセンブラ配線（checkpoint/rollback 対応）。弾性内力 < 0.2%、接線対角 < 1%、FD 自己整合検証合格。26 テスト追加 — status-329 |
 | ファイバー梁F5 | **Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**: use_fiber_beam フラグで素線メッシュ→ファイバー梁切替。直線梁メッシュ+断面積分+TL定式化（非線形材料のCR UL f_int=0問題回避）。弾性先端変位0.02%一致、BilinearKH/MultiLayerFriction NR収束合格。10 テスト追加 — status-330 |
-| **次** | **Phase F5 散逸エネルギー検証**（完了判定: 7本撚線 < 10%）／**Phase F6 キャリブレーション**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| F5散逸検証 | **Phase F5 散逸エネルギー検証（CableDissipationProcess）**: M-κ ヒステリシス追跡 + ループ面積計算。散逸 ∝ κ^1.9（超線形）、n_strands 超線形（EI比駆動）、β=0.10-0.50 でティアドロップ非対称性。checkpoint bugfix（TL mode section state commit）。15 テスト追加 — status-331 |
+| 解析モデル | **断面接触点統計モデル（Papailiou 1997 + 分布閾値拡張）**: 単層 W∝κ^1.0 → 分布閾値 W∝κ^(α+1) でκ冪1.85完全再現。n≥7で±10%精度。ピッチ非依存性を解析的に証明。**ただしキャリブレーション先がファイバー梁（近似モデル同士の比較）のため、CR梁接触動解析での直接検証が必要** — status-332 |
+| **次** | **Phase F6 キャリブレーション**／**BilinearKH 除荷NR改善**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 

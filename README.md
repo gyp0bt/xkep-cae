@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10 テスト** — 2026-04-14時点 | **ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**（status-330） ／ **弾性先端変位 0.02%・BilinearKH/MultiLayerFriction NR収束合格** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15 テスト** — 2026-04-14時点 | **断面接触点統計モデル（Papailiou + 分布閾値拡張）**（status-332） ／ **κ冪1.85再現・ピッチ非依存性証明。次: CR梁接触動解析で直接検証** | 契約違反 **4件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

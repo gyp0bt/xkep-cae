@@ -337,6 +337,10 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     tol: float = 1e-8,
     show_progress: bool = True,
     use_ul: bool = True,
+    prescribed_func: object | None = None,
+    track_mk: bool = False,
+    mk_curvature_func: object | None = None,
+    mk_moment_dof: int = -1,
 ) -> SolverResultData:
     """接触なし問題用の静的NRソルバー.
 
@@ -350,6 +354,13 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
                 status-330: ファイバー梁の非線形材料は TL が必要
                 （UL の update_reference で eps_p/alpha の参照枠が
                 不整合になる CR梁ULのf_int=0問題を回避）。
+        prescribed_func: frac → np.ndarray。非None時、処方変位を
+                frac_target * prescribed_values の代わりに
+                prescribed_func(frac_target) で計算。サイクル荷重に対応。
+                status-331: 散逸エネルギー検証用。
+        track_mk: True で M-κ 履歴を追跡。
+        mk_curvature_func: frac → float。曲率を返す関数。
+        mk_moment_dof: 反力モーメントを抽出するDOFインデックス。
 
     Returns:
         SolverResultData: ソルバー結果
@@ -358,6 +369,7 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
 
     t0 = time.time()
     load_history: list[float] = []
+    mk_history: list[tuple[float, float]] = []
     n_cutbacks = 0
     total_attempts = 0
 
@@ -376,6 +388,10 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     u_total = np.zeros(ndof)
     u_total_ckpt = np.zeros(ndof)
 
+    # M-κ初期点
+    if track_mk and mk_curvature_func is not None:
+        mk_history.append((mk_curvature_func(0.0), 0.0))
+
     while frac < 1.0 - 1e-12:
         dt_try = min(dt_frac, 1.0 - frac)
         frac_target = frac + dt_try
@@ -383,14 +399,20 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
         converged = False
         f_ref = 1.0
 
-        if use_ul:
-            # UL: 増分変位（前回収束からのゼロスタート）
-            u_incr = np.zeros(ndof)
-            u_incr[prescribed_dofs] = (frac_target - frac) * prescribed_values
+        # 処方変位計算: prescribed_func があればそちらを使用
+        if prescribed_func is not None:
+            pv_target = prescribed_func(frac_target)
+            pv_incr = pv_target - (prescribed_func(frac) if use_ul else np.zeros_like(pv_target))
         else:
-            # TL: 前回収束の全変位から開始
+            pv_target = frac_target * prescribed_values
+            pv_incr = (frac_target - frac) * prescribed_values
+
+        if use_ul:
+            u_incr = np.zeros(ndof)
+            u_incr[prescribed_dofs] = pv_incr
+        else:
             u_incr = u_total.copy()
-            u_incr[prescribed_dofs] = frac_target * prescribed_values
+            u_incr[prescribed_dofs] = pv_target
 
         for att in range(max_nr):
             total_attempts += 1
@@ -431,6 +453,13 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
             u_incr += solve_out.du
 
         if converged:
+            # M-κ 履歴追跡: 収束時の反力モーメントを記録
+            if track_mk and mk_curvature_func is not None and mk_moment_dof >= 0:
+                f_int_conv = assembler.assemble_internal_force(u_incr)
+                kappa = mk_curvature_func(frac_target)
+                moment = float(f_int_conv[mk_moment_dof])
+                mk_history.append((kappa, moment))
+
             if use_ul:
                 assembler.update_reference(u_incr)
             else:
@@ -465,6 +494,7 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
         load_history=tuple(load_history),
         elapsed_seconds=elapsed,
         n_cutbacks=n_cutbacks,
+        moment_curvature_history=tuple(mk_history),
     )
 
 
@@ -1355,7 +1385,50 @@ class StrandBendingOscillationProcess(
         # 非線形材料ではTL定式化（update_referenceを呼ばない）。
         # CR梁ULのf_int=0問題を回避（CLAUDE.md参照）。
         is_nonlinear = not isinstance(material, Elastic1D)
-        n_increments = cfg.n_increments_per_cycle * cfg.n_cycles
+
+        # サイクル荷重パターン（status-331: 散逸エネルギー検証用）
+        # n_cycles=1: 単調負荷 0→κ_max
+        # n_cycles=2: 負荷→除荷 0→κ_max→0（三角波）
+        # n_cycles>2: 負荷→除荷→反転... の多サイクル
+        n_half_cycles = cfg.n_cycles
+        n_increments = cfg.n_increments_per_cycle * n_half_cycles
+
+        if n_half_cycles >= 2 and is_nonlinear:
+            # サイクル荷重: prescribed_func で三角波パターンを定義
+            def _prescribed_func(frac: float) -> np.ndarray:
+                # 三角波: frac 0→1 で n_half_cycles 半サイクル
+                # 半サイクル内の位相 [0, 1]
+                phase = frac * n_half_cycles
+                half_idx = int(phase)
+                t = phase - half_idx
+                if half_idx >= n_half_cycles:
+                    half_idx = n_half_cycles - 1
+                    t = 1.0
+                # 偶数半サイクル: 0→κ_max（正方向）
+                # 奇数半サイクル: κ_max→0（除荷）
+                if half_idx % 2 == 0:
+                    kappa_frac = t
+                else:
+                    kappa_frac = 1.0 - t
+                return np.array([bending_angle * kappa_frac])
+
+            def _curvature_func(frac: float) -> float:
+                vals = _prescribed_func(frac)
+                return float(vals[0]) / strand_length
+
+            prescribed_func_arg = _prescribed_func
+            mk_curvature_func_arg = _curvature_func
+        else:
+            # 単調負荷: prescribed_func なし（従来の frac * prescribed_values）
+            prescribed_func_arg = None
+
+            def _curvature_func_mono(frac: float) -> float:
+                return cfg.bending_curvature * frac
+
+            mk_curvature_func_arg = _curvature_func_mono
+
+        # M-κ 追跡: 非線形材料時のみ有効化
+        track_mk = is_nonlinear
         solver_result = _static_nr_solve(
             assembler=assembler,
             ndof=ndof,
@@ -1367,6 +1440,10 @@ class StrandBendingOscillationProcess(
             max_nr=cfg.max_nr_attempts,
             tol=cfg.tol_force,
             use_ul=not is_nonlinear,
+            prescribed_func=prescribed_func_arg,
+            track_mk=track_mk,
+            mk_curvature_func=mk_curvature_func_arg,
+            mk_moment_dof=prescribed_dof,
         )
 
         return StrandBendingOscillationResult(

@@ -258,6 +258,9 @@ class SolverResultData:
     # UL参照配置（status-299: 2フェーズリスタートでの内力整合用）
     final_ul_ref_base: np.ndarray | None = None
     final_node_coords_ref: np.ndarray | None = None
+    # M-κ 履歴（status-331: 散逸エネルギー検証用）
+    # tuple of (curvature, moment) at each converged step
+    moment_curvature_history: tuple = ()
 
 
 @dataclass(frozen=True)

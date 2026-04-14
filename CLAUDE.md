@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10 テスト** — 2026-04-14 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12+25+26+10+15 テスト** — 2026-04-14 | 契約違反 **4件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -132,7 +132,10 @@
 - ~~ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）~~ ← status-328で完了（FD接線検証合格、弾性EI誤差<1%、25テスト追加）
 - ~~ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）~~ ← status-329で完了（CR Timoshenko 梁ファイバー積分統合 + ULCRFiberBeamAssembler 配線、弾性内力<0.2%・接線対角<1%・FD自己整合検証合格、26テスト追加）
 - ~~ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）~~ ← status-330で完了（弾性先端変位0.02%・BilinearKH/MultiLayerFriction NR収束合格、TL定式化でf_int=0問題回避、10テスト追加）
-- **次**: **Phase F5 散逸エネルギー検証**（7本撚線との一致 < 10%）／**Phase F6 キャリブレーション**／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
+- ~~Phase F5 散逸エネルギー検証（CableDissipationProcess）~~ ← status-331で完了（M-κヒステリシス追跡、散逸∝κ^1.9、撚線本数超線形、checkpoint bugfix、15テスト追加）
+- ~~断面接触点統計モデル（Papailiou解析 + 分布閾値拡張）~~ ← status-332で完了（κ冪1.85完全再現、n≥7で±10%精度、ピッチ非依存性証明、曲げ+捻り複合モード閉形式）
+  - **反省**: 近似モデル同士の比較は循環論法。CR梁接触動解析で直接検証すべき
+- **次**: **CR梁接触動解析でM-κヒステリシス直接取得** — StrandBendingOscillationProcess に M-κ追跡 + 素線間接触力・滑り量観測を追加し、ファイバー梁/Papailiouモデルの真の検証データを得る
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
@@ -172,36 +175,17 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **MPC+接触のNR収束改善**（frac=0.35→1.0）
-  - ~~DOF消去MPC実装（端部剛体結合）~~ ← status-253で完了
-  - ~~StrandBendingOscillationProcess 実装~~ ← status-253で完了
-  - ~~MPC u伝搬修正 + 収束実行テスト~~ ← status-254で完了（frac=0.35到達）
-  - ~~MPC + 動的ソルバーの力残差整合性確認~~ ← status-254で確認（slave残差問題特定）
-  - ~~MPC縮退系残差判定 + u_pred射影 + ストール検知拡張~~ ← status-255で完了
-  - ~~MPC+接触の接線剛性FD診断~~ ← status-256で完了（TangentFDDiagnosticProcess実装）
-  - ~~FD診断compute_residual実装 + 不整合箇所特定~~ ← status-257で完了
-  - ~~K_c不整合再解析 + consistent_st_tangent=TrueデフォルトON~~ ← status-258で完了（K_c正確、不整合は活性集合変化）
-  - ~~Huber smoothing_deltaパイプライン貫通 + 自動推定有効化~~ ← status-259で完了
-  - ~~smoothing_deltaチューニング（1000/rで frac 0.35→0.59）~~ ← status-260で完了
-  - ~~smoothing_delta=1000（手動）でfrac=1.0完走テスト実装 + active_contact_dofs NRソルバー結合~~ ← status-261で完了
-  - ~~delta_h直接指定API実装（huber_delta_h パイプライン貫通）~~ ← status-261で完了
-  - ~~delta_h最適値探索 + three_point_bend huber_delta_h貫通~~ ← status-262で完了（delta_h=0.025最速、非単調性あり）
-  - ~~delta_hデフォルト値検討（three_point_bend検証 + 剛体-梁での検証）~~ ← status-263で完了（0.0維持、問題依存性高い）
-- プロセス脱法修正（Phase D〜E、status-249 参照）
-  - ~~A1-A3: アセンブラProcess化~~ ← status-250で完了
-  - ~~C2-C3: 幾何計算Process化~~ ← status-255で完了
-  - ~~B1-B4: 摩擦アセンブリProcess化~~ ← status-256で完了
-- NR 残差収束速度の改善（中盤後〜終盤で 25 反復が力収束に不足、disp 収束で抜ける状態）
+- **CR梁接触動解析でのM-κヒステリシス直接取得**（最優先）
+  - StrandBendingOscillationProcess に M-κ追跡機能を追加
+  - 各素線間の接触力・滑り量を直接観測（κ_cr分布の実測）
+  - ピッチ依存性の接触解析検証（p=50/100/200 での散逸差を直接計測）
+  - 上記データでファイバー梁モデル/Papailiou解析モデルを校正 → 予測モデルとして完成
 - **リスタート解析方式**: ContactFrictionProcess の I/O を `(u, v, a, 接触ペア)` 入出力に整理
   - ソルバーが初期条件 `(u0, v0, a0, contact_pairs)` を受け取り、結果 `(u, v, a, contact_pairs)` を返す
   - 曲げ・揺動プロセスは境界条件（prescribed_dofs, prescribed_func, f_ext等）を渡すだけの薄いラッパー
   - update_reference を解析ステップ間で跨がない設計（CR梁ULのf_int=0問題の根本解決）
-  - これにより曲げ→揺動のステップ切り替え時にも内力・接触状態が完全に連続
-- Hermite 非局所 ∂g/∂u 対応（4ノードペア外の DOF 結合）
-  - ~~Step1: StJacobian隣接ノード微分（ds_du_adj/dt_du_adj）~~ ← status-271で完了
-  - ~~Step2: K_st拡張（隣接ノードDOFへの接線剛性エントリ追加）~~ ← status-272で完了
-  - ~~Step3: K_c拡張（Hermite形状関数の隣接ノード依存性）~~ ← status-273で完了
-  - ~~Step4: 摩擦K_st隣接ノード拡張~~ ← status-274で完了
+- **被膜圧縮モデル改善** — バリア関数 or 二層モデルで物理的に正確な被膜力
+- **空間ブロック分離 or ペアクラスタリング**（n² 根本対策、1000本撚線への道）
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること

@@ -473,7 +473,15 @@ class ULCRFiberBeamAssembler:
         self._section_states = list(self._section_states_trial)
 
     def checkpoint(self) -> None:
-        """参照配置とセクション状態のチェックポイントを保存."""
+        """参照配置とセクション状態のチェックポイントを保存.
+
+        status-331: TL モード（update_reference なし）でも
+        セクション状態を確定するため、checkpoint 時に
+        trial 状態をコミットする。UL モードでは update_reference で
+        既にコミット済みなので二重更新だが実害なし。
+        """
+        # Trial 状態をコミット（TL モードでの状態確定に必要）
+        self._section_states = list(self._section_states_trial)
         self._ckpt_coords_ref = self.coords_ref.copy()
         self._ckpt_R_ref = self.R_ref.copy()
         self._ckpt_u_total_accum = self._u_total_accum.copy()
