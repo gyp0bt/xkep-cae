@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10 テスト** — 2026-04-14 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12+25+26+10+15 テスト** — 2026-04-14 | 契約違反 **4件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -132,7 +132,8 @@
 - ~~ファイバー梁 Phase F3（CircularFiberSection + FiberSectionIntegratorProcess）~~ ← status-328で完了（FD接線検証合格、弾性EI誤差<1%、25テスト追加）
 - ~~ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）~~ ← status-329で完了（CR Timoshenko 梁ファイバー積分統合 + ULCRFiberBeamAssembler 配線、弾性内力<0.2%・接線対角<1%・FD自己整合検証合格、26テスト追加）
 - ~~ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）~~ ← status-330で完了（弾性先端変位0.02%・BilinearKH/MultiLayerFriction NR収束合格、TL定式化でf_int=0問題回避、10テスト追加）
-- **次**: **Phase F5 散逸エネルギー検証**（7本撚線との一致 < 10%）／**Phase F6 キャリブレーション**／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
+- ~~Phase F5 散逸エネルギー検証（CableDissipationProcess）~~ ← status-331で完了（M-κヒステリシス追跡、散逸∝κ^1.9、撚線本数超線形、checkpoint bugfix、15テスト追加）
+- **次**: **Phase F6 キャリブレーション**／**BilinearKH 除荷NR改善**／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:

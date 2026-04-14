@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10 テスト** — 2026-04-14時点 | **ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**（status-330） ／ **弾性先端変位 0.02%・BilinearKH/MultiLayerFriction NR収束合格** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15 テスト** — 2026-04-14時点 | **Phase F5 散逸エネルギー検証（CableDissipationProcess）**（status-331） ／ **散逸∝κ^1.9・撚線本数超線形・M-κ ヒステリシス追跡** | 契約違反 **4件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
