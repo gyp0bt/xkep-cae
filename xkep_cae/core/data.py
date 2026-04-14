@@ -46,6 +46,25 @@ class BoundaryData:
 
 
 @dataclass(frozen=True)
+class ContactPairSnapshotEntry:
+    """1接触ペアの状態スナップショット（軽量版）.
+
+    status-333: CR梁接触動解析でのインクリメント毎接触力・滑り量記録用。
+    _ContactPairOutput / _ContactStateOutput の全フィールドではなく、
+    M-κ検証に必要な最小限のフィールドのみ保持。
+    """
+
+    elem_a: int  # 要素A ID
+    elem_b: int  # 要素B ID
+    p_n: float  # 法線接触力
+    gap: float  # ギャップ（>0: 離間）
+    slip_s: float  # 接線スリップ s成分
+    slip_t: float  # 接線スリップ t成分
+    stick: bool  # True: スティック, False: スライディング
+    dissipation: float  # 累積摩擦散逸エネルギー
+
+
+@dataclass(frozen=True)
 class ContactSetupData:
     """接触設定結果."""
 
@@ -225,6 +244,17 @@ class ContactFrictionInputData:
     # True にすると初期接触検出をスキップし、manager の既存 pairs をそのまま使う。
     # checkpoint から復元した manager_pairs を信頼する。
     skip_initial_detection: bool = False
+    # M-κ追跡（status-333: CR梁接触動解析でのM-κヒステリシス直接取得）
+    # track_mk=True かつ mk_moment_dofs/mk_curvature_func が設定されると、
+    # 各収束インクリメントで (κ, M) を moment_curvature_history に記録。
+    track_mk: bool = False
+    mk_moment_dofs: tuple[
+        int, ...
+    ] = ()  # f_intから曲げモーメントを取得するDOFインデックス群（合算）
+    mk_curvature_func: Callable[[float], float] | None = None  # load_frac → κ
+    # 接触ペア履歴記録（status-333: 素線間接触力・滑り量の直接観測）
+    # track_contact_pairs=True で各収束インクリメントの活性接触ペア状態をスナップショット保存。
+    track_contact_pairs: bool = False
 
     @property
     def is_dynamic(self) -> bool:
@@ -258,9 +288,12 @@ class SolverResultData:
     # UL参照配置（status-299: 2フェーズリスタートでの内力整合用）
     final_ul_ref_base: np.ndarray | None = None
     final_node_coords_ref: np.ndarray | None = None
-    # M-κ 履歴（status-331: 散逸エネルギー検証用）
+    # M-κ 履歴（status-331: 散逸エネルギー検証用, status-333: CR梁M-κ追跡拡張）
     # tuple of (curvature, moment) at each converged step
     moment_curvature_history: tuple = ()
+    # 接触ペア履歴（status-333: インクリメント毎の接触ペアスナップショット）
+    # tuple of (load_frac, tuple[ContactPairSnapshotEntry, ...])
+    contact_pair_history: tuple = ()
 
 
 @dataclass(frozen=True)
