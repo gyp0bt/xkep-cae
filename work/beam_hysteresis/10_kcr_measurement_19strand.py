@@ -25,9 +25,14 @@ import time
 
 import numpy as np
 
+from xkep_cae.mesh.process import StrandMeshConfig, StrandMeshProcess
 from xkep_cae.numerical_tests.contact_pair_analysis import (
     ContactPairAnalysisInput,
     ContactPairAnalysisProcess,
+)
+from xkep_cae.numerical_tests.contact_pair_layer_classifier import (
+    ContactPairLayerClassifierInput,
+    ContactPairLayerClassifierProcess,
 )
 from xkep_cae.numerical_tests.strand_bending_oscillation import (
     StrandBendingOscillationConfig,
@@ -154,6 +159,45 @@ def main() -> int:
             for i in range(n_bins):
                 bar = "#" * int(hist[i])
                 print(f"    [{edges[i]:.3e}, {edges[i + 1]:.3e}): {hist[i]:3d} {bar}")
+
+    # ── ContactPairLayerClassifierProcess 実行（status-340 バイモーダル仮説検証）──
+    mesh_result = StrandMeshProcess().process(
+        StrandMeshConfig(
+            n_strands=cfg.n_strands,
+            wire_radius=cfg.wire_radius,
+            pitch_length=cfg.pitch_length,
+            gap=cfg.gap,
+            n_elements_per_pitch=cfg.n_elements_per_pitch,
+            n_pitches=cfg.n_pitches,
+        )
+    )
+    classifier = ContactPairLayerClassifierProcess().process(
+        ContactPairLayerClassifierInput(
+            kappa_cr_per_pair=analysis.kappa_cr_per_pair,
+            per_pair_dissipation=analysis.per_pair_dissipation,
+            strand_ids=mesh_result.mesh.strand_ids.tolist(),
+            strand_layers=mesh_result.strand_layers,
+        )
+    )
+
+    print()
+    print("=" * 70)
+    print("ContactPairLayerClassifier 結果（バイモーダル仮説検証）")
+    print("=" * 70)
+    print(f"  n_unique_layer_pairs: {classifier.n_unique_layer_pairs}")
+    print()
+    print(
+        f"  {'(l_min,l_max)':<14s} {'n_pairs':>8s} {'n_slip':>7s} "
+        f"{'κ_cr mean':>11s} {'κ_cr std':>11s} {'κ_cr CV':>8s} {'diss_sum':>11s}"
+    )
+    for lp in sorted(classifier.per_layer_pair_stats.keys()):
+        s = classifier.per_layer_pair_stats[lp]
+        cv = s.kappa_cr_std / s.kappa_cr_mean if s.kappa_cr_mean > 0 else 0.0
+        print(
+            f"  {str(lp):<14s} {s.n_pairs:>8d} {s.n_slipped:>7d} "
+            f"{s.kappa_cr_mean:>11.3e} {s.kappa_cr_std:>11.3e} "
+            f"{cv:>8.3f} {s.dissipation_sum:>11.3e}"
+        )
 
     print()
     print("=" * 70)
