@@ -105,7 +105,8 @@
 | 散逸率厳格化 | **M-κ ループ散逸率を load-only 弾性仕事基準に厳格化**: status-335 の外接矩形比 `loop_area/(M_peak·κ_peak)` は弾性スケールの粗近似で物理解釈不能だったため、`_compute_mk_metrics` の `loading_work = Σ max(0,dκ)·M_avg` を分母に採用。2本撚線ケースで `W_load=6.99e-3, W_unload=4.75e-3, loop_area=2.24e-3, dissipation_ratio=0.32` を検証。散逸率上限（<2.0）および `metrics["dissipation_ratio"]` 一致を assert 化 — status-336 |
 | 接触ペア後処理 | **ContactPairAnalysisProcess 新設**: `contact_pair_history` から **κ_cr 分布**（初回スリップ曲率）・**各ペア最終散逸**・**活性ペア数時系列** を抽出する PostProcess。`_compute_mk_metrics` の M-κ 集約と責務直交（素線レベル観測）。9 テスト追加（合成履歴 8 + 2本撚線統合 1）。CLAUDE.md「CR梁接触動解析での直接検証（最優先）」のキャリブレーションデータ抽出経路が確立 — status-337 |
 | κ_cr 初回実測 | **7本撚線 κ_cr 実測（90°曲げ・281s・frac=1.0）**: `work/beam_hysteresis/09_kcr_measurement_7strand.py` で status-337 Process を初適用。**κ_cr mean=5.80e-3, std=1.74e-3, CV=0.30, min=3.52e-3, max=1.23e-2**。n_unique_pairs=26, n_slipped_pairs=24（92%）、max active=15、total_dissipation=1.71e-7。右裾型（対数正規様）分布でピークは 4.4-5.3e-3 帯。Papailiou 単一 κ_cr 仮定に対し **30% 広がり**を実測 — status-338 |
-| **次** | **ピッチ依存性検証（p=50/100/200 で κ_cr 分布実測）**／**揺動サイクル履歴依存性観測**／**ファイバー梁キャリブレーション（mean κ_cr + CV=0.30 を MultiLayerFrictionDegrading1D に反映）**／**CSV/可視化スクリプト**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| 19本スケール試行 | **19本撚線 κ_cr 実測 — frac=0.484 で Type D stall（未完走）**: `work/beam_hysteresis/10_kcr_measurement_19strand.py` で n=19 へスケールアップ、status-319 既知の Type D stall 再現。534s で incr=271, cb=39。ただし 57/59 ペアのデータ取得成功（mean=4.50e-3, CV=0.33、バイモーダル気配）。7本対比で mean 22% 低下（接触早期化）、CV は scale invariant。Type D 対策ガイド（K_c FD 診断 / n_incr=40 / gap_cull 掃引 / 仮説 A: z 成分不整合）を次セッション向けに策定 — status-339 |
+| **次** | **19本撚線 Type D 対策（frac=1.0 完走）**／**7本撚線ピッチ依存性検証（p=50/100/200）**／**揺動サイクル履歴依存性観測**／**ファイバー梁キャリブレーション（7本の mean κ_cr + CV=0.30）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 

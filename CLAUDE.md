@@ -139,7 +139,9 @@
 - ~~2本撚線 M-κ ヒステリシスループ観測 + loop_area / W_load=0.32 厳格化~~ ← status-335/336で完了
 - ~~ContactPairAnalysisProcess 新設（κ_cr 分布・各ペア散逸・活性ペア時系列 PostProcess）~~ ← status-337で完了（9 テスト追加）
 - ~~7本撚線 κ_cr 初回実測~~ ← status-338で完了（**κ_cr mean=5.80e-3, CV=0.30, n_slipped=24/26, 90°曲げ frac=1.0, 281s**。右裾型分布、Papailiou 単一κ_cr 仮定に対し 30% 広がり）
-- **次**: **ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証）
+- ~~19本撚線 κ_cr 実測試行~~ ← status-339で**部分成果**（frac=0.484 で Type D stall、ただし 57/59 ペア取得: mean=4.50e-3, CV=0.33、バイモーダル気配、7本対比で mean 22% 低下・CV scale invariant）
+- **次**: **19本撚線 Type D 対策 → frac=1.0 完走** — status-339 の対策ガイド参照（推奨優先順: (1) K_c FD 診断取得、(2) n_increments_per_cycle=20→40、(3) gap_cull_threshold 手動掃引、(4) 凍結モード OFF 検証、(5) 仮説 A: StJacobian z 成分カップリング再検）
+- **次**: **7本撚線ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証、完走確実な 7本で実施）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
@@ -179,8 +181,12 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **ファイバー梁キャリブレーション（最優先）** — status-338 で得た 7本撚線 κ_cr 分布（mean=5.80e-3, CV=0.30）で `MultiLayerFrictionDegrading1D` のパラメータを推定し、ファイバー梁モデルを予測モデルとして完成
-  - **ピッチ依存性検証**: p=50/100/200 で κ_cr 分布を実測（Papailiou のピッチ非依存予測を CR梁で検証）
+- **19本撚線 Type D stall 対策（最優先）** — status-339 で frac=0.484 stall。次セッション開始時は **status-339 の「次セッション向け Type D 対策ガイド」を最初に読むこと**
+  - 推奨アクション 2 を最初に試行: `n_increments_per_cycle=20→40` で再実行（リスク低、所要 ~1200s）
+  - K_c FD 診断ダンプを 50 増分毎に取得し comp別不整合の n 依存性を 7本 vs 19本で比較
+  - 仮説 A（StJacobian z 成分カップリング）は最後の手段、別セッションで status-291〜296 規模の工事
+- **ファイバー梁キャリブレーション** — status-338 で得た 7本撚線 κ_cr 分布（mean=5.80e-3, CV=0.30）で `MultiLayerFrictionDegrading1D` のパラメータを推定
+  - **7本撚線ピッチ依存性検証**: p=50/100/200 で κ_cr 分布を実測（完走確実な 7本で実施、19本は Type D 対策後）
   - **揺動サイクル履歴依存性観測**: `n_cycles=2` + `n_oscillation_cycles=1` で κ_cr の load/unload 非対称性を観測
   - **端部外れ値の物理確認**: pair (2, 18) の κ_cr=1.23e-2 外れ値が `exclude_end_elements` で説明されるか切り分け
 - **リスタート解析方式**: ContactFrictionProcess の I/O を `(u, v, a, 接触ペア)` 入出力に整理
