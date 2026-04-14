@@ -92,7 +92,7 @@ class CableSection:
     I_wire: float
 
 
-def make_cable_section(
+def _make_cable_section(
     n_strands: int = 7,
     wire_radius: float = 0.5,
     pitch_length: float = 100.0,
@@ -237,7 +237,7 @@ class SectionResponse:
     EI_effective: float
 
 
-def compute_section_response(
+def _compute_section_response(
     section: CableSection,
     kappa_y: float = 0.0,
     kappa_z: float = 0.0,
@@ -432,7 +432,7 @@ def _wire_friction_and_kappa_cr(
     return f_friction, kappa_cr
 
 
-def dissipation_energy_bending(
+def _dissipation_energy_bending(
     section: CableSection,
     kappa_max: float,
     mu: float = 0.15,
@@ -445,7 +445,7 @@ def dissipation_energy_bending(
 
     Note:
         T_pretension=0 では摩擦力ゼロのため散逸もゼロ。
-        数値モデルとの比較には calibrate_pretension() でキャリブレーション。
+        数値モデルとの比較には _calibrate_pretension() でキャリブレーション。
 
     Args:
         section: ケーブル断面
@@ -514,7 +514,7 @@ def dissipation_energy_bending(
     }
 
 
-def calibrate_pretension(
+def _calibrate_pretension(
     section: CableSection,
     kappa_ref: float,
     W_target: float,
@@ -546,7 +546,7 @@ def calibrate_pretension(
     T_scan = np.logspace(np.log10(max(T_range[0], 0.01)), np.log10(T_range[1]), n_scan)
     W_scan = np.zeros(n_scan)
     for i, T in enumerate(T_scan):
-        result = dissipation_energy_bending(section, kappa_max=kappa_ref, mu=mu, T_pretension=T)
+        result = _dissipation_energy_bending(section, kappa_max=kappa_ref, mu=mu, T_pretension=T)
         W_scan[i] = result["dissipation_energy"]
 
     W_peak = W_scan.max()
@@ -561,7 +561,9 @@ def calibrate_pretension(
 
     for _ in range(max_iter):
         T_mid = (T_lo + T_hi) / 2.0
-        result = dissipation_energy_bending(section, kappa_max=kappa_ref, mu=mu, T_pretension=T_mid)
+        result = _dissipation_energy_bending(
+            section, kappa_max=kappa_ref, mu=mu, T_pretension=T_mid
+        )
         W_mid = result["dissipation_energy"]
 
         if abs(W_mid - W_target) / max(W_target, 1e-20) < tol:
@@ -575,7 +577,7 @@ def calibrate_pretension(
     return (T_lo + T_hi) / 2.0
 
 
-def dissipation_energy_bending_distributed(
+def _dissipation_energy_bending_distributed(
     section: CableSection,
     kappa_max: float,
     mu: float = 0.15,
@@ -675,7 +677,7 @@ def dissipation_energy_bending_distributed(
     }
 
 
-def calibrate_distributed_model(
+def _calibrate_distributed_model(
     section: CableSection,
     kappa_W_pairs: list[tuple[float, float]],
     mu: float = 0.15,
@@ -719,7 +721,7 @@ def calibrate_distributed_model(
         for T in np.logspace(-1, 3, 30):
             W_pred = np.array(
                 [
-                    dissipation_energy_bending_distributed(
+                    _dissipation_energy_bending_distributed(
                         section,
                         kappa_max=k,
                         mu=mu,
@@ -745,7 +747,7 @@ def calibrate_distributed_model(
     }
 
 
-def dissipation_energy_combined(
+def _dissipation_energy_combined(
     section: CableSection,
     kappa_max: float = 0.0,
     tau_max: float = 0.0,
@@ -840,7 +842,7 @@ def dissipation_energy_combined(
 # ====================================================================
 
 
-def mk_curve_analytical(
+def _mk_curve_analytical(
     section: CableSection,
     kappa_max: float,
     n_points: int = 200,
@@ -857,7 +859,7 @@ def mk_curve_analytical(
     M_unloading = np.zeros(n_points)
 
     for idx, kappa in enumerate(kappas):
-        resp_load = compute_section_response(
+        resp_load = _compute_section_response(
             section, kappa_z=kappa, mu=mu, T_pretension=T_pretension
         )
         M_loading[idx] = -resp_load.M_z  # 符号調整
@@ -865,7 +867,7 @@ def mk_curve_analytical(
         # 除荷: κ_max → κ（逆方向からの弾性復帰）
         # 除荷時の M = M(κ_max) - ΔM_elastic(κ_max - κ)
         # 全素線がスティックに戻る（弾性除荷）ので EI_max で除荷
-        resp_max = compute_section_response(
+        resp_max = _compute_section_response(
             section, kappa_z=kappa_max, mu=mu, T_pretension=T_pretension
         )
         M_at_max = -resp_max.M_z

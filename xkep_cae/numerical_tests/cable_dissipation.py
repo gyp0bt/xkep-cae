@@ -40,7 +40,7 @@ from xkep_cae.numerical_tests.strand_bending_oscillation import (
 # ====================================================================
 
 
-def compute_mk_loop_area(mk_history: tuple | list) -> float:
+def _compute_mk_loop_area(mk_history: tuple | list) -> float:
     """M-κ 履歴からヒステリシスループ面積（散逸エネルギー）を計算.
 
     台形則による数値積分: ∮ M dκ（符号付き面積）。
@@ -67,7 +67,7 @@ def compute_mk_loop_area(mk_history: tuple | list) -> float:
     return abs(area)
 
 
-def compute_mk_metrics(
+def _compute_mk_metrics(
     mk_history: tuple | list,
 ) -> dict[str, float]:
     """M-κ 履歴からヒステリシス指標を計算.
@@ -145,7 +145,7 @@ def compute_mk_metrics(
 # ====================================================================
 
 
-def cable_geometry(
+def _cable_geometry(
     n_strands: int,
     wire_radius: float,
     pitch_length: float,
@@ -226,7 +226,7 @@ def cable_geometry(
 # ====================================================================
 
 
-def make_cable_material(
+def _make_cable_material(
     n_strands: int = 7,
     wire_radius: float = 0.5,
     pitch_length: float = 100.0,
@@ -258,7 +258,7 @@ def make_cable_material(
     Returns:
         (material, info_dict)
     """
-    geom = cable_geometry(n_strands, wire_radius, pitch_length)
+    geom = _cable_geometry(n_strands, wire_radius, pitch_length)
     d_cable = geom["cable_diameter"]
     I_fiber = math.pi / 64.0 * d_cable**4
 
@@ -413,14 +413,14 @@ class CableDissipationProcess(
         cfg = input_data
 
         # ── 1. ケーブル断面幾何 ──
-        cable_info = cable_geometry(cfg.n_strands, cfg.wire_radius, cfg.pitch_length)
+        cable_info = _cable_geometry(cfg.n_strands, cfg.wire_radius, cfg.pitch_length)
 
         # ── 2. 材料生成 ──
         if cfg.fiber_material is not None:
             material = cfg.fiber_material
             material_info = {"source": "external"}
         else:
-            material, material_info = make_cable_material(
+            material, material_info = _make_cable_material(
                 n_strands=cfg.n_strands,
                 wire_radius=cfg.wire_radius,
                 pitch_length=cfg.pitch_length,
@@ -460,7 +460,7 @@ class CableDissipationProcess(
 
         # ── 4. M-κ 指標計算 ──
         mk_hist = result.solver_result.moment_curvature_history
-        mk_metrics = compute_mk_metrics(mk_hist)
+        mk_metrics = _compute_mk_metrics(mk_hist)
 
         dissipation = mk_metrics["loop_area"]
 
