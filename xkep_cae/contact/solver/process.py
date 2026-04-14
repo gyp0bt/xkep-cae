@@ -482,6 +482,13 @@ class ContactFrictionProcess(
         _global_f_ref: float = 0.0
         # status-307: 収束型インクリメント統計
         _conv_type_counts: dict[str, int] = {"force": 0, "disp": 0, "energy": 0}
+        # status-333: M-κ追跡 + 接触ペアスナップショット
+        _track_mk = getattr(input_data, "track_mk", False)
+        _mk_moment_dofs = getattr(input_data, "mk_moment_dofs", ())
+        _mk_curvature_func = getattr(input_data, "mk_curvature_func", None)
+        _mk_history: list[tuple[float, float]] = []
+        _track_pairs = getattr(input_data, "track_contact_pairs", False)
+        _pair_history: list[tuple[float, tuple]] = []
 
         # ================================================================
         # 荷重ステップループ
@@ -662,6 +669,8 @@ class ContactFrictionProcess(
                         final_contact_manager=manager,
                         final_ul_ref_base=_ul_ref_base.copy() if _ul_ref_base is not None else None,
                         final_node_coords_ref=state.node_coords_ref.copy(),
+                        moment_curvature_history=tuple(_mk_history),
+                        contact_pair_history=tuple(_pair_history),
                     )
 
             # ==============================================================
@@ -700,8 +709,12 @@ class ContactFrictionProcess(
                             f"n_penetrated={_n_pen}"
                         )
 
-            # エネルギー診断
+            # status-333: M-κ追跡（f_intから曲げモーメント、curvature_funcから曲率）
             _f_int = _asm_internal_force(state.u)
+            if _track_mk and _mk_moment_dofs and _mk_curvature_func is not None:
+                _mk_moment = sum(float(_f_int[d]) for d in _mk_moment_dofs)
+                _mk_kappa = _mk_curvature_func(load_frac)
+                _mk_history.append((_mk_kappa, _mk_moment))
             _coat_energy = 0.0
             if use_coating:
                 _coat_energy = strategies.coating.energy(manager.pairs, manager.config)
@@ -935,6 +948,25 @@ class ContactFrictionProcess(
             _u_hist = ul_assembler.u_total_accum + state.u if _ul else state.u.copy()
             _disp_history.append(_u_hist.copy() if _ul else _u_hist)
             _contact_force_history.append(_fc_norm)
+            # status-333: 接触ペアスナップショット記録
+            if _track_pairs and manager.pairs:
+                from xkep_cae.core.data import ContactPairSnapshotEntry
+
+                _snap_entries = tuple(
+                    ContactPairSnapshotEntry(
+                        elem_a=p.elem_a,
+                        elem_b=p.elem_b,
+                        p_n=p.state.p_n,
+                        gap=p.state.gap,
+                        slip_s=float(p.state.z_t[0]),
+                        slip_t=float(p.state.z_t[1]),
+                        stick=p.state.stick,
+                        dissipation=p.state.dissipation,
+                    )
+                    for p in manager.pairs
+                    if p.state.p_n > 0
+                )
+                _pair_history.append((load_frac, _snap_entries))
             try:
                 _cg_out = ContactGraphProcess().process(
                     ContactGraphInput(manager=manager, step=state.increment_display - 1)
@@ -983,4 +1015,6 @@ class ContactFrictionProcess(
             final_acceleration=_final_acc,
             final_ul_ref_base=_ul_ref_base.copy() if _ul_ref_base is not None else None,
             final_node_coords_ref=state.node_coords_ref.copy(),
+            moment_curvature_history=tuple(_mk_history),
+            contact_pair_history=tuple(_pair_history),
         )

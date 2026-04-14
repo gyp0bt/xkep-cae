@@ -66,6 +66,7 @@
 | [330](status-330.md) | 2026-04-14 | ファイバー梁 Phase F5 実装（`StrandBendingOscillationProcess` に `use_fiber_beam` フラグ — 直線梁メッシュ+ファイバー断面積分+TL定式化、弾性先端変位0.02%・BilinearKH/MultiLayerFriction NR収束合格、10テスト追加） | 459+13+22+5+8+12+12+25+26+10 passed |
 | [331](status-331.md) | 2026-04-14 | Phase F5 散逸エネルギー検証 — `CableDissipationProcess` + M-κ ヒステリシス追跡（散逸∝κ^1.9 超線形、撚線本数/劣化比/BilinearKH 検証、checkpoint bugfix、15テスト追加） | 459+13+22+5+8+12+12+25+26+10+15 passed |
 | [332](status-332.md) | 2026-04-14 | 断面接触点統計モデル — Papailiou解析 + 分布閾値拡張（κ冪1.85完全再現、n≥7で±10%精度、ピッチ非依存性証明） | 459+13+22+5+8+12+12+25+26+10+15 passed |
+| [333](status-333.md) | 2026-04-14 | M-κ追跡 + 接触ペアスナップショット — CR梁接触動解析でのM-κヒステリシス直接取得基盤（9テスト追加） | 459+13+22+5+8+12+12+25+26+10+15+9 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 
