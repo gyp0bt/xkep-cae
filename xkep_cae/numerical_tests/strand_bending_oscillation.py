@@ -50,6 +50,12 @@ from xkep_cae.core import (
 from xkep_cae.elements._beam_assembler import (
     ULCRBeamAssemblerInput,
     ULCRBeamAssemblerProcess,
+    ULCRFiberBeamAssemblerInput,
+    ULCRFiberBeamAssemblerProcess,
+)
+from xkep_cae.elements.fiber import (
+    CircularFiberSection,
+    Elastic1D,
 )
 from xkep_cae.mesh.process import StrandMeshConfig, StrandMeshProcess
 from xkep_cae.numerical_tests.three_point_bend_jig import _circle_section
@@ -212,6 +218,19 @@ class StrandBendingOscillationConfig:
     coating_k_t_ratio: float = 0.5  # 接線剛性比
     coating_thickness: float = 0.0  # 被膜厚さ [mm], >0: core_radius = wire_radius - thickness
     coating_barrier: bool = True  # バリア関数被膜モデル（status-303）
+    # ファイバー梁モード（status-330 / Phase F5）
+    # True: 素線メッシュの代わりに1本のファイバー梁として解く。
+    # 内部摩擦はセクション積分で処理。接触計算なし。
+    use_fiber_beam: bool = False
+    # ファイバー梁の材料則。None=Elastic1D（弾性）。
+    # Fiber1DMaterialStrategy 準拠オブジェクトを外部から渡す。
+    fiber_material: object | None = None
+    # ファイバー断面離散化: "strip"=y方向ストリップ, "polar"=極座標格子
+    fiber_section_type: str = "strip"
+    # ファイバー数（strip: n_fiber, polar: n_radial）
+    fiber_n_fiber: int = 60
+    # polar 離散化の周方向分割数
+    fiber_n_theta: int = 16
 
 
 @dataclass(frozen=True)
@@ -317,17 +336,20 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     max_nr: int = 50,
     tol: float = 1e-8,
     show_progress: bool = True,
+    use_ul: bool = True,
 ) -> SolverResultData:
-    """接触なし問題用の静的NRソルバー（UL増分形）.
+    """接触なし問題用の静的NRソルバー.
 
     status-281: 動的ソルバー（Generalized-α）は慣性項による残差連成で
     ヘリカル複数素線の曲げ収束が困難。接触なし問題では純粋な
     静的NR法で直接求解する。
 
-    UL（Updated Lagrangian）フォーマレーション:
-    - 各収束ステップ後に参照配置を更新（update_reference）
-    - NR反復中は増分変位 u_incr をアセンブラに渡す
-    - 累積変位 u_total は出力用に追跡
+    Args:
+        use_ul: True=UL定式化（毎ステップ update_reference）、
+                False=TL定式化（全変位追跡、非線形材料向け）。
+                status-330: ファイバー梁の非線形材料は TL が必要
+                （UL の update_reference で eps_p/alpha の参照枠が
+                不整合になる CR梁ULのf_int=0問題を回避）。
 
     Returns:
         SolverResultData: ソルバー結果
@@ -346,23 +368,29 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
     _linear_solver = LinearSolveProcess()
 
     frac = 0.0
-    frac_prev = 0.0  # 前回収束時のfrac
     dt_frac = 1.0 / n_increments
     dt_min = dt_frac / 64.0
     incr = 0
+
+    # TL モード: 全変位を追跡（update_reference を呼ばない）
+    u_total = np.zeros(ndof)
+    u_total_ckpt = np.zeros(ndof)
 
     while frac < 1.0 - 1e-12:
         dt_try = min(dt_frac, 1.0 - frac)
         frac_target = frac + dt_try
 
-        # UL増分: 前回収束状態からの増分変位
-        u_incr = np.zeros(ndof)
         converged = False
+        f_ref = 1.0
 
-        # 処方変位の増分（前回収束からの差分）
-        delta_presc = (frac_target - frac_prev) * prescribed_values
-        u_incr[prescribed_dofs] = delta_presc
-        f_ref = 1.0  # 初期値（att==0で更新される）
+        if use_ul:
+            # UL: 増分変位（前回収束からのゼロスタート）
+            u_incr = np.zeros(ndof)
+            u_incr[prescribed_dofs] = (frac_target - frac) * prescribed_values
+        else:
+            # TL: 前回収束の全変位から開始
+            u_incr = u_total.copy()
+            u_incr[prescribed_dofs] = frac_target * prescribed_values
 
         for att in range(max_nr):
             total_attempts += 1
@@ -372,13 +400,11 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
             R[prescribed_dofs] = 0.0
 
             res_norm = float(np.linalg.norm(R[free_mask]))
-            # 参照ノルム: 外力があればその大きさ、なければ初回残差
             f_ext_norm = float(np.linalg.norm(f_ext_total * frac_target))
             if f_ext_norm > 1e-30:
                 f_ref = f_ext_norm
             elif att == 0:
                 f_ref = max(res_norm, 1.0)
-            # else: f_ref は前回の値を維持
 
             if show_progress and att % 5 == 0:
                 print(
@@ -405,19 +431,21 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
             u_incr += solve_out.du
 
         if converged:
-            # UL参照配置を更新
-            assembler.update_reference(u_incr)
+            if use_ul:
+                assembler.update_reference(u_incr)
+            else:
+                u_total[:] = u_incr
             assembler.checkpoint()
-            frac_prev = frac_target
+            u_total_ckpt[:] = u_total if not use_ul else u_total_ckpt
             incr += 1
             frac = frac_target
             load_history.append(frac)
-            # dt成長
             dt_frac = min(dt_frac * 1.5, 1.0 / n_increments)
         else:
-            # カットバック
             n_cutbacks += 1
             assembler.rollback()
+            if not use_ul:
+                u_total[:] = u_total_ckpt
             dt_frac *= 0.5
             if dt_frac < dt_min:
                 if show_progress:
@@ -425,10 +453,12 @@ def _static_nr_solve(  # noqa: PLR0912, PLR0915
                 break
 
     elapsed = time.time() - t0
-    # 累積変位を取得
-    u_total = assembler.u_total_accum
+    if use_ul:
+        u_out = assembler.u_total_accum
+    else:
+        u_out = u_total
     return SolverResultData(
-        u=u_total,
+        u=u_out,
         converged=frac >= 1.0 - 1e-10,
         n_increments=incr,
         total_attempts=total_attempts,
@@ -467,6 +497,7 @@ class StrandBendingOscillationProcess(
         StrandMeshProcess,
         MPCEliminationProcess,
         ULCRBeamAssemblerProcess,
+        ULCRFiberBeamAssemblerProcess,
         ContactFrictionProcess,
     ]
 
@@ -476,6 +507,10 @@ class StrandBendingOscillationProcess(
     ) -> StrandBendingOscillationResult:
         """撚線曲げ揺動を実行."""
         cfg = input_data
+
+        # ── ファイバー梁モード分岐（Phase F5） ──
+        if cfg.use_fiber_beam:
+            return self._process_fiber_beam(cfg)
 
         # ── 1. メッシュ生成 ──
         mesh_result = StrandMeshProcess().process(
@@ -1220,6 +1255,125 @@ class StrandBendingOscillationProcess(
             mesh=mesh,
             n_ref_nodes=0,
             n_strand_nodes=n_strand_nodes,
+            total_ndof=ndof,
+            bending_angle=bending_angle,
+        )
+
+    def _process_fiber_beam(
+        self,
+        cfg: StrandBendingOscillationConfig,
+    ) -> StrandBendingOscillationResult:
+        """ファイバー梁モードで撚線曲げ揺動を実行.
+
+        status-330 / Phase F5: 素線メッシュの代わりに1本のファイバー梁として解く。
+        内部摩擦はセクションファイバー積分で処理。接触計算なし。
+
+        パイプライン:
+        1. 直線梁メッシュ生成（単一梁、n_elements 個の2ノード要素）
+        2. ULCRFiberBeamAssemblerProcess でファイバー梁アセンブラ構築
+        3. 左端固定、右端θ_y処方の境界条件
+        4. _static_nr_solve で静的NR求解
+        """
+        # ── 1. 直線梁メッシュ生成 ──
+        strand_length = cfg.pitch_length * cfg.n_pitches
+        n_elems = int(cfg.n_elements_per_pitch * cfg.n_pitches)
+        n_nodes = n_elems + 1
+
+        # x軸方向の直線梁
+        node_coords = np.zeros((n_nodes, 3))
+        node_coords[:, 0] = np.linspace(0.0, strand_length, n_nodes)
+        connectivity = np.column_stack([np.arange(n_elems), np.arange(1, n_elems + 1)])
+
+        # メッシュデータ（radii=0: 接触なし）
+        mesh = MeshData(
+            node_coords=node_coords,
+            connectivity=connectivity,
+            radii=0.0,
+            n_strands=1,
+            strand_ids=np.zeros(n_elems, dtype=int),
+        )
+
+        # ── 2. ファイバー断面生成 ──
+        diameter = cfg.wire_radius * 2.0
+        if cfg.fiber_section_type == "polar":
+            section = CircularFiberSection.polar(
+                diameter, n_radial=cfg.fiber_n_fiber, n_theta=cfg.fiber_n_theta
+            )
+        else:
+            section = CircularFiberSection.strip(diameter, n_fiber=cfg.fiber_n_fiber)
+
+        # 材料則: 外部指定 or デフォルト弾性
+        material = cfg.fiber_material if cfg.fiber_material is not None else Elastic1D(E=cfg.E)
+
+        # ── 3. ファイバー梁アセンブラ構築 ──
+        G = cfg.E / (2.0 * (1.0 + cfg.nu))
+        sec = _circle_section(diameter, cfg.nu)
+
+        beam_result = ULCRFiberBeamAssemblerProcess().process(
+            ULCRFiberBeamAssemblerInput(
+                node_coords=node_coords,
+                connectivity=connectivity,
+                section=section,
+                material=material,
+                G=G,
+                J=sec["J"],
+                kappa_y=sec["kappa"],
+                kappa_z=sec["kappa"],
+            )
+        )
+        assembler = beam_result.assembler
+        ndof = n_nodes * 6
+
+        # ── 4. 境界条件 ──
+        # 左端（node 0）: 全6DOF固定
+        fixed_dofs: set[int] = set()
+        for k in range(6):
+            fixed_dofs.add(k)
+
+        # 右端（node n_nodes-1）: θ_x 固定
+        right_node = n_nodes - 1
+        fixed_dofs.add(right_node * 6 + 3)  # θ_x
+
+        # x-z 面曲げ: 全ノードの u_y, θ_z を拘束
+        # strip 断面では EI_z=0（z座標ゼロ）のため u_y/θ_z の剛性がゼロ。
+        # polar 断面でも面外拘束が必要（x-z 面曲げ問題）。
+        for n in range(n_nodes):
+            fixed_dofs.add(n * 6 + 1)  # u_y
+            fixed_dofs.add(n * 6 + 5)  # θ_z
+
+        # 曲げ角度 = κ * L
+        bending_angle = cfg.bending_curvature * strand_length
+
+        # 処方変位: 右端の θ_y（x-z面曲げ回転）
+        prescribed_dof = right_node * 6 + 4  # θ_y
+        prescribed_dofs = np.array([prescribed_dof], dtype=int)
+        prescribed_values = np.array([bending_angle])
+
+        fixed_dofs_arr = np.array(sorted(fixed_dofs), dtype=int)
+
+        # ── 5. 静的NRソルバー実行 ──
+        # 非線形材料ではTL定式化（update_referenceを呼ばない）。
+        # CR梁ULのf_int=0問題を回避（CLAUDE.md参照）。
+        is_nonlinear = not isinstance(material, Elastic1D)
+        n_increments = cfg.n_increments_per_cycle * cfg.n_cycles
+        solver_result = _static_nr_solve(
+            assembler=assembler,
+            ndof=ndof,
+            fixed_dofs=fixed_dofs_arr,
+            prescribed_dofs=prescribed_dofs,
+            prescribed_values=prescribed_values,
+            f_ext_total=np.zeros(ndof),
+            n_increments=n_increments,
+            max_nr=cfg.max_nr_attempts,
+            tol=cfg.tol_force,
+            use_ul=not is_nonlinear,
+        )
+
+        return StrandBendingOscillationResult(
+            solver_result=solver_result,
+            mesh=mesh,
+            n_ref_nodes=0,
+            n_strand_nodes=n_nodes,
             total_ndof=ndof,
             bending_angle=bending_angle,
         )
