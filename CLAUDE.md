@@ -133,6 +133,7 @@
 - ~~ファイバー梁 Phase F4（StrandFiberBeamProcess + _beam_assembler 配線）~~ ← status-329で完了（CR Timoshenko 梁ファイバー積分統合 + ULCRFiberBeamAssembler 配線、弾性内力<0.2%・接線対角<1%・FD自己整合検証合格、26テスト追加）
 - ~~ファイバー梁 Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）~~ ← status-330で完了（弾性先端変位0.02%・BilinearKH/MultiLayerFriction NR収束合格、TL定式化でf_int=0問題回避、10テスト追加）
 - ~~Phase F5 散逸エネルギー検証（CableDissipationProcess）~~ ← status-331で完了（M-κヒステリシス追跡、散逸∝κ^1.9、撚線本数超線形、checkpoint bugfix、15テスト追加）
+- ~~断面接触点統計モデル（Papailiou解析 + 分布閾値拡張）~~ ← status-332で完了（κ冪1.85完全再現、n≥7で±10%精度、ピッチ非依存性証明、曲げ+捻り複合モード閉形式）
 - **次**: **Phase F6 キャリブレーション**／**BilinearKH 除荷NR改善**／**被膜 ON プロファイル + pypardiso 環境再ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 

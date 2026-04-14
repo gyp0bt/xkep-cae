@@ -98,6 +98,7 @@
 | ファイバー梁F4 | **Phase F4（StrandFiberBeamProcess + ULCRFiberBeamAssembler）**: CR Timoshenko 梁にファイバー断面積分を統合。Battini & Pacoste 解析的接線（K_mat+K_geo）。UL マルチ要素アセンブラ配線（checkpoint/rollback 対応）。弾性内力 < 0.2%、接線対角 < 1%、FD 自己整合検証合格。26 テスト追加 — status-329 |
 | ファイバー梁F5 | **Phase F5（StrandBendingOscillationProcess use_fiber_beam 統合）**: use_fiber_beam フラグで素線メッシュ→ファイバー梁切替。直線梁メッシュ+断面積分+TL定式化（非線形材料のCR UL f_int=0問題回避）。弾性先端変位0.02%一致、BilinearKH/MultiLayerFriction NR収束合格。10 テスト追加 — status-330 |
 | F5散逸検証 | **Phase F5 散逸エネルギー検証（CableDissipationProcess）**: M-κ ヒステリシス追跡 + ループ面積計算。散逸 ∝ κ^1.9（超線形）、n_strands 超線形（EI比駆動）、β=0.10-0.50 でティアドロップ非対称性。checkpoint bugfix（TL mode section state commit）。15 テスト追加 — status-331 |
+| 解析モデル | **断面接触点統計モデル（Papailiou 1997 + 分布閾値拡張）**: 単層 W∝κ^1.0 → 分布閾値 W∝κ^(α+1) でκ冪1.85完全再現。n≥7で±10%精度。ピッチ非依存性を sin(α)≈2πR/p から解析的に証明。曲げ+捻り複合モード閉形式 — status-332 |
 | **次** | **Phase F6 キャリブレーション**／**BilinearKH 除荷NR改善**／**被膜 ON + pypardiso ベンチ**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
