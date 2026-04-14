@@ -135,7 +135,11 @@
 - ~~Phase F5 散逸エネルギー検証（CableDissipationProcess）~~ ← status-331で完了（M-κヒステリシス追跡、散逸∝κ^1.9、撚線本数超線形、checkpoint bugfix、15テスト追加）
 - ~~断面接触点統計モデル（Papailiou解析 + 分布閾値拡張）~~ ← status-332で完了（κ冪1.85完全再現、n≥7で±10%精度、ピッチ非依存性証明、曲げ+捻り複合モード閉形式）
   - **反省**: 近似モデル同士の比較は循環論法。CR梁接触動解析で直接検証すべき
-- **次**: **CR梁接触動解析でM-κヒステリシス直接取得** — StrandBendingOscillationProcess に M-κ追跡 + 素線間接触力・滑り量観測を追加し、ファイバー梁/Papailiouモデルの真の検証データを得る
+- ~~CR梁接触動解析でM-κヒステリシス直接取得（M-κ追跡 + 接触ペアスナップショット基盤）~~ ← status-333で完了（2本撚線 infra 検証、ContactPairSnapshotEntry 軽量フォーマット）
+- ~~2本撚線 M-κ ヒステリシスループ観測 + loop_area / W_load=0.32 厳格化~~ ← status-335/336で完了
+- ~~ContactPairAnalysisProcess 新設（κ_cr 分布・各ペア散逸・活性ペア時系列 PostProcess）~~ ← status-337で完了（9 テスト追加）
+- ~~7本撚線 κ_cr 初回実測~~ ← status-338で完了（**κ_cr mean=5.80e-3, CV=0.30, n_slipped=24/26, 90°曲げ frac=1.0, 281s**。右裾型分布、Papailiou 単一κ_cr 仮定に対し 30% 広がり）
+- **次**: **ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
 **NR収束改善（活性集合変化対策）** — status-264:
@@ -175,11 +179,10 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **CR梁接触動解析でのM-κヒステリシス直接取得**（最優先）
-  - StrandBendingOscillationProcess に M-κ追跡機能を追加
-  - 各素線間の接触力・滑り量を直接観測（κ_cr分布の実測）
-  - ピッチ依存性の接触解析検証（p=50/100/200 での散逸差を直接計測）
-  - 上記データでファイバー梁モデル/Papailiou解析モデルを校正 → 予測モデルとして完成
+- **ファイバー梁キャリブレーション（最優先）** — status-338 で得た 7本撚線 κ_cr 分布（mean=5.80e-3, CV=0.30）で `MultiLayerFrictionDegrading1D` のパラメータを推定し、ファイバー梁モデルを予測モデルとして完成
+  - **ピッチ依存性検証**: p=50/100/200 で κ_cr 分布を実測（Papailiou のピッチ非依存予測を CR梁で検証）
+  - **揺動サイクル履歴依存性観測**: `n_cycles=2` + `n_oscillation_cycles=1` で κ_cr の load/unload 非対称性を観測
+  - **端部外れ値の物理確認**: pair (2, 18) の κ_cr=1.23e-2 外れ値が `exclude_end_elements` で説明されるか切り分け
 - **リスタート解析方式**: ContactFrictionProcess の I/O を `(u, v, a, 接触ペア)` 入出力に整理
   - ソルバーが初期条件 `(u0, v0, a0, contact_pairs)` を受け取り、結果 `(u, v, a, contact_pairs)` を返す
   - 曲げ・揺動プロセスは境界条件（prescribed_dofs, prescribed_func, f_ext等）を渡すだけの薄いラッパー
