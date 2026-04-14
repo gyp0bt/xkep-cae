@@ -70,6 +70,7 @@
 | [334](status-334.md) | 2026-04-14 | C16 契約違反 12 件解消 — `cable_dissipation.py` / `strand_cross_section_model.py` の純粋関数 12 本を `_` prefix で private 化（契約違反 12→0） | 459+13+22+5+8+12+12+25+26+10+15+9 passed |
 | [335](status-335.md) | 2026-04-14 | 2本撚線 M-κ ヒステリシスループ直接観測（infra 検証）— `n_oscillation_cycles=1` 統合モードで load+unload、κ 下降14回・loop_area=1.17e-2 観測（1テスト追加） | 459+13+22+5+8+12+12+25+26+10+15+10 passed |
 | [336](status-336.md) | 2026-04-14 | M-κ ループ散逸率を load-only 弾性仕事基準に厳格化 — `_compute_mk_metrics` を活用して `loop_area/W_load=0.32` を観測、外接矩形比 0.86 を廃止（テスト数変更なし） | 459+13+22+5+8+12+12+25+26+10+15+10 passed |
+| [337](status-337.md) | 2026-04-14 | ContactPairAnalysisProcess 新設 — `contact_pair_history` から κ_cr 分布・各ペア散逸・活性ペア数推移を抽出する後処理 Process（PostProcess、9テスト追加） | 459+13+22+5+8+12+12+25+26+10+15+10+9 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 

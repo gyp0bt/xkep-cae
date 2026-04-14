@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10 テスト** — 2026-04-14時点 | **M-κ ループ散逸率を load-only 弾性仕事基準に厳格化**（status-336） ／ 2本撚線ケース `W_load=6.99e-3, W_unload=4.75e-3, loop_area=2.24e-3, dissipation_ratio=0.32` を観測（旧 M_peak×κ_peak 外接矩形比 0.86 を廃止）。次: 7本撚線 load+unload 実測 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9 テスト** — 2026-04-14時点 | **ContactPairAnalysisProcess 新設**（status-337） ／ `contact_pair_history` から κ_cr 分布・各ペア散逸・活性ペア数時系列を抽出する PostProcess（合成履歴 8 + 2本撚線統合 1 テスト）。ファイバー梁キャリブレーション用の素線レベル観測量を確立。次: 7本撚線 end-to-end 実測 + ピッチ依存性検証 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
