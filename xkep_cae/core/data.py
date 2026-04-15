@@ -223,6 +223,7 @@ class ContactFrictionInputData:
     contact_relax_omega: float = 0.5  # リラクゼーション係数
     stall_window: int = 4  # ストール検知窓
     tangent_fd_diagnostic: bool = False  # ストール時にFD接線診断を実行（status-257）
+    kc_component_fd_diagnostic: bool = False  # K_c 成分分解 FD 診断（status-343/344）
     chattering_delta_h_boost: float = 4.0  # チャタリング時Huber delta_hブースト倍率（status-268）
     chattering_extra_attempts: int = 20  # ブースト時の追加NR反復上限（status-268）
     nr_min_restore: bool = False  # status-277: OFF（不正確な状態の持ち越し防止）

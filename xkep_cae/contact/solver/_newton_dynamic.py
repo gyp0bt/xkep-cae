@@ -35,6 +35,10 @@ from xkep_cae.contact.solver._newton_steps import (
     TangentFDDiagnosticProcess,
 )
 from xkep_cae.core import ProcessMeta, SolverProcess
+from xkep_cae.verify.kc_component_fd import (
+    ContactKcComponentFDDiagnosticInput,
+    ContactKcComponentFDDiagnosticProcess,
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +109,11 @@ class NewtonDynamicInput:
     type_d_consecutive_threshold: int = 5  # FD診断トリガーまでの連続Type D回数
     type_d_tangent_refresh_rate: float = 0.85  # この収束率を超えたら接線リフレッシュ考慮
     type_d_extra_attempts: int = 15  # Type D検知時の追加NR反復上限
+    # K_c 成分分解 FD 診断（status-343/344: 仮説 A 最終検証）
+    # tangent_fd_diagnostic/type_d_auto_fd と同じトリガー契機で
+    # K_mat/K_geo/K_st を個別取得し、4 組み合わせで FD 相対誤差を報告。
+    # x 成分 68% 不整合（status-342）の部分行列由来を切り分ける。
+    kc_component_fd_diagnostic: bool = False  # True なら K_c 成分分解 FD 診断も出力
 
 
 @dataclass(frozen=True)
@@ -162,6 +171,7 @@ class NewtonDynamicProcess(
         LinearSolveProcess,
         LineSearchUpdateProcess,
         TangentFDDiagnosticProcess,
+        ContactKcComponentFDDiagnosticProcess,
     ]
 
     def process(  # noqa: C901, PLR0912, PLR0915
@@ -1020,6 +1030,40 @@ class NewtonDynamicProcess(
                 )
                 if cfg.show_progress:
                     print(_fd_out.report)
+
+                # ── K_c 成分分解 FD 診断（status-343/344: 仮説 A 最終検証） ──
+                # K_c を K_mat / K_geo / K_st に分解し、4 組み合わせで FD と突合。
+                # x 成分 68% 不整合の由来を部分行列レベルで特定。
+                if cfg.kc_component_fd_diagnostic and hasattr(
+                    _contact_force_strategy, "tangent_components"
+                ):
+                    try:
+                        _K_mat_c, _K_geo_c, _K_st_c = _contact_force_strategy.tangent_components(
+                            u,
+                            manager,
+                            k_pen,
+                            node_coords=input_data.node_coords_ref,
+                        )
+                        _kc_comp_proc = ContactKcComponentFDDiagnosticProcess()
+                        _kc_out = _kc_comp_proc.process(
+                            ContactKcComponentFDDiagnosticInput(
+                                u=u,
+                                du=du,
+                                compute_contact_force=_compute_fc_at,
+                                K_mat=_K_mat_c,
+                                K_geo=_K_geo_c,
+                                K_st=_K_st_c,
+                                eps=1e-7,
+                                label=f"incr={increment_display} att={att}",
+                            )
+                        )
+                        if cfg.show_progress:
+                            print("[K_c成分FD]")
+                            print(_kc_out.report)
+                    except Exception as _kc_err:  # noqa: BLE001
+                        if cfg.show_progress:
+                            print(f"[K_c成分FD] skipped: {_kc_err}")
+
                 # Type D トリガー時の追加応答（status-288）
                 if _fd_trigger_type_d:
                     _type_d_fd_triggered = True

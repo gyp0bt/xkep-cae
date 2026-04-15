@@ -179,6 +179,7 @@ class StrandBendingOscillationConfig:
         0  # >0: 各素線の端部N要素を接触候補から除外（status-296: MPC安定化）
     )
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
+    kc_component_fd_diagnostic: bool = False  # K_c 成分分解 FD 診断（status-343/344）
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
     du_norm_cap: float = 0.0  # NR更新キャップ（0=制限なし）
@@ -847,6 +848,7 @@ class StrandBendingOscillationProcess(
             tol_force=cfg.tol_force,
             max_increments=cfg.max_increments,
             tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+            kc_component_fd_diagnostic=cfg.kc_component_fd_diagnostic,
             du_norm_cap=cfg.du_norm_cap,
             load_frac_start=_frac_start,
             penalty_exponent=cfg.penalty_exponent,
@@ -1147,6 +1149,7 @@ class StrandBendingOscillationProcess(
                 tol_force=cfg.tol_force,
                 max_increments=cfg.max_increments,
                 tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+                kc_component_fd_diagnostic=cfg.kc_component_fd_diagnostic,
                 du_norm_cap=cfg.du_norm_cap,
                 penalty_exponent=cfg.penalty_exponent,
                 checkpoint_path=cfg.checkpoint_path,
@@ -1316,6 +1319,7 @@ class StrandBendingOscillationProcess(
                 tol_force=cfg.tol_force,
                 max_increments=cfg.max_increments,
                 tangent_fd_diagnostic=cfg.tangent_fd_diagnostic,
+                kc_component_fd_diagnostic=cfg.kc_component_fd_diagnostic,
                 du_norm_cap=cfg.du_norm_cap,
                 penalty_exponent=cfg.penalty_exponent,
                 skip_initial_detection=False,

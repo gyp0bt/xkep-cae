@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8 テスト** — 2026-04-15時点 | **19本撚線 K_c FD 診断 166 レコード取得**（status-342）— `tangent_fd_diagnostic`+`type_d_auto_fd` で Type D stall 中に自動発火させ CSV 化。**`f_c` FD 相対誤差 mean=115%/max=191%** で K_c 自体が大きく狂うことを実測。不整合方向は **x 成分支配（f_c comp x=68.3%）**、全体系 z=89.7% は beam coupling の 2 次効果。**仮説 A を「K_c の x 成分寄与（mat/geo/st）」に再定義**。次は K_c 分解 FD 診断で由来切り分け | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15時点 | **19本撚線 K_c 成分分解 FD 初回実測 — 仮説 A 決着**（status-344）— status-343 Process をソルバーに配線し、19本 Type D stall 断面で 183 件の K_c 成分分解 FD 診断を取得。**最良組み合わせ = `mat_only` 100%（183/183）、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%、K_st 追加で +16pp 悪化**。K_mat 主導 + K_st 追従の構造が確定、次工事は K_mat の x/z 成分カップリング再検（status-295 規模） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
