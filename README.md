@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15時点 | **K_c 成分分解 FD 診断 Process 新設**（status-343）— `xkep_cae/verify/kc_component_fd.py` に `ContactKcComponentFDDiagnosticProcess` を追加。K_c = K_mat - K_geo + K_st の 4 組み合わせ（full/mat_only/mat_geo/mat_st）で FD 相対誤差 + 成分別不整合シェア + 寄与率を報告し、status-342 で特定された x 成分 68% 不整合の由来を部分行列レベルで切り分ける基盤を整備（11 テスト追加）| 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15時点 | **19本撚線 K_c 成分分解 FD 初回実測 — 仮説 A 決着**（status-344）— status-343 Process をソルバーに配線し、19本 Type D stall 断面で 183 件の K_c 成分分解 FD 診断を取得。**最良組み合わせ = `mat_only` 100%（183/183）、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%、K_st 追加で +16pp 悪化**。K_mat 主導 + K_st 追従の構造が確定、次工事は K_mat の x/z 成分カップリング再検（status-295 規模） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

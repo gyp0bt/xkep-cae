@@ -142,7 +142,10 @@
 - ~~19本撚線 κ_cr 実測試行~~ ← status-339で**部分成果**（frac=0.484 で Type D stall、ただし 57/59 ペア取得: mean=4.50e-3, CV=0.33、バイモーダル気配、7本対比で mean 22% 低下・CV scale invariant）
 - ~~ペアインデックス→層分類ヘルパー（バイモーダル仮説検証基盤）~~ ← status-340で完了（`ContactPairLayerClassifierProcess` 新設、`StrandMeshResult.strand_layers` 公開、19本実測スクリプトに層別 κ_cr 出力統合、8 テスト追加）
 - ~~n_incr=40 リトライで仮説 C 検証~~ ← status-341で**反証**（frac=0.4839→**0.1991 退化**、-59%、154s で早期 stall）。stall 主 comp が z=65% → **x=72-97%** に変化、成分選択的ではなく広範な K_c 不整合示唆。**仮説 A 優先度 4→1 に更新**。層分類器は 11 ペア全て (1,2) を正常抽出し実運用初検証合格
-- **次**: **19本撚線 Type D 対策 → frac=1.0 完走** — status-341 で優先順位更新後の推奨順: (1) **K_c FD 診断取得（最優先、7本 vs 19本の成分別不整合スケーリング比較）**、(2) gap_cull_threshold 手動掃引、(3) 凍結モード OFF 検証、(4) **仮説 A: StJacobian z 成分カップリング再検（本命工事、status-291〜296 規模）**。~~n_incr=40~~ は反証済みにつき非推奨
+- ~~19本撚線 K_c FD 診断取得~~ ← status-342で完了（166 レコード、`f_c` FD rel_err mean=115%/max=191%、**x 成分支配（68.3%）**、仮説 A を「x 成分 primary driver」に再定義）
+- ~~K_c 成分分解 FD 診断 Process 新設~~ ← status-343で完了（`ContactKcComponentFDDiagnosticProcess`、4 組み合わせ FD 相対誤差 + 成分別不整合、11 テスト）
+- ~~19本撚線 K_c 成分分解 FD 初回実測~~ ← status-344で完了（183 レコード、**最良=mat_only 100%、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%**、K_st 追加で +16pp 悪化、**K_mat 主導 + K_st 追従構造確定**）
+- **次**: **K_mat x/z 成分カップリング修正 → frac=1.0 完走** — status-344 決着を受け、(1) **`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開（status-295 `K_c_adj mat-only` 規模、本命工事）**、(2) K_geo=0 原因調査（なぜ 19本接触で Geo が寄与ゼロか）、(3) gap_cull_threshold 手動掃引（低コスト）
 - **次**: **7本撚線ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証、完走確実な 7本で実施）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
@@ -183,11 +186,12 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **19本撚線 Type D stall 対策（最優先）** — status-341 で仮説 C（曲率過粗さ）反証済み。次セッション開始時は **status-341 + status-339 の Type D 対策ガイドを最初に読むこと**
-  - **推奨アクション 1（新）**: K_c FD 診断ダンプを 50 増分毎に取得し、7本（frac=1.0 完走）vs 19本（frac=0.199 stall）の comp別不整合スケーリングを比較。n_incr=40 stall では x=97%/z=70% 両成分が同時悪化しており、単一成分の issue ではない可能性
-  - **推奨アクション 2**: gap_cull_threshold 手動掃引（リスク極小、パラメータ 1 つ）
-  - **仮説 A（StJacobian z 成分カップリング）**: 優先度 4→1 に更新（status-341）。ただし status-291〜296 規模の工事なので、先に FD 診断で根拠固め
-  - ~~n_incr=40 倍化~~: status-341 で反証済み（frac 退化）、再試行禁止
+- **19本撚線 Type D stall 対策（最優先）** — status-344 で**仮説 A 決着**（K_mat 主導 + K_st 追従、K_geo≈0、mat_only rel_err mean=44% / comp_x max=98%）。次セッション開始時は **status-344 + status-343 + status-342 を最初に読むこと**
+  - **推奨アクション 1（本命）**: **K_mat の x/z 成分カップリング修正** — `ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` の x/z 成分を再展開し、Hermite 補間 + 3D 非局所 du の寄与漏れを解消。status-295 の `K_c_adj mat-only 化` と同規模の工事。**目標: 19本の mat_only FD rel_err を 7本水準 1.8% まで絞り込む → frac=1.0 完走**
+  - **推奨アクション 2（診断）**: **K_geo=0 原因調査** — status-344 で share_geo=0.000 が 183 件全件再現。`ContactForceGeoStiffness` 系の実装分岐で 19本接触条件下に幾何項が常にゼロになっている可能性。要素レベルで K_geo の非ゼロ成分を toy 問題で検証
+  - **推奨アクション 3（低コスト）**: `gap_cull_threshold` 手動掃引（0.5x〜2.0x）、mat_only rel_err が下がる設定が存在するか
+  - ~~推奨アクション: n_incr=40 倍化~~: status-341 で反証済み
+  - ~~推奨アクション: K_c FD 診断取得~~: status-342/344 で完了（183 レコード）
 - **ファイバー梁キャリブレーション** — status-338 で得た 7本撚線 κ_cr 分布（mean=5.80e-3, CV=0.30）で `MultiLayerFrictionDegrading1D` のパラメータを推定
   - **7本撚線ピッチ依存性検証**: p=50/100/200 で κ_cr 分布を実測（完走確実な 7本で実施、19本は Type D 対策後）
   - **揺動サイクル履歴依存性観測**: `n_cycles=2` + `n_oscillation_cycles=1` で κ_cr の load/unload 非対称性を観測
