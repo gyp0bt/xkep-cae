@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15時点 | **19本撚線 K_c 成分分解 FD 初回実測 — 仮説 A 決着**（status-344）— status-343 Process をソルバーに配線し、19本 Type D stall 断面で 183 件の K_c 成分分解 FD 診断を取得。**最良組み合わせ = `mat_only` 100%（183/183）、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%、K_st 追加で +16pp 悪化**。K_mat 主導 + K_st 追従の構造が確定、次工事は K_mat の x/z 成分カップリング再検（status-295 規模） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12 テスト** — 2026-04-15時点 | **status-344「K_geo=0」誤認の訂正**（status-345）— `ContactKcComponentFDDiagnosticProcess` の report 寄与率フォーマット `{:5.2f}` が微小値を 0.00 に丸めていた表示バグ。既存 log 再解析で **K_geo share mean=1.02e-3 / max=3.79e-3**（K_mat の 0.1% で非ゼロ）と復元。report を `{:.3e}` に修正、Output に `*_du_norm` 5 フィールド追加、status-344 推奨アクション 3（K_geo==0 調査）は**クローズ**。仮説 A 主旨（K_mat 主導）は維持、次工事は K_mat の x/z 成分カップリング再検（status-295 規模） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|

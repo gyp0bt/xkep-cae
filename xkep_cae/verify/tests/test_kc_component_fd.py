@@ -266,6 +266,50 @@ class TestContactKcComponentFDDiagnosticProcess:
         )
         assert isinstance(out, ContactKcComponentFDDiagnosticOutput)
 
+    def test_share_report_preserves_small_geo_precision(self):
+        """status-345: K_geo が K_mat の 0.2% 相当でも share 値が report から復元可能.
+
+        status-344 の 19本実測で ||K_geo@du|| ≈ 1e-9, ||K_mat@du|| ≈ 1e-6
+        （比 ~0.002）が観測された。`{:5.2f}` フォーマットではこれが 0.00 に
+        丸められて K_geo が "消失" したように見える不具合があった。
+        科学表記（`{:.3e}`）では 2.0e-03 相当の値が保全される。
+        """
+        n = 12
+        # K_mat 約 500x K_geo（実測比 ~500:1 を模擬）
+        K_mat = _random_spmatrix(n, seed=1) * 500.0
+        K_geo = _random_spmatrix(n, seed=2)  # 単位スケール
+        K_st = _random_spmatrix(n, seed=3) * 200.0
+        K_c = K_mat - K_geo + K_st
+
+        rng = np.random.default_rng(317)
+        u = rng.standard_normal(n)
+        du = rng.standard_normal(n)
+
+        proc = ContactKcComponentFDDiagnosticProcess()
+        out = proc.process(
+            ContactKcComponentFDDiagnosticInput(
+                u=u,
+                du=du,
+                compute_contact_force=_make_linear_compute(K_c),
+                K_mat=K_mat,
+                K_geo=K_geo,
+                K_st=K_st,
+            )
+        )
+        # share_geo は微小だが非ゼロで dataclass から取得可能
+        assert out.share_geo > 0.0
+        assert out.share_geo < 0.05  # K_mat 支配下での小 share
+        # report 文字列に科学表記で残っている（"geo=X.XXXe-0Y" 形式）
+        import re
+
+        m = re.search(r"geo=([0-9.eE+\-]+)", out.report)
+        assert m is not None, f"geo share missing in report: {out.report}"
+        parsed_geo = float(m.group(1))
+        assert abs(parsed_geo - out.share_geo) / max(out.share_geo, 1e-30) < 1e-2
+        # 絶対 L2 ノルムも dataclass に公開
+        assert out.geo_du_norm > 0.0
+        assert out.mat_du_norm > out.geo_du_norm
+
     def test_input_frozen(self):
         n = 12
         K_mat = _random_spmatrix(n, seed=1)

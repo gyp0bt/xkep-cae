@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12 テスト** — 2026-04-15 | 契約違反 **0件** | 条例違反 **0件**
 
 ### ターゲット
 
@@ -145,7 +145,8 @@
 - ~~19本撚線 K_c FD 診断取得~~ ← status-342で完了（166 レコード、`f_c` FD rel_err mean=115%/max=191%、**x 成分支配（68.3%）**、仮説 A を「x 成分 primary driver」に再定義）
 - ~~K_c 成分分解 FD 診断 Process 新設~~ ← status-343で完了（`ContactKcComponentFDDiagnosticProcess`、4 組み合わせ FD 相対誤差 + 成分別不整合、11 テスト）
 - ~~19本撚線 K_c 成分分解 FD 初回実測~~ ← status-344で完了（183 レコード、**最良=mat_only 100%、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%**、K_st 追加で +16pp 悪化、**K_mat 主導 + K_st 追従構造確定**）
-- **次**: **K_mat x/z 成分カップリング修正 → frac=1.0 完走** — status-344 決着を受け、(1) **`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開（status-295 `K_c_adj mat-only` 規模、本命工事）**、(2) K_geo=0 原因調査（なぜ 19本接触で Geo が寄与ゼロか）、(3) gap_cull_threshold 手動掃引（低コスト）
+- ~~status-344「K_geo=0」誤認の訂正~~ ← status-345で完了（report `{:5.2f}` 精度バグを特定、既存 log 再解析で **share_geo mean=1.02e-3 / max=3.79e-3**（K_mat の 0.1% で非ゼロ）と復元、report を `{:.3e}` 化 + Output に `*_du_norm` 5 フィールド追加、**推奨アクション 3（K_geo==0 調査）はクローズ**）
+- **次**: **K_mat x/z 成分カップリング修正 → frac=1.0 完走** — status-344 決着を受け、(1) **`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開（status-295 `K_c_adj mat-only` 規模、本命工事）**、(2) ~~K_geo=0 原因調査~~（status-345 でクローズ）、(3) gap_cull_threshold 手動掃引（低コスト）
 - **次**: **7本撚線ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証、完走確実な 7本で実施）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
@@ -186,9 +187,9 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **19本撚線 Type D stall 対策（最優先）** — status-344 で**仮説 A 決着**（K_mat 主導 + K_st 追従、K_geo≈0、mat_only rel_err mean=44% / comp_x max=98%）。次セッション開始時は **status-344 + status-343 + status-342 を最初に読むこと**
+- **19本撚線 Type D stall 対策（最優先）** — status-344 で**仮説 A 決着**（K_mat 主導 + K_st 追従、K_geo≈0.1% 非ゼロ（status-345 で訂正）、mat_only rel_err mean=44% / comp_x max=98%）。次セッション開始時は **status-345 + status-344 + status-343 + status-342 を最初に読むこと**
   - **推奨アクション 1（本命）**: **K_mat の x/z 成分カップリング修正** — `ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` の x/z 成分を再展開し、Hermite 補間 + 3D 非局所 du の寄与漏れを解消。status-295 の `K_c_adj mat-only 化` と同規模の工事。**目標: 19本の mat_only FD rel_err を 7本水準 1.8% まで絞り込む → frac=1.0 完走**
-  - **推奨アクション 2（診断）**: **K_geo=0 原因調査** — status-344 で share_geo=0.000 が 183 件全件再現。`ContactForceGeoStiffness` 系の実装分岐で 19本接触条件下に幾何項が常にゼロになっている可能性。要素レベルで K_geo の非ゼロ成分を toy 問題で検証
+  - ~~推奨アクション 2（診断）: K_geo=0 原因調査~~ — status-345 で**クローズ**（share_geo=0.000 は report の `{:5.2f}` 精度バグであり、実測では K_geo は K_mat の 0.1% 程度で非ゼロ。実装上の正常挙動）
   - **推奨アクション 3（低コスト）**: `gap_cull_threshold` 手動掃引（0.5x〜2.0x）、mat_only rel_err が下がる設定が存在するか
   - ~~推奨アクション: n_incr=40 倍化~~: status-341 で反証済み
   - ~~推奨アクション: K_c FD 診断取得~~: status-342/344 で完了（183 レコード）
