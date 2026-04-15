@@ -14,7 +14,7 @@
 
 ## 現在地（2026-04-14）
 
-**459+13+22+5+8+12+12+25+26+10+15+10 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
 
 | 到達点 | 概要 |
 |--------|------|
@@ -106,7 +106,9 @@
 | 接触ペア後処理 | **ContactPairAnalysisProcess 新設**: `contact_pair_history` から **κ_cr 分布**（初回スリップ曲率）・**各ペア最終散逸**・**活性ペア数時系列** を抽出する PostProcess。`_compute_mk_metrics` の M-κ 集約と責務直交（素線レベル観測）。9 テスト追加（合成履歴 8 + 2本撚線統合 1）。CLAUDE.md「CR梁接触動解析での直接検証（最優先）」のキャリブレーションデータ抽出経路が確立 — status-337 |
 | κ_cr 初回実測 | **7本撚線 κ_cr 実測（90°曲げ・281s・frac=1.0）**: `work/beam_hysteresis/09_kcr_measurement_7strand.py` で status-337 Process を初適用。**κ_cr mean=5.80e-3, std=1.74e-3, CV=0.30, min=3.52e-3, max=1.23e-2**。n_unique_pairs=26, n_slipped_pairs=24（92%）、max active=15、total_dissipation=1.71e-7。右裾型（対数正規様）分布でピークは 4.4-5.3e-3 帯。Papailiou 単一 κ_cr 仮定に対し **30% 広がり**を実測 — status-338 |
 | 19本スケール試行 | **19本撚線 κ_cr 実測 — frac=0.484 で Type D stall（未完走）**: `work/beam_hysteresis/10_kcr_measurement_19strand.py` で n=19 へスケールアップ、status-319 既知の Type D stall 再現。534s で incr=271, cb=39。ただし 57/59 ペアのデータ取得成功（mean=4.50e-3, CV=0.33、バイモーダル気配）。7本対比で mean 22% 低下（接触早期化）、CV は scale invariant。Type D 対策ガイド（K_c FD 診断 / n_incr=40 / gap_cull 掃引 / 仮説 A: z 成分不整合）を次セッション向けに策定 — status-339 |
-| **次** | **19本撚線 Type D 対策（frac=1.0 完走）**／**7本撚線ピッチ依存性検証（p=50/100/200）**／**揺動サイクル履歴依存性観測**／**ファイバー梁キャリブレーション（7本の mean κ_cr + CV=0.30）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| ペア層分類 PostProcess | **`ContactPairLayerClassifierProcess` 新設**: `(elem_a, elem_b)` を `(layer_min, layer_max)` に正規化し、層ペアごとの κ_cr 分布統計（mean/std/min/max）と累積散逸を集約する PostProcess。`StrandMeshResult.strand_layers` を新規追加して `StrandInfoOutput.layer` を外部へ公開、`work/beam_hysteresis/10_kcr_measurement_19strand.py` に層分類出力を統合。status-339 のバイモーダル気配（内層対 vs 外層対）を 19本撚線完走時に内層(1,1)/層跨ぎ(1,2)/外層(2,2) で定量切り分け可能に。8 テスト追加 — status-340 |
+| 仮説 C 反証 | **19本撚線 n_incr=40 リトライ — 曲率プロファイル過粗さ仮説を反証**: status-339 推奨アクション 2（`n_increments_per_cycle=20→40`）を `work/beam_hysteresis/11_kcr_19strand_nincr40.py` で実施。**frac=0.4839 → 0.1991 退化**（-59%）、n_incr=116/cb=11/154s で早期 Type D stall。stall 主 comp が z=65% → **x=72-97%** に変化し、成分選択的ではなく広範な K_c 不整合の可能性を示唆。仮説 A（StJacobian z 成分）優先度を 1 に引き上げ、次セッションは **K_c FD 診断取得を最優先** に更新（status-340 層分類器は 11 ペア全て (1,2) を正常抽出し実運用初検証合格） — status-341 |
+| **次** | **19本撚線 Type D 対策（K_c FD 診断取得 → 仮説 A 検証、frac=1.0 完走）**／**7本撚線ピッチ依存性検証（p=50/100/200）**／**揺動サイクル履歴依存性観測**／**ファイバー梁キャリブレーション（7本の mean κ_cr + CV=0.30）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
 
 ---
 

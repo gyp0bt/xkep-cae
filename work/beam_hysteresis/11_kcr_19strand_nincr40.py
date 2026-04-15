@@ -1,21 +1,29 @@
-"""work/beam_hysteresis/10_kcr_measurement_19strand.py — 19本撚線 κ_cr 実測.
+"""work/beam_hysteresis/11_kcr_19strand_nincr40.py — 19本撚線 κ_cr 実測（n_incr=40）.
 
 [← README](README.md) | [← project README](../../README.md)
 
-status-338 で確立した 7本撚線 κ_cr 実測手順を 19本撚線（1+6+12 構造）へ
-スケールアップする。
+status-339 の推奨アクション 2: `n_increments_per_cycle=20→40` リトライ。
 
-7本撚線ベースライン（status-338）:
-    κ_cr mean=5.80e-3, CV=0.30, n_slipped=24/26, 90°曲げ frac=1.0, 281s
+status-339 では `n_increments_per_cycle=20` で frac=0.484 Type D stall（未完走）。
+曲率プロファイル過粗さが原因の仮説 C を検証するため、増分数を 2 倍化して
+1 増分あたりの活性集合変化を緩和し、Newton 修正の追従を可能にする試行。
 
-19本撚線で期待される変化:
-    - n_unique_pairs が 26 → ~100 程度（外層-外層ペア増、2層化）
-    - 層間（内層 vs 外層）で κ_cr 分布がバイモーダルになる可能性
-    - 計算時間 ~1000-2000s（n² 接触ペア + K_st 準線形スケール、status-326）
+比較対象（status-339 ベースライン）:
+    n_increments_per_cycle=20: frac=0.4839, incr=271, cb=39, elapsed=534.68s
+    → n_increments_per_cycle=40 での frac/incr/cb/elapsed を実測
+
+予測:
+    - 所要時間 ~1200s（2x + 粗さ緩和効果の補正）
+    - 完走（frac=1.0）到達で Type D stall 解消が確認される
+    - stall 再発時は Type D の原因が曲率粗さではない（仮説 A/B/D の可能性）
+
+status-340 で新設した ContactPairLayerClassifierProcess も同時に実行し、
+完走時は (0,1)/(1,1)/(1,2)/(2,2) の層ペア別 κ_cr 平均を出力する
+（バイモーダル仮説の定量検証）。
 
 実行:
-    python work/beam_hysteresis/10_kcr_measurement_19strand.py 2>&1 \
-        | tee /tmp/kcr_meas_19_$(date +%s).log
+    python work/beam_hysteresis/11_kcr_19strand_nincr40.py 2>&1 \
+        | tee /tmp/kcr_meas_19_nincr40_$(date +%s).log
 """
 
 from __future__ import annotations
@@ -41,9 +49,9 @@ from xkep_cae.numerical_tests.strand_bending_oscillation import (
 
 
 def main() -> int:
-    """19本撚線曲げ + 接触ペア解析."""
+    """19本撚線曲げ（n_incr=40）+ 接触ペア解析 + 層分類."""
     print("=" * 70)
-    print("19本撚線 κ_cr 実測（status-338 の 7本撚線スケールアップ）")
+    print("19本撚線 κ_cr 実測 n_incr=40 リトライ（status-339 推奨アクション 2）")
     print("=" * 70)
 
     cfg = StrandBendingOscillationConfig(
@@ -57,7 +65,7 @@ def main() -> int:
         rho=8.96e-9,
         bending_curvature=0.015,  # 90度曲げ相当（status-338 と同条件）
         n_cycles=1,
-        n_increments_per_cycle=20,
+        n_increments_per_cycle=40,  # ★ status-339 推奨アクション 2（20→40）
         rho_inf=0.9,
         mu=0.15,
         max_nr_attempts=200,
@@ -97,6 +105,17 @@ def main() -> int:
     print(f"  mk_history:     {mk_len} entries")
     print(f"  pair_history:   {pair_len} entries")
 
+    # ── ベースライン比較（status-339） ──
+    print()
+    print("=" * 70)
+    print("status-339 比較（n_incr=20 ベースライン vs n_incr=40）")
+    print("=" * 70)
+    print(f"  {'項目':<20s} {'n_incr=20':>15s} {'n_incr=40':>15s}")
+    print(f"  {'frac_completed':<20s} {'0.4839':>15s} {frac:>15.4f}")
+    print(f"  {'n_increments':<20s} {'271':>15s} {sr.n_increments:>15d}")
+    print(f"  {'n_cutbacks':<20s} {'39':>15s} {sr.n_cutbacks:>15d}")
+    print(f"  {'elapsed [s]':<20s} {'534.68':>15s} {elapsed:>15.2f}")
+
     # ── ContactPairAnalysisProcess 実行 ──
     analysis = ContactPairAnalysisProcess().process(
         ContactPairAnalysisInput(
@@ -122,32 +141,7 @@ def main() -> int:
         cv = analysis.kappa_cr_std / analysis.kappa_cr_mean if analysis.kappa_cr_mean > 0 else 0.0
         print(f"  κ_cr CV (std/mean): {cv:.4f}")
 
-    # 活性ペア数推移（代表点）
-    n_active_tup = analysis.n_active_per_step
-    if n_active_tup:
-        print()
-        print("  活性ペア数推移（最初/中間/最後）:")
-        n = len(n_active_tup)
-        for i in (0, n // 4, n // 2, 3 * n // 4, n - 1):
-            load_frac = analysis.load_frac_per_step[i]
-            print(f"    step[{i}]: load_frac={load_frac:.4f}, n_active={n_active_tup[i]}")
-        print(f"  max active: {max(n_active_tup)}")
-
-    # per_pair_dissipation トップ10（7本撚線より多いので 10 に拡張）
-    if analysis.per_pair_dissipation:
-        sorted_diss = sorted(
-            analysis.per_pair_dissipation.items(),
-            key=lambda kv: abs(kv[1]),
-            reverse=True,
-        )[:10]
-        print()
-        print("  per-pair dissipation top-10:")
-        for (a, b), d in sorted_diss:
-            kcr = analysis.kappa_cr_per_pair.get((a, b), None)
-            kcr_str = f"κ_cr={kcr:.3e}" if kcr is not None else "κ_cr=N/A(未スリップ)"
-            print(f"    ({a:3d}, {b:3d}): dissipation={d:.4e}, {kcr_str}")
-
-    # κ_cr ヒストグラム（15 bin に拡張、19本は分布裾が長い想定）
+    # κ_cr ヒストグラム
     if analysis.n_slipped_pairs >= 5:
         kcrs = np.array(list(analysis.kappa_cr_per_pair.values()))
         kmin, kmax = kcrs.min(), kcrs.max()

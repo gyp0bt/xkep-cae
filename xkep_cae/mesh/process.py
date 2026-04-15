@@ -30,10 +30,19 @@ class StrandMeshConfig:
 
 @dataclass(frozen=True)
 class StrandMeshResult:
-    """撚線メッシュ生成結果."""
+    """撚線メッシュ生成結果.
+
+    Attributes:
+        mesh: 撚線メッシュ（node_coords / connectivity / strand_ids 等）
+        core_radii: 被膜内側の芯線半径配列（被膜あり時のみ）
+        strand_layers: strand_id → layer のマップ（status-340 で追加）。
+            核 = 0, 内層 = 1, 外層 = 2, ... の階層構造を表現し、
+            `ContactPairLayerClassifierProcess` の `strand_layers` 入力に渡す。
+    """
 
     mesh: MeshData
     core_radii: np.ndarray | float | None = None
+    strand_layers: tuple[int, ...] = ()
 
 
 class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
@@ -81,7 +90,11 @@ class StrandMeshProcess(PreProcess[StrandMeshConfig, StrandMeshResult]):
             strand_ids=strand_ids,
         )
 
+        # strand_id → layer のマップ（status-340: 接触ペア層分類用）
+        strand_layers = tuple(int(info.layer) for info in mesh.strand_infos)
+
         return StrandMeshResult(
             mesh=mesh_data,
             core_radii=getattr(mesh, "core_radii", None),
+            strand_layers=strand_layers,
         )
