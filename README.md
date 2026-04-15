@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8 テスト** — 2026-04-14時点 | **接触ペア層分類 PostProcess 新設**（status-340）— `ContactPairLayerClassifierProcess` で `(elem_a, elem_b)` を `(layer_min, layer_max)` に集約し、status-339 の 19本撚線バイモーダル気配（内層対 vs 外層対）を定量検証可能に。`StrandMeshResult.strand_layers` 追加、19本実測スクリプトに層分類出力統合、8 テスト追加。19本撚線 frac=1.0 完走自体は次セッション継続課題（status-339 ガイド参照） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8 テスト** — 2026-04-15時点 | **19本撚線 Type D 対策: 仮説 C 反証**（status-341）— `n_increments_per_cycle=20→40` リトライで frac=0.4839→**0.1991 退化**を観測。曲率プロファイル過粗さは Type D stall の原因でないことが判明。stall 主 comp が z=65% → x=72-97% に変化し、**広範な K_c 不整合**の可能性を示唆。次セッションは K_c FD 診断取得（仮説 A）を最優先アクションに更新 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
