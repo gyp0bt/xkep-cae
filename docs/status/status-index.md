@@ -75,6 +75,7 @@
 | [339](status-339.md) | 2026-04-14 | 19本撚線 κ_cr 実測 — **frac=0.484 で Type D stall（未完走）**。ただし 57/59 ペアのデータ取得成功（mean=4.50e-3, CV=0.33、バイモーダル気配）。次セッション向け Type D 対策ガイド策定（K_c FD 診断 / n_incr=40 / gap_cull 掃引 / 仮説 A: z 成分不整合） | 459+13+22+5+8+12+12+25+26+10+15+10+9 passed |
 | [340](status-340.md) | 2026-04-14 | `ContactPairLayerClassifierProcess` 新設 — `(elem_a, elem_b)` を `(layer_min, layer_max)` に集約する PostProcess、status-339 のバイモーダル気配（内層対 vs 外層対）を定量検証可能に。`StrandMeshResult.strand_layers` 追加、19本実測スクリプトに層分類出力統合（8 テスト追加） | 459+13+22+5+8+12+12+25+26+10+15+10+9+8 passed |
 | [341](status-341.md) | 2026-04-15 | 19本撚線 n_incr=40 リトライ — **仮説 C（曲率プロファイル過粗さ）反証**。frac=0.4839→**0.1991 退化**（n_incr=20 比 -59%）。stall 主 comp が z=65% → x=72-97% に変化し、成分選択的ではなく **広範な K_c 不整合** の可能性を示唆。仮説 A（StJacobian z 成分）優先度を 1 に引き上げ、次セッションは K_c FD 診断取得を最優先アクションに更新 | 459+13+22+5+8+12+12+25+26+10+15+10+9+8 passed |
+| [342](status-342.md) | 2026-04-15 | 19本撚線 K_c FD 診断取得（166 レコード） — `work/beam_hysteresis/12_kc_fd_diagnostic_19strand.py` 新設、`tangent_fd_diagnostic`+`type_d_auto_fd` で Type D stall 中の FD レポートを stdout 捕捉→CSV 化。**`f_c` FD 相対誤差 mean=115%/max=191%** で K_c 自体が大きく狂うことを実測、不整合方向は **x 成分支配（f_c comp x=68.3%, y=44.2%, z=41.5%）**。status-341 の「z 支配」は beam coupling の 2 次効果と判明し、**仮説 A を「x 成分 primary driver」に再定義**。次は K_c mat/geo/st 分解 FD 診断で由来切り分け | 459+13+22+5+8+12+12+25+26+10+15+10+9+8 passed |
 
 ## アーカイブ（175〜274 — 新 xkep_cae R1完遂・NR収束改善・Hermite非局所対応）
 
