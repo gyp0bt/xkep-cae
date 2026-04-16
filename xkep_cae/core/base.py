@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
 
 from xkep_cae.core.registry import ProcessRegistry, RegistryProxy
+from xkep_cae.mathematics.contracts import MathematicalContract
 
 TIn = TypeVar("TIn")
 TOut = TypeVar("TOut")
@@ -28,6 +29,10 @@ class ProcessMeta:
     """プロセスのメタ情報.
 
     document_path: ソースファイルからの相対パスで設計文書を指定。
+    math_contracts: status-347 (MCDD Phase A-2) で追加。
+        Process が満たすべき `MathematicalContract` のタプル。
+        デフォルト空 tuple で後方互換。class-level ``contracts`` ClassVar と
+        併用可能（`AbstractProcess.__init_subclass__` で合算される）。
     """
 
     name: str
@@ -38,6 +43,7 @@ class ProcessMeta:
     document_path: str = ""  # ソースファイルからの相対パス
     stability: str = "stable"  # experimental / stable / frozen / deprecated
     support_tier: str = "ci-required"  # ci-required / compat-only / dev-only
+    math_contracts: tuple[MathematicalContract, ...] = ()  # status-347 MCDD Phase A-2
 
 
 class ProcessMetaclass(type(ABC)):
@@ -248,6 +254,9 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
     # --- クラス変数（サブクラスで上書き） ---
     meta: ClassVar[ProcessMeta]
     uses: ClassVar[list[type[AbstractProcess]]] = []
+    # status-347 (MCDD Phase A-2): 数理契約の class-level 宣言ポイント。
+    # ``meta.math_contracts`` と併せて ``ProcessContractRegistry`` に自動登録される。
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = ()
 
     # --- 自動管理 ---
     _registry: ClassVar[dict[str, type[AbstractProcess]]] = RegistryProxy(ProcessRegistry.default)  # type: ignore[assignment]
@@ -296,6 +305,9 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
         # _skip_registry = True のテスト用クラスはレジストリに登録しない
         if getattr(cls, "_skip_registry", False):
             cls._used_by = []
+            # status-347: ProcessRegistry 登録は skip するが、
+            # 数理契約の登録は独立に行う（test fixture でも契約宣言を検証可能に）
+            _register_math_contracts(cls)
             return
 
         # レジストリ登録
@@ -308,6 +320,9 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
             if not hasattr(dep, "_used_by") or dep._used_by is AbstractProcess._used_by:
                 dep._used_by = []
             dep._used_by.append(cls)
+
+        # status-347 (MCDD Phase A-2): 数理契約を ProcessContractRegistry に登録
+        _register_math_contracts(cls)
 
     @abstractmethod
     def process(self, input_data: TIn) -> TOut:
@@ -456,3 +471,33 @@ class AbstractProcess(ABC, Generic[TIn, TOut], metaclass=ProcessMetaclass):
                 sections.append(dep_doc)
 
         return "\n".join(sections)
+
+
+def _register_math_contracts(cls: type[AbstractProcess]) -> None:
+    """status-347 (MCDD Phase A-2) で追加。
+
+    ``cls.contracts`` (class-level ClassVar) と ``cls.meta.math_contracts``
+    (ProcessMeta フィールド) の両方から数理契約を集めて
+    ``ProcessContractRegistry.default()`` に登録する。
+
+    どちらも空タプルの場合は何もしない（後方互換: 既存 Process は非侵襲）。
+
+    - 同一契約（同一名）が class-level と meta の双方で重複宣言されている場合は
+      ``ValueError`` が ``register_contracts`` から送出される。
+    - 契約型が ``MathematicalContract`` サブクラスでない場合も同様に拒否される。
+    """
+    class_level = getattr(cls, "contracts", ())
+    meta_obj: ProcessMeta | None = getattr(cls, "meta", None)
+    meta_level: tuple[MathematicalContract, ...] = (
+        meta_obj.math_contracts if isinstance(meta_obj, ProcessMeta) else ()
+    )
+    combined: tuple[MathematicalContract, ...] = tuple(class_level) + tuple(meta_level)
+
+    if not combined:
+        return
+
+    # 遅延 import（循環回避: mathematics/registry.py → core/base.py の
+    # 後方参照を避けるため）
+    from xkep_cae.mathematics.registry import ProcessContractRegistry
+
+    ProcessContractRegistry.default().register_contracts(cls, combined)

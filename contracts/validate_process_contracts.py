@@ -611,8 +611,8 @@ def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
 def check_c16_sterilization() -> list[str]:
     """C16: 新パッケージ滅菌チェック — Process Architecture 外の型を完全検挙.
 
-    xkep_cae/ 配下の全モジュール（core/ を除く）で定義された全クラスを分類し、
-    以下のいずれにも該当しないものを契約違反とする:
+    xkep_cae/ 配下の全モジュール（core/・mathematics/ を除く）で定義された
+    全クラスを分類し、以下のいずれにも該当しないものを契約違反とする:
 
     許可カテゴリ:
       1. AbstractProcess サブクラス（Process）
@@ -624,18 +624,24 @@ def check_c16_sterilization() -> list[str]:
 
     除外:
       - core/ — 基盤モジュール（Protocol 定義、レジストリ等）は検査対象外
-      - core からのインポート関数も検査対象外
+      - mathematics/ — MCDD 基盤モジュール（status-347 Phase A-2）。
+        `ProcessContractRegistry` がミュータブルなシングルトンレジストリであり、
+        `core/registry.py::ProcessRegistry` と構造的に同等の「基盤レジストリ」で
+        あるため core/ と同様に滅菌検査から除外する。
+        契約型自体は全て frozen dataclass として C16 準拠を満たす。
+      - core/mathematics からのインポート関数も検査対象外
     """
     import dataclasses
     import enum
 
     errors = []
-    # core/ を除く xkep_cae/ 配下の全サブパッケージを走査
+    # core/・mathematics/ を除く xkep_cae/ 配下の全サブパッケージを走査
+    # (mathematics/ は status-347 で追加された MCDD 基盤。理由は docstring 参照)
     xkep_root = _project_root / "xkep_cae"
     scan_roots = [
         d
         for d in sorted(xkep_root.iterdir())
-        if d.is_dir() and d.name != "__pycache__" and d.name != "core"
+        if d.is_dir() and d.name not in ("__pycache__", "core", "mathematics")
     ]
 
     # protocols.py は Protocol 定義ファイルなのでスキップ

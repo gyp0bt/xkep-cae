@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** — 2026-04-16時点 | **MCDD Phase A-1 — MathematicalContract 型システム新設**（status-346）— 数理契約駆動開発（MCDD）を最優先タスクとして導入。`xkep_cae/mathematics/` パッケージ新設、5 種の frozen dataclass 契約型（Identity / Inequality / FDConsistency / Symmetry / **TermExpansion** ★MCDD の核）を実装。`TermExpansionContract` は `K = Σ K_term_k` の項網羅性を型宣言可能にし、K_mat x/z 欠落のような「項抜け」を型レベルで検出可能にする。33 テスト追加、既存 Process 改変なし、契約違反 0 件。計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 1/11 完了、他 TODO は凍結 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** — 2026-04-16時点 | **MCDD Phase A-2 — ProcessContractRegistry + @verified_by デコレータ新設**（status-347）— Phase A-1（status-346）の `MathematicalContract` 型 5 種に続き、契約↔Process↔検証 Process の三者紐付けレジストリと `@verified_by(contract_name, verify_cls)` デコレータを実装。`AbstractProcess.contracts: ClassVar[tuple[...]]` + `ProcessMeta.math_contracts` の二経路宣言を `__init_subclass__` で自動合算、**dummy VerifyProcess の AST 検査拒否**（`pass`/`...`/`return`/`raise NotImplementedError` のみなら `DummyVerifyProcessError`）で脱法実装 pattern 2 を型レベルで封じ込め。`unverified_contracts` / `all_bindings` で Phase E の C18 静的検査前段 API を提供。C16 滅菌除外に `mathematics/` を追加（`ProcessRegistry` と同等の基盤レジストリ）。33 テスト追加、計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 2/11 完了 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
@@ -36,7 +36,7 @@ xkep_cae/
 ├── core/              # プロセスアーキテクチャ基盤（base, registry, runner 等）
 │   ├── strategies/    # Strategy Protocol 定義
 │   └── batch/         # BatchProcess（ワークフローオーケストレーション）
-├── mathematics/       # MCDD 基盤（status-346〜）: MathematicalContract 型
+├── mathematics/       # MCDD 基盤（status-346〜）: MathematicalContract 型 + ProcessContractRegistry + @verified_by
 ├── contact/           # 接触モジュール
 │   ├── penalty/       # PenaltyStrategy + 法線力 Process
 │   ├── friction/      # FrictionStrategy + return mapping
