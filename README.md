@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** — 2026-04-16時点 | **MCDD Phase A-2 — ProcessContractRegistry + @verified_by デコレータ新設**（status-347）— Phase A-1（status-346）の `MathematicalContract` 型 5 種に続き、契約↔Process↔検証 Process の三者紐付けレジストリと `@verified_by(contract_name, verify_cls)` デコレータを実装。`AbstractProcess.contracts: ClassVar[tuple[...]]` + `ProcessMeta.math_contracts` の二経路宣言を `__init_subclass__` で自動合算、**dummy VerifyProcess の AST 検査拒否**（`pass`/`...`/`return`/`raise NotImplementedError` のみなら `DummyVerifyProcessError`）で脱法実装 pattern 2 を型レベルで封じ込め。`unverified_contracts` / `all_bindings` で Phase E の C18 静的検査前段 API を提供。C16 滅菌除外に `mathematics/` を追加（`ProcessRegistry` と同等の基盤レジストリ）。33 テスト追加、計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 2/11 完了 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** — 2026-04-16時点 | **MCDD Phase B-1 — `docs/math/03_huber_contact_penalty.md` 先行整備**（status-348）— Phase A-2（status-347）の `ProcessContractRegistry` + `@verified_by` に続き、`MathematicalContract.equation_ref` から参照される**離散化方程式の単一のソース・オブ・トゥルース**として `docs/math/` を新設。03 章「Huber 接触ペナルティ」を 8 節 / 19 アンカーで先行整備し、**$\boldsymbol{K}_c$ の 6 項完全分解**（`K_mat_nn` / **`K_mat_ndir`★** / `K_closest` / `K_hermite_adj` / `K_geo` / `K_st`）と $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$（status-352 本命の `K_mat,ndir` 未実装項）を**契約側から要求する構造**を確立。アンカー命名規約（`eq-/inv-/sym-/sec-`）と「数値は台帳に書かない」整合性ルールで脱法実装 pattern 7（report 精度バグ）/ 6（骨格 status）を構造的に防止。実装非侵襲（Markdown のみ）、既存テスト変動なし。Phase A〜E / status-346〜356 の **3/11 完了** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
@@ -62,6 +62,7 @@ xkep_cae/
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集 |
 | [MCDD 設計仕様](xkep_cae/mathematics/docs/mathematics.md) | 数理契約駆動開発の型システム設計（status-346〜）|
+| [数理台帳（docs/math/）](docs/math/README.md) | 離散化方程式の単一のソース・オブ・トゥルース（status-348〜）|
 | [撚線ファイバー梁 設計仕様](xkep_cae/elements/docs/fiber_beam_strand.md) | 内部摩擦ヒステリシスを1本の梁で等価化する設計 |
 | [beam_hysteresis 概念検証](work/beam_hysteresis/README.md) | 上記設計の裏付け数値実験 |
 
