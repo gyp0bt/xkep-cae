@@ -12,9 +12,16 @@
 
 ---
 
-## 現在地（2026-04-14）
+## 現在地（2026-04-16）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中。
+> 計画: `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
+> **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
+> 方式 / 被膜圧縮モデル改善 / 空間ブロック分離 / K_mat x/z 修正の単発対応）は
+> MCDD 完了まで凍結**。K_mat x/z 問題は Phase C の項別 Process 分解で
+> `KcNormalDirectionStiffnessProcess` として解消される（status-352 本命修正）。
 
 | 到達点 | 概要 |
 |--------|------|
@@ -112,7 +119,8 @@
 | K_c 成分分解 FD 診断 Process | **`ContactKcComponentFDDiagnosticProcess` 新設（status-342 推奨アクション 1）**: `xkep_cae/verify/kc_component_fd.py` に `SolverProcess` ベースの診断 Process を追加。K_c = K_mat - K_geo + K_st の 4 組み合わせ（`full` / `mat_only` / `mat_geo` / `mat_st`）で FD 相対誤差 + 成分別（x/y/z/θ）不整合シェア + 寄与率 `||K_i @ du||/||K_c @ du||` を報告。既存 `TangentFDDiagnosticProcess`（合成接線の単一 rel_err のみ）を補完し、status-342 で特定された x 成分 68% 不整合の由来を部分行列レベルで切り分ける基盤を整備。単体テスト 11 件追加（線形系セルフチェック / mat-only 検出 / st primary driver 分離 / comp shares 範囲検証等）— status-343 |
 | 19本 K_c 成分分解 FD 初回実測 — 仮説 A 決着 | **status-343 Process をソルバー配線 + 19本実測（183 レコード）**: `ContactFrictionInputData.kc_component_fd_diagnostic` 追加 + `_newton_dynamic.py` の `tangent_fd_diagnostic` トリガー契機に `ContactKcComponentFDDiagnosticProcess` フックを埋め込み、`work/beam_hysteresis/13_kc_component_fd_19strand.py` で 19本撚線 frac=0.3743 stall 中の FD 診断 183 件を取得。**仮説 A 決着**: 最良組み合わせ = **`mat_only` 100%（183/183）**、`share_geo = 0.000` 全件（K_geo は 19本接触で寄与なし）、K_st 追加で rel_err 平均 +16pp / 最大 +52pp 悪化、mat_only rel_err mean=44% / **comp_x max=98%**（status-341 の x=97% と一致）。7本（1.8%）→ 19本（44%）で 25 倍不整合が拡大し、**K_mat 主導 + K_st 追従**という部分行列構造が確定。次工事は **K_mat の x/z 成分カップリング再検**（status-295 `K_c_adj mat-only` 規模）— status-344 |
 | status-344「K_geo=0」誤認の訂正 — report 精度バグ | `ContactKcComponentFDDiagnosticProcess` report の寄与率フォーマット `{:5.2f}` が微小値を 0.00 に丸めていた表示バグを特定。既存 log 再解析で **K_geo share mean=1.02e-3 / max=3.79e-3**（K_mat の 0.1% で非ゼロ）と高精度復元。report を `{:.3e}` に修正 + Output dataclass に `mat/geo/st/full_du_norm` + `dfc_fd_norm` 5 フィールド公開。status-344 推奨アクション 3（K_geo==0 原因調査）は実装バグでなく表示精度問題として**クローズ**。仮説 A 主旨（K_mat 主導）は不動、次は K_mat 修正に集中可能。テスト 1 件追加（11→12） — status-345 |
-| **次** | **K_mat の x/z 成分カップリング修正（status-344 決着を受け、`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開 → 19本 mat_only rel_err を 7本水準 1.8% まで絞り込む、frac=1.0 完走）**／**7本撚線ピッチ依存性検証（p=50/100/200）**／~~K_geo=0 原因調査~~（status-345 で表示精度問題と判明し**クローズ**）／**ファイバー梁キャリブレーション（7本の mean κ_cr + CV=0.30）**／**空間ブロック分離 or ペアクラスタリング**（n² 根本対策）→ 1000本6時間 |
+| **MCDD Phase A-1** | **MathematicalContract 型システム新設**: `xkep_cae/mathematics/` パッケージ新設（`contracts.py` + `docs/mathematics.md` + `tests/`）。5 種の frozen dataclass 契約型（`IdentityContract` / `InequalityContract` / `FDConsistencyContract` / `SymmetryContract` / **`TermExpansionContract`** ★MCDD の核 — `K = Σ K_term_k` の項網羅性を型で宣言）を実装。`providers` 重複検出・長さ一致検証・frozen/severity 必須性で脱法実装 pattern 2/3/9 を型レベルで封じ込め。既存 Process 改変なし、33 テスト追加、契約違反 0 件。計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 1/11 を完了 — status-346 |
+| **次（MCDD Phase A-2）** | **`@verified_by` + `registry.py` + `ProcessMeta.math_contracts` 拡張**（status-347）— 契約と検証 Process を紐付け、既存 Process に `contracts: ClassVar[tuple[MathematicalContract, ...]]` クラス属性で宣言可能化。後続: Phase B 離散化方程式台帳（status-348-349）→ Phase C パイロット項別分解で **K_mat x/z 問題自然解消**（status-350-353、status-352 が `KcNormalDirectionStiffnessProcess` 本命修正）→ Phase D 診断ディスパッチャ（status-354-355）→ Phase E C18/C19 契約検査（status-356）|
 
 ---
 
