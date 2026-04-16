@@ -14,14 +14,17 @@
 
 ## 現在地（2026-04-16）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** | 契約違反**0件** | [最新status](status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中。
-> 計画: `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中
+> （**3/11 完了** — Phase A-1〜A-2 + B-1）。計画:
+> `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離 / K_mat x/z 修正の単発対応）は
 > MCDD 完了まで凍結**。K_mat x/z 問題は Phase C の項別 Process 分解で
 > `KcNormalDirectionStiffnessProcess` として解消される（status-352 本命修正）。
+> 離散化方程式の正規参照は [`docs/math/03_huber_contact_penalty.md`](math/03_huber_contact_penalty.md)
+> （status-348 で先行整備）。
 
 | 到達点 | 概要 |
 |--------|------|
