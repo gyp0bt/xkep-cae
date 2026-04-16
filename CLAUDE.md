@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** — 2026-04-16 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase A-1 完了（status-346）**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** — 2026-04-16 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase A-2 完了（status-347）**
 
 ### ターゲット
 
@@ -194,11 +194,13 @@
 **設計仕様**: `xkep_cae/mathematics/docs/mathematics.md`
 
 status-346 で **MCDD Phase A-1 完了**（`MathematicalContract` 型 5 種新設、
-33 テスト追加）。次は **Phase A-2（status-347）**:
+33 テスト追加）。status-347 で **MCDD Phase A-2 完了**（`ProcessContractRegistry`
++ `@verified_by` デコレータ + dummy VerifyProcess AST 検査拒否、33 テスト追加）。
+次は **Phase B-1（status-348）**:
 
-- **status-347（Phase A-2、次セッション）**: `@verified_by` デコレータ +
-  `xkep_cae/mathematics/registry.py` + `ProcessMeta.math_contracts` 拡張
-- **status-348-349（Phase B）**: `docs/math/*.md` 離散化方程式台帳（6 章）
+- ~~status-347（Phase A-2）~~: 完了（`ProcessContractRegistry` + `@verified_by`
+  + `AbstractProcess.contracts` ClassVar + `ProcessMeta.math_contracts` 二経路）
+- **status-348-349（Phase B、次セッション）**: `docs/math/*.md` 離散化方程式台帳（6 章）
 - **status-350-353（Phase C）**: パイロット項別分解
   （`KcNormal` / `KcGeo` / `KcSt` / **`KcNormalDirection` ★x/z 本命修正**
   / `KcClosestPoint` / `KcHermiteNonlocal`）

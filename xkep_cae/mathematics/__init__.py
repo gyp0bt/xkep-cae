@@ -33,12 +33,22 @@ from xkep_cae.mathematics.contracts import (
     SymmetryContract,
     TermExpansionContract,
 )
+from xkep_cae.mathematics.registry import (
+    DummyVerifyProcessError,
+    ProcessContractRegistry,
+    verified_by,
+)
 
 __all__ = [
+    # Phase A-1: 契約型
     "MathematicalContract",
     "IdentityContract",
     "InequalityContract",
     "FDConsistencyContract",
     "SymmetryContract",
     "TermExpansionContract",
+    # Phase A-2: 紐付けレジストリ + デコレータ
+    "ProcessContractRegistry",
+    "verified_by",
+    "DummyVerifyProcessError",
 ]
