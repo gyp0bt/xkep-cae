@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15時点 | **19本撚線 K_c 成分分解 FD 初回実測 — 仮説 A 決着**（status-344）— status-343 Process をソルバーに配線し、19本 Type D stall 断面で 183 件の K_c 成分分解 FD 診断を取得。**最良組み合わせ = `mat_only` 100%（183/183）、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%、K_st 追加で +16pp 悪化**。K_mat 主導 + K_st 追従の構造が確定、次工事は K_mat の x/z 成分カップリング再検（status-295 規模） | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** — 2026-04-16時点 | **MCDD Phase A-1 — MathematicalContract 型システム新設**（status-346）— 数理契約駆動開発（MCDD）を最優先タスクとして導入。`xkep_cae/mathematics/` パッケージ新設、5 種の frozen dataclass 契約型（Identity / Inequality / FDConsistency / Symmetry / **TermExpansion** ★MCDD の核）を実装。`TermExpansionContract` は `K = Σ K_term_k` の項網羅性を型宣言可能にし、K_mat x/z 欠落のような「項抜け」を型レベルで検出可能にする。33 テスト追加、既存 Process 改変なし、契約違反 0 件。計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 1/11 完了、他 TODO は凍結 | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
@@ -36,6 +36,7 @@ xkep_cae/
 ├── core/              # プロセスアーキテクチャ基盤（base, registry, runner 等）
 │   ├── strategies/    # Strategy Protocol 定義
 │   └── batch/         # BatchProcess（ワークフローオーケストレーション）
+├── mathematics/       # MCDD 基盤（status-346〜）: MathematicalContract 型
 ├── contact/           # 接触モジュール
 │   ├── penalty/       # PenaltyStrategy + 法線力 Process
 │   ├── friction/      # FrictionStrategy + return mapping
@@ -60,6 +61,7 @@ xkep_cae/
 | [ロードマップ](docs/roadmap.md) | 全体計画・マイルストーン・TODO |
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集 |
+| [MCDD 設計仕様](xkep_cae/mathematics/docs/mathematics.md) | 数理契約駆動開発の型システム設計（status-346〜）|
 | [撚線ファイバー梁 設計仕様](xkep_cae/elements/docs/fiber_beam_strand.md) | 内部摩擦ヒステリシスを1本の梁で等価化する設計 |
 | [beam_hysteresis 概念検証](work/beam_hysteresis/README.md) | 上記設計の裏付け数値実験 |
 

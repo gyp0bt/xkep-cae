@@ -92,6 +92,12 @@ class ContactKcComponentFDDiagnosticOutput:
     share_mat: float = 0.0
     share_geo: float = 0.0
     share_st: float = 0.0
+    # status-345: 部分行列作用ベクトルの絶対 L2 ノルム（share 分母ドリフト排除）
+    mat_du_norm: float = 0.0
+    geo_du_norm: float = 0.0
+    st_du_norm: float = 0.0
+    full_du_norm: float = 0.0
+    dfc_fd_norm: float = 0.0
     comp_share_full: dict[str, float] = field(default_factory=dict)
     comp_share_mat_only: dict[str, float] = field(default_factory=dict)
     comp_share_mat_geo: dict[str, float] = field(default_factory=dict)
@@ -173,11 +179,14 @@ class ContactKcComponentFDDiagnosticProcess(
         lines.append(f"  ||K_c@du||   = {full_du_norm:.4e}")
 
         # ── 寄与率（Kc に対するシェア） ──
+        # status-345: 19本撚線で K_geo share が 1e-3 スケールの微小値を
+        # 取りうるため、`{:5.2f}` では 0.00 に丸められて捕捉できない。
+        # 科学表記（`{:.3e}`）で精度を保全し、下流 CSV パースでも復元可能に。
         ref_share = max(full_du_norm, 1e-30)
         share_mat = mat_du_norm / ref_share
         share_geo = geo_du_norm / ref_share
         share_st = st_du_norm / ref_share
-        lines.append(f"  寄与率: mat={share_mat:5.2f}, geo={share_geo:5.2f}, st={share_st:5.2f}")
+        lines.append(f"  寄与率: mat={share_mat:.3e}, geo={share_geo:.3e}, st={share_st:.3e}")
 
         # ── 4 組み合わせの rel_err + comp 分解 ──
         combos = {
@@ -236,6 +245,11 @@ class ContactKcComponentFDDiagnosticProcess(
             share_mat=share_mat,
             share_geo=share_geo,
             share_st=share_st,
+            mat_du_norm=mat_du_norm,
+            geo_du_norm=geo_du_norm,
+            st_du_norm=st_du_norm,
+            full_du_norm=full_du_norm,
+            dfc_fd_norm=dfc_norm,
             comp_share_full=comp_shares["full"],
             comp_share_mat_only=comp_shares["mat_only"],
             comp_share_mat_geo=comp_shares["mat_geo"],

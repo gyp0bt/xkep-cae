@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+11 テスト** — 2026-04-15 | 契約違反 **0件** | 条例違反 **0件**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33 テスト** — 2026-04-16 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase A-1 完了（status-346）**
 
 ### ターゲット
 
@@ -145,7 +145,8 @@
 - ~~19本撚線 K_c FD 診断取得~~ ← status-342で完了（166 レコード、`f_c` FD rel_err mean=115%/max=191%、**x 成分支配（68.3%）**、仮説 A を「x 成分 primary driver」に再定義）
 - ~~K_c 成分分解 FD 診断 Process 新設~~ ← status-343で完了（`ContactKcComponentFDDiagnosticProcess`、4 組み合わせ FD 相対誤差 + 成分別不整合、11 テスト）
 - ~~19本撚線 K_c 成分分解 FD 初回実測~~ ← status-344で完了（183 レコード、**最良=mat_only 100%、share_geo=0.000 全件、mat_only rel_err mean=44% / comp_x max=98%**、K_st 追加で +16pp 悪化、**K_mat 主導 + K_st 追従構造確定**）
-- **次**: **K_mat x/z 成分カップリング修正 → frac=1.0 完走** — status-344 決着を受け、(1) **`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開（status-295 `K_c_adj mat-only` 規模、本命工事）**、(2) K_geo=0 原因調査（なぜ 19本接触で Geo が寄与ゼロか）、(3) gap_cull_threshold 手動掃引（低コスト）
+- ~~status-344「K_geo=0」誤認の訂正~~ ← status-345で完了（report `{:5.2f}` 精度バグを特定、既存 log 再解析で **share_geo mean=1.02e-3 / max=3.79e-3**（K_mat の 0.1% で非ゼロ）と復元、report を `{:.3e}` 化 + Output に `*_du_norm` 5 フィールド追加、**推奨アクション 3（K_geo==0 調査）はクローズ**）
+- **次**: **K_mat x/z 成分カップリング修正 → frac=1.0 完走** — status-344 決着を受け、(1) **`ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` x/z 成分を再展開（status-295 `K_c_adj mat-only` 規模、本命工事）**、(2) ~~K_geo=0 原因調査~~（status-345 でクローズ）、(3) gap_cull_threshold 手動掃引（低コスト）
 - **次**: **7本撚線ピッチ依存性検証** — p=50/100/200 で κ_cr 分布・mean・CV の変化を実測（Papailiou 非依存予測の CR梁実測検証、完走確実な 7本で実施）
 - **次**: リスタート解析方式への移行 — 動的摩擦接触ソルバーが `(u, v, a, 接触ペア)` を初期条件として受け取り `(u, v, a, 接触ペア)` を返すI/Oに整理。曲げ・揺動は境界条件を渡すだけの薄いラッパーとし、解析ステップ単位でのリスタートを可能にする（CR梁ULのf_int=0問題の根本解決: update_referenceを跨がない設計）
 
@@ -186,26 +187,69 @@
 **以下を厳守すること。違反は作業のやり直しになる。**
 
 ## やるべきこと
-- **19本撚線 Type D stall 対策（最優先）** — status-344 で**仮説 A 決着**（K_mat 主導 + K_st 追従、K_geo≈0、mat_only rel_err mean=44% / comp_x max=98%）。次セッション開始時は **status-344 + status-343 + status-342 を最初に読むこと**
-  - **推奨アクション 1（本命）**: **K_mat の x/z 成分カップリング修正** — `ContactForceStrategy.tangent_components()` の K_mat 構築経路で `∂(p_n·n̂)/∂u` の x/z 成分を再展開し、Hermite 補間 + 3D 非局所 du の寄与漏れを解消。status-295 の `K_c_adj mat-only 化` と同規模の工事。**目標: 19本の mat_only FD rel_err を 7本水準 1.8% まで絞り込む → frac=1.0 完走**
-  - **推奨アクション 2（診断）**: **K_geo=0 原因調査** — status-344 で share_geo=0.000 が 183 件全件再現。`ContactForceGeoStiffness` 系の実装分岐で 19本接触条件下に幾何項が常にゼロになっている可能性。要素レベルで K_geo の非ゼロ成分を toy 問題で検証
-  - **推奨アクション 3（低コスト）**: `gap_cull_threshold` 手動掃引（0.5x〜2.0x）、mat_only rel_err が下がる設定が存在するか
-  - ~~推奨アクション: n_incr=40 倍化~~: status-341 で反証済み
-  - ~~推奨アクション: K_c FD 診断取得~~: status-342/344 で完了（183 レコード）
-- **ファイバー梁キャリブレーション** — status-338 で得た 7本撚線 κ_cr 分布（mean=5.80e-3, CV=0.30）で `MultiLayerFrictionDegrading1D` のパラメータを推定
-  - **7本撚線ピッチ依存性検証**: p=50/100/200 で κ_cr 分布を実測（完走確実な 7本で実施、19本は Type D 対策後）
-  - **揺動サイクル履歴依存性観測**: `n_cycles=2` + `n_oscillation_cycles=1` で κ_cr の load/unload 非対称性を観測
-  - **端部外れ値の物理確認**: pair (2, 18) の κ_cr=1.23e-2 外れ値が `exclude_end_elements` で説明されるか切り分け
-- **リスタート解析方式**: ContactFrictionProcess の I/O を `(u, v, a, 接触ペア)` 入出力に整理
-  - ソルバーが初期条件 `(u0, v0, a0, contact_pairs)` を受け取り、結果 `(u, v, a, contact_pairs)` を返す
-  - 曲げ・揺動プロセスは境界条件（prescribed_dofs, prescribed_func, f_ext等）を渡すだけの薄いラッパー
-  - update_reference を解析ステップ間で跨がない設計（CR梁ULのf_int=0問題の根本解決）
-- **被膜圧縮モデル改善** — バリア関数 or 二層モデルで物理的に正確な被膜力
-- **空間ブロック分離 or ペアクラスタリング**（n² 根本対策、1000本撚線への道）
+
+### ★最優先: MCDD（数理契約駆動開発）Phase A〜E（status-346〜356）
+
+**計画**: `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結、変更には承認要）
+**設計仕様**: `xkep_cae/mathematics/docs/mathematics.md`
+
+status-346 で **MCDD Phase A-1 完了**（`MathematicalContract` 型 5 種新設、
+33 テスト追加）。次は **Phase A-2（status-347）**:
+
+- **status-347（Phase A-2、次セッション）**: `@verified_by` デコレータ +
+  `xkep_cae/mathematics/registry.py` + `ProcessMeta.math_contracts` 拡張
+- **status-348-349（Phase B）**: `docs/math/*.md` 離散化方程式台帳（6 章）
+- **status-350-353（Phase C）**: パイロット項別分解
+  （`KcNormal` / `KcGeo` / `KcSt` / **`KcNormalDirection` ★x/z 本命修正**
+  / `KcClosestPoint` / `KcHermiteNonlocal`）
+  → **K_mat x/z カップリング問題は Phase C で自然解消**（status-352 本命）
+- **status-354-355（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断
+  フラグ deprecation
+- **status-356（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19
+  （`term_processes` 実在検査）の追加
+
+**凍結中の TODO**（MCDD 完了まで再開禁止）:
+
+- ~~19本 Type D stall の K_mat x/z 単発対応~~ → Phase C で解消
+- ~~7本撚線ピッチ依存性検証（p=50/100/200）~~
+- ~~ファイバー梁キャリブレーション~~
+- ~~リスタート解析方式~~
+- ~~被膜圧縮モデル改善（バリア関数 / 二層モデル）~~
+- ~~空間ブロック分離 / ペアクラスタリング~~
+
+**凍結解除条件**: Phase E 完了 + 19本 frac=1.0 完走 + `KcNormalDirectionStiffness`
+FD rel_err < 1e-2。
+
+### セッション開始時の必須確認（MCDD 規範）
+
+次セッションを Claude Code / Codex で開始する際は、以下を**順に**実行:
+
+1. `/root/.claude/plans/deep-wiggling-seal.md` を**全文読む**（要約禁止）
+2. 最新 `docs/status/status-{N}.md` を読み、前セッションの停止点を確認
+3. 計画書「🚫 脱法実装パターン 10 項」を読み返し、本セッションで陥りそうな
+   項目を自己チェック
+4. その上で着手
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
 - 収束トライ時に目標を緩和して本質的対策を先送りにすること
+
+### MCDD 脱法実装禁止パターン（計画書から抜粋、status-346〜356 で厳守）
+
+1. **契約の tol を事後緩和して pass させる**（数理的正当化なき `tol_rel` 変更は禁止）
+2. **dummy VerifyProcess を `@verified_by` に紐付けて C18 を通す**
+3. **`tangent_components()` を wrapper だけで済ませる**（中身が旧 monolith 呼び出しだけ）
+4. **`KcNormalDirectionStiffnessProcess` を rename で済ませる**（新規実装必須）
+5. **既存テスト 12 件を skip/xfail で pass させる**（`test_kc_component_fd.py` 無変更 pass が gate）
+6. **「Phase C を Phase C' に分割」等で困難を先送り**（骨格だけの status は禁止、
+   コンテキスト不足は status 中断で正規手順）
+7. **診断 report を `{:5.2f}` 等で丸める**（status-345 の教訓、share/ratio は `{:.3e}` 必須）
+8. **回帰を「ベースライン側が誤っていた」と根拠なく主張**（数値で反証必須）
+9. **`tuple[...]` を `list[...]` に変えて frozen 契約を回避**
+10. **status ファイルに「TODO として積む」で次回送り**（各 status で成功基準を達成）
+
+コンテキスト不足時は `git stash` で保留 + 「中断スナップショット」section を
+status ファイルに書き残し、**妥協実装を push して status を締めない**。
 
 ## STA2 防止ルール（STAP細胞の二の舞防止）
 - **increment の定義**: increment は成功した dt ステップの数。カットバック（時間増分の縮小リトライ）は increment に含めない。`_incr_count` は成功パスでのみインクリメントし、`max_increments` はカットバック回数に侵食されない。
