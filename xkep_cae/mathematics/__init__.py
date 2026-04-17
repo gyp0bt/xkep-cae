@@ -33,6 +33,12 @@ from xkep_cae.mathematics.contracts import (
     SymmetryContract,
     TermExpansionContract,
 )
+from xkep_cae.mathematics.equation_index import (
+    DuplicateAnchorError,
+    EquationIndex,
+    UnresolvedReferenceError,
+)
+from xkep_cae.mathematics.equation_index import load as load_equation_index
 from xkep_cae.mathematics.registry import (
     DummyVerifyProcessError,
     ProcessContractRegistry,
@@ -51,4 +57,9 @@ __all__ = [
     "ProcessContractRegistry",
     "verified_by",
     "DummyVerifyProcessError",
+    # Phase B-2: 台帳アンカー抽出・参照解決
+    "EquationIndex",
+    "DuplicateAnchorError",
+    "UnresolvedReferenceError",
+    "load_equation_index",
 ]
