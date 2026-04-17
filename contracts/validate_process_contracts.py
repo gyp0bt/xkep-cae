@@ -14,6 +14,8 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
 - C13: active プロセスが CompatibilityProcess を uses している場合はエラー
 - C14: xkep_cae/ 内から __xkep_cae_deprecated をインポートしていないか検出
 - C15: ProcessMeta.document_path で指定されたドキュメントが実在するか検証
+- C15(math): MathematicalContract.equation_ref が docs/math/ 台帳で解決可能か検証
+  （status-349 Phase B-2 で追加）
 - C16: 新パッケージ滅菌 — core/ 以外の全モジュール内のクラス/関数を分類検査
        __init__.py のクラス再エクスポートも型検査対象
 - C17: プライベートモジュール dataclass 衛生 — _xxx.py 内の dataclass が
@@ -565,6 +567,90 @@ def check_c15_strategy_docs(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c15_equation_refs(registry: dict[str, type]) -> list[str]:
+    """C15 拡張（status-349）: MathematicalContract.equation_ref の台帳解決.
+
+    `AbstractProcess.contracts` に宣言された `MathematicalContract` および
+    `ProcessContractRegistry.all_contracts()` に登録された契約の
+    `equation_ref` を `docs/math/` 台帳に対して解決する。
+
+    検査対象:
+        - 実行時に収集された `MathematicalContract` インスタンスのみ
+          （contracts.py docstring 内の例題は ClassVar 未宣言のため収集されず
+          自然に除外される）
+
+    検出する不整合:
+        - `bad_format`: ``<file>.md#<prefix>-<id>`` 形式に合致しない参照
+        - `missing_file`: 台帳に存在しないファイルへの参照
+        - `missing_anchor`: ファイルは存在するが未定義アンカーへの参照
+        - `duplicate_anchor`: 同一ファイル内でアンカー多重定義
+    """
+    errors: list[str] = []
+
+    # 循環 import 回避のため遅延 import
+    try:
+        from xkep_cae.mathematics import (
+            ProcessContractRegistry,
+            load_equation_index,
+        )
+    except ImportError as exc:
+        errors.append(f"C15(math): mathematics パッケージのインポートに失敗: {exc}")
+        return errors
+
+    idx = load_equation_index()
+    if idx.total_anchors == 0:
+        errors.append("C15(math): docs/math/ 台帳が空（実行ディレクトリから見つからない可能性）")
+        return errors
+
+    # 重複アンカー検出（load() 側の集計を 1 つずつ契約違反として計上）
+    for dup in idx.duplicates:
+        errors.append(f"C15(math): 台帳アンカー重複 {dup.file_name}#{dup.anchor} ({dup.count} 回)")
+
+    # 契約の収集: ProcessContractRegistry + 既存 ProcessRegistry の両経路
+    seen_refs: set[tuple[str, str]] = set()  # (process_name, contract_name) 重複防止
+
+    try:
+        math_reg = ProcessContractRegistry.default()
+        for proc_name, contracts in math_reg.all_contracts().items():
+            for contract in contracts:
+                key = (proc_name, contract.name)
+                if key in seen_refs:
+                    continue
+                seen_refs.add(key)
+                err = idx.resolve(contract.equation_ref)
+                if err is not None:
+                    errors.append(
+                        f"C15(math): {proc_name}.contracts[{contract.name!r}]"
+                        f".equation_ref {err.reason}: {contract.equation_ref}"
+                    )
+    except Exception as exc:
+        errors.append(f"C15(math): ProcessContractRegistry 参照に失敗: {exc}")
+
+    # ProcessRegistry 側からも直接 contracts ClassVar を参照（__init_subclass__ 経由）
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        for contract in contracts:
+            # MathematicalContract 以外のゴミが入っていたら無視（Phase D 配線余地）
+            equation_ref = getattr(contract, "equation_ref", None)
+            contract_name = getattr(contract, "name", "?")
+            if not equation_ref:
+                continue
+            key = (proc_name, contract_name)
+            if key in seen_refs:
+                continue
+            seen_refs.add(key)
+            err = idx.resolve(equation_ref)
+            if err is not None:
+                errors.append(
+                    f"C15(math): {proc_name}.contracts[{contract_name!r}]"
+                    f".equation_ref {err.reason}: {equation_ref}"
+                )
+
+    return errors
+
+
 def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
     """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
 
@@ -1091,6 +1177,7 @@ def main() -> int:
         ("C12: BatchProcess順序", check_c12_batch_order),
         ("C13: CompatibilityProcess uses禁止", check_c13_compatibility_uses),
         ("C15: Strategy ドキュメント存在", check_c15_strategy_docs),
+        ("C15(math): MathematicalContract.equation_ref 解決", check_c15_equation_refs),
     ]
 
     for label, check_fn in checks:
