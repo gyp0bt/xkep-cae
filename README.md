@@ -18,7 +18,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33 テスト** — 2026-04-16時点 | **MCDD Phase B-1 — `docs/math/03_huber_contact_penalty.md` 先行整備**（status-348）— Phase A-2（status-347）の `ProcessContractRegistry` + `@verified_by` に続き、`MathematicalContract.equation_ref` から参照される**離散化方程式の単一のソース・オブ・トゥルース**として `docs/math/` を新設。03 章「Huber 接触ペナルティ」を 8 節 / 19 アンカーで先行整備し、**$\boldsymbol{K}_c$ の 6 項完全分解**（`K_mat_nn` / **`K_mat_ndir`★** / `K_closest` / `K_hermite_adj` / `K_geo` / `K_st`）と $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$（status-352 本命の `K_mat,ndir` 未実装項）を**契約側から要求する構造**を確立。アンカー命名規約（`eq-/inv-/sym-/sec-`）と「数値は台帳に書かない」整合性ルールで脱法実装 pattern 7（report 精度バグ）/ 6（骨格 status）を構造的に防止。実装非侵襲（Markdown のみ）、既存テスト変動なし。Phase A〜E / status-346〜356 の **3/11 完了** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8 テスト** — 2026-04-17時点 | **MCDD Phase B-2 — 数理台帳 6 章完備 + `equation_index.py` + C15 拡張**（status-349）— status-348 の Huber 章（03）に続き、残り 5 章（**01 梁運動学 CR/TL/UL+Hermite / 02 接触幾何 StJacobian / 04 smooth penalty 摩擦 / 05 バリア関数被膜 / 06 Generalized-α 時間積分**）を整備し、**計 6 章 / 55 アンカー** の離散化方程式台帳を完成。`xkep_cae/mathematics/equation_index.py` を新設し、`<a id="(eq|inv|sym|sec)-...">` 抽出 + `MathematicalContract.equation_ref` の `<file>#<anchor>` 参照解決 API を提供（21 テスト、重複・未解決・bad_format 検出）。`contracts/validate_process_contracts.py` に **C15 拡張** を配線、`ProcessContractRegistry` と `AbstractProcess.contracts` ClassVar の二経路から `equation_ref` を収集して台帳と突合、docstring 例題は ClassVar 未宣言のため自然除外（8 テスト）。Phase A〜E / status-346〜356 の **4/11 完了** | 契約違反 **0件** | 条例違反 **0件** | [ロードマップ](docs/roadmap.md) | [ステータス一覧](docs/status/status-index.md)
 
 | 分野 | 概要 |
 |------|------|
@@ -62,7 +62,7 @@ xkep_cae/
 | [ステータス一覧](docs/status/status-index.md) | 全statusファイル + テスト数推移 |
 | [設計文書一覧](docs/design/README.md) | 設計仕様書リンク集 |
 | [MCDD 設計仕様](xkep_cae/mathematics/docs/mathematics.md) | 数理契約駆動開発の型システム設計（status-346〜）|
-| [数理台帳（docs/math/）](docs/math/README.md) | 離散化方程式の単一のソース・オブ・トゥルース（status-348〜）|
+| [数理台帳（docs/math/）](docs/math/README.md) | 離散化方程式の単一のソース・オブ・トゥルース（6 章 / 55 アンカー、status-348〜349）|
 | [撚線ファイバー梁 設計仕様](xkep_cae/elements/docs/fiber_beam_strand.md) | 内部摩擦ヒステリシスを1本の梁で等価化する設計 |
 | [beam_hysteresis 概念検証](work/beam_hysteresis/README.md) | 上記設計の裏付け数値実験 |
 
