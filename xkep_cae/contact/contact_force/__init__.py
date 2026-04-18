@@ -10,6 +10,11 @@ from xkep_cae.contact.contact_force.strategy import (
     ContactForceStStiffnessOutput,
     ContactForceStStiffnessProcess,
     HuberContactForceProcess,
+    KcGeoStiffnessOutput,
+    KcGeoStiffnessProcess,
+    KcNormalStiffnessOutput,
+    KcNormalStiffnessProcess,
+    KcTermAssemblyInput,
 )
 
 __all__ = [
@@ -20,4 +25,10 @@ __all__ = [
     "ContactForceStStiffnessProcess",
     "ContactForceStStiffnessInput",
     "ContactForceStStiffnessOutput",
+    # Phase C-1: K_c 項別 Process (status-350)
+    "KcTermAssemblyInput",
+    "KcNormalStiffnessProcess",
+    "KcNormalStiffnessOutput",
+    "KcGeoStiffnessProcess",
+    "KcGeoStiffnessOutput",
 ]

@@ -18,6 +18,7 @@ status-256 B1: ContactForceStStiffnessProcess
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import ClassVar
 
 import numpy as np
 import scipy.sparse as sp
@@ -25,6 +26,35 @@ import scipy.sparse as sp
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
+from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
+
+# ── K_c 項展開契約（status-350 Phase C-1） ──────────────────
+# 現行実装の既存 3 項 (K_mat, K_geo, K_st) に対応。数理台帳の 6 項完全分解
+# (K_mat_nn / K_mat_ndir / K_closest / K_hermite_adj / K_geo / K_st) のうち、
+# K_mat_ndir (status-352 本命) / K_closest (status-351) / K_hermite_adj (status-353)
+# は本 status では未抽出。K_mat は現状 K_mat_nn + K_hermite_adj (隣接拡張) を
+# 束ねた形で KcNormalStiffnessProcess が提供する。
+#
+# term_names/providers の長さは等しく、`TermExpansionContract.__post_init__` で
+# 同一性が検査される。status-353 で 6 項完全分解に置換される。
+_K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
+    name="K_c_term_expansion",
+    equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition",
+    total_name="K_c",
+    term_names=("K_mat", "K_geo", "K_st"),
+    providers=(
+        "KcNormalStiffnessProcess",
+        "KcGeoStiffnessProcess",
+        "ContactForceStStiffnessProcess",
+    ),
+    combinator="add_sub",
+    tol_rel=5e-3,
+    severity="nightly",
+    description=(
+        "status-350 Phase C-1: tangent_components() から 3 項を抽出。"
+        "status-351/352/353 で K_closest / K_mat_ndir / K_hermite_adj を追加予定。"
+    ),
+)
 
 # ── Input / Output ─────────────────────────────────────────
 
@@ -259,10 +289,12 @@ class ContactForceStStiffnessProcess(
     meta = ProcessMeta(
         name="ContactForceStStiffness",
         module="solve",
-        version="1.0.0",
+        version="1.1.0",
         document_path="docs/contact_force.md",
     )
     uses = [ComputeStJacobianProcess]
+    # status-350 Phase C-1: K_c 項展開契約の K_st プロバイダとして宣言
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
 
     def process(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
         return self._process_batch(inp)
@@ -547,6 +579,346 @@ class ContactForceStStiffnessProcess(
                 shape=(inp.ndof_total, inp.ndof_total),
             )
         )
+
+
+# ── K_c 項別 Process (status-350 Phase C-1) ────────────────
+
+
+@dataclass(frozen=True)
+class KcTermAssemblyInput:
+    """K_c 項別 Process の共通入力 (status-350 Phase C-1).
+
+    KcNormalStiffnessProcess / KcGeoStiffnessProcess が共有する入力構造。
+    ``pairs`` から各 Process が独立にアクティブ集合を抽出し、対応する項の
+    接触接線剛性ブロックを組み立てる。各 Process は自己完結し、他 Process
+    の内部状態には依存しない（MCDD 脱法実装 pattern 3 の防止）。
+
+    Attributes:
+        pairs: 接触ペアのリスト（ContactManager.pairs と互換）。
+        k_pen: ペナルティ係数。
+        delta_h: Huber 遷移幅（既に boost 反映済み）。
+        ndof_total: 全体 DOF 数。
+        ndof_per_node: ノードあたり DOF 数（デフォルト 6、並進 3 + 回転 3）。
+        penalty_exponent: Hertz 型指数（1.0 で線形、1.5 で Hertz、status-285）。
+        use_hermite: Hermite 形状関数基底を使用するか。
+        node_counts: 各ノードの要素参照数（Hermite 補正用、None で線形補間）。
+        adj_node_map: elem → (隣接ノード 0, 隣接ノード 1) のマップ
+            （K_mat_adj 隣接拡張用、KcGeo では未使用）。
+        adj_node_counts: 各ノードの隣接要素数（K_mat_adj 用、KcGeo では未使用）。
+    """
+
+    pairs: list
+    k_pen: float
+    delta_h: float
+    ndof_total: int
+    ndof_per_node: int = 6
+    penalty_exponent: float = 1.0
+    use_hermite: bool = False
+    node_counts: np.ndarray | None = None
+    adj_node_map: dict | None = None
+    adj_node_counts: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class KcNormalStiffnessOutput:
+    """KcNormalStiffnessProcess の出力."""
+
+    K_mat: sp.csr_matrix
+
+
+@dataclass(frozen=True)
+class KcGeoStiffnessOutput:
+    """KcGeoStiffnessProcess の出力."""
+
+    K_geo: sp.csr_matrix
+
+
+def _extract_kc_active_pair_data(inp: KcTermAssemblyInput) -> dict | None:
+    """K_c 項別 Process 共通のアクティブペア抽出ヘルパ (status-350).
+
+    ``has_state & ((h_deriv > 0) | (p_n > 0))`` でアクティブ集合をフィルタし、
+    w_mat / w_geo / coeffs / nn / I_nn / cc / gdofs などの共有計算を実行する。
+
+    Returns:
+        辞書 ``{"n_act", "w_mat", "w_geo", "coeffs", "nn", "I_nn", "cc",
+        "gdofs", "s_act", "t_act", "nodes_act"}`` を返す。
+        アクティブ 0 の場合は None を返す。
+    """
+    if not inp.pairs:
+        return None
+    n = len(inp.pairs)
+    has_state = np.zeros(n, dtype=bool)
+    gaps = np.zeros(n)
+    s_arr = np.zeros(n)
+    t_arr = np.zeros(n)
+    normals = np.zeros((n, 3))
+    nodes = np.zeros((n, 4), dtype=int)
+    radius_a = np.zeros(n)
+    radius_b = np.zeros(n)
+    p_n_all = np.zeros(n)
+    for i, pair in enumerate(inp.pairs):
+        if not hasattr(pair, "state"):
+            continue
+        has_state[i] = True
+        gaps[i] = pair.state.gap
+        s_arr[i] = pair.state.s
+        t_arr[i] = pair.state.t
+        normals[i] = pair.state.normal
+        nodes[i, 0] = pair.nodes_a[0]
+        nodes[i, 1] = pair.nodes_a[1]
+        nodes[i, 2] = pair.nodes_b[0]
+        nodes[i, 3] = pair.nodes_b[1]
+        radius_a[i] = pair.radius_a
+        radius_b[i] = pair.radius_b
+        p_n_all[i] = pair.state.p_n
+
+    x_pen = inp.k_pen * (-gaps)
+    h_deriv = HuberContactForceProcess._huber_deriv_batch(x_pen, inp.delta_h)
+    if inp.penalty_exponent != 1.0:
+        h_vals = HuberContactForceProcess._huber_batch(x_pen, inp.delta_h)
+        pen = h_vals / max(inp.k_pen, 1e-30)
+        safe_pen = np.maximum(pen, 0.0)
+        h_deriv = np.where(
+            safe_pen > 1e-30,
+            inp.penalty_exponent * safe_pen ** (inp.penalty_exponent - 1.0) * h_deriv,
+            0.0,
+        )
+    h_deriv[~has_state] = 0.0
+
+    active = has_state & ((h_deriv > 1e-30) | (p_n_all > 1e-30))
+    n_act = int(np.sum(active))
+    if n_act == 0:
+        return None
+
+    h_deriv_act = h_deriv[active]
+    p_n_act = p_n_all[active]
+    gaps_act = gaps[active]
+    s_act = s_arr[active]
+    t_act = t_arr[active]
+    n_act_v = normals[active]
+    nodes_act = nodes[active]
+    ra_act = radius_a[active]
+    rb_act = radius_b[active]
+
+    w_mat = h_deriv_act * inp.k_pen
+    dist = gaps_act + ra_act + rb_act
+    w_geo = np.where(dist > 1e-15, p_n_act / dist, 0.0)
+
+    # 形状関数係数（Hermite or 線形）
+    if inp.use_hermite:
+        if inp.node_counts is not None:
+            dm_A, dm_B = HuberContactForceProcess._batch_dm_coeffs(inp.node_counts, nodes_act)
+            coeffs, _, _ = HuberContactForceProcess._batch_hermite_corrected_coeffs(
+                s_act, t_act, dm_A, dm_B
+            )
+        else:
+            coeffs = HuberContactForceProcess._batch_hermite_coeffs(s_act, t_act)
+    else:
+        coeffs = np.column_stack([1.0 - s_act, s_act, -(1.0 - t_act), -t_act])
+
+    nn = n_act_v[:, :, None] * n_act_v[:, None, :]
+    I3 = np.eye(3)[None, :, :]
+    I_nn = I3 - nn
+    cc = coeffs[:, :, None] * coeffs[:, None, :]
+
+    ndpn = inp.ndof_per_node
+    gdofs = (nodes_act[:, :, None] * ndpn + np.arange(3, dtype=int)[None, None, :]).reshape(
+        n_act, 12
+    )
+
+    return {
+        "active": active,
+        "n_act": n_act,
+        "p_n_act": p_n_act,
+        "s_act": s_act,
+        "t_act": t_act,
+        "n_act_v": n_act_v,
+        "nodes_act": nodes_act,
+        "w_mat": w_mat,
+        "w_geo": w_geo,
+        "coeffs": coeffs,
+        "nn": nn,
+        "I_nn": I_nn,
+        "cc": cc,
+        "gdofs": gdofs,
+    }
+
+
+def _assemble_12x12_pair_block(
+    K_3x3_block: np.ndarray,
+    cc: np.ndarray,
+    gdofs: np.ndarray,
+    ndof_total: int,
+) -> sp.csr_matrix:
+    """ペア 3x3 ブロック × 形状係数外積 cc(4,4) → 12x12 COO アセンブリ.
+
+    K_local[n, ki*3:(ki+1)*3, kj*3:(kj+1)*3] = cc[n, ki, kj] * K_3x3_block[n]
+    """
+    n_act = K_3x3_block.shape[0]
+    K_local = np.zeros((n_act, 12, 12))
+    for ki in range(4):
+        for kj in range(4):
+            K_local[:, ki * 3 : (ki + 1) * 3, kj * 3 : (kj + 1) * 3] = (
+                cc[:, ki, kj][:, None, None] * K_3x3_block
+            )
+    row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+    col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
+    val_arr = K_local.ravel()
+    mask = np.abs(val_arr) > 1e-30
+    return sp.coo_matrix(
+        (val_arr[mask], (row_idx[mask], col_idx[mask])),
+        shape=(ndof_total, ndof_total),
+    ).tocsr()
+
+
+class KcNormalStiffnessProcess(
+    SolverProcess[KcTermAssemblyInput, KcNormalStiffnessOutput],
+):
+    """K_c 法線材料剛性項 K_mat を計算する Process (status-350 Phase C-1).
+
+    K_mat = -(∂p_n/∂u) ⊗ n̂ のペア局所組み立て（3x3 ブロック w_mat*(n⊗n)）と、
+    隣接ノード拡張 K_mat_adj (status-295、mat-only 形式) を合算する。
+    数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-kc-full-decomposition``
+    の第 1 項 ``K_mat_nn``（本 status では K_hermite_adj も暫定包含、
+    status-353 で分離）を提供する。
+
+    status-350 時点では既存 ``HuberContactForceProcess.tangent_components()``
+    から該当ブロックを移設。K_mat_ndir (status-352 本命) は未実装。
+    """
+
+    meta = ProcessMeta(
+        name="KcNormalStiffness",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_force.md",
+    )
+    uses: list[type] = []
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
+
+    def process(self, inp: KcTermAssemblyInput) -> KcNormalStiffnessOutput:
+        zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+        data = _extract_kc_active_pair_data(inp)
+        if data is None:
+            return KcNormalStiffnessOutput(K_mat=zero)
+
+        n_act = data["n_act"]
+        w_mat = data["w_mat"]
+        nn = data["nn"]
+        cc = data["cc"]
+        gdofs = data["gdofs"]
+        coeffs = data["coeffs"]
+        s_act = data["s_act"]
+        t_act = data["t_act"]
+        nodes_act = data["nodes_act"]
+
+        # K_mat ペア局所: w_mat * (n⊗n)
+        K_3x3_mat = w_mat[:, None, None] * nn
+        K_mat = _assemble_12x12_pair_block(K_3x3_mat, cc, gdofs, inp.ndof_total)
+
+        # K_mat_adj: 隣接ノードへの材料剛性拡張 (status-295, mat-only)
+        # 幾何剛性 (I-n⊗n) は隣接ノードでは s 追従により相殺されるため除外。
+        if inp.adj_node_map is not None and inp.adj_node_counts is not None:
+            active_idx = np.where(data["active"])[0]
+            pairs_active = [inp.pairs[int(idx)] for idx in active_idx]
+            elem_a_act = np.array([p.elem_a for p in pairs_active], dtype=int)
+            elem_b_act = np.array([p.elem_b for p in pairs_active], dtype=int)
+
+            c_a0 = np.maximum(inp.adj_node_counts[nodes_act[:, 0]], 1.0)
+            c_a1 = np.maximum(inp.adj_node_counts[nodes_act[:, 1]], 1.0)
+            c_b0 = np.maximum(inp.adj_node_counts[nodes_act[:, 2]], 1.0)
+            c_b1 = np.maximum(inp.adj_node_counts[nodes_act[:, 3]], 1.0)
+            dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
+            dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
+            dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
+            dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+
+            s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
+            t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
+            h10_s = s3_h - 2.0 * s2_h + s_act
+            h11_s = s3_h - s2_h
+            h10_t = t3_h - 2.0 * t2_h + t_act
+            h11_t = t3_h - t2_h
+
+            alpha_adj = np.column_stack(
+                [
+                    h10_s * dm_ext_a0,
+                    h11_s * dm_ext_a1,
+                    -h10_t * dm_ext_b0,
+                    -h11_t * dm_ext_b1,
+                ]
+            )
+
+            adj_gnodes = np.full((n_act, 4), -1, dtype=int)
+            for i in range(n_act):
+                adj_a = inp.adj_node_map.get(int(elem_a_act[i]), (-1, -1))
+                adj_b = inp.adj_node_map.get(int(elem_b_act[i]), (-1, -1))
+                adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+
+            c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
+            K_mat_adj_local = np.zeros((n_act, 12, 12))
+            for ki in range(4):
+                for aj in range(4):
+                    K_mat_adj_local[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
+                        c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
+                    )
+
+            ndpn = inp.ndof_per_node
+            adj_gdofs = np.zeros((n_act, 12), dtype=int)
+            adj_valid = np.zeros((n_act, 12), dtype=bool)
+            for aj in range(4):
+                valid = adj_gnodes[:, aj] >= 0
+                for d in range(3):
+                    adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
+                    adj_valid[:, aj * 3 + d] = valid
+
+            row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+            col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
+            val_adj = K_mat_adj_local.ravel()
+            valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
+            mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
+            if mask_adj.any():
+                K_mat_adj = sp.coo_matrix(
+                    (
+                        val_adj[mask_adj],
+                        (row_adj[mask_adj], col_adj[mask_adj]),
+                    ),
+                    shape=(inp.ndof_total, inp.ndof_total),
+                ).tocsr()
+                K_mat = K_mat + K_mat_adj
+
+        return KcNormalStiffnessOutput(K_mat=K_mat)
+
+
+class KcGeoStiffnessProcess(
+    SolverProcess[KcTermAssemblyInput, KcGeoStiffnessOutput],
+):
+    """K_c 幾何補正項 K_geo を計算する Process (status-350 Phase C-1).
+
+    K_geo = (p_n / d) * (I - n̂⊗n̂) のペア局所組み立て。数理台帳
+    ``docs/math/03_huber_contact_penalty.md#eq-kc-pair-block`` の w_geo 項。
+    ``tangent_components()`` の規約では ``K_c = K_mat - K_geo + K_st`` で
+    合成されるため、Process は絶対値の幾何剛性を返し、符号は呼び出し側が処理する。
+    """
+
+    meta = ProcessMeta(
+        name="KcGeoStiffness",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_force.md",
+    )
+    uses: list[type] = []
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
+
+    def process(self, inp: KcTermAssemblyInput) -> KcGeoStiffnessOutput:
+        zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+        data = _extract_kc_active_pair_data(inp)
+        if data is None:
+            return KcGeoStiffnessOutput(K_geo=zero)
+
+        # K_geo ペア局所: w_geo * (I - n⊗n)
+        K_3x3_geo = data["w_geo"][:, None, None] * data["I_nn"]
+        K_geo = _assemble_12x12_pair_block(K_3x3_geo, data["cc"], data["gdofs"], inp.ndof_total)
+        return KcGeoStiffnessOutput(K_geo=K_geo)
 
 
 # ── 具象 Process ──────────────────────────────────────────
@@ -1239,6 +1611,12 @@ class HuberContactForceProcess(
         status-321: K_st は ContactForceStStiffnessProcess 経由で COO 形式の
         まま返される場合がある（往復変換削減のため）。`+ - @` 等の sparse 演算は
         CSR/COO 互換で動作する。
+
+        status-350 Phase C-1: 3 項を ``KcNormalStiffnessProcess`` /
+        ``KcGeoStiffnessProcess`` / ``ContactForceStStiffnessProcess`` に
+        抽出。本メソッドは 3 Process の出力を組み立てる orchestrator に変更。
+        ``TermExpansionContract("K_c_term_expansion")`` の providers と
+        1:1 対応する。
         """
         delta_h = self._resolve_delta_h(k_pen)
         ndof = self._ndof
@@ -1284,173 +1662,44 @@ class HuberContactForceProcess(
             # status-294: frozen-m 部分解消
             _node_counts = _adj_node_counts
 
-        extracted = self._extract_pair_arrays(manager.pairs)
-        if extracted is None:
-            return zero, zero, zero
-        has_state, gaps, s_arr, t_arr, normals, nodes, radius_a, radius_b = extracted
-
-        x_pen = k_pen * (-gaps)
-        h_deriv_all = self._huber_deriv_batch(x_pen, delta_h)
-        if self._penalty_exponent != 1.0:
-            h_vals = self._huber_batch(x_pen, delta_h)
-            h_deriv_all = self._apply_power_law_deriv(h_vals, h_deriv_all, k_pen)
-        h_deriv_all[~has_state] = 0.0
-        p_n_all = np.array(
-            [manager.pairs[i].state.p_n if has_state[i] else 0.0 for i in range(len(manager.pairs))]
+        # ── K_mat (KcNormalStiffnessProcess) + K_geo (KcGeoStiffnessProcess) ──
+        term_input = KcTermAssemblyInput(
+            pairs=manager.pairs,
+            k_pen=k_pen,
+            delta_h=delta_h,
+            ndof_total=ndof,
+            ndof_per_node=self._ndof_per_node,
+            penalty_exponent=self._penalty_exponent,
+            use_hermite=_use_hermite,
+            node_counts=_node_counts,
+            adj_node_map=_adj_node_map,
+            adj_node_counts=_adj_node_counts,
         )
+        K_mat = KcNormalStiffnessProcess().process(term_input).K_mat
+        K_geo = KcGeoStiffnessProcess().process(term_input).K_geo
 
-        active = has_state & ((h_deriv_all > 1e-30) | (p_n_all > 1e-30))
-        n_act = int(np.sum(active))
-
-        K_mat = zero
-        K_geo = zero
-        K_st = zero
-
-        if n_act > 0:
-            h_deriv_act = h_deriv_all[active]
-            p_n_act = p_n_all[active]
-            gaps_act = gaps[active]
-            s_act = s_arr[active]
-            t_act = t_arr[active]
-            n_act_v = normals[active]
-            nodes_act = nodes[active]
-            ra_act = radius_a[active]
-            rb_act = radius_b[active]
-
-            w_mat = h_deriv_act * k_pen
-            dist = gaps_act + ra_act + rb_act
-            w_geo = np.where(dist > 1e-15, p_n_act / dist, 0.0)
-
-            coeffs = self._batch_shape_coeffs(
-                s_act,
-                t_act,
-                _use_hermite,
-                _node_counts,
-                nodes_act,
-            )
-
-            nn = n_act_v[:, :, None] * n_act_v[:, None, :]
-            I3 = np.eye(3)[None, :, :]
-            I_nn = I3 - nn
-
-            # K_mat 3x3: w_mat * (n⊗n)
-            K_3x3_mat = w_mat[:, None, None] * nn
-            # K_geo 3x3: w_geo * (I - n⊗n)
-            K_3x3_geo = w_geo[:, None, None] * I_nn
-
-            cc = coeffs[:, :, None] * coeffs[:, None, :]
-            ndpn = self._ndof_per_node
-
-            gdofs = np.zeros((n_act, 12), dtype=int)
-            for k in range(4):
-                for d in range(3):
-                    gdofs[:, k * 3 + d] = nodes_act[:, k] * ndpn + d
-
-            def _assemble_12x12(K_3x3_block):
-                K_local = np.zeros((n_act, 12, 12))
-                for ki in range(4):
-                    for kj in range(4):
-                        K_local[:, ki * 3 : (ki + 1) * 3, kj * 3 : (kj + 1) * 3] = (
-                            cc[:, ki, kj][:, None, None] * K_3x3_block
-                        )
-                row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
-                col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
-                val_arr = K_local.ravel()
-                mask = np.abs(val_arr) > 1e-30
-                return sp.coo_matrix(
-                    (val_arr[mask], (row_idx[mask], col_idx[mask])),
-                    shape=(ndof, ndof),
-                ).tocsr()
-
-            K_mat = _assemble_12x12(K_3x3_mat)
-            K_geo = _assemble_12x12(K_3x3_geo)
-
-            # ── K_mat_adj: 隣接ノードへの材料剛性拡張（status-295） ──
-            # 幾何剛性(I-n⊗n)は隣接ノードではs追従により相殺されるため除外。
-            if _adj_node_map is not None and _adj_node_counts is not None:
-                active_idx = np.where(active)[0]
-                elem_a_act = np.array([manager.pairs[int(idx)].elem_a for idx in active_idx])
-                elem_b_act = np.array([manager.pairs[int(idx)].elem_b for idx in active_idx])
-
-                c_a0 = np.maximum(_adj_node_counts[nodes_act[:, 0]], 1.0)
-                c_a1 = np.maximum(_adj_node_counts[nodes_act[:, 1]], 1.0)
-                c_b0 = np.maximum(_adj_node_counts[nodes_act[:, 2]], 1.0)
-                c_b1 = np.maximum(_adj_node_counts[nodes_act[:, 3]], 1.0)
-                dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
-                dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
-                dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
-                dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
-
-                s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
-                t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
-                h10_s = s3_h - 2.0 * s2_h + s_act
-                h11_s = s3_h - s2_h
-                h10_t = t3_h - 2.0 * t2_h + t_act
-                h11_t = t3_h - t2_h
-
-                alpha_adj = np.column_stack(
-                    [
-                        h10_s * dm_ext_a0,
-                        h11_s * dm_ext_a1,
-                        -h10_t * dm_ext_b0,
-                        -h11_t * dm_ext_b1,
-                    ]
-                )
-
-                adj_gnodes = np.full((n_act, 4), -1, dtype=int)
-                for i in range(n_act):
-                    adj_a = _adj_node_map.get(int(elem_a_act[i]), (-1, -1))
-                    adj_b = _adj_node_map.get(int(elem_b_act[i]), (-1, -1))
-                    adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
-
-                c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
-                K_mat_adj_local = np.zeros((n_act, 12, 12))
-                for ki in range(4):
-                    for aj in range(4):
-                        K_mat_adj_local[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
-                            c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
-                        )
-
-                adj_gdofs = np.zeros((n_act, 12), dtype=int)
-                adj_valid = np.zeros((n_act, 12), dtype=bool)
-                for aj in range(4):
-                    valid = adj_gnodes[:, aj] >= 0
-                    for d in range(3):
-                        adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
-                        adj_valid[:, aj * 3 + d] = valid
-
-                row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
-                col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
-                val_adj = K_mat_adj_local.ravel()
-                valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
-                mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
-                if mask_adj.any():
-                    K_mat_adj = sp.coo_matrix(
-                        (
-                            val_adj[mask_adj],
-                            (row_adj[mask_adj], col_adj[mask_adj]),
-                        ),
-                        shape=(ndof, ndof),
-                    ).tocsr()
-                    K_mat = K_mat + K_mat_adj
-
+        # ── K_st (ContactForceStStiffnessProcess) ──
+        K_st: sp.csr_matrix | sp.coo_matrix = zero
         if _use_st and node_coords is not None:
-            b1 = ContactForceStStiffnessProcess()
-            K_st = b1.process(
-                ContactForceStStiffnessInput(
-                    pairs=manager.pairs,
-                    node_coords=node_coords,
-                    k_pen=k_pen,
-                    delta_h=delta_h,
-                    ndof_total=ndof,
-                    ndof_per_node=self._ndof_per_node,
-                    use_hermite=_use_hermite,
-                    node_tangents=_node_tangents,
-                    node_counts=_node_counts,
-                    adj_node_map=_adj_node_map,
-                    penalty_exponent=self._penalty_exponent,
+            K_st = (
+                ContactForceStStiffnessProcess()
+                .process(
+                    ContactForceStStiffnessInput(
+                        pairs=manager.pairs,
+                        node_coords=node_coords,
+                        k_pen=k_pen,
+                        delta_h=delta_h,
+                        ndof_total=ndof,
+                        ndof_per_node=self._ndof_per_node,
+                        use_hermite=_use_hermite,
+                        node_tangents=_node_tangents,
+                        node_counts=_node_counts,
+                        adj_node_map=_adj_node_map,
+                        penalty_exponent=self._penalty_exponent,
+                    )
                 )
-            ).K_st
+                .K_st
+            )
 
         return K_mat, K_geo, K_st
 
