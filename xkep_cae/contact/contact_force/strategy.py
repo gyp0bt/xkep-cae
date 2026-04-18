@@ -28,22 +28,25 @@ from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
 from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
 
-# ── K_c 項展開契約（status-350 Phase C-1） ──────────────────
-# 現行実装の既存 3 項 (K_mat, K_geo, K_st) に対応。数理台帳の 6 項完全分解
-# (K_mat_nn / K_mat_ndir / K_closest / K_hermite_adj / K_geo / K_st) のうち、
-# K_mat_ndir (status-352 本命) / K_closest (status-351) / K_hermite_adj (status-353)
-# は本 status では未抽出。K_mat は現状 K_mat_nn + K_hermite_adj (隣接拡張) を
-# 束ねた形で KcNormalStiffnessProcess が提供する。
+# ── K_c 項展開契約（status-350 Phase C-1 → status-351 Phase C-2） ─────
+# 数理台帳 6 項完全分解 (K_mat_nn / K_mat_ndir / K_closest / K_hermite_adj /
+# K_geo / K_st) のうち、status-351 で 5 項（K_mat_ndir 以外）を独立 Process
+# として確立。K_mat_ndir は status-352 本命修正で追加予定。
 #
 # term_names/providers の長さは等しく、`TermExpansionContract.__post_init__` で
-# 同一性が検査される。status-353 で 6 項完全分解に置換される。
+# 同一性が検査される。orchestrator `tangent_components()` は 5 Process の出力を
+# 組み立て、後方互換のため 3-tuple (K_mat, K_geo, K_st) を返す:
+#   K_mat = K_mat_nn + K_hermite_adj (KcNormal + KcHermiteNonlocal)
+#   K_st  = K_closest + K_st         (KcClosest + ContactForceSt)
 _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     name="K_c_term_expansion",
     equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition",
     total_name="K_c",
-    term_names=("K_mat", "K_geo", "K_st"),
+    term_names=("K_mat_nn", "K_closest", "K_hermite_adj", "K_geo", "K_st"),
     providers=(
         "KcNormalStiffnessProcess",
+        "KcClosestPointStiffnessProcess",
+        "KcHermiteNonlocalStiffnessProcess",
         "KcGeoStiffnessProcess",
         "ContactForceStStiffnessProcess",
     ),
@@ -51,8 +54,9 @@ _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     tol_rel=5e-3,
     severity="nightly",
     description=(
-        "status-350 Phase C-1: tangent_components() から 3 項を抽出。"
-        "status-351/352/353 で K_closest / K_mat_ndir / K_hermite_adj を追加予定。"
+        "status-351 Phase C-2: tangent_components() から 5 項を抽出。"
+        "K_mat_nn / K_closest / K_hermite_adj / K_geo / K_st が独立 Process。"
+        "K_mat_ndir は status-352 本命修正で追加予定。"
     ),
 )
 
@@ -299,27 +303,63 @@ class ContactForceStStiffnessProcess(
     def process(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
         return self._process_batch(inp)
 
+    @classmethod
+    def _assemble_term_coo(
+        cls,
+        inp: ContactForceStStiffnessInput,
+        *,
+        term: str,
+    ) -> sp.csr_matrix | sp.coo_matrix:
+        """K_st 残差項 / K_closest 項を共通セットアップから組み立てる共通ヘルパ.
+
+        status-351 Phase C-2: ``ContactForceStStiffnessProcess`` と
+        ``KcClosestPointStiffnessProcess`` が同じ StJacobian・∂n/∂s・∂p_n/∂s
+        セットアップから異なる項を組み立てる。両 Process は本メソッドを呼び出して
+        `term="residual"` / `term="closest"` を指定する。
+
+        Args:
+            inp: ペア・座標・k_pen 等の入力（既存 ContactForceStStiffnessInput）
+            term: "residual"（K_st の形状関数・法線追従項）または
+                  "closest"（K_closest の dpn 追従項）
+
+        Returns:
+            対象項の COO/CSR 行列（アクティブペアなしの場合は空 CSR）。
+        """
+        return cls._process_batch_term(inp, term=term)
+
     def _process_batch(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
-        """K_st のバッチ計算（status-309: ベクトル化高速化）.
+        """K_st 残差項のバッチ計算（status-351 Phase C-2 以降は残差のみ）.
 
-        全アクティブペアをNumPy配列に抽出し、StJacobian+K_stを一括計算。
+        status-309 で全アクティブペアを NumPy 配列に抽出、StJacobian+K_st を
+        一括計算するバッチ経路を導入。status-321/322 で更に高速化。
 
-        status-321: 抽出ループを 2 段階圧縮:
-        1. state を持つペアのみ list comprehension で先に絞る
-        2. p_n > 0 で active filter
-        3. active ペアのみ NumPy 配列に bulk 抽出
-        これにより total ペア数ではなく active ペア数に比例した forループになる。
+        status-351 Phase C-2: 本 Process は K_st 残差項 ``-outer(p_n*(dc_ds*n
+        + coeffs*dn_ds), ds_du) + ...`` のみを返す。K_closest 項
+        ``-outer(dpn_ds*g_shape, ds_du) + ...`` は
+        ``KcClosestPointStiffnessProcess`` が ``_assemble_term_coo(term="closest")``
+        経由で独立に組み立てる。
+        """
+        K_st = self._process_batch_term(inp, term="residual")
+        return ContactForceStStiffnessOutput(K_st=K_st)
 
-        status-322: 抽出ブロックを friction 側と同様の pre-bound states パターンに
-        統一。`state_pairs = [(i, p) ...]` の tuple 二重アクセスを排除し、`hasattr`
-        の重複チェックも省く。加えて P_perp の (N,3,3) 中間配列・g_shape/df の
-        for-k ループ・gdofs の二重ループをブロードキャスト一発に置き換え。
+    @classmethod
+    def _process_batch_term(
+        cls,
+        inp: ContactForceStStiffnessInput,
+        *,
+        term: str,
+    ) -> sp.csr_matrix | sp.coo_matrix:
+        """K_st 残差項または K_closest 項のバッチ計算.
+
+        status-351 Phase C-2 で ``_process_batch`` から項選択ヘルパへ抽出。
+        共通セットアップ（StJacobian, ∂n/∂s, ∂p_n/∂s）を 1 度実行し、
+        ``term`` 引数で K_st 残差 / K_closest のどちらを返すかを切り替える。
         """
         zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
 
         # ── ペアデータ抽出（status-322: pre-bound states パターン） ──
         if not inp.pairs:
-            return ContactForceStStiffnessOutput(K_st=zero)
+            return zero
 
         # Distance culling threshold (status-324):
         # Huber derivative = 0 when gap > delta_h / k_pen → K_st 寄与ゼロ。
@@ -332,7 +372,7 @@ class ContactForceStStiffnessProcess(
         # Step 1: state + gap < _gap_cull pre-filter（status-324 distance culling）
         has_state_pairs = [p for p in inp.pairs if hasattr(p, "state") and p.state.gap < _gap_cull]
         if not has_state_pairs:
-            return ContactForceStStiffnessOutput(K_st=zero)
+            return zero
 
         # Step 2: p_n > 0 で active filter（state を一度だけ bind）
         states_all = [p.state for p in has_state_pairs]
@@ -344,7 +384,7 @@ class ContactForceStStiffnessProcess(
         active_local = p_n_state > 1e-30
         n_act = int(np.sum(active_local))
         if n_act == 0:
-            return ContactForceStStiffnessOutput(K_st=zero)
+            return zero
 
         # Step 3: active ペア + state を pre-bind
         act_idx = np.where(active_local)[0]
@@ -469,7 +509,7 @@ class ContactForceStStiffnessProcess(
             n_act = int(np.sum(keep))
 
         if n_act == 0:
-            return ContactForceStStiffnessOutput(K_st=zero)
+            return zero
 
         # ── 形状関数係数・微分（バッチ） ──
         if inp.use_hermite and inp.node_counts is not None:
@@ -535,23 +575,37 @@ class ContactForceStStiffnessProcess(
         g_shape_3d = coeffs[:, :, None] * n_act_v[:, None, :]  # (N, 4, 3)
         g_shape = g_shape_3d.reshape(n_act, 12)
 
-        # ── df_ds, df_dt (N, 12) ──
-        # df_ds[:, k, d] = dpn_ds * g_shape + p_n * (dc_ds[:,k] * n[:,d] + coeffs[:,k] * dn_ds[:,d])
-        # status-322: for-k ループを broadcasting に置換
-        df_ds_inner = p_n_act[:, None, None] * (
+        # ── df_ds, df_dt を status-351 Phase C-2 で 2 成分に分解 ──
+        # ∂f_c/∂(s,t) の完全微分:
+        #   df_ds = dpn_ds * g_shape                   ... (K_closest 寄与)
+        #         + p_n * (dc_ds * n + coeffs * dn_ds) ... (K_st 残差寄与)
+        # 前者は "(s,t) 摂動に伴う p_n 追従" = K_closest 項、
+        # 後者は "∂(c_k * n̂)/∂(s,t) に伴う形状関数・法線追従" = K_st 残差項。
+        # 本 Process は K_st 残差項のみを返す。K_closest は
+        # ``KcClosestPointStiffnessProcess`` が同じ分解式から算出する。
+        # status-322: for-k ループを broadcasting に置換。
+        df_ds_rest_block = p_n_act[:, None, None] * (
             dc_ds[:, :, None] * n_act_v[:, None, :] + coeffs[:, :, None] * dn_ds[:, None, :]
         )  # (N, 4, 3)
-        df_dt_inner = p_n_act[:, None, None] * (
+        df_dt_rest_block = p_n_act[:, None, None] * (
             dc_dt[:, :, None] * n_act_v[:, None, :] + coeffs[:, :, None] * dn_dt[:, None, :]
         )
-        df_ds = dpn_ds[:, None] * g_shape + df_ds_inner.reshape(n_act, 12)
-        df_dt = dpn_dt[:, None] * g_shape + df_dt_inner.reshape(n_act, 12)
+        df_ds_rest = df_ds_rest_block.reshape(n_act, 12)
+        df_dt_rest = df_dt_rest_block.reshape(n_act, 12)
 
-        # ── K_st_local = -(outer(df_ds, ds_du) + outer(df_dt, dt_du)): (N, 12, 12) ──
-        # status-321: einsum → 直接ブロードキャスト（外積は broadcasting の方が
-        # 1.5〜3x 高速。einsum の path optimization は単純外積では overkill）。
-        K_st_local = -(
-            df_ds[:, :, None] * ds_du[:, None, :] + df_dt[:, :, None] * dt_du[:, None, :]
+        # ── 項別 K_local = -(outer(df_ds_*, ds_du) + outer(df_dt_*, dt_du)) ──
+        # status-321: einsum → 直接ブロードキャスト（外積は broadcasting の方が高速）。
+        if term == "closest":
+            df_ds_term = dpn_ds[:, None] * g_shape
+            df_dt_term = dpn_dt[:, None] * g_shape
+        elif term == "residual":
+            df_ds_term = df_ds_rest
+            df_dt_term = df_dt_rest
+        else:
+            raise ValueError(f"Unknown term: {term!r}; expected 'residual' or 'closest'")
+
+        K_local = -(
+            df_ds_term[:, :, None] * ds_du[:, None, :] + df_dt_term[:, :, None] * dt_du[:, None, :]
         )
 
         # ── DOF インデックス (N, 12) ──
@@ -567,17 +621,15 @@ class ContactForceStStiffnessProcess(
         # 集約され、無視できる。マスク作成 + 索引コピーが per-call 1〜2ms 程度。
         row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
         col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
-        val_arr = K_st_local.ravel()
+        val_arr = K_local.ravel()
 
         if len(val_arr) == 0:
-            return ContactForceStStiffnessOutput(K_st=zero)
+            return zero
         # status-321: tocsr() を skip し COO のまま返す（呼び出し側で 1 度だけ
         # 集約 CSR 化することで往復変換 ~11ms/call を削減）
-        return ContactForceStStiffnessOutput(
-            K_st=sp.coo_matrix(
-                (val_arr, (row_idx, col_idx)),
-                shape=(inp.ndof_total, inp.ndof_total),
-            )
+        return sp.coo_matrix(
+            (val_arr, (row_idx, col_idx)),
+            shape=(inp.ndof_total, inp.ndof_total),
         )
 
 
@@ -621,9 +673,24 @@ class KcTermAssemblyInput:
 
 @dataclass(frozen=True)
 class KcNormalStiffnessOutput:
-    """KcNormalStiffnessProcess の出力."""
+    """KcNormalStiffnessProcess の出力.
+
+    status-351 Phase C-2 以降、``K_mat`` は **K_mat_nn のみ** を表す
+    （K_hermite_adj は ``KcHermiteNonlocalStiffnessOutput.K_hermite_adj`` へ分離）。
+    """
 
     K_mat: sp.csr_matrix
+
+
+@dataclass(frozen=True)
+class KcHermiteNonlocalStiffnessOutput:
+    """KcHermiteNonlocalStiffnessProcess の出力 (status-351 Phase C-2).
+
+    隣接ノードの Hermite 接線経由で伝搬する ∂p_A/∂u_adj 寄与を持つ
+    材料剛性拡張（status-295 の mat-only K_c_adj に相当）。
+    """
+
+    K_hermite_adj: sp.csr_matrix
 
 
 @dataclass(frozen=True)
@@ -631,6 +698,18 @@ class KcGeoStiffnessOutput:
     """KcGeoStiffnessProcess の出力."""
 
     K_geo: sp.csr_matrix
+
+
+@dataclass(frozen=True)
+class KcClosestPointStiffnessOutput:
+    """KcClosestPointStiffnessProcess の出力 (status-351 Phase C-2).
+
+    最近接点 $(s,t)$ の摂動に伴う $\\partial p_n/\\partial \\boldsymbol{u}$
+    追従寄与 ``-(dpn_ds * g_shape) \\otimes ds_du - (dpn_dt * g_shape) \\otimes dt_du``
+    を担う。
+    """
+
+    K_closest: sp.csr_matrix | sp.coo_matrix
 
 
 def _extract_kc_active_pair_data(inp: KcTermAssemblyInput) -> dict | None:
@@ -774,22 +853,24 @@ def _assemble_12x12_pair_block(
 class KcNormalStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcNormalStiffnessOutput],
 ):
-    """K_c 法線材料剛性項 K_mat を計算する Process (status-350 Phase C-1).
+    """K_c 法線材料剛性項 K_mat_nn を計算する Process (status-350 / status-351).
 
-    K_mat = -(∂p_n/∂u) ⊗ n̂ のペア局所組み立て（3x3 ブロック w_mat*(n⊗n)）と、
-    隣接ノード拡張 K_mat_adj (status-295、mat-only 形式) を合算する。
     数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-kc-full-decomposition``
-    の第 1 項 ``K_mat_nn``（本 status では K_hermite_adj も暫定包含、
-    status-353 で分離）を提供する。
+    の第 1 項 $\\boldsymbol{K}_{\\mathrm{mat,nn}}
+    = -\\frac{\\partial p_n}{\\partial \\boldsymbol{u}}\\otimes\\hat{\\boldsymbol{n}}$
+    （$(s,t)$ を凍結したペア局所 $3\\times 3$ ブロック $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$）
+    を提供する。
 
-    status-350 時点では既存 ``HuberContactForceProcess.tangent_components()``
-    から該当ブロックを移設。K_mat_ndir (status-352 本命) は未実装。
+    status-351 Phase C-2 で隣接ノード拡張 (K_hermite_adj) を
+    ``KcHermiteNonlocalStiffnessProcess`` へ分離。本 Process はペア局所の
+    12x12 ブロックのみを扱い、非局所ノードには寄与しない。
+    K_mat_ndir (status-352 本命) は未実装。
     """
 
     meta = ProcessMeta(
         name="KcNormalStiffness",
         module="solve",
-        version="1.0.0",
+        version="1.1.0",
         document_path="docs/contact_force.md",
     )
     uses: list[type] = []
@@ -801,92 +882,122 @@ class KcNormalStiffnessProcess(
         if data is None:
             return KcNormalStiffnessOutput(K_mat=zero)
 
+        # K_mat_nn ペア局所: w_mat * (n⊗n) * c_i c_j
+        K_3x3_mat = data["w_mat"][:, None, None] * data["nn"]
+        K_mat = _assemble_12x12_pair_block(K_3x3_mat, data["cc"], data["gdofs"], inp.ndof_total)
+        return KcNormalStiffnessOutput(K_mat=K_mat)
+
+
+class KcHermiteNonlocalStiffnessProcess(
+    SolverProcess[KcTermAssemblyInput, KcHermiteNonlocalStiffnessOutput],
+):
+    """K_c Hermite 非局所材料剛性 K_hermite_adj を計算する Process (status-351).
+
+    Hermite 補間の接線ベクトル $\\boldsymbol{m}_0,\\boldsymbol{m}_1$ が隣接ノード
+    座標の有限差分で構成されるため、$\\boldsymbol{p}_A(s)$ は実質的に隣接ノード
+    座標にも依存する（status-271〜274 / status-294 frozen-m 部分解消）。
+    本項は材料剛性 $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$
+    を隣接ノード DOF 列に拡張した mat-only 組み立て（status-295 で正当化）。
+
+    数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-hermite-pA`` 参照。
+    """
+
+    meta = ProcessMeta(
+        name="KcHermiteNonlocalStiffness",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_force.md",
+    )
+    uses: list[type] = []
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
+
+    def process(self, inp: KcTermAssemblyInput) -> KcHermiteNonlocalStiffnessOutput:
+        zero = sp.csr_matrix((inp.ndof_total, inp.ndof_total))
+        if inp.adj_node_map is None or inp.adj_node_counts is None:
+            return KcHermiteNonlocalStiffnessOutput(K_hermite_adj=zero)
+        data = _extract_kc_active_pair_data(inp)
+        if data is None:
+            return KcHermiteNonlocalStiffnessOutput(K_hermite_adj=zero)
+
         n_act = data["n_act"]
         w_mat = data["w_mat"]
         nn = data["nn"]
-        cc = data["cc"]
         gdofs = data["gdofs"]
         coeffs = data["coeffs"]
         s_act = data["s_act"]
         t_act = data["t_act"]
         nodes_act = data["nodes_act"]
 
-        # K_mat ペア局所: w_mat * (n⊗n)
         K_3x3_mat = w_mat[:, None, None] * nn
-        K_mat = _assemble_12x12_pair_block(K_3x3_mat, cc, gdofs, inp.ndof_total)
 
-        # K_mat_adj: 隣接ノードへの材料剛性拡張 (status-295, mat-only)
-        # 幾何剛性 (I-n⊗n) は隣接ノードでは s 追従により相殺されるため除外。
-        if inp.adj_node_map is not None and inp.adj_node_counts is not None:
-            active_idx = np.where(data["active"])[0]
-            pairs_active = [inp.pairs[int(idx)] for idx in active_idx]
-            elem_a_act = np.array([p.elem_a for p in pairs_active], dtype=int)
-            elem_b_act = np.array([p.elem_b for p in pairs_active], dtype=int)
+        active_idx = np.where(data["active"])[0]
+        pairs_active = [inp.pairs[int(idx)] for idx in active_idx]
+        elem_a_act = np.array([p.elem_a for p in pairs_active], dtype=int)
+        elem_b_act = np.array([p.elem_b for p in pairs_active], dtype=int)
 
-            c_a0 = np.maximum(inp.adj_node_counts[nodes_act[:, 0]], 1.0)
-            c_a1 = np.maximum(inp.adj_node_counts[nodes_act[:, 1]], 1.0)
-            c_b0 = np.maximum(inp.adj_node_counts[nodes_act[:, 2]], 1.0)
-            c_b1 = np.maximum(inp.adj_node_counts[nodes_act[:, 3]], 1.0)
-            dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
-            dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
-            dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
-            dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+        c_a0 = np.maximum(inp.adj_node_counts[nodes_act[:, 0]], 1.0)
+        c_a1 = np.maximum(inp.adj_node_counts[nodes_act[:, 1]], 1.0)
+        c_b0 = np.maximum(inp.adj_node_counts[nodes_act[:, 2]], 1.0)
+        c_b1 = np.maximum(inp.adj_node_counts[nodes_act[:, 3]], 1.0)
+        dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
+        dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
+        dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
+        dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
 
-            s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
-            t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
-            h10_s = s3_h - 2.0 * s2_h + s_act
-            h11_s = s3_h - s2_h
-            h10_t = t3_h - 2.0 * t2_h + t_act
-            h11_t = t3_h - t2_h
+        s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
+        t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
+        h10_s = s3_h - 2.0 * s2_h + s_act
+        h11_s = s3_h - s2_h
+        h10_t = t3_h - 2.0 * t2_h + t_act
+        h11_t = t3_h - t2_h
 
-            alpha_adj = np.column_stack(
-                [
-                    h10_s * dm_ext_a0,
-                    h11_s * dm_ext_a1,
-                    -h10_t * dm_ext_b0,
-                    -h11_t * dm_ext_b1,
-                ]
-            )
+        alpha_adj = np.column_stack(
+            [
+                h10_s * dm_ext_a0,
+                h11_s * dm_ext_a1,
+                -h10_t * dm_ext_b0,
+                -h11_t * dm_ext_b1,
+            ]
+        )
 
-            adj_gnodes = np.full((n_act, 4), -1, dtype=int)
-            for i in range(n_act):
-                adj_a = inp.adj_node_map.get(int(elem_a_act[i]), (-1, -1))
-                adj_b = inp.adj_node_map.get(int(elem_b_act[i]), (-1, -1))
-                adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
+        adj_gnodes = np.full((n_act, 4), -1, dtype=int)
+        for i in range(n_act):
+            adj_a = inp.adj_node_map.get(int(elem_a_act[i]), (-1, -1))
+            adj_b = inp.adj_node_map.get(int(elem_b_act[i]), (-1, -1))
+            adj_gnodes[i] = [adj_a[0], adj_a[1], adj_b[0], adj_b[1]]
 
-            c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
-            K_mat_adj_local = np.zeros((n_act, 12, 12))
-            for ki in range(4):
-                for aj in range(4):
-                    K_mat_adj_local[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
-                        c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
-                    )
-
-            ndpn = inp.ndof_per_node
-            adj_gdofs = np.zeros((n_act, 12), dtype=int)
-            adj_valid = np.zeros((n_act, 12), dtype=bool)
+        c_alpha = coeffs[:, :, None] * alpha_adj[:, None, :]
+        K_mat_adj_local = np.zeros((n_act, 12, 12))
+        for ki in range(4):
             for aj in range(4):
-                valid = adj_gnodes[:, aj] >= 0
-                for d in range(3):
-                    adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
-                    adj_valid[:, aj * 3 + d] = valid
+                K_mat_adj_local[:, ki * 3 : (ki + 1) * 3, aj * 3 : (aj + 1) * 3] = (
+                    c_alpha[:, ki, aj][:, None, None] * K_3x3_mat
+                )
 
-            row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
-            col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
-            val_adj = K_mat_adj_local.ravel()
-            valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
-            mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
-            if mask_adj.any():
-                K_mat_adj = sp.coo_matrix(
-                    (
-                        val_adj[mask_adj],
-                        (row_adj[mask_adj], col_adj[mask_adj]),
-                    ),
-                    shape=(inp.ndof_total, inp.ndof_total),
-                ).tocsr()
-                K_mat = K_mat + K_mat_adj
+        ndpn = inp.ndof_per_node
+        adj_gdofs = np.zeros((n_act, 12), dtype=int)
+        adj_valid = np.zeros((n_act, 12), dtype=bool)
+        for aj in range(4):
+            valid = adj_gnodes[:, aj] >= 0
+            for d in range(3):
+                adj_gdofs[:, aj * 3 + d] = np.where(valid, adj_gnodes[:, aj] * ndpn + d, 0)
+                adj_valid[:, aj * 3 + d] = valid
 
-        return KcNormalStiffnessOutput(K_mat=K_mat)
+        row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+        col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
+        val_adj = K_mat_adj_local.ravel()
+        valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
+        mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
+        if not mask_adj.any():
+            return KcHermiteNonlocalStiffnessOutput(K_hermite_adj=zero)
+        K_hermite_adj = sp.coo_matrix(
+            (
+                val_adj[mask_adj],
+                (row_adj[mask_adj], col_adj[mask_adj]),
+            ),
+            shape=(inp.ndof_total, inp.ndof_total),
+        ).tocsr()
+        return KcHermiteNonlocalStiffnessOutput(K_hermite_adj=K_hermite_adj)
 
 
 class KcGeoStiffnessProcess(
@@ -919,6 +1030,41 @@ class KcGeoStiffnessProcess(
         K_3x3_geo = data["w_geo"][:, None, None] * data["I_nn"]
         K_geo = _assemble_12x12_pair_block(K_3x3_geo, data["cc"], data["gdofs"], inp.ndof_total)
         return KcGeoStiffnessOutput(K_geo=K_geo)
+
+
+class KcClosestPointStiffnessProcess(
+    SolverProcess[ContactForceStStiffnessInput, KcClosestPointStiffnessOutput],
+):
+    """K_c 最近接点追従項 K_closest を計算する Process (status-351 Phase C-2).
+
+    数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-kc-full-decomposition``
+    の項 $\\boldsymbol{K}_{\\mathrm{closest}}
+    = -\\,(\\partial p_n/\\partial(s,t))\\;(\\boldsymbol{c}\\otimes\\hat{\\boldsymbol{n}})
+    \\,\\partial(s,t)/\\partial\\boldsymbol{u}$ を担う。現行の K_st 全体のうち
+    "(s,t) 摂動に伴う p_n 追従" 成分を分離したもので、残差
+    $-\\,p_n\\,(\\partial \\boldsymbol{c}/\\partial(s,t))\\cdot\\hat{\\boldsymbol{n}}
+    -\\,p_n\\,\\boldsymbol{c}\\cdot(\\partial\\hat{\\boldsymbol{n}}/\\partial(s,t))$
+    は ``ContactForceStStiffnessProcess`` が K_st として返す。
+
+    status-351 Phase C-2: ``ContactForceStStiffnessProcess._assemble_term_coo``
+    の共通セットアップを再利用（StJacobian / ∂n/∂s / ∂p_n/∂s を 2 度計算する
+    ことを避けるため、共通 classmethod を呼び出す）。
+    """
+
+    meta = ProcessMeta(
+        name="KcClosestPointStiffness",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/contact_force.md",
+    )
+    # uses: ContactForceStStiffnessProcess._assemble_term_coo 経由で共通セットアップを
+    # 再利用する（status-351 Phase C-2 の設計。重計算の 2 度走りを避ける）。
+    uses = [ComputeStJacobianProcess, ContactForceStStiffnessProcess]
+    contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
+
+    def process(self, inp: ContactForceStStiffnessInput) -> KcClosestPointStiffnessOutput:
+        K_closest = ContactForceStStiffnessProcess._assemble_term_coo(inp, term="closest")
+        return KcClosestPointStiffnessOutput(K_closest=K_closest)
 
 
 # ── 具象 Process ──────────────────────────────────────────
@@ -1613,10 +1759,15 @@ class HuberContactForceProcess(
         CSR/COO 互換で動作する。
 
         status-350 Phase C-1: 3 項を ``KcNormalStiffnessProcess`` /
-        ``KcGeoStiffnessProcess`` / ``ContactForceStStiffnessProcess`` に
-        抽出。本メソッドは 3 Process の出力を組み立てる orchestrator に変更。
-        ``TermExpansionContract("K_c_term_expansion")`` の providers と
-        1:1 対応する。
+        ``KcGeoStiffnessProcess`` / ``ContactForceStStiffnessProcess`` に抽出。
+
+        status-351 Phase C-2: 更に ``KcHermiteNonlocalStiffnessProcess`` /
+        ``KcClosestPointStiffnessProcess`` を分離し 5 項構成へ。本メソッドは
+        後方互換のため 3-tuple を保つが、内部では:
+          K_mat = K_mat_nn + K_hermite_adj  (KcNormal + KcHermiteNonlocal)
+          K_st  = K_closest + K_st_residual  (KcClosest + ContactForceSt)
+        として 5 Process の出力を加算する。``TermExpansionContract
+        ("K_c_term_expansion")`` の 5 providers と 1:1 対応する。
         """
         delta_h = self._resolve_delta_h(k_pen)
         ndof = self._ndof
@@ -1662,7 +1813,7 @@ class HuberContactForceProcess(
             # status-294: frozen-m 部分解消
             _node_counts = _adj_node_counts
 
-        # ── K_mat (KcNormalStiffnessProcess) + K_geo (KcGeoStiffnessProcess) ──
+        # ── K_mat_nn + K_hermite_adj + K_geo (KcTermAssemblyInput 3 Process) ──
         term_input = KcTermAssemblyInput(
             pairs=manager.pairs,
             k_pen=k_pen,
@@ -1675,31 +1826,32 @@ class HuberContactForceProcess(
             adj_node_map=_adj_node_map,
             adj_node_counts=_adj_node_counts,
         )
-        K_mat = KcNormalStiffnessProcess().process(term_input).K_mat
+        K_mat_nn = KcNormalStiffnessProcess().process(term_input).K_mat
+        K_hermite_adj = KcHermiteNonlocalStiffnessProcess().process(term_input).K_hermite_adj
         K_geo = KcGeoStiffnessProcess().process(term_input).K_geo
+        # 後方互換: 呼び出し側は K_mat = K_mat_nn + K_hermite_adj を期待
+        K_mat = K_mat_nn + K_hermite_adj
 
-        # ── K_st (ContactForceStStiffnessProcess) ──
+        # ── K_closest + K_st 残差 (KcClosestPoint + ContactForceSt) ──
         K_st: sp.csr_matrix | sp.coo_matrix = zero
         if _use_st and node_coords is not None:
-            K_st = (
-                ContactForceStStiffnessProcess()
-                .process(
-                    ContactForceStStiffnessInput(
-                        pairs=manager.pairs,
-                        node_coords=node_coords,
-                        k_pen=k_pen,
-                        delta_h=delta_h,
-                        ndof_total=ndof,
-                        ndof_per_node=self._ndof_per_node,
-                        use_hermite=_use_hermite,
-                        node_tangents=_node_tangents,
-                        node_counts=_node_counts,
-                        adj_node_map=_adj_node_map,
-                        penalty_exponent=self._penalty_exponent,
-                    )
-                )
-                .K_st
+            st_input = ContactForceStStiffnessInput(
+                pairs=manager.pairs,
+                node_coords=node_coords,
+                k_pen=k_pen,
+                delta_h=delta_h,
+                ndof_total=ndof,
+                ndof_per_node=self._ndof_per_node,
+                use_hermite=_use_hermite,
+                node_tangents=_node_tangents,
+                node_counts=_node_counts,
+                adj_node_map=_adj_node_map,
+                penalty_exponent=self._penalty_exponent,
             )
+            K_closest = KcClosestPointStiffnessProcess().process(st_input).K_closest
+            K_st_residual = ContactForceStStiffnessProcess().process(st_input).K_st
+            # 後方互換: 呼び出し側は K_st = K_closest + K_st_residual を期待
+            K_st = K_closest + K_st_residual
 
         return K_mat, K_geo, K_st
 

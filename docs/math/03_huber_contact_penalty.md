@@ -181,12 +181,12 @@ $$
 
 | `term_name` | 数式 | 実装 Process（Phase C で抽出予定） | 状態 |
 |---|---|---|---|
-| `K_mat_nn` | $-\,\frac{\partial p_n}{\partial \boldsymbol{u}}\otimes\hat{\boldsymbol{n}}$ | `KcNormalStiffnessProcess` | ✅ status-350 で抽出（K_hermite_adj も暫定包含、status-353 で分離予定） |
+| `K_mat_nn` | $-\,\frac{\partial p_n}{\partial \boldsymbol{u}}\otimes\hat{\boldsymbol{n}}$ | `KcNormalStiffnessProcess` | ✅ status-350 で抽出、status-351 で K_hermite_adj 分離後はペア局所のみ |
 | `K_mat_ndir` | $-\,p_n\,\frac{\partial \hat{\boldsymbol{n}}}{\partial \boldsymbol{u}}$ | **`KcNormalDirectionStiffnessProcess`** | **未実装。status-352 本命修正**（[#sec-ndir](#sec-ndir)） |
-| `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等 | `KcClosestPointStiffnessProcess` | status-351 で分離 |
-| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$ | `KcHermiteNonlocalStiffnessProcess` | status-353 で抽出（status-271〜274 で C 実装済、status-350 時点では `KcNormalStiffnessProcess` に暫定包含） |
+| `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等 | `KcClosestPointStiffnessProcess` | ✅ status-351 で分離（K_st 残差から ``dpn_ds * g_shape`` 項を抽出） |
+| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$ | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351 で KcNormalStiffnessProcess から分離（status-271〜274/295 の mat-only 形式） |
 | `K_geo` | $-\,(p_n/d)\,\boldsymbol{P}_\perp \cdot c_i c_j$ | `KcGeoStiffnessProcess` | ✅ status-350 で抽出 |
-| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか | `ContactForceStStiffnessProcess`（status-351 で `KcStStiffnessProcess` へ rename 予定） | ✅ status-350 で `_K_C_TERM_EXPANSION_CONTRACT` 宣言済 |
+| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか | `ContactForceStStiffnessProcess`（K_closest 分離後は残差項のみ） | ✅ status-350/351 で contract 宣言、K_closest 分離済み |
 
 → 契約: `TermExpansionContract(name="K_c_term_expansion", total_name="K_c", term_names=("K_mat_nn","K_mat_ndir","K_closest","K_hermite_adj","K_geo","K_st"), providers=(...), combinator="add_sub", equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition")`
 

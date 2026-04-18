@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+14 テスト** — 2026-04-18 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-1 完了（status-350）**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-18 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-2 完了（status-351）**
 
 ### ターゲット
 
@@ -200,15 +200,18 @@ status-348 で **Phase B-1 完了**（`docs/math/03_huber_contact_penalty.md` 19
 アンカー）。status-349 で **Phase B-2 完了**（残り 5 章 + `equation_index.py`
 + C15 拡張、29 テスト追加）。status-350 で **Phase C-1 完了**
 （`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化、
-`TermExpansionContract` 3 Process 紐付け、14 テスト追加）。次は
-**Phase C-2（status-351）**:
+`TermExpansionContract` 3 Process 紐付け、14 テスト追加）。status-351 で
+**Phase C-2 完了**（`KcHermiteNonlocalStiffnessProcess` + `KcClosestPointStiffnessProcess`
+新設、`TermExpansionContract` 5 項化、11 テスト追加で 14→25）。次は
+**Phase C-3（status-352）本命修正**:
 
 - ~~status-347（Phase A-2）~~: 完了
 - ~~status-348-349（Phase B）~~: 完了（6 章 / 55 アンカー + `equation_index.py` + C15 拡張）
 - ~~status-350（Phase C-1）~~: 完了（`KcNormal` / `KcGeo` + `ContactForceStStiffnessProcess` の 3 Process 抽出）
-- **status-351（Phase C-2、次セッション）**: `KcClosestPoint` / `KcHermiteNonlocal` 分離
-- **status-352-353（Phase C）**: **`KcNormalDirection` ★x/z 本命修正** / K_mat_nn / K_st 再配線
-  → **K_mat x/z カップリング問題は Phase C で自然解消**（status-352 本命）
+- ~~status-351（Phase C-2）~~: 完了（`KcHermiteNonlocal` / `KcClosestPoint` 分離、5 項 TermExpansionContract）
+- **status-352（Phase C-3、次セッション）**: **`KcNormalDirection` ★x/z 本命修正**（`-p_n·∂n̂/∂u`、rename 禁止）、6 項化、19本 Type D stall 解消
+- **status-353（Phase C-4）**: K_mat_nn / K_st 再配線 + 項別 FD 整合性（#eq-kc-term-fd）
+  → **K_mat x/z カップリング問題は Phase C-3 で自然解消**（status-352 本命）
 - **status-354-355（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断
   フラグ deprecation
 - **status-356（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19

@@ -14,10 +14,10 @@
 
 ## 現在地（2026-04-18）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+14 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中
-> （**5/11 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1）。計画:
+> （**6/11 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2）。計画:
 > `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離 / K_mat x/z 修正の単発対応）は
@@ -127,7 +127,8 @@
 | **MCDD Phase B-1** | **`docs/math/03_huber_contact_penalty.md` 先行整備**（status-348）— Huber 接触ペナルティ系の離散化方程式を Markdown + TeX で台帳化、各式にアンカーを付与し `TermExpansionContract.equation_ref` から参照可能に。8 節 / 19 アンカー |
 | **MCDD Phase B-2** | **数理台帳 6 章完備 + `equation_index.py` + C15 拡張**（status-349）— 残り 5 章（01 梁運動学 / 02 接触幾何 / 04 smooth penalty 摩擦 / 05 バリア関数被膜 / 06 Generalized-α 時間積分）を整備し、計 6 章 / 55 アンカー完成。`equation_index.py` で `<a id="...">` 抽出 + 参照解決 API（21 テスト）、C15 拡張で台帳空・アンカー重複・未解決参照を契約違反計上（8 テスト） |
 | **MCDD Phase C-1** | **`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化**（status-350）— `HuberContactForceProcess.tangent_components()` の K_c 3 項（K_mat / K_geo / K_st）を独立 Process に分離、`TermExpansionContract` `providers` で 1:1 対応。新 Process 14 テスト追加、既存 `test_kc_component_fd.py` 19 件無変更 pass、7本撚線 frac=1.0 回帰合格（82s） |
-| **次（MCDD Phase C-2）** | `KcClosestPoint` / `KcHermiteNonlocal` 分離（status-351）— `K_closest` 最近接点 `∂(s,t)/∂u` 経由 + `K_hermite_adj` 隣接ノード拡張を独立 Process 化、`term_names` 5 項拡張。後続: Phase C-3 `KcNormalDirectionStiffnessProcess` 本命修正（status-352、K_mat x/z カップリング解消）→ Phase D 診断ディスパッチャ（status-354-355）→ Phase E C18/C19 契約検査（status-356）|
+| **MCDD Phase C-2** | **`KcHermiteNonlocal` / `KcClosestPoint` Process 抽出 + 5 項 TermExpansionContract**（status-351）— K_mat_adj 隣接拡張を `KcNormalStiffnessProcess` から `KcHermiteNonlocalStiffnessProcess` に分離。K_st の「(s,t) 摂動に伴う p_n 追従」成分を `KcClosestPointStiffnessProcess` に分離（`ContactForceStStiffnessProcess._assemble_term_coo(term)` classmethod で共通セットアップ共有）。`term_names` 5 項 `("K_mat_nn", "K_closest", "K_hermite_adj", "K_geo", "K_st")` / providers 5 Process に拡張、orchestrator は後方互換 3-tuple 返却。新 Process 11 テスト追加（14→25）、`test_kc_component_fd.py` 19 件無変更 pass、7本撚線 frac=1.0 回帰合格（47s） |
+| **次（MCDD Phase C-3）** | **`KcNormalDirectionStiffnessProcess` 本命修正**（status-352）— 数理台帳 `#eq-dn-du` に基づく `-p_n · ∂n̂/∂u` の新規実装（rename 禁止）。`term_names` 6 項化（K_mat_ndir 追加）、19本撚線 Type D stall 解消（frac=0.48→1.0）。後続: Phase D 診断ディスパッチャ（status-354-355）→ Phase E C18/C19 契約検査（status-356）|
 
 ---
 

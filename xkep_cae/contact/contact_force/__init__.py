@@ -10,8 +10,12 @@ from xkep_cae.contact.contact_force.strategy import (
     ContactForceStStiffnessOutput,
     ContactForceStStiffnessProcess,
     HuberContactForceProcess,
+    KcClosestPointStiffnessOutput,
+    KcClosestPointStiffnessProcess,
     KcGeoStiffnessOutput,
     KcGeoStiffnessProcess,
+    KcHermiteNonlocalStiffnessOutput,
+    KcHermiteNonlocalStiffnessProcess,
     KcNormalStiffnessOutput,
     KcNormalStiffnessProcess,
     KcTermAssemblyInput,
@@ -31,4 +35,9 @@ __all__ = [
     "KcNormalStiffnessOutput",
     "KcGeoStiffnessProcess",
     "KcGeoStiffnessOutput",
+    # Phase C-2: K_hermite_adj / K_closest (status-351)
+    "KcHermiteNonlocalStiffnessProcess",
+    "KcHermiteNonlocalStiffnessOutput",
+    "KcClosestPointStiffnessProcess",
+    "KcClosestPointStiffnessOutput",
 ]
