@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8 テスト** — 2026-04-17 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase B-2 完了（status-349）**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+14 テスト** — 2026-04-18 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-1 完了（status-350）**
 
 ### ターゲット
 
@@ -196,14 +196,18 @@
 status-346 で **MCDD Phase A-1 完了**（`MathematicalContract` 型 5 種新設、
 33 テスト追加）。status-347 で **MCDD Phase A-2 完了**（`ProcessContractRegistry`
 + `@verified_by` デコレータ + dummy VerifyProcess AST 検査拒否、33 テスト追加）。
-次は **Phase B-1（status-348）**:
+status-348 で **Phase B-1 完了**（`docs/math/03_huber_contact_penalty.md` 19
+アンカー）。status-349 で **Phase B-2 完了**（残り 5 章 + `equation_index.py`
++ C15 拡張、29 テスト追加）。status-350 で **Phase C-1 完了**
+（`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化、
+`TermExpansionContract` 3 Process 紐付け、14 テスト追加）。次は
+**Phase C-2（status-351）**:
 
-- ~~status-347（Phase A-2）~~: 完了（`ProcessContractRegistry` + `@verified_by`
-  + `AbstractProcess.contracts` ClassVar + `ProcessMeta.math_contracts` 二経路）
-- **status-348-349（Phase B、次セッション）**: `docs/math/*.md` 離散化方程式台帳（6 章）
-- **status-350-353（Phase C）**: パイロット項別分解
-  （`KcNormal` / `KcGeo` / `KcSt` / **`KcNormalDirection` ★x/z 本命修正**
-  / `KcClosestPoint` / `KcHermiteNonlocal`）
+- ~~status-347（Phase A-2）~~: 完了
+- ~~status-348-349（Phase B）~~: 完了（6 章 / 55 アンカー + `equation_index.py` + C15 拡張）
+- ~~status-350（Phase C-1）~~: 完了（`KcNormal` / `KcGeo` + `ContactForceStStiffnessProcess` の 3 Process 抽出）
+- **status-351（Phase C-2、次セッション）**: `KcClosestPoint` / `KcHermiteNonlocal` 分離
+- **status-352-353（Phase C）**: **`KcNormalDirection` ★x/z 本命修正** / K_mat_nn / K_st 再配線
   → **K_mat x/z カップリング問題は Phase C で自然解消**（status-352 本命）
 - **status-354-355（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断
   フラグ deprecation
