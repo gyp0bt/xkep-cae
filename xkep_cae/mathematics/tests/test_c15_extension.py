@@ -22,13 +22,34 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import pytest  # noqa: E402
+
 from xkep_cae.mathematics import (  # noqa: E402
     EquationIndex,
     FDConsistencyContract,
     IdentityContract,
     InequalityContract,
+    ProcessContractRegistry,
 )
 from xkep_cae.mathematics.equation_index import load  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolate_process_contract_registry():
+    """status-350: 各テストで `ProcessContractRegistry.default()` を分離する.
+
+    他モジュール（例: `xkep_cae.contact.contact_force`）が import 時に
+    `__init_subclass__` 経由で default registry に契約を登録する。
+    C15 拡張テストは fake ledger に対して検査するため、この汚染があると
+    「実在契約が fake ledger に無い」という誤検出を引き起こす。
+    テストごとに空の registry を差し込み、終了時に元へ戻す。
+    """
+    original = ProcessContractRegistry._default_instance
+    ProcessContractRegistry._set_default(ProcessContractRegistry())
+    try:
+        yield
+    finally:
+        ProcessContractRegistry._set_default(original)
 
 
 def _load_check_module():

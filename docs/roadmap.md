@@ -12,12 +12,12 @@
 
 ---
 
-## 現在地（2026-04-17）
+## 現在地（2026-04-18）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+14 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中
-> （**4/11 完了** — Phase A-1〜A-2 + B-1〜B-2）。計画:
+> （**5/11 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1）。計画:
 > `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離 / K_mat x/z 修正の単発対応）は
@@ -124,7 +124,10 @@
 | status-344「K_geo=0」誤認の訂正 — report 精度バグ | `ContactKcComponentFDDiagnosticProcess` report の寄与率フォーマット `{:5.2f}` が微小値を 0.00 に丸めていた表示バグを特定。既存 log 再解析で **K_geo share mean=1.02e-3 / max=3.79e-3**（K_mat の 0.1% で非ゼロ）と高精度復元。report を `{:.3e}` に修正 + Output dataclass に `mat/geo/st/full_du_norm` + `dfc_fd_norm` 5 フィールド公開。status-344 推奨アクション 3（K_geo==0 原因調査）は実装バグでなく表示精度問題として**クローズ**。仮説 A 主旨（K_mat 主導）は不動、次は K_mat 修正に集中可能。テスト 1 件追加（11→12） — status-345 |
 | **MCDD Phase A-1** | **MathematicalContract 型システム新設**: `xkep_cae/mathematics/` パッケージ新設（`contracts.py` + `docs/mathematics.md` + `tests/`）。5 種の frozen dataclass 契約型（`IdentityContract` / `InequalityContract` / `FDConsistencyContract` / `SymmetryContract` / **`TermExpansionContract`** ★MCDD の核 — `K = Σ K_term_k` の項網羅性を型で宣言）を実装。`providers` 重複検出・長さ一致検証・frozen/severity 必須性で脱法実装 pattern 2/3/9 を型レベルで封じ込め。既存 Process 改変なし、33 テスト追加、契約違反 0 件。計画 `/root/.claude/plans/deep-wiggling-seal.md` の Phase A〜E / status-346〜356 の 1/11 を完了 — status-346 |
 | **MCDD Phase A-2** | **`ProcessContractRegistry` + `@verified_by` デコレータ新設**: `xkep_cae/mathematics/registry.py`（469 行）で契約↔Process↔検証 Process の三者紐付けレジストリを実装。`AbstractProcess.contracts: ClassVar[tuple[MathematicalContract, ...]]` + `ProcessMeta.math_contracts` の二経路宣言 + `__init_subclass__` 自動合算。`@verified_by(contract_name, verify_cls)` デコレータで紐付け宣言、**dummy VerifyProcess の AST 検査拒否**（`process()` 本体が `pass`/`...`/`return`/`raise NotImplementedError` のみなら `DummyVerifyProcessError`）で脱法実装 pattern 2 を型レベルで封じ込め。`unverified_contracts` / `all_bindings` で Phase E の C18 静的検査前段 API を提供。C16 滅菌除外に `mathematics/` を追加（`core/registry.py::ProcessRegistry` と構造同等の基盤）。33 テスト追加、契約違反 0 件、既存 skip/xfail 増加 0 — status-347 |
-| **次（MCDD Phase B-1）** | **`docs/math/03_huber_contact_penalty.md` 先行整備**（status-348）— Huber 接触ペナルティ系の離散化方程式を Markdown + TeX で台帳化、各式にアンカーを付与し `TermExpansionContract.equation_ref` から参照可能に。後続: status-349 で他 5 章 + `equation_index.py` + C15 拡張 → Phase C パイロット項別分解で **K_mat x/z 問題自然解消**（status-350-353、status-352 が `KcNormalDirectionStiffnessProcess` 本命修正）→ Phase D 診断ディスパッチャ（status-354-355）→ Phase E C18/C19 契約検査（status-356）|
+| **MCDD Phase B-1** | **`docs/math/03_huber_contact_penalty.md` 先行整備**（status-348）— Huber 接触ペナルティ系の離散化方程式を Markdown + TeX で台帳化、各式にアンカーを付与し `TermExpansionContract.equation_ref` から参照可能に。8 節 / 19 アンカー |
+| **MCDD Phase B-2** | **数理台帳 6 章完備 + `equation_index.py` + C15 拡張**（status-349）— 残り 5 章（01 梁運動学 / 02 接触幾何 / 04 smooth penalty 摩擦 / 05 バリア関数被膜 / 06 Generalized-α 時間積分）を整備し、計 6 章 / 55 アンカー完成。`equation_index.py` で `<a id="...">` 抽出 + 参照解決 API（21 テスト）、C15 拡張で台帳空・アンカー重複・未解決参照を契約違反計上（8 テスト） |
+| **MCDD Phase C-1** | **`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化**（status-350）— `HuberContactForceProcess.tangent_components()` の K_c 3 項（K_mat / K_geo / K_st）を独立 Process に分離、`TermExpansionContract` `providers` で 1:1 対応。新 Process 14 テスト追加、既存 `test_kc_component_fd.py` 19 件無変更 pass、7本撚線 frac=1.0 回帰合格（82s） |
+| **次（MCDD Phase C-2）** | `KcClosestPoint` / `KcHermiteNonlocal` 分離（status-351）— `K_closest` 最近接点 `∂(s,t)/∂u` 経由 + `K_hermite_adj` 隣接ノード拡張を独立 Process 化、`term_names` 5 項拡張。後続: Phase C-3 `KcNormalDirectionStiffnessProcess` 本命修正（status-352、K_mat x/z カップリング解消）→ Phase D 診断ディスパッチャ（status-354-355）→ Phase E C18/C19 契約検査（status-356）|
 
 ---
 
