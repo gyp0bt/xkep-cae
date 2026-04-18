@@ -13,9 +13,15 @@ import numpy as np
 import pytest
 
 from xkep_cae.contact.contact_force import (
+    ContactForceStStiffnessInput,
+    ContactForceStStiffnessProcess,
     HuberContactForceProcess,
+    KcClosestPointStiffnessOutput,
+    KcClosestPointStiffnessProcess,
     KcGeoStiffnessOutput,
     KcGeoStiffnessProcess,
+    KcHermiteNonlocalStiffnessOutput,
+    KcHermiteNonlocalStiffnessProcess,
     KcNormalStiffnessOutput,
     KcNormalStiffnessProcess,
     KcTermAssemblyInput,
@@ -192,14 +198,20 @@ class TestKcGeoStiffnessProcess:
 
 
 class TestKcTermExpansionContract:
-    """TermExpansionContract（K_c_term_expansion）の静的検証."""
+    """TermExpansionContract（K_c_term_expansion）の静的検証 (status-351 5 項)."""
 
-    def test_providers_registered_on_all_three_processes(self):
-        """K_mat / K_geo / K_st 3 Process が同一契約を宣言する."""
-        from xkep_cae.contact.contact_force import ContactForceStStiffnessProcess
+    def test_providers_registered_on_all_five_processes(self):
+        """K_mat_nn / K_closest / K_hermite_adj / K_geo / K_st 5 Process が同一契約."""
+        from xkep_cae.contact.contact_force import (
+            ContactForceStStiffnessProcess,
+            KcClosestPointStiffnessProcess,
+            KcHermiteNonlocalStiffnessProcess,
+        )
 
         for cls in (
             KcNormalStiffnessProcess,
+            KcHermiteNonlocalStiffnessProcess,
+            KcClosestPointStiffnessProcess,
             KcGeoStiffnessProcess,
             ContactForceStStiffnessProcess,
         ):
@@ -208,13 +220,15 @@ class TestKcTermExpansionContract:
             assert term_contracts[0].name == "K_c_term_expansion"
 
     def test_contract_structure(self):
-        """契約の骨格: term_names=(K_mat,K_geo,K_st) & combinator='add_sub'."""
+        """契約の骨格: 5 項 term_names + providers + combinator='add_sub'."""
         tc = [
             c for c in KcNormalStiffnessProcess.contracts if isinstance(c, TermExpansionContract)
         ][0]
-        assert tc.term_names == ("K_mat", "K_geo", "K_st")
+        assert tc.term_names == ("K_mat_nn", "K_closest", "K_hermite_adj", "K_geo", "K_st")
         assert tc.providers == (
             "KcNormalStiffnessProcess",
+            "KcClosestPointStiffnessProcess",
+            "KcHermiteNonlocalStiffnessProcess",
             "KcGeoStiffnessProcess",
             "ContactForceStStiffnessProcess",
         )
@@ -223,8 +237,139 @@ class TestKcTermExpansionContract:
         assert tc.equation_ref.startswith("03_huber_contact_penalty.md")
 
 
+@binds_to(KcHermiteNonlocalStiffnessProcess)
+class TestKcHermiteNonlocalStiffnessProcess:
+    """K_c Hermite 非局所材料剛性項 K_hermite_adj の単体検証 (status-351 Phase C-2)."""
+
+    def test_meta(self):
+        assert KcHermiteNonlocalStiffnessProcess.meta.name == "KcHermiteNonlocalStiffness"
+        assert KcHermiteNonlocalStiffnessProcess.meta.module == "solve"
+
+    def test_contract_declared(self):
+        contracts = KcHermiteNonlocalStiffnessProcess.contracts
+        term_contracts = [c for c in contracts if isinstance(c, TermExpansionContract)]
+        assert len(term_contracts) == 1
+        assert "KcHermiteNonlocalStiffnessProcess" in term_contracts[0].providers
+
+    def test_empty_pairs(self):
+        out = KcHermiteNonlocalStiffnessProcess().process(
+            KcTermAssemblyInput(
+                pairs=[],
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert isinstance(out, KcHermiteNonlocalStiffnessOutput)
+        assert out.K_hermite_adj.shape == (24, 24)
+        assert out.K_hermite_adj.nnz == 0
+
+    def test_zero_when_adj_map_not_provided(self):
+        """adj_node_map / adj_node_counts が None のとき K_hermite_adj はゼロ."""
+        pair = _make_pair(gap=-0.01, p_n=1.0)
+        out = KcHermiteNonlocalStiffnessProcess().process(
+            KcTermAssemblyInput(
+                pairs=[pair],
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+                adj_node_map=None,
+                adj_node_counts=None,
+            )
+        )
+        assert out.K_hermite_adj.nnz == 0
+
+    def test_nonzero_with_adj_map(self):
+        """隣接ノードが存在するとき K_hermite_adj が非ゼロで隣接 DOF 列に配置."""
+        pair = _make_pair(gap=-0.01, p_n=1.0, elem_a=1, elem_b=4)
+        # elem_a=1 → (node_prev, node_next) 隣接
+        # elem_b=4 → (node_prev, node_next) 隣接
+        adj_node_map = {1: (9, 10), 4: (11, 12)}  # 隣接ノード (ダミー)
+        adj_node_counts = np.array(
+            [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            dtype=int,  # 全ノード 2 要素参照
+        )
+        out = KcHermiteNonlocalStiffnessProcess().process(
+            KcTermAssemblyInput(
+                pairs=[pair],
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=13 * 6,  # 13 ノード * 6 DOF
+                adj_node_map=adj_node_map,
+                adj_node_counts=adj_node_counts,
+            )
+        )
+        assert out.K_hermite_adj.nnz > 0
+
+
+@binds_to(KcClosestPointStiffnessProcess)
+class TestKcClosestPointStiffnessProcess:
+    """K_c 最近接点追従項 K_closest の単体検証 (status-351 Phase C-2)."""
+
+    def test_meta(self):
+        assert KcClosestPointStiffnessProcess.meta.name == "KcClosestPointStiffness"
+
+    def test_contract_declared(self):
+        contracts = KcClosestPointStiffnessProcess.contracts
+        term_contracts = [c for c in contracts if isinstance(c, TermExpansionContract)]
+        assert len(term_contracts) == 1
+        assert "KcClosestPointStiffnessProcess" in term_contracts[0].providers
+
+    def test_empty_pairs(self):
+        out = KcClosestPointStiffnessProcess().process(
+            ContactForceStStiffnessInput(
+                pairs=[],
+                node_coords=np.zeros((4, 3)),
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert isinstance(out, KcClosestPointStiffnessOutput)
+        assert out.K_closest.shape == (24, 24)
+        assert out.K_closest.nnz == 0
+
+    def test_inactive_pair_zero(self):
+        """p_n=0 のペアは K_closest に寄与しない."""
+        coords = np.zeros((4, 3))
+        pair = _make_pair(p_n=0.0)
+        out = KcClosestPointStiffnessProcess().process(
+            ContactForceStStiffnessInput(
+                pairs=[pair],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert out.K_closest.nnz == 0
+
+    def test_single_pair_nonzero(self):
+        """近接平行セグメントで K_closest が非ゼロ."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        pair = _make_pair(gap=-0.01, p_n=1.0)
+        out = KcClosestPointStiffnessProcess().process(
+            ContactForceStStiffnessInput(
+                pairs=[pair],
+                node_coords=coords,
+                k_pen=1e4,
+                delta_h=100.0,
+                ndof_total=24,
+            )
+        )
+        assert out.K_closest.shape == (24, 24)
+        assert out.K_closest.nnz > 0
+
+
 class TestTangentComponentsOrchestration:
-    """tangent_components() が 3 Process の出力を orchestrate することを検証."""
+    """tangent_components() が 5 Process の出力を orchestrate することを検証."""
 
     def _make_manager(self, pair) -> SimpleNamespace:
         return SimpleNamespace(
@@ -237,7 +382,7 @@ class TestTangentComponentsOrchestration:
         )
 
     def test_orchestrator_matches_process_outputs(self):
-        """tangent_components() 直接呼び出しと 3 Process 個別呼び出しが一致."""
+        """tangent_components() 直接呼び出しと 5 Process 個別呼び出しが一致."""
         pair = _make_pair(gap=-0.01, p_n=1.0)
         manager = self._make_manager(pair)
 
@@ -250,7 +395,7 @@ class TestTangentComponentsOrchestration:
         )
         K_mat_o, K_geo_o, K_st_o = proc.tangent_components(np.zeros(ndof), manager, k_pen=1e4)
 
-        # 同じ入力で KcNormal / KcGeo を直接呼ぶ
+        # 同じ入力で Kc* を直接呼ぶ
         term_input = KcTermAssemblyInput(
             pairs=manager.pairs,
             k_pen=1e4,
@@ -263,17 +408,62 @@ class TestTangentComponentsOrchestration:
             adj_node_map=None,
             adj_node_counts=None,
         )
-        K_mat_d = KcNormalStiffnessProcess().process(term_input).K_mat
+        K_mat_nn = KcNormalStiffnessProcess().process(term_input).K_mat
+        K_hermite_adj = KcHermiteNonlocalStiffnessProcess().process(term_input).K_hermite_adj
         K_geo_d = KcGeoStiffnessProcess().process(term_input).K_geo
 
-        # orchestrator と直接呼び出しが一致
-        diff_mat = (K_mat_o - K_mat_d).toarray()
+        # orchestrator の K_mat は K_mat_nn + K_hermite_adj (adj_map=None なので 0)
+        diff_mat = (K_mat_o - (K_mat_nn + K_hermite_adj)).toarray()
         diff_geo = (K_geo_o - K_geo_d).toarray()
         np.testing.assert_allclose(diff_mat, 0.0, atol=1e-14)
         np.testing.assert_allclose(diff_geo, 0.0, atol=1e-14)
 
         # K_st は consistent_st_tangent=False なのでゼロ
         assert K_st_o.nnz == 0
+
+    def test_orchestrator_k_st_equals_kst_residual_plus_closest(self):
+        """K_st (orchestrator) == K_st_residual + K_closest (直接呼び出し)."""
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 0.1, 0.0],
+                [1.0, 0.1, 0.0],
+            ]
+        )
+        pair = _make_pair(gap=-0.01, p_n=1.0)
+        manager = SimpleNamespace(
+            pairs=[pair],
+            connectivity=np.array([[0, 1], [2, 3]]),
+            config=SimpleNamespace(
+                use_hermite_centerline=False,
+                consistent_st_tangent=True,
+            ),
+        )
+        ndof = 24
+        proc = HuberContactForceProcess(
+            ndof=ndof,
+            ndof_per_node=6,
+            smoothing_delta=5000.0,
+            huber_delta_h=100.0,
+        )
+        _, _, K_st_o = proc.tangent_components(
+            np.zeros(ndof), manager, k_pen=1e4, node_coords=coords
+        )
+
+        st_input = ContactForceStStiffnessInput(
+            pairs=manager.pairs,
+            node_coords=coords,
+            k_pen=1e4,
+            delta_h=100.0,
+            ndof_total=ndof,
+            ndof_per_node=6,
+            use_hermite=False,
+        )
+        K_closest = KcClosestPointStiffnessProcess().process(st_input).K_closest
+        K_st_res = ContactForceStStiffnessProcess().process(st_input).K_st
+        expected = (K_closest + K_st_res).toarray()
+        np.testing.assert_allclose(K_st_o.toarray(), expected, atol=1e-14)
 
     def test_empty_manager_returns_zeros(self):
         """manager.pairs が空のとき 3 ブロックとも zero."""
