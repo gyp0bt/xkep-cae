@@ -44,5 +44,6 @@
 ## 関連
 
 - 設計仕様: [`xkep_cae/mathematics/docs/mathematics.md`](../../xkep_cae/mathematics/docs/mathematics.md)
-- 計画書: `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）
+- 計画書: `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
+  （status-352 記録）。以降 `../../CLAUDE.md` と `../roadmap.md` を正とする
 - 進捗 status: [status-346](../status/status-346.md) / [status-347](../status/status-347.md) / [status-348](../status/status-348.md) / [status-349](../status/status-349.md)

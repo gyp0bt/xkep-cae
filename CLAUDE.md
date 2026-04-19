@@ -190,7 +190,10 @@
 
 ### ★最優先: MCDD（数理契約駆動開発）Phase A〜E（status-346〜356）
 
-**計画**: `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結、変更には承認要）
+**計画（LOST）**: `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
+（2026-04-19 時点、ファイルは復旧不可）。以降、計画書参照箇所は本 CLAUDE.md・
+`docs/roadmap.md`・`docs/status/status-{N}.md` に同等情報を転記して運用する。
+脱法実装禁止パターン 10 項は下記「MCDD 脱法実装禁止パターン」を参照。
 **設計仕様**: `xkep_cae/mathematics/docs/mathematics.md`
 
 status-346 で **MCDD Phase A-1 完了**（`MathematicalContract` 型 5 種新設、
@@ -233,17 +236,19 @@ FD rel_err < 1e-2。
 
 次セッションを Claude Code / Codex で開始する際は、以下を**順に**実行:
 
-1. `/root/.claude/plans/deep-wiggling-seal.md` を**全文読む**（要約禁止）
+1. ~~`/root/.claude/plans/deep-wiggling-seal.md` を**全文読む**（要約禁止）~~
+   → **計画書は永久ロスト**（status-352 で記録）。代替として本 CLAUDE.md の
+   「やるべきこと」「MCDD 脱法実装禁止パターン」および最新 status を参照
 2. 最新 `docs/status/status-{N}.md` を読み、前セッションの停止点を確認
-3. 計画書「🚫 脱法実装パターン 10 項」を読み返し、本セッションで陥りそうな
-   項目を自己チェック
+3. 本ファイル「MCDD 脱法実装禁止パターン 10 項」を読み返し、本セッションで
+   陥りそうな項目を自己チェック
 4. その上で着手
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
 - 収束トライ時に目標を緩和して本質的対策を先送りにすること
 
-### MCDD 脱法実装禁止パターン（計画書から抜粋、status-346〜356 で厳守）
+### MCDD 脱法実装禁止パターン（旧計画書より転記、status-346〜356 で厳守）
 
 1. **契約の tol を事後緩和して pass させる**（数理的正当化なき `tol_rel` 変更は禁止）
 2. **dummy VerifyProcess を `@verified_by` に紐付けて C18 を通す**

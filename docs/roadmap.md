@@ -17,8 +17,10 @@
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜356）を実施中
-> （**6/11 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2）。計画:
-> `/root/.claude/plans/deep-wiggling-seal.md`（v1.0.0 凍結）。
+> （**6/11 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2）。
+> 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
+> （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
+> `docs/status/status-{N}.md` に転記して運用する。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離 / K_mat x/z 修正の単発対応）は
 > MCDD 完了まで凍結**。K_mat x/z 問題は Phase C の項別 Process 分解で
