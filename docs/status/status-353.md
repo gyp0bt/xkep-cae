@@ -103,8 +103,11 @@ $$
 - ✅ `python contracts/validate_process_contracts.py`: 契約違反 0、条例違反 0
 - ✅ `pytest xkep_cae/contact/`: **421 passed, 5 skipped**（既存と同数）
 - ✅ `pytest xkep_cae/contact/contact_force/tests/test_kc_component_fd.py xkep_cae/verify/tests/test_kc_component_fd.py xkep_cae/mathematics/tests/`: **114 passed**
-- ✅ **7本撚線曲げ揺動回帰テスト**: `tests/numerical_tests/test_strand_bending_convergence.py::TestStrandBendingConvergence::test_strand_bending_oscillation_converges` **frac=1.0000, incr=51, cutback=4, 10.20s 完走**
-- ✅ **7本撚線 Hertz 型完走テスト**: `test_strand_bending_full_completion_hertz` **frac=1.0000, incr=51, cutback=4, 9.96s 完走**
+- ✅ **7本撚線曲げ揺動回帰テスト（弱曲げ・接触未活性スモーク）**: `tests/numerical_tests/test_strand_bending_convergence.py::TestStrandBendingConvergence::test_strand_bending_oscillation_converges` **frac=1.0000, incr=51, cutback=4, 10.20s, bending_angle=0.100 rad (≈5.73°), max contact F=0.0 完走**
+  - **条件**: κ=0.001 1/mm, n_pitches=1.0（→ bending_angle=κ·L=0.1 rad≈5.73°）, Hertz α=1.5, free_end_mode=True, exclude_same_strand=True, μ=0.15
+  - **注意**: **90° 曲げではなく、また実行中に `max contact F=0.0`（接触力はゼロ、全 51 incr で `active=0`）**。本テストはソルバーパイプライン整合性のスモーク回帰であり、**接触活性下の x/z カップリング検証ではない**。K_c FD 検証は別途 `test_kc_component_fd.py` 19 件（通常 pytest 経路）で実施済み
+- ✅ **7本撚線 Hertz 型完走テスト（同条件、確認用）**: `test_strand_bending_full_completion_hertz` **frac=1.0000, incr=51, cutback=4, 9.96s, 接触未活性**
+- ⚠️ **接触あり 90° 曲げ回帰は本 status 未実行**: status-298/299 系の重量テスト（κ=0.04, n_pitches=多、揺動 ±48mm）は標準 pytest 経路ではなく `scripts/` 系の手動実行。本訂正は数理台帳・コメントのみでコード数値挙動は無変更のため、重量回帰は status-354（Phase C-3 再定義、`K_hermite_adj` フル項拡張）で実施予定
 - ✅ `ruff check xkep_cae/ tests/`: All checks passed
 - ✅ `ruff format --check xkep_cae/ tests/`: 191 files already formatted
 
