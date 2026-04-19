@@ -138,32 +138,42 @@ $$
 
 ## 3. 接触接線剛性 $\boldsymbol{K}_c$ の完全項展開
 
-$\boldsymbol{f}_c = -p_n\hat{\boldsymbol{n}}$ を全体変位 $\boldsymbol{u}$ で微分:
+接触力は $\boldsymbol{f}_c^{(A)} = -p_n\hat{\boldsymbol{n}}$（A 側、ペナルティ符号）。
+NR ソルバーは残差 $\boldsymbol{R} = \boldsymbol{f}_{\mathrm{int}} + \boldsymbol{f}_c - \boldsymbol{f}_{\mathrm{ext}}$
+の接線として $\boldsymbol{K}_c \equiv \partial(-\boldsymbol{f}_c)/\partial \boldsymbol{u}
+= \partial(p_n\hat{\boldsymbol{n}})/\partial \boldsymbol{u}$ を組む（符号規約、
+`test_kc_component_fd.py:224` で FD 比較値は `-f_c`）。
+
+これを連鎖律で展開:
 
 $$
 \boldsymbol{K}_c
-\;=\;\frac{\partial \boldsymbol{f}_c}{\partial \boldsymbol{u}}
 \;=\;
-\underbrace{-\frac{\partial p_n}{\partial \boldsymbol{u}}\otimes\hat{\boldsymbol{n}}}_{\boldsymbol{K}_{\mathrm{mat,nn}}}
-\;\;\underbrace{-\;p_n\,\frac{\partial \hat{\boldsymbol{n}}}{\partial \boldsymbol{u}}}_{\boldsymbol{K}_{\mathrm{mat,ndir}}\;(\text{未実装、status-352 本命})}
+\underbrace{\frac{\partial p_n}{\partial \boldsymbol{u}}\otimes\hat{\boldsymbol{n}}}_{\boldsymbol{K}_{\mathrm{mat,nn}}}
+\;\;\underbrace{-\;\boldsymbol{K}_{\mathrm{geo}}}_{\displaystyle=\,p_n\,\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}\;\text{（法線方向感度）}}
 \;\;\underbrace{+\;\boldsymbol{K}_{\mathrm{closest}}}_{(s,t)\,\text{追従}}
-\;\;\underbrace{+\;\boldsymbol{K}_{\mathrm{hermite,adj}}}_{\text{隣接ノード}}
-\;\;\underbrace{-\;\boldsymbol{K}_{\mathrm{geo}}}_{\text{幾何補正}}
-\;\;\underbrace{+\;\boldsymbol{K}_{\mathrm{st}}}_{(s,t)\,\partial s/\partial \boldsymbol{u}}
+\;\;\underbrace{+\;\boldsymbol{K}_{\mathrm{hermite,adj}}}_{\text{隣接ノード非局所}}
+\;\;\underbrace{+\;\boldsymbol{K}_{\mathrm{st}}}_{(s,t)\,\partial s/\partial \boldsymbol{u}\;\text{残差}}
 $$
 
-ペアの組み立て前行列形（$3\times 3$ ブロック、Hermite 形状係数 $c_i,c_j$ 込み）:
+**重要**: $-\boldsymbol{K}_{\mathrm{geo}}$ の項**そのもの**が
+$p_n\cdot\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$（法線方向感度）を表現する。
+従来 status-344 以前の「$\boldsymbol{K}_{\mathrm{mat,ndir}}$ 欠落」という診断は
+**重複カウント誤認**だった（詳細 [#sec-ndir](#sec-ndir)）。`TermExpansionContract`
+は 5 項で完結する。
+
+ペアの組み立て前行列形（$3\times 3$ ブロック、Hermite 形状係数 $c_i,c_j$ 込み、A-A カップリング）:
 
 <a id="eq-kc-pair-block"></a>
 
 $$
 \boldsymbol{K}_c^{(ij)} \;=\;
 c_i\,c_j\Big[\,
-\underbrace{w_{\mathrm{mat}}\,(\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top)}_{\text{法線剛性}}
+\underbrace{w_{\mathrm{mat}}\,(\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top)}_{\boldsymbol{K}_{\mathrm{mat,nn}}}
 \;-\;
-\underbrace{w_{\mathrm{geo}}\,\boldsymbol{P}_\perp}_{\text{幾何補正}}
+\underbrace{w_{\mathrm{geo}}\,\boldsymbol{P}_\perp}_{\boldsymbol{K}_{\mathrm{geo}}\;=\;p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}}
 \,\Big]
-\;+\; \boldsymbol{K}_{\mathrm{st}}^{(ij)}
+\;+\; \boldsymbol{K}_{\mathrm{hermite,adj}}^{(ij)} \;+\; \boldsymbol{K}_{\mathrm{closest}}^{(ij)} \;+\; \boldsymbol{K}_{\mathrm{st}}^{(ij)}
 $$
 
 ここで:
@@ -175,28 +185,36 @@ w_{\mathrm{mat}} = \frac{\mathrm{d}p_n}{\mathrm{d}x}\cdot k_{\mathrm{pen}}
 w_{\mathrm{geo}} = \frac{p_n}{d}
 $$
 
-→ 実装: `HuberContactForceProcess.assemble_tangent`（`strategy.py:960` 付近）— 現行の式網羅は **5 項 + $\boldsymbol{K}_{\mathrm{mat,ndir}}$ 欠落**。
+導出（A-A 同側、$\partial \boldsymbol{r}/\partial \boldsymbol{x}_j^{(A)} = -c_j\boldsymbol{I}$ を使用）:
+
+- $\partial(-g)/\partial \boldsymbol{x}_j^{(A)} = +c_j \hat{\boldsymbol{n}}^\top \Rightarrow \partial p_n/\partial \boldsymbol{x}_j^{(A)} = +c_j w_{\mathrm{mat}}\hat{\boldsymbol{n}}^\top$
+- $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{x}_j^{(A)} = -(c_j/d)\boldsymbol{P}_\perp$
+
+を $[\boldsymbol{K}_c]^{(i,j)}_{AA} = c_i\,[\partial p_n/\partial \boldsymbol{x}_j^{(A)}\cdot \hat{\boldsymbol{n}} + p_n\,\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{x}_j^{(A)}]$ に代入すると
+$c_i c_j [w_{\mathrm{mat}}\,\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top - (p_n/d)\,\boldsymbol{P}_\perp]$ が得られ、`strategy.py:1595` の
+`w_mat * nn - w_geo * I_nn` と一致する。
+
+→ 実装: `HuberContactForceProcess.assemble_tangent`（`strategy.py:1595` 付近、バッチ経路）— **5 項で完結**。
 
 ### 3.1 項一覧（`TermExpansionContract.term_names` と一対一対応）
 
-| `term_name` | 数式 | 実装 Process（Phase C で抽出予定） | 状態 |
+| `term_name` | 数式（ペア局所形） | 実装 Process | 状態 |
 |---|---|---|---|
-| `K_mat_nn` | $-\,\frac{\partial p_n}{\partial \boldsymbol{u}}\otimes\hat{\boldsymbol{n}}$ | `KcNormalStiffnessProcess` | ✅ status-350 で抽出、status-351 で K_hermite_adj 分離後はペア局所のみ |
-| `K_mat_ndir` | $-\,p_n\,\frac{\partial \hat{\boldsymbol{n}}}{\partial \boldsymbol{u}}$ | **`KcNormalDirectionStiffnessProcess`** | **未実装。status-352 本命修正**（[#sec-ndir](#sec-ndir)） |
-| `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等 | `KcClosestPointStiffnessProcess` | ✅ status-351 で分離（K_st 残差から ``dpn_ds * g_shape`` 項を抽出） |
-| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$ | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351 で KcNormalStiffnessProcess から分離（status-271〜274/295 の mat-only 形式） |
-| `K_geo` | $-\,(p_n/d)\,\boldsymbol{P}_\perp \cdot c_i c_j$ | `KcGeoStiffnessProcess` | ✅ status-350 で抽出 |
-| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか | `ContactForceStStiffnessProcess`（K_closest 分離後は残差項のみ） | ✅ status-350/351 で contract 宣言、K_closest 分離済み |
+| `K_mat_nn` | $+c_i c_j\,w_{\mathrm{mat}}\,(\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top)$ | `KcNormalStiffnessProcess` | ✅ status-350/351（K_hermite_adj 分離後はペア局所のみ）|
+| `K_geo` | $-\,c_i c_j\,w_{\mathrm{geo}}\,\boldsymbol{P}_\perp$（$= p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ と同値）| `KcGeoStiffnessProcess` | ✅ status-350、**法線方向感度 $\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ を内包**（status-353 訂正）|
+| `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等（`dpn_ds * g_shape`）| `KcClosestPointStiffnessProcess` | ✅ status-351 で K_st 残差から分離 |
+| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$（mat-only 近似、`w_mat * nn` のみ） | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351（status-271〜274/295 mat-only。**I_nn 項は未拡張、status-353 で x/z 残差候補に再設定**） |
+| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか（K_closest 分離後の残差項）| `ContactForceStStiffnessProcess` | ✅ status-350/351 |
 
-→ 契約: `TermExpansionContract(name="K_c_term_expansion", total_name="K_c", term_names=("K_mat_nn","K_mat_ndir","K_closest","K_hermite_adj","K_geo","K_st"), providers=(...), combinator="add_sub", equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition")`
+→ 契約: `TermExpansionContract(name="K_c_term_expansion", total_name="K_c", term_names=("K_mat_nn","K_closest","K_hermite_adj","K_geo","K_st"), providers=(...), combinator="add_sub", equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition")`
 
-`combinator="add_sub"` は $\boldsymbol{K}_c = (\boldsymbol{K}_{\mathrm{mat,nn}}+\boldsymbol{K}_{\mathrm{mat,ndir}}+\boldsymbol{K}_{\mathrm{closest}}+\boldsymbol{K}_{\mathrm{hermite,adj}}) - \boldsymbol{K}_{\mathrm{geo}} + \boldsymbol{K}_{\mathrm{st}}$ の符号付き加算を表す。
+`combinator="add_sub"` は $\boldsymbol{K}_c = (\boldsymbol{K}_{\mathrm{mat,nn}}+\boldsymbol{K}_{\mathrm{closest}}+\boldsymbol{K}_{\mathrm{hermite,adj}}+\boldsymbol{K}_{\mathrm{st}}) - \boldsymbol{K}_{\mathrm{geo}}$ の符号付き加算を表す。
 
 ---
 
 <a id="sec-ndir"></a>
 
-## 4. 法線方向感度 $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$（K_mat,ndir、status-344 本命）
+## 4. 法線方向感度 $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ と $\boldsymbol{K}_{\mathrm{geo}}$ の同一性（status-353 訂正）
 
 最近接点距離ベクトル $\boldsymbol{r} = \boldsymbol{p}_B(t)-\boldsymbol{p}_A(s)$ から
 $\hat{\boldsymbol{n}} = \boldsymbol{r}/d$、$d=\lVert\boldsymbol{r}\rVert$。
@@ -212,51 +230,82 @@ $$
 \frac{\partial \boldsymbol{r}}{\partial \boldsymbol{u}}
 $$
 
-これを [#eq-kc-full-decomposition](#eq-kc-full-decomposition) の第 2 項に
-代入することで、status-344 で観測された **$\boldsymbol{K}_{\mathrm{mat}}$ の x/z 成分カップリング欠落**
-（`mat_only` rel_err mean=44%, comp_x max=98%）が解消される見込み。
+A-A 同側（$\partial \boldsymbol{r}/\partial \boldsymbol{x}_j^{(A)} = -c_j\boldsymbol{I}$）で
+$\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{x}_j^{(A)} = -(c_j/d)\boldsymbol{P}_\perp$。
+[#eq-kc-full-decomposition](#eq-kc-full-decomposition) の連鎖律で外側の $p_n$ と
+組み立て係数 $c_i$ を掛けると:
 
-注意: $\boldsymbol{P}_\perp$ 自体は [#eq-kc-pair-block](#eq-kc-pair-block) の
-**幾何項** $\boldsymbol{K}_{\mathrm{geo}}$ にも現れるが、両者は意味も符号も異なる:
+$$
+p_n\cdot \frac{\partial \hat{\boldsymbol{n}}}{\partial \boldsymbol{u}}\;\Big|_{\text{ペア局所 A-A}}
+\;=\;
+-\,c_i c_j\,\frac{p_n}{d}\,\boldsymbol{P}_\perp
+\;\equiv\;
+-\,\boldsymbol{K}_{\mathrm{geo}}^{(ij)}
+$$
 
-| 項 | 出所 | 符号 | 重み |
-|---|---|---|---|
-| $\boldsymbol{K}_{\mathrm{geo}}$ | $\partial(c_i c_j \boldsymbol{p}_A)/\partial \boldsymbol{u}$ の幾何補正 | $-$ | $p_n/d$ |
-| $\boldsymbol{K}_{\mathrm{mat,ndir}}$ | $\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ そのもの | $-$ | $p_n$（$d$ で割らない $\boldsymbol{P}_\perp$ 単独） |
+**すなわち $\boldsymbol{K}_{\mathrm{geo}} = -\,p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ のペア局所形
+そのもの**であり、両者は符号・係数とも同一。`strategy.py:1595` の `-w_geo * I_nn`
+項がこれを実装しており、$w_{\mathrm{geo}} = p_n/d$ の $1/d$ 因子は
+$\partial \hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ 由来（`[#eq-dn-du]` の $1/d$）である。
 
-両者を混同して「$\boldsymbol{K}_{\mathrm{geo}}$ で代用済み」と誤読する経路が
-status-289〜344 を浪費させた根本要因。Phase C で **異なる Process に分離**
-することで構造的に再発を防ぐ（[#eq-kc-full-decomposition](#eq-kc-full-decomposition)）。
+### 4.1 status-344〜352 の「K_mat,ndir 欠落」診断誤りの訂正（status-353）
 
-→ 実装: **未配置**。status-352（Phase C-3）で `KcNormalDirectionStiffnessProcess` を新設予定。
+status-289〜344 の K_c FD 調査で「x/z 成分カップリング欠落」が観測された際、
+旧 Phase C-3 計画（status-346 当初の mathematics.md / status-352 の B 候補）は
+これを「$\boldsymbol{K}_{\mathrm{mat,ndir}}$ が独立の項として未実装」と診断した。
+この診断は **$\boldsymbol{K}_{\mathrm{geo}}$ が既に法線方向感度を含んでいる事実を
+見落とした** もので、status-353 の数理再検証により以下に訂正する:
+
+| 過去の主張（status-346〜352） | 訂正（status-353）|
+|---|---|
+| $\boldsymbol{K}_{\mathrm{geo}}$ と $\boldsymbol{K}_{\mathrm{mat,ndir}}$ は別項、重み $p_n/d$ vs $p_n$ | **同一項**、重み $p_n/d$（$1/d$ は $\hat{\boldsymbol{n}} = \boldsymbol{r}/d$ 由来の内在項） |
+| `KcNormalDirectionStiffnessProcess` の新設で x/z 欠落解消 | `K_geo` は既実装のため新設は**二重計上**となる |
+| Phase C-3 で 6 項 `TermExpansionContract` 化 | **5 項で完結**（status-351 で既達） |
+
+status-344 で観測された x/z カップリング残差（`mat_only` rel_err mean=44%, comp_x max=98%）
+の真の原因候補は、ペア局所の完全項ではなく **`K_hermite_adj` の隣接ノード拡張が
+mat-only（`w_mat * nn` のみ）で `I_nn` 項を含まないこと**（status-295 で意図的に
+除外、理由: 「隣接ノード変位→s追従により法線変化はほぼ相殺されるが、ギャップ
+変化(n⊗n項)は維持される」`strategy.py:1596-1598` 既存コメント）に再設定する。
+詳細と検証は status-353 を参照。
+
+→ 実装: **既存 `KcGeoStiffnessProcess`** が $-p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ のペア局所形を担う。新規 Process 追加は不要。
 
 ---
 
 <a id="eq-kmat"></a>
 
-## 5. $\boldsymbol{K}_{\mathrm{mat}}$ の対称性
+## 5. $\boldsymbol{K}_{\mathrm{mat,nn}} - \boldsymbol{K}_{\mathrm{geo}}$ の対称性
 
-完全項を持つ場合（$\boldsymbol{K}_{\mathrm{mat,nn}}+\boldsymbol{K}_{\mathrm{mat,ndir}}$）、
-法線方向の合成として:
+ペア局所の $3\times 3$ 表現 [#eq-kc-pair-block](#eq-kc-pair-block) の材料項
+（法線剛性 + 法線方向感度）は対称:
 
 $$
-\boldsymbol{K}_{\mathrm{mat}}\,\partial \boldsymbol{u}
+\big(\boldsymbol{K}_{\mathrm{mat,nn}} - \boldsymbol{K}_{\mathrm{geo}}\big)^{(ij)}
 \;=\;
--\,\partial(p_n\hat{\boldsymbol{n}})/\partial \boldsymbol{u}\cdot \partial \boldsymbol{u}
+c_i c_j\,\big[\,w_{\mathrm{mat}}\,\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top
+\;-\;w_{\mathrm{geo}}\,\boldsymbol{P}_\perp\,\big]
 $$
 
-このペア局所の $3\times 3$ 表現は対称（共役勾配系の前提）:
+$\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top$ と $\boldsymbol{P}_\perp$ は
+いずれも $3\times 3$ 対称行列であり、$(i,j)\leftrightarrow(j,i)$ で $c_i c_j$
+対称性から:
 
 <a id="sym-kmat"></a>
 
 $$
-\boldsymbol{K}_{\mathrm{mat}}^{(ij)} = \big(\boldsymbol{K}_{\mathrm{mat}}^{(ji)}\big)^\top
+\big(\boldsymbol{K}_{\mathrm{mat,nn}} - \boldsymbol{K}_{\mathrm{geo}}\big)^{(ij)}
+\;=\;
+\big[\big(\boldsymbol{K}_{\mathrm{mat,nn}} - \boldsymbol{K}_{\mathrm{geo}}\big)^{(ji)}\big]^\top
 $$
 
-→ 契約: `SymmetryContract(name="K_mat_symmetric", matrix_name="K_mat", kind="symmetric", equation_ref="03_huber_contact_penalty.md#sym-kmat")`
+→ 契約: `SymmetryContract(name="K_mat_symmetric", matrix_name="K_mat_nn_minus_geo", kind="symmetric", equation_ref="03_huber_contact_penalty.md#sym-kmat")`（status-353 で `matrix_name` を `K_mat` から `K_mat_nn_minus_geo` に訂正予定）
 
 注意: 現行実装の $\boldsymbol{K}_c$ は $\boldsymbol{K}_{\mathrm{st}}$（摩擦・滑り
-追従）を含むため**全体としては非対称**。本契約は項分解後の $\boldsymbol{K}_{\mathrm{mat}}$ にのみ適用する。
+追従）と $\boldsymbol{K}_{\mathrm{closest}}$ を含むため**全体としては非対称**。
+本契約は対称部分（`KcNormalStiffnessProcess` + `KcGeoStiffnessProcess`）にのみ
+適用する。$\boldsymbol{K}_{\mathrm{hermite,adj}}$ は隣接ノード DOF の非対称展開で
+あるため別契約で扱う（status-353 で検討）。
 
 ---
 
@@ -330,12 +379,14 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 `HuberContactForceProcess.assemble_tangent` の `_adj_node_map`/`_node_counts`
 分岐（status-273/274）。
 
-→ 契約: status-353 で `KcHermiteNonlocalStiffnessProcess` を抽出後、
-`TermExpansionContract.term_names="K_hermite_adj"` で網羅性を要求する。
+→ 契約: status-351 で `KcHermiteNonlocalStiffnessProcess` が抽出され、
+`TermExpansionContract.term_names="K_hermite_adj"` で網羅性を要求している。
+**ただし現行実装は mat-only（`w_mat * nn` のみ、`I_nn` 隣接拡張なし）**
+であり、status-353 で x/z カップリング残差の主因候補に再設定。
 
 ---
 
-## 8. 既存実装との trace（status-348 時点）
+## 8. 既存実装との trace（status-353 時点）
 
 | 数式 | 実装位置 | 備考 |
 |---|---|---|
@@ -343,12 +394,13 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 | [#eq-pn-hertz](#eq-pn-hertz) | `strategy.py:_apply_power_law` | $\alpha=1.5$ |
 | [#eq-dpn-dx](#eq-dpn-dx) | `strategy.py:_apply_power_law_deriv` | tangent 用 |
 | [#eq-fc](#eq-fc) | `strategy.py:HuberContactForceProcess.evaluate` | バッチ経路 |
-| [#eq-kc-full-decomposition](#eq-kc-full-decomposition) | `strategy.py:assemble_tangent` | **K_mat,ndir 欠落** |
-| [#eq-kc-pair-block](#eq-kc-pair-block) | `strategy.py:tangent_components`（旧）| Phase C で項別 Process に分解 |
-| [#eq-dn-du](#eq-dn-du) | **未実装** | status-352（Phase C-3）|
+| [#eq-kc-full-decomposition](#eq-kc-full-decomposition) | `strategy.py:tangent_components`（orchestrator）| 5 項 Process 統合、status-350/351 で抽出 |
+| [#eq-kc-pair-block](#eq-kc-pair-block) | `strategy.py:1595`（`w_mat * nn - w_geo * I_nn`）| `KcNormalStiffnessProcess` + `KcGeoStiffnessProcess` で分解済み |
+| [#eq-dn-du](#eq-dn-du) | `strategy.py:1595` の `-w_geo * I_nn` 項（`KcGeoStiffnessProcess`）| **既実装。status-353 で $\boldsymbol{K}_{\mathrm{geo}}$ との同一性を確立** |
 | [#sym-kmat](#sym-kmat) | — | 静的契約のみ、Phase E で C18 検査 |
 | [#eq-kc-fd](#eq-kc-fd) | `xkep_cae/verify/kc_component_fd.py` | `@verified_by` 紐付け予定 |
-| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` | status-271〜274 拡張 |
+| [#eq-kc-term-fd](#eq-kc-term-fd) | — | status-353 以降の項別 FD 整合性、tol 未決定 |
+| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` | status-271〜274 拡張、隣接 I_nn 非拡張は status-353 で x/z 残差候補 |
 
 ---
 
@@ -361,6 +413,8 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 - status-289〜296: K_c FD 不整合追跡（s_unclamped、StJacobian、frozen-m、K_c_adj mat-only）
 - status-342〜345: 19 本撚線 K_c 成分分解 FD 診断 + report 精度バグ訂正
 - status-346〜347: MCDD Phase A（`MathematicalContract` + `ProcessContractRegistry`）
-- **status-348（本台帳）**: Phase B-1 — 03 章先行整備
-- status-349（予定）: Phase B-2 — 他 5 章 + `equation_index.py` + C15 拡張
-- status-350〜353: Phase C — 項別 Process 抽出 + `KcNormalDirectionStiffnessProcess` 新設（本命修正）
+- status-348（本台帳初版）: Phase B-1 — 03 章先行整備（K_mat,ndir を独立項として記述、後に訂正）
+- status-349: Phase B-2 — 他 5 章 + `equation_index.py` + C15 拡張
+- status-350〜351: Phase C-1/C-2 — 項別 Process 抽出（5 項独立 Process 化）
+- status-352: 計画書ロスト記録 + Phase C-3 前提の数理検証（K_mat,ndir ≡ K_geo の指摘）
+- **status-353（本台帳 §3/§4/§5/§8 訂正）**: K_mat,ndir と K_geo の同一性を確立し、6 項記述を 5 項に訂正。x/z カップリング残差の再原因候補を K_hermite_adj mat-only に再設定
