@@ -28,10 +28,15 @@ from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
 from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
 
-# ── K_c 項展開契約（status-350 Phase C-1 → status-351 Phase C-2） ─────
-# 数理台帳 6 項完全分解 (K_mat_nn / K_mat_ndir / K_closest / K_hermite_adj /
-# K_geo / K_st) のうち、status-351 で 5 項（K_mat_ndir 以外）を独立 Process
-# として確立。K_mat_ndir は status-352 本命修正で追加予定。
+# ── K_c 項展開契約（status-350 Phase C-1 → status-351 Phase C-2 → status-353 訂正） ─────
+# 数理台帳 03 章の 5 項完全分解 (K_mat_nn / K_closest / K_hermite_adj / K_geo /
+# K_st) を独立 Process として確立済み。
+#
+# status-353 訂正: 当初 status-346〜352 で計画されていた「K_mat_ndir（法線方向
+# 感度 -p_n · ∂n̂/∂u）を独立項として追加」は、数理検証により
+# K_geo（= -p_n · ∂n̂/∂u のペア局所形、重み p_n/d、I_nn 項）と **同一である**
+# ことが判明（docs/math/03_huber_contact_penalty.md §4 参照）。新規追加は
+# 二重計上となるため撤回し、5 項で完結とする。
 #
 # term_names/providers の長さは等しく、`TermExpansionContract.__post_init__` で
 # 同一性が検査される。orchestrator `tangent_components()` は 5 Process の出力を
@@ -54,9 +59,9 @@ _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     tol_rel=5e-3,
     severity="nightly",
     description=(
-        "status-351 Phase C-2: tangent_components() から 5 項を抽出。"
+        "status-351 Phase C-2 + status-353 訂正: tangent_components() の 5 項分解。"
         "K_mat_nn / K_closest / K_hermite_adj / K_geo / K_st が独立 Process。"
-        "K_mat_ndir は status-352 本命修正で追加予定。"
+        "K_mat_ndir（当初 Phase C-3 計画）は K_geo と同一のため未追加（status-353）。"
     ),
 )
 
@@ -853,18 +858,23 @@ def _assemble_12x12_pair_block(
 class KcNormalStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcNormalStiffnessOutput],
 ):
-    """K_c 法線材料剛性項 K_mat_nn を計算する Process (status-350 / status-351).
+    """K_c 法線材料剛性項 K_mat_nn を計算する Process (status-350 / status-351 / status-353).
 
     数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-kc-full-decomposition``
     の第 1 項 $\\boldsymbol{K}_{\\mathrm{mat,nn}}
-    = -\\frac{\\partial p_n}{\\partial \\boldsymbol{u}}\\otimes\\hat{\\boldsymbol{n}}$
-    （$(s,t)$ を凍結したペア局所 $3\\times 3$ ブロック $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$）
+    = +\\frac{\\partial p_n}{\\partial \\boldsymbol{u}}\\otimes\\hat{\\boldsymbol{n}}$
+    （符号は $\\boldsymbol{K}_c = \\partial(-\\boldsymbol{f}_c)/\\partial \\boldsymbol{u}$ の残差系規約、
+    $(s,t)$ を凍結したペア局所 $3\\times 3$ ブロック $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$）
     を提供する。
 
     status-351 Phase C-2 で隣接ノード拡張 (K_hermite_adj) を
     ``KcHermiteNonlocalStiffnessProcess`` へ分離。本 Process はペア局所の
     12x12 ブロックのみを扱い、非局所ノードには寄与しない。
-    K_mat_ndir (status-352 本命) は未実装。
+
+    status-353 訂正: 当初計画されていた K_mat_ndir 項（法線方向感度
+    $-p_n\\,\\partial\\hat{\\boldsymbol{n}}/\\partial \\boldsymbol{u}$）は、
+    ``KcGeoStiffnessProcess`` が既に担う I_nn 項と数理的に同一であることが
+    status-353 で確認されたため、追加 Process は不要（5 項で完結）。
     """
 
     meta = ProcessMeta(
@@ -1003,12 +1013,18 @@ class KcHermiteNonlocalStiffnessProcess(
 class KcGeoStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcGeoStiffnessOutput],
 ):
-    """K_c 幾何補正項 K_geo を計算する Process (status-350 Phase C-1).
+    """K_c 幾何補正項 K_geo を計算する Process (status-350 Phase C-1 / status-353 訂正).
 
     K_geo = (p_n / d) * (I - n̂⊗n̂) のペア局所組み立て。数理台帳
     ``docs/math/03_huber_contact_penalty.md#eq-kc-pair-block`` の w_geo 項。
     ``tangent_components()`` の規約では ``K_c = K_mat - K_geo + K_st`` で
     合成されるため、Process は絶対値の幾何剛性を返し、符号は呼び出し側が処理する。
+
+    status-353 訂正: 本項は **法線方向感度 $-p_n \\cdot \\partial\\hat{\\boldsymbol{n}}/\\partial\\boldsymbol{u}$
+    のペア局所形そのもの** であり、$1/d$ 因子は
+    $\\hat{\\boldsymbol{n}} = \\boldsymbol{r}/d$ の内在項として現れる。
+    status-346〜352 で独立項扱いされていた K_mat_ndir は本 Process と同一のため、
+    新規 Process 追加は二重計上となる（詳細は数理台帳 §4）。
     """
 
     meta = ProcessMeta(
