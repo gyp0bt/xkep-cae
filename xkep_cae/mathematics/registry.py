@@ -38,7 +38,8 @@ Phase E status-356 で追加される C18 静的検査（「`@verified_by` 紐�
 ----
 - 契約型: `xkep_cae/mathematics/contracts.py`
 - 設計仕様: `xkep_cae/mathematics/docs/mathematics.md`
-- 上位プラン: `/root/.claude/plans/deep-wiggling-seal.md`
+- 上位プラン: `/root/.claude/plans/deep-wiggling-seal.md`（**永久ロスト**、
+  status-352 で記録。計画情報は `CLAUDE.md` / `docs/roadmap.md` / status 群に転記）
 """
 
 from __future__ import annotations

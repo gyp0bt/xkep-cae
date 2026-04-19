@@ -142,7 +142,9 @@ class HuberContactForceProcess(SolverProcess[...]):
 | D-2 | 355 | 既存 FD 診断フラグの deprecation |
 | E | 356 | C18/C19 契約検査追加 |
 
-全体計画: `/root/.claude/plans/deep-wiggling-seal.md`
+全体計画: `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
+（status-352 記録）。現行の計画情報は `CLAUDE.md`・`docs/roadmap.md`・
+`docs/status/status-{N}.md` の各章に転記して運用する。
 
 ## 設計上の注意
 
