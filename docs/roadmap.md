@@ -16,8 +16,9 @@
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜357）を実施中
-> （**7/12 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜358）を実施中
+> （**7/12 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353、
+> status-354 で 7本撚線 90度曲げ接触あり重量回帰確認 frac=1.0 維持 + 38% 高速化）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -134,8 +135,9 @@
 | **MCDD Phase B-2** | **数理台帳 6 章完備 + `equation_index.py` + C15 拡張**（status-349）— 残り 5 章（01 梁運動学 / 02 接触幾何 / 04 smooth penalty 摩擦 / 05 バリア関数被膜 / 06 Generalized-α 時間積分）を整備し、計 6 章 / 55 アンカー完成。`equation_index.py` で `<a id="...">` 抽出 + 参照解決 API（21 テスト）、C15 拡張で台帳空・アンカー重複・未解決参照を契約違反計上（8 テスト） |
 | **MCDD Phase C-1** | **`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化**（status-350）— `HuberContactForceProcess.tangent_components()` の K_c 3 項（K_mat / K_geo / K_st）を独立 Process に分離、`TermExpansionContract` `providers` で 1:1 対応。新 Process 14 テスト追加、既存 `test_kc_component_fd.py` 19 件無変更 pass、7本撚線 frac=1.0 回帰合格（82s） |
 | **MCDD Phase C-2** | **`KcHermiteNonlocal` / `KcClosestPoint` Process 抽出 + 5 項 TermExpansionContract**（status-351）— K_mat_adj 隣接拡張を `KcNormalStiffnessProcess` から `KcHermiteNonlocalStiffnessProcess` に分離。K_st の「(s,t) 摂動に伴う p_n 追従」成分を `KcClosestPointStiffnessProcess` に分離（`ContactForceStStiffnessProcess._assemble_term_coo(term)` classmethod で共通セットアップ共有）。`term_names` 5 項 `("K_mat_nn", "K_closest", "K_hermite_adj", "K_geo", "K_st")` / providers 5 Process に拡張、orchestrator は後方互換 3-tuple 返却。新 Process 11 テスト追加（14→25）、`test_kc_component_fd.py` 19 件無変更 pass、7本撚線 frac=1.0 回帰合格（47s） |
+| **7本撚線90度回帰** | **接触あり 90度曲げ重量回帰 — frac=1.0 維持 + 38% 高速化**（status-354）— status-353 数理台帳訂正後の重量回帰を `contracts/verify_7strand_90deg_contact.py`（status-326 で掃除された `verify_s_unclamped_90deg.py` を git history から再整備）で実施。κ=π/2/L=0.01571 [1/mm]（bending_angle=90°）、Hertz 型 α=1.5、free_end_mode=True、contact_enabled=True、μ=0.15 の status-298 同一設定。**frac=1.0000, incr=542, cutback=52, 465.0s** 完走、status-298 baseline (752s) 比 **-38.2%** 高速化（status-308〜326 の K_st vectorize / cKDTree / distance culling / symbolic factor reuse の累積効果）。cutback 内訳 `diverged` 8 / `nr_limit` **43 (82.7%)** / `relax_fail` 1、`nr_limit` 主体は status-353 仮説 A（`K_hermite_adj` mat-only）と整合。実装変更なし、テスト数変動なし |
 | **MCDD 数理台帳訂正** | **K_mat,ndir ≡ K_geo 同一性確立 + Phase C-3 再定義**（status-353）— A-A 同側ペア局所導出から `K_geo = -p_n · ∂n̂/∂u` のペア局所形そのもの（$1/d$ は $\hat n = r/d$ 内在項）であることを証明、`KcGeoStiffnessProcess` が法線方向感度を担うことを確立。「`K_mat_ndir` 独立追加」の当初 Phase C-3 計画を撤回、5 項 `TermExpansionContract` で完結。`docs/math/03_huber_contact_penalty.md` §3/§3.1/§4/§5/§8 訂正、`strategy.py` モジュールコメント / `KcNormalStiffness` / `KcGeoStiffness` docstring 訂正。19本 Type D stall の真の候補を `K_hermite_adj` mat-only 近似（`I_nn` 隣接拡張漏れ、status-295 で意図的に除外）に再設定。7本撚線曲げ揺動 frac=1.0000, 10.20s 完走、Hertz 完走 9.96s、`pytest xkep_cae/contact/` 421 passed 5 skipped |
-| **次（MCDD Phase C-3 再定義）** | **`K_hermite_adj` フル項拡張**（status-354）— `KcHermiteNonlocalStiffnessProcess` に `−(p_n/d) P_⊥` の `I_nn` 隣接ノード成分を追加（status-295 mat-only 制約を解消）。19本撚線 K_c FD 再計測で `mat_only` rel_err 改善を確認、frac=0.48→1.0 完走を目標。後続: Phase D 診断ディスパッチャ（status-355-356）→ Phase E C18/C19 契約検査（status-357）|
+| **次（MCDD Phase C-3 再定義）** | **`K_hermite_adj` フル項拡張**（status-355 着手予定、status-354 の重量回帰確認で baseline 再実測済み）— `KcHermiteNonlocalStiffnessProcess` に `−(p_n/d) P_⊥` の `I_nn` 隣接ノード成分を追加（status-295 mat-only 制約を解消）。19本撚線 K_c FD 再計測で `mat_only` rel_err 改善を確認、frac=0.48→1.0 完走を目標。status-354 で計測した cutback `nr_limit` 43 件（82.7%）の削減が主 KPI。後続: Phase D 診断ディスパッチャ（status-356-357）→ Phase E C18/C19 契約検査（status-358）|
 
 ---
 

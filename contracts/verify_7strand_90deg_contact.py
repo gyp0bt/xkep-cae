@@ -26,7 +26,7 @@ import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from xkep_cae.numerical_tests.strand_bending_oscillation import (
+from xkep_cae.numerical_tests.strand_bending_oscillation import (  # noqa: E402
     StrandBendingOscillationConfig,
     StrandBendingOscillationProcess,
 )
@@ -94,7 +94,9 @@ def run_90deg_bending() -> tuple[float, int, int, float]:
     print()
     print("--- status-298 baseline 比較 ---")
     print("  baseline: frac=1.0000, incr=535, cutback=45, 752s")
-    print(f"  current : frac={frac:.4f}, incr={sr.n_increments}, cutback={sr.n_cutbacks}, {elapsed:.1f}s")
+    print(
+        f"  current : frac={frac:.4f}, incr={sr.n_increments}, cutback={sr.n_cutbacks}, {elapsed:.1f}s"
+    )
     print()
 
     return frac, sr.n_increments, sr.n_cutbacks, elapsed
