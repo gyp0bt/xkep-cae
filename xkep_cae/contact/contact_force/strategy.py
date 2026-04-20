@@ -28,7 +28,7 @@ from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
 from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
 
-# ── K_c 項展開契約（status-350 Phase C-1 → status-351 Phase C-2 → status-353 訂正） ─────
+# ── K_c 項展開契約（status-350/351/353/354） ─────
 # 数理台帳 03 章の 5 項完全分解 (K_mat_nn / K_closest / K_hermite_adj / K_geo /
 # K_st) を独立 Process として確立済み。
 #
@@ -37,6 +37,14 @@ from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
 # K_geo（= -p_n · ∂n̂/∂u のペア局所形、重み p_n/d、I_nn 項）と **同一である**
 # ことが判明（docs/math/03_huber_contact_penalty.md §4 参照）。新規追加は
 # 二重計上となるため撤回し、5 項で完結とする。
+#
+# status-354 仲裁: status-353 提示の仮説 A（K_hermite_adj に `-w_geo * I_nn` の
+# 隣接ノード項を追加すると x/z 残差が改善する）を実装して直接実験した結果、
+# `test_kc_component_fd.py::test_helical_3d_hermite` の rel_err が
+# 1.795% → 38.49% に 21 倍悪化し反証された。mat-only 形態（status-295）は
+# s-tracking 補償の実装上の要請であり、Phase C-3 再々定義は
+# hypothesis B（K_closest 隣接拡張）/ C（NR active set）/ D（摩擦 K_st 隣接項）
+# に再配分する（docs/math/03 §7 参照）。
 #
 # term_names/providers の長さは等しく、`TermExpansionContract.__post_init__` で
 # 同一性が検査される。orchestrator `tangent_components()` は 5 Process の出力を
@@ -59,9 +67,10 @@ _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     tol_rel=5e-3,
     severity="nightly",
     description=(
-        "status-351 Phase C-2 + status-353 訂正: tangent_components() の 5 項分解。"
+        "status-351/353/354: tangent_components() の 5 項分解。"
         "K_mat_nn / K_closest / K_hermite_adj / K_geo / K_st が独立 Process。"
-        "K_mat_ndir（当初 Phase C-3 計画）は K_geo と同一のため未追加（status-353）。"
+        "K_mat_ndir は K_geo と同一のため未追加（status-353）、"
+        "K_hermite_adj の I_nn フル項拡張は実験反証済み（status-354）。"
     ),
 )
 
@@ -907,7 +916,8 @@ class KcHermiteNonlocalStiffnessProcess(
     座標の有限差分で構成されるため、$\\boldsymbol{p}_A(s)$ は実質的に隣接ノード
     座標にも依存する（status-271〜274 / status-294 frozen-m 部分解消）。
     本項は材料剛性 $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$
-    を隣接ノード DOF 列に拡張した mat-only 組み立て（status-295 で正当化）。
+    を隣接ノード DOF 列に拡張した mat-only 組み立て（status-295 で正当化、
+    status-354 で仮説 A = I_nn フル項拡張が反証されたため継続）。
 
     数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-hermite-pA`` 参照。
     """
@@ -938,6 +948,9 @@ class KcHermiteNonlocalStiffnessProcess(
         t_act = data["t_act"]
         nodes_act = data["nodes_act"]
 
+        # status-354: 仮説 A（I_nn 隣接拡張追加）は `test_helical_3d_hermite` で
+        # rel_err 1.795% → 38.49% に悪化し反証された（3D ヘリカル Hermite Hertz、
+        # s 追従による n̂ 変化相殺が活性化）。status-295 の mat-only は継続。
         K_3x3_mat = w_mat[:, None, None] * nn
 
         active_idx = np.where(data["active"])[0]
