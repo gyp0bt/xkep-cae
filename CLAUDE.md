@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-19 | 契約違反 **0件** | 条例違反 **0件** | **MCDD 数理台帳訂正完了（status-353） — K_mat,ndir ≡ K_geo 同一性確立、当初 Phase C-3 撤回・5 項完結化、Phase C-3 再定義 = `K_hermite_adj` フル項拡張（status-354）**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-20 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-3 再定義実験完了（status-354） — 仮説 A（`K_hermite_adj` フル項拡張）を実験反証（rel_err 1.795%→38.49%）、mat-only 継続、Phase C-3' 再々定義で仮説 B（`KcClosestPointStiffnessProcess` 隣接拡張）最有力（status-355 着手予定）**
 
 ### ターゲット
 
@@ -188,7 +188,7 @@
 
 ## やるべきこと
 
-### ★最優先: MCDD（数理契約駆動開発）Phase A〜E（status-346〜357、status-353 で 1 status 後ろ倒し）
+### ★最優先: MCDD（数理契約駆動開発）Phase A〜E（status-346〜358、status-354 で 1 status 後ろ倒し）
 
 **計画（LOST）**: `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 （2026-04-19 時点、ファイルは復旧不可）。以降、計画書参照箇所は本 CLAUDE.md・
@@ -210,8 +210,15 @@ status-348 で **Phase B-1 完了**（`docs/math/03_huber_contact_penalty.md` 19
 status-353 で **数理台帳訂正完了**（`K_mat,ndir` ≡ `K_geo` の同一性確立、
 当初 Phase C-3 計画を撤回、5 項で完結化、`docs/math/03_huber_contact_penalty.md`
 §3/§3.1/§4/§5/§8 訂正、`strategy.py` モジュールコメント / 関連 docstring 訂正、
-7本撚線回帰 frac=1.0000 完走、421 passed 5 skipped）。次は
-**Phase C-3 再定義（status-354）**: `K_hermite_adj` フル項拡張:
+7本撚線回帰 frac=1.0000 完走、421 passed 5 skipped）。status-354 で
+**Phase C-3 再定義実験**（仮説 A `K_hermite_adj` フル項拡張 = `-w_geo * I_nn`
+隣接ノード項追加）を直接実験し、gate テスト `test_helical_3d_hermite` の
+rel_err が **1.795% → 38.49%** に 21 倍悪化して **反証**、mat-only（status-295）
+継続。数理台帳 §7/§3.1/§4/§8 に仲裁追記、`strategy.py` docstring に実測
+結果記録（実装変更なし）。Phase C-3 を **Phase C-3' 再々定義**
+（hypothesis B/C/D）へ再配分。次は **仮説 B（status-355）**:
+`KcClosestPointStiffnessProcess` の隣接ノード拡張で s-tracking 補償経路を
+解析的実装:
 
 - ~~status-347（Phase A-2）~~: 完了
 - ~~status-348-349（Phase B）~~: 完了（6 章 / 55 アンカー + `equation_index.py` + C15 拡張）
@@ -219,9 +226,10 @@ status-353 で **数理台帳訂正完了**（`K_mat,ndir` ≡ `K_geo` の同一
 - ~~status-351（Phase C-2）~~: 完了（`KcHermiteNonlocal` / `KcClosestPoint` 分離、5 項 TermExpansionContract）
 - ~~status-352（中断スナップショット）~~: 完了（計画書ロスト記録 + Phase C-3 前提疑義提示）
 - ~~status-353（数理台帳訂正）~~: 完了（`K_mat,ndir` ≡ `K_geo` 確立、当初 Phase C-3 撤回、5 項完結化、§3/§4/§5/§8 訂正、7本撚線回帰 frac=1.0 完走）
-- **status-354（Phase C-3 再定義、次セッション）**: **`K_hermite_adj` フル項拡張**（`KcHermiteNonlocalStiffnessProcess` に `−(p_n/d) P_⊥` の `I_nn` 隣接ノード成分追加、status-295 mat-only 制約解消）。19本撚線 K_c FD 再計測で `mat_only` rel_err 改善を確認、frac=0.48→1.0 完走を目標
-- **status-355-356（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断フラグ deprecation
-- **status-357（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19（`term_processes` 実在検査）の追加
+- ~~status-354（Phase C-3 再定義実験）~~: 完了（仮説 A = `K_hermite_adj` + `-w_geo * I_nn` を実験反証、rel_err 1.795%→38.49% 21倍悪化、revert・mat-only 継続、数理台帳 §7 仲裁追記、Phase C-3' 再々定義）
+- **status-355（Phase C-3' 着手、次セッション）**: **仮説 B = `KcClosestPointStiffnessProcess` の隣接ノード拡張**（`∂s/∂u_adj` / `∂t/∂u_adj` を組み込み、仮説 A 反証で判明した s-tracking 補償経路 (2) を解析的実装）。19本撚線 K_c FD 再計測で `mat_only` rel_err 改善を確認、frac=0.48→1.0 完走を目標。まず `_st_jacobian.py` / `_assemble_term_coo` 精査で実装コスト評価 + `test_helical_3d_hermite` comp_z 77% 不整合を s-tracking 不足由来で切り分け
+- **status-356-357（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断フラグ deprecation
+- **status-358（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19（`term_processes` 実在検査）の追加
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）:
 

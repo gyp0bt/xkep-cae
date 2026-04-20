@@ -203,7 +203,7 @@ $c_i c_j [w_{\mathrm{mat}}\,\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top - (p_n
 | `K_mat_nn` | $+c_i c_j\,w_{\mathrm{mat}}\,(\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top)$ | `KcNormalStiffnessProcess` | ✅ status-350/351（K_hermite_adj 分離後はペア局所のみ）|
 | `K_geo` | $-\,c_i c_j\,w_{\mathrm{geo}}\,\boldsymbol{P}_\perp$（$= p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ と同値）| `KcGeoStiffnessProcess` | ✅ status-350、**法線方向感度 $\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ を内包**（status-353 訂正）|
 | `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等（`dpn_ds * g_shape`）| `KcClosestPointStiffnessProcess` | ✅ status-351 で K_st 残差から分離 |
-| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$（mat-only 近似、`w_mat * nn` のみ） | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351（status-271〜274/295 mat-only。**I_nn 項は未拡張、status-353 で x/z 残差候補に再設定**） |
+| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$（mat-only、`w_mat * nn` のみ） | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351（status-295 mat-only、**status-354 で I_nn フル項拡張の仮説 A は実験反証済み** — §7 参照） |
 | `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか（K_closest 分離後の残差項）| `ContactForceStStiffnessProcess` | ✅ status-350/351 |
 
 → 契約: `TermExpansionContract(name="K_c_term_expansion", total_name="K_c", term_names=("K_mat_nn","K_closest","K_hermite_adj","K_geo","K_st"), providers=(...), combinator="add_sub", equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition")`
@@ -263,11 +263,11 @@ status-289〜344 の K_c FD 調査で「x/z 成分カップリング欠落」が
 | Phase C-3 で 6 項 `TermExpansionContract` 化 | **5 項で完結**（status-351 で既達） |
 
 status-344 で観測された x/z カップリング残差（`mat_only` rel_err mean=44%, comp_x max=98%）
-の真の原因候補は、ペア局所の完全項ではなく **`K_hermite_adj` の隣接ノード拡張が
-mat-only（`w_mat * nn` のみ）で `I_nn` 項を含まないこと**（status-295 で意図的に
-除外、理由: 「隣接ノード変位→s追従により法線変化はほぼ相殺されるが、ギャップ
-変化(n⊗n項)は維持される」`strategy.py:1596-1598` 既存コメント）に再設定する。
-詳細と検証は status-353 を参照。
+について、status-353 で提示された仮説 A（「`K_hermite_adj` の `I_nn` 隣接拡張
+追加で改善」）は **status-354 の直接実験で反証された**（`test_helical_3d_hermite`
+rel_err **1.795% → 38.49%**、§7 参照）。mat-only 近似は s-tracking 補償の
+実装上の要請であり、真の残差源は他の 3 経路（hypothesis B/C/D）に再配分する。
+詳細は status-354 および §7 を参照。
 
 → 実装: **既存 `KcGeoStiffnessProcess`** が $-p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ のペア局所形を担う。新規 Process 追加は不要。
 
@@ -381,8 +381,37 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 
 → 契約: status-351 で `KcHermiteNonlocalStiffnessProcess` が抽出され、
 `TermExpansionContract.term_names="K_hermite_adj"` で網羅性を要求している。
-**ただし現行実装は mat-only（`w_mat * nn` のみ、`I_nn` 隣接拡張なし）**
-であり、status-353 で x/z カップリング残差の主因候補に再設定。
+
+**mat-only 形態の正当性（status-354 実験検証）**:
+status-353 で提示された仮説 A（「K_hermite_adj に `-w_geo * I_nn` の隣接
+ノード項を追加すると x/z 残差が改善する」）は **status-354 の実験で反証**
+された。`KcHermiteNonlocalStiffnessProcess` の `K_3x3_mat` を
+`w_mat * nn - w_geo * I_nn`（ペア局所と同形）に拡張して
+`test_kc_component_fd.py::test_helical_3d_hermite` を実行した結果:
+
+| 構成 | rel_err | 備考 |
+|------|---------|------|
+| mat-only（現行、status-295） | **1.795%** | 既存ゲートテスト合格 |
+| `mat + I_nn`（仮説 A 実装） | **38.49%** | 21 倍悪化、ゲートテスト fail |
+
+この反証の数理的解釈:  隣接ノード $\boldsymbol{x}_{\mathrm{adj}}$ の摂動は
+(i) Hermite 接線 $\boldsymbol{m}$ 経由で $\boldsymbol{p}_A$ を直接動かす
+成分と、(ii) min-distance 射影で $(s,t)$ を再決定する s-tracking
+補償成分の 2 経路を持つ。`I_nn` 方向（法線直交）の変動は (ii) により
+ほぼ相殺されるのに対し、`n⊗n` 方向（ギャップ方向）の変動は (i) から (ii) への
+漏出が小さく維持される。Process は (i) のみを計算するため、数学的に
+純粋な chain-rule（フル項）よりも **mat-only のほうが FD（実測）と一致する**
+（status-295 の設計意図の実証）。
+
+**Phase C-3 再々定義**: 19 本撚線 Type D stall の真の原因候補は以下に再配分:
+
+1. **B**: `KcClosestPointStiffnessProcess` を隣接ノード DOF 列にも拡張
+   （$\partial s/\partial \boldsymbol{u}_{\mathrm{adj}}$ / $\partial t/\partial \boldsymbol{u}_{\mathrm{adj}}$
+   を組み込み、上記 (ii) 経路を解析的に実装）
+2. **C**: NR 反復内の active set 凍結近似の弛緩（status-258 観察と整合）
+3. **D**: 摩擦 `K_st` 隣接拡張での類似項不整合
+
+status-354 はコードの mat-only を維持し、数理台帳と実装の整合性を確認した。
 
 ---
 
@@ -400,7 +429,7 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 | [#sym-kmat](#sym-kmat) | — | 静的契約のみ、Phase E で C18 検査 |
 | [#eq-kc-fd](#eq-kc-fd) | `xkep_cae/verify/kc_component_fd.py` | `@verified_by` 紐付け予定 |
 | [#eq-kc-term-fd](#eq-kc-term-fd) | — | status-353 以降の項別 FD 整合性、tol 未決定 |
-| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` | status-271〜274 拡張、隣接 I_nn 非拡張は status-353 で x/z 残差候補 |
+| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` | status-271〜274 拡張、隣接 I_nn 非拡張は **status-354 で仮説 A 反証** — mat-only 継続（§7 参照） |
 
 ---
 
@@ -417,4 +446,5 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 - status-349: Phase B-2 — 他 5 章 + `equation_index.py` + C15 拡張
 - status-350〜351: Phase C-1/C-2 — 項別 Process 抽出（5 項独立 Process 化）
 - status-352: 計画書ロスト記録 + Phase C-3 前提の数理検証（K_mat,ndir ≡ K_geo の指摘）
-- **status-353（本台帳 §3/§4/§5/§8 訂正）**: K_mat,ndir と K_geo の同一性を確立し、6 項記述を 5 項に訂正。x/z カップリング残差の再原因候補を K_hermite_adj mat-only に再設定
+- **status-353（§3/§4/§5/§8 訂正）**: K_mat,ndir と K_geo の同一性を確立し、6 項記述を 5 項に訂正。x/z カップリング残差の再原因候補を K_hermite_adj mat-only に再設定
+- **status-354（§7/§3.1/§4/§8 仲裁追記）**: 仮説 A（K_hermite_adj フル項拡張）を実験反証（`test_helical_3d_hermite` rel_err 1.795% → 38.49%）、mat-only 継続を実証。Phase C-3 再々定義 = hypothesis B/C/D 探索へ
