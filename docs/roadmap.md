@@ -12,30 +12,35 @@
 
 ---
 
-## 現在地（2026-04-20）
+## 現在地（2026-04-21）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜358、status-354 で 1 status 後ろ倒し）を実施中
-> （**7/13 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354）。
+> （**8/13 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
-> **status-353 訂正**: 当初 Phase C-3 で計画されていた `KcNormalDirectionStiffnessProcess`
-> は、A-A 同側ペア局所導出により **既存 `KcGeoStiffnessProcess` と数理的に同一**
-> （重み $p_n/d$、$1/d$ は $\hat n = r/d$ の内在項）であることが判明し撤回。
-> Phase C-3 を **「`K_hermite_adj` フル項拡張（`I_nn` 隣接ノード成分追加）」** に再定義（status-354 着手）。
-> **status-354 実験反証**: 仮説 A（`K_hermite_adj` に `-w_geo * I_nn` 追加）を直接実験し、
-> `test_kc_component_fd.py::test_helical_3d_hermite` の rel_err が **1.795% → 38.49%** に
-> 21 倍悪化して反証、変更を全 revert し mat-only（status-295）継続。
-> 隣接ノード摂動の `I_nn` 方向は min-distance 射影の s-tracking で補償されるため
-> Process 側に追加すると FD との乖離が拡大。Phase C-3 を **Phase C-3' 再々定義**
-> （hypothesis B/C/D）へ再配分し、**仮説 B**（`KcClosestPointStiffnessProcess` の
-> 隣接ノード拡張で s-tracking 経路を解析的実装）を最有力候補に昇格（status-355 着手予定）。
+> **status-353 訂正**: 当初 Phase C-3 の `KcNormalDirectionStiffnessProcess` は
+> **既存 `KcGeoStiffnessProcess` と数理的に同一**（重み $p_n/d$、$1/d$ は
+> $\hat n = r/d$ 内在項）で撤回。**status-354 反証**: 仮説 A（`K_hermite_adj`
+> 単独フル項化 = `-w_geo * I_nn` 追加）は `test_helical_3d_hermite` rel_err
+> 1.795% → 38.49%（21 倍悪化）で**単独では過剰計上**。**status-355 診断**:
+> rel_err の 100% が active×adj ブロックに局在、仮説 B 目標を
+> `||diff[ax]|| 98.52 → <1e-3` に定量化。
+> **status-356 解決**: 仮説 A（フル項 (i) 直接経路）と仮説 B（`K_closest` /
+> `K_st` active×adj 拡張 = (ii) s-tracking 経路）を**同時導入**することで
+> 2 経路の $P_\perp$ 成分が解析的に相殺し、`test_helical_3d_hermite`
+> **rel_err 1.795% → 2.18e-07**（FD 機械精度）、`||diff[ax]|| 98.52 → 4.75e-05`
+> （6 桁改善）達成。status-354 の「mat-only が最良」は (ii) 未実装時の
+> ワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / status-356
+> 解決 / 診断裏付けに再構成。次は status-357 で 19 本撚線 FD 再計測 +
+> Type D stall 再試行。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、
 > status-353 で 03 章 §3/§4/§5/§8 訂正、status-354 で §7 仮説 A 反証仲裁追記、
+> **status-356 で §7 全面再構成（2 経路解析 + 相殺定理）**、
 > `equation_index.py` で C15 機械検証）。
 
 | 到達点 | 概要 |

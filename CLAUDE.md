@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-20 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-3 再定義実験完了（status-354） — 仮説 A（`K_hermite_adj` フル項拡張）を実験反証（rel_err 1.795%→38.49%）、mat-only 継続、Phase C-3' 再々定義で仮説 B（`KcClosestPointStiffnessProcess` 隣接拡張）最有力（status-355 着手予定）**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-21 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-3' 実装完了（status-356） — 仮説 A（`K_hermite_adj` フル項）+ 仮説 B（`K_closest`/`K_st` active×adj 拡張）同時導入で 2 経路 $P_\perp$ 相殺、`test_helical_3d_hermite` rel_err 1.795% → 2.18e-07（FD 機械精度）達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正。次は status-357 で 19 本撚線 FD 再計測 + Type D stall 再試行**
 
 ### ターゲット
 
@@ -226,9 +226,10 @@ rel_err が **1.795% → 38.49%** に 21 倍悪化して **反証**、mat-only�
 - ~~status-351（Phase C-2）~~: 完了（`KcHermiteNonlocal` / `KcClosestPoint` 分離、5 項 TermExpansionContract）
 - ~~status-352（中断スナップショット）~~: 完了（計画書ロスト記録 + Phase C-3 前提疑義提示）
 - ~~status-353（数理台帳訂正）~~: 完了（`K_mat,ndir` ≡ `K_geo` 確立、当初 Phase C-3 撤回、5 項完結化、§3/§4/§5/§8 訂正、7本撚線回帰 frac=1.0 完走）
-- ~~status-354（Phase C-3 再定義実験）~~: 完了（仮説 A = `K_hermite_adj` + `-w_geo * I_nn` を実験反証、rel_err 1.795%→38.49% 21倍悪化、revert・mat-only 継続、数理台帳 §7 仲裁追記、Phase C-3' 再々定義）
-- **status-355（Phase C-3' 着手、次セッション）**: **仮説 B = `KcClosestPointStiffnessProcess` の隣接ノード拡張**（`∂s/∂u_adj` / `∂t/∂u_adj` を組み込み、仮説 A 反証で判明した s-tracking 補償経路 (2) を解析的実装）。19本撚線 K_c FD 再計測で `mat_only` rel_err 改善を確認、frac=0.48→1.0 完走を目標。まず `_st_jacobian.py` / `_assemble_term_coo` 精査で実装コスト評価 + `test_helical_3d_hermite` comp_z 77% 不整合を s-tracking 不足由来で切り分け
-- **status-356-357（Phase D）**: `DiagnosticDispatcherProcess` + 既存 FD 診断フラグ deprecation
+- ~~status-354（Phase C-3 再定義実験）~~: 完了（仮説 A = `K_hermite_adj` + `-w_geo * I_nn` を単独で実験、rel_err 1.795%→38.49% 21倍悪化、当時は revert・mat-only 継続、数理台帳 §7 仲裁追記、Phase C-3' 再々定義）
+- ~~status-355（Phase C-3' 診断）~~: 完了（`work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` 新設、rel_err 1.795% の 100% が active×adj ブロックに局在、仮説 B の定量目標 `||diff[ax]|| 98.52 → <1e-3` と実装パス ~45 行を確立）
+- ~~status-356（Phase C-3' 実装）~~: 完了（**仮説 A + 仮説 B 同時導入**で 2 経路 (i)(ii) の $P_\perp$ 成分を相殺、`test_helical_3d_hermite` rel_err **1.795% → 2.18e-07**、`||diff[ax]|| 98.52 → 4.75e-05` 達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / 診断裏付けに再構成。`_batch_dm_ext_coeffs` ヘルパ抽出で MCDD 脱法 3 回避）
+- **status-357（次セッション）**: **19 本撚線 K_c FD 再計測 + Type D stall 再試行**。`work/beam_hysteresis/13_kc_component_fd_19strand.py` を Phase C-3' 設定で実行し `mat_only` rel_err mean=44% の改善を定量測定、frac=0.48→1.0 完走を目標（status-339 で frac=0.484 止まり、status-341 で n_incr=40 リトライも frac=0.1991 退化）。接触あり 90° 曲げ重量回帰（status-298/299）でも回帰なし確認
 - **status-358（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19（`term_processes` 実在検査）の追加
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）:
