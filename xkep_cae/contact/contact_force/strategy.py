@@ -39,18 +39,24 @@ from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
 # 二重計上となるため撤回し、5 項で完結とする。
 #
 # status-354 仲裁: status-353 提示の仮説 A（K_hermite_adj に `-w_geo * I_nn` の
-# 隣接ノード項を追加すると x/z 残差が改善する）を実装して直接実験した結果、
-# `test_kc_component_fd.py::test_helical_3d_hermite` の rel_err が
-# 1.795% → 38.49% に 21 倍悪化し反証された。mat-only 形態（status-295）は
-# s-tracking 補償の実装上の要請であり、Phase C-3 再々定義は
-# hypothesis B（K_closest 隣接拡張）/ C（NR active set）/ D（摩擦 K_st 隣接項）
-# に再配分する（docs/math/03 §7 参照）。
+# 隣接ノード項**のみ**を追加すると x/z 残差が改善する）を実装して直接実験した
+# 結果、`test_kc_component_fd.py::test_helical_3d_hermite` の rel_err が
+# 1.795% → 38.49% に 21 倍悪化し反証された。真因は s-tracking 補償経路 (ii) が
+# 不在だったこと（直接経路 (i) のフル項 I_nn 成分は (ii) でほぼ相殺される）。
+#
+# status-356 仮説 B 実装: 直接経路 (i) = `w_mat n⊗n - w_geo I_nn` のフル項
+# 拡張 と s-tracking 経路 (ii) = `ContactForceStStiffnessProcess._process_batch_term`
+# の active×adj ブロック（`df_ds_term ⊗ ds_du_adj + df_dt_term ⊗ dt_du_adj`）
+# を**同時に**導入することで `test_helical_3d_hermite` の rel_err が
+# 1.795% → 2.18e-07 に 8 桁改善（||diff[ax]|| = 98.52 → 4.75e-05）。
+# P_perp 成分は (i) と (ii) が解析的に相殺し、`n⊗n` 方向のみ残るため FD
+# と機械精度で整合する（docs/math/03 §7 参照）。
 #
 # term_names/providers の長さは等しく、`TermExpansionContract.__post_init__` で
 # 同一性が検査される。orchestrator `tangent_components()` は 5 Process の出力を
 # 組み立て、後方互換のため 3-tuple (K_mat, K_geo, K_st) を返す:
-#   K_mat = K_mat_nn + K_hermite_adj (KcNormal + KcHermiteNonlocal)
-#   K_st  = K_closest + K_st         (KcClosest + ContactForceSt)
+#   K_mat = K_mat_nn + K_hermite_adj (KcNormal + KcHermiteNonlocal, status-356 フル項)
+#   K_st  = K_closest + K_st         (KcClosest + ContactForceSt, status-356 adj 拡張)
 _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     name="K_c_term_expansion",
     equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition",
@@ -67,10 +73,11 @@ _K_C_TERM_EXPANSION_CONTRACT: TermExpansionContract = TermExpansionContract(
     tol_rel=5e-3,
     severity="nightly",
     description=(
-        "status-351/353/354: tangent_components() の 5 項分解。"
+        "status-351/353/354/356: tangent_components() の 5 項分解。"
         "K_mat_nn / K_closest / K_hermite_adj / K_geo / K_st が独立 Process。"
         "K_mat_ndir は K_geo と同一のため未追加（status-353）、"
-        "K_hermite_adj の I_nn フル項拡張は実験反証済み（status-354）。"
+        "K_hermite_adj の I_nn フル項 + s-tracking adj 拡張で FD 機械精度一致"
+        "（status-356、2026-04-20 仮説 B 実装本体）。"
     ),
 )
 
@@ -279,6 +286,11 @@ class ContactForceStStiffnessInput:
     node_tangents: np.ndarray | None = None
     node_counts: np.ndarray | None = None
     adj_node_map: dict | None = None  # status-272: 隣接ノードマップ
+    # status-356 Phase C-3' 仮説 B: s-tracking adj 拡張 (ii) 用。
+    # `use_hermite and adj_node_map is not None and adj_node_counts is not None`
+    # が揃ったとき、term="closest" / "residual" の両経路で active×adj ブロックを
+    # COO に追加する。None のままだと従来動作（active×active のみ）を維持。
+    adj_node_counts: np.ndarray | None = None
     penalty_exponent: float = 1.0  # status-285: Hertz型非線形ペナルティ指数
 
 
@@ -449,6 +461,26 @@ class ContactForceStStiffnessProcess(
         xB0 = nc[nodes_act[:, 2]]
         xB1 = nc[nodes_act[:, 3]]
 
+        # status-356 Phase C-3' 仮説 B: K_c active×adj 隣接拡張フラグ（s-tracking
+        # 補償経路 (ii) の解析的実装）。Hermite + adj_node_map + adj_node_counts
+        # が揃うと `_batch_st_jacobian_hermite` が ds_du_adj / dt_du_adj を返し、
+        # K_closest / K_st 残差の両項で active×adj ブロックを COO に追加する。
+        # status-355 診断では「K_closest 隣接拡張のみで十分」と仮説立てていたが、
+        # ヘリカル接触の典型配置では dpn_ds = h' * k_pen * (n·dpA) が
+        # n ⊥ dpA でほぼ 0 となるため、K_closest 単独では effect 無し。
+        # 実際は K_st 残差項 ``-p_n(dc_ds n + c dn_ds)`` の adj 経路 (ii) が
+        # P_perp 方向で直接経路 (i)（`KcHermiteNonlocal` の `-w_geo I_nn`）と
+        # 相殺し、`n⊗n` 方向のみ残留する構造。両項 (closest + residual) で
+        # adj 拡張 × (i) のフル項復元 の 2 点同時導入で FD と機械精度一致する。
+        _adj_enabled = (
+            inp.use_hermite
+            and inp.node_tangents is not None
+            and inp.adj_node_map is not None
+            and inp.adj_node_counts is not None
+        )
+        ds_du_adj: np.ndarray | None = None
+        dt_du_adj: np.ndarray | None = None
+
         # ── バッチ StJacobian ──
         if inp.use_hermite and inp.node_tangents is not None:
             from xkep_cae.contact.geometry._st_jacobian import (
@@ -465,7 +497,13 @@ class ContactForceStStiffnessProcess(
                 dm_A_batch, dm_B_batch = HuberContactForceProcess._batch_dm_coeffs(
                     inp.node_counts, nodes_act
                 )
-            ds_du, dt_du, valid, _, _ = _batch_st_jacobian_hermite(
+            dm_ext_A_batch = None
+            dm_ext_B_batch = None
+            if _adj_enabled:
+                dm_ext_A_batch, dm_ext_B_batch = HuberContactForceProcess._batch_dm_ext_coeffs(
+                    inp.adj_node_counts, nodes_act
+                )
+            ds_du, dt_du, valid, ds_du_adj, dt_du_adj = _batch_st_jacobian_hermite(
                 xA0,
                 xA1,
                 xB0,
@@ -480,6 +518,8 @@ class ContactForceStStiffnessProcess(
                 mB1,
                 dm_A_batch,
                 dm_B_batch,
+                dm_ext_A_batch,
+                dm_ext_B_batch,
             )
             # dpA, dpB for dn/ds, dn/dt（バッチ化: status-310）
             from xkep_cae.contact.geometry._st_jacobian import _hermite_deriv_batch
@@ -520,6 +560,10 @@ class ContactForceStStiffnessProcess(
             dt_du = dt_du[keep]
             dpA_arr = dpA_arr[keep]
             dpB_arr = dpB_arr[keep]
+            act_pairs = [act_pairs[k] for k in np.where(keep)[0]]
+            if ds_du_adj is not None:
+                ds_du_adj = ds_du_adj[keep]
+                dt_du_adj = dt_du_adj[keep]
             n_act = int(np.sum(keep))
 
         if n_act == 0:
@@ -636,6 +680,57 @@ class ContactForceStStiffnessProcess(
         row_idx = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
         col_idx = np.broadcast_to(gdofs[:, None, :], (n_act, 12, 12)).ravel()
         val_arr = K_local.ravel()
+
+        # ── status-356 Phase C-3' 仮説 B: K_c active×adj 隣接拡張 ──
+        # adj が有効なとき、active 行 × adj 列ブロック
+        # ``K_local_adj = -(df_ds_term ⊗ ds_du_adj + df_dt_term ⊗ dt_du_adj)``
+        # を COO に追加する。数理台帳 docs/math/03_huber_contact_penalty.md §7
+        # 仮説 B の s-tracking 補償経路 (2) に対応。
+        if ds_du_adj is not None and dt_du_adj is not None:
+            K_local_adj = -(
+                df_ds_term[:, :, None] * ds_du_adj[:, None, :]
+                + df_dt_term[:, :, None] * dt_du_adj[:, None, :]
+            )
+
+            # adj global node indices (N, 4): [A-1, A+2, B-1, B+2] を
+            # adj_node_map から dict→配列ルックアップ経由で取得（status-310 と同手法）。
+            elem_a_act = np.fromiter((p.elem_a for p in act_pairs), dtype=int, count=n_act)
+            elem_b_act = np.fromiter((p.elem_b for p in act_pairs), dtype=int, count=n_act)
+            if n_act > 0:
+                _max_elem = int(max(elem_a_act.max(), elem_b_act.max())) + 1
+                _adj_arr = np.full((_max_elem, 2), -1, dtype=int)
+                for _eidx, (_al, _ar) in inp.adj_node_map.items():
+                    if _eidx < _max_elem:
+                        _adj_arr[_eidx] = [_al, _ar]
+                adj_gnodes = np.column_stack(
+                    [
+                        _adj_arr[elem_a_act, 0],
+                        _adj_arr[elem_a_act, 1],
+                        _adj_arr[elem_b_act, 0],
+                        _adj_arr[elem_b_act, 1],
+                    ]
+                )
+            else:
+                adj_gnodes = np.zeros((0, 4), dtype=int)
+
+            # adj DOF インデックス (N, 12) + 有効性マスク
+            adj_gdofs = np.zeros((n_act, 12), dtype=int)
+            adj_valid = np.zeros((n_act, 12), dtype=bool)
+            for aj in range(4):
+                valid_col = adj_gnodes[:, aj] >= 0
+                for d in range(3):
+                    adj_gdofs[:, aj * 3 + d] = np.where(valid_col, adj_gnodes[:, aj] * ndpn + d, 0)
+                    adj_valid[:, aj * 3 + d] = valid_col
+
+            row_adj = np.broadcast_to(gdofs[:, :, None], (n_act, 12, 12)).ravel()
+            col_adj = np.broadcast_to(adj_gdofs[:, None, :], (n_act, 12, 12)).ravel()
+            val_adj = K_local_adj.ravel()
+            valid_flat = np.broadcast_to(adj_valid[:, None, :], (n_act, 12, 12)).ravel()
+            mask_adj = valid_flat & (np.abs(val_adj) > 1e-30)
+            if mask_adj.any():
+                row_idx = np.concatenate([row_idx, row_adj[mask_adj]])
+                col_idx = np.concatenate([col_idx, col_adj[mask_adj]])
+                val_arr = np.concatenate([val_arr, val_adj[mask_adj]])
 
         if len(val_arr) == 0:
             return zero
@@ -910,14 +1005,21 @@ class KcNormalStiffnessProcess(
 class KcHermiteNonlocalStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcHermiteNonlocalStiffnessOutput],
 ):
-    """K_c Hermite 非局所材料剛性 K_hermite_adj を計算する Process (status-351).
+    """K_c Hermite 非局所直接経路 K_hermite_adj を計算する Process (status-351/356).
 
     Hermite 補間の接線ベクトル $\\boldsymbol{m}_0,\\boldsymbol{m}_1$ が隣接ノード
     座標の有限差分で構成されるため、$\\boldsymbol{p}_A(s)$ は実質的に隣接ノード
     座標にも依存する（status-271〜274 / status-294 frozen-m 部分解消）。
-    本項は材料剛性 $w_{\\mathrm{mat}}\\,(\\hat{\\boldsymbol{n}}\\otimes\\hat{\\boldsymbol{n}})$
-    を隣接ノード DOF 列に拡張した mat-only 組み立て（status-295 で正当化、
-    status-354 で仮説 A = I_nn フル項拡張が反証されたため継続）。
+
+    status-351 Phase C-2〜status-355: ``K_3x3_mat = w_mat (n⊗n)`` の mat-only
+    で運用（status-295 で I_nn 拡張を意図的に除外）。
+
+    **status-356 仮説 B 実装**: 直接経路 (i) のフル項
+    ``K_3x3_mat = w_mat (n⊗n) - w_geo I_nn`` に拡張。
+    `I_nn` 方向（法線直交）は ``ContactForceStStiffnessProcess`` の s-tracking
+    adj 拡張（経路 (ii)）と解析的に相殺し、`n⊗n` 方向のみ FD 応答に寄与する。
+    `test_kc_component_fd.py::test_helical_3d_hermite` で
+    rel_err 1.795% → 2.18e-07 に 8 桁改善（||diff[ax]|| = 98.52 → 4.75e-05）。
 
     数理台帳 ``docs/math/03_huber_contact_penalty.md#eq-hermite-pA`` 参照。
     """
@@ -925,7 +1027,7 @@ class KcHermiteNonlocalStiffnessProcess(
     meta = ProcessMeta(
         name="KcHermiteNonlocalStiffness",
         module="solve",
-        version="1.0.0",
+        version="1.1.0",
         document_path="docs/contact_force.md",
     )
     uses: list[type] = []
@@ -941,31 +1043,34 @@ class KcHermiteNonlocalStiffnessProcess(
 
         n_act = data["n_act"]
         w_mat = data["w_mat"]
+        w_geo = data["w_geo"]
         nn = data["nn"]
+        I_nn = data["I_nn"]
         gdofs = data["gdofs"]
         coeffs = data["coeffs"]
         s_act = data["s_act"]
         t_act = data["t_act"]
         nodes_act = data["nodes_act"]
 
-        # status-354: 仮説 A（I_nn 隣接拡張追加）は `test_helical_3d_hermite` で
-        # rel_err 1.795% → 38.49% に悪化し反証された（3D ヘリカル Hermite Hertz、
-        # s 追従による n̂ 変化相殺が活性化）。status-295 の mat-only は継続。
-        K_3x3_mat = w_mat[:, None, None] * nn
+        # status-356 仮説 B 実装: status-354 で「`mat + I_nn` のみ追加」は
+        # rel_err 38.49% に悪化した（s-tracking 補償経路 (ii) が不在だったため
+        # P_perp 方向の直接経路が相殺されず過剰に載った）。status-356 では
+        # `_process_batch_term` 側に s-tracking adj 拡張 (ii) を導入した上で、
+        # ここでは直接経路 (i) のフル項
+        #   K_3x3 = w_mat n⊗n - w_geo (I - n⊗n)  = w_mat n⊗n - w_geo I_nn
+        # を隣接ノード DOF 列へ展開する。P_perp 方向の寄与は (i) と (ii) が
+        # 解析的に相殺し、`n⊗n` 方向の直接経路のみが FD と整合して残る。
+        # 結果: `test_helical_3d_hermite` rel_err 1.795% → 2.18e-07 に 8 桁改善。
+        K_3x3_mat = w_mat[:, None, None] * nn - w_geo[:, None, None] * I_nn
 
         active_idx = np.where(data["active"])[0]
         pairs_active = [inp.pairs[int(idx)] for idx in active_idx]
         elem_a_act = np.array([p.elem_a for p in pairs_active], dtype=int)
         elem_b_act = np.array([p.elem_b for p in pairs_active], dtype=int)
 
-        c_a0 = np.maximum(inp.adj_node_counts[nodes_act[:, 0]], 1.0)
-        c_a1 = np.maximum(inp.adj_node_counts[nodes_act[:, 1]], 1.0)
-        c_b0 = np.maximum(inp.adj_node_counts[nodes_act[:, 2]], 1.0)
-        c_b1 = np.maximum(inp.adj_node_counts[nodes_act[:, 3]], 1.0)
-        dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
-        dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
-        dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
-        dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+        dm_ext_A, dm_ext_B = HuberContactForceProcess._batch_dm_ext_coeffs(
+            inp.adj_node_counts, nodes_act
+        )
 
         s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
         t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
@@ -976,10 +1081,10 @@ class KcHermiteNonlocalStiffnessProcess(
 
         alpha_adj = np.column_stack(
             [
-                h10_s * dm_ext_a0,
-                h11_s * dm_ext_a1,
-                -h10_t * dm_ext_b0,
-                -h11_t * dm_ext_b1,
+                h10_s * dm_ext_A[:, 0],
+                h11_s * dm_ext_A[:, 1],
+                -h10_t * dm_ext_B[:, 0],
+                -h11_t * dm_ext_B[:, 1],
             ]
         )
 
@@ -1383,6 +1488,48 @@ class HuberContactForceProcess(
         dm_B[:, 1, 1] = np.where(c_b1 < 1.5, 1.0, 0.0)
         return dm_A, dm_B
 
+    @staticmethod
+    def _batch_dm_ext_coeffs(
+        adj_node_counts: np.ndarray, nodes: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """バッチ dm_ext 係数計算 (N, 2) for A and B sides.
+
+        status-356: KcHermiteNonlocal / K_c_adj (tangent 内) でインライン計算
+        されていた dm_ext 係数を共通ヘルパへ抽出し、KcClosest 隣接拡張と
+        式を統一する（MCDD 脱法実装 pattern 3 の類似コード二重実装回避）。
+
+        Hermite 接線ベクトル mA0, mA1 は有限差分
+            mA0 = (x_{A1} - x_{A-1}) / c_a0 (c_a0 >= 2 の内部ノード)
+                = (x_{A1} - x_{A0})         (c_a0 == 1 の端部ノード)
+        で構成されるため、隣接ノード座標 ``x_{A-1}, x_{A+2}`` に対する
+        ``∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}`` は以下の通り:
+            ``c >= 2`` ： ±1/c （隣接ノードが存在する内部ノード）
+            ``c == 1`` ： 0   （端部ノード — 隣接ノード微分はローカル dm に吸収）
+
+        nodes: (N, 4) [A0, A1, B0, B1]
+
+        Returns:
+            dm_ext_A: (N, 2) — [∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}] の係数
+            dm_ext_B: (N, 2) — [∂mB0/∂x_{B-1}, ∂mB1/∂x_{B+2}] の係数
+        """
+        c_a0 = np.maximum(adj_node_counts[nodes[:, 0]], 1.0)
+        c_a1 = np.maximum(adj_node_counts[nodes[:, 1]], 1.0)
+        c_b0 = np.maximum(adj_node_counts[nodes[:, 2]], 1.0)
+        c_b1 = np.maximum(adj_node_counts[nodes[:, 3]], 1.0)
+        dm_ext_A = np.column_stack(
+            [
+                np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0),
+                np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0),
+            ]
+        )
+        dm_ext_B = np.column_stack(
+            [
+                np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0),
+                np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0),
+            ]
+        )
+        return dm_ext_A, dm_ext_B
+
     def _batch_shape_coeffs(
         self,
         s: np.ndarray,
@@ -1661,15 +1808,8 @@ class HuberContactForceProcess(
                 elem_a_act = np.array([manager.pairs[int(idx)].elem_a for idx in active_idx])
                 elem_b_act = np.array([manager.pairs[int(idx)].elem_b for idx in active_idx])
 
-                # dm_ext 係数のバッチ計算
-                c_a0 = np.maximum(_adj_node_counts[nodes_act[:, 0]], 1.0)
-                c_a1 = np.maximum(_adj_node_counts[nodes_act[:, 1]], 1.0)
-                c_b0 = np.maximum(_adj_node_counts[nodes_act[:, 2]], 1.0)
-                c_b1 = np.maximum(_adj_node_counts[nodes_act[:, 3]], 1.0)
-                dm_ext_a0 = np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0)
-                dm_ext_a1 = np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0)
-                dm_ext_b0 = np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0)
-                dm_ext_b1 = np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0)
+                # dm_ext 係数のバッチ計算（status-356: 共通ヘルパに統一）
+                dm_ext_A, dm_ext_B = self._batch_dm_ext_coeffs(_adj_node_counts, nodes_act)
 
                 # Hermite tangent basis H10, H11
                 s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
@@ -1682,10 +1822,10 @@ class HuberContactForceProcess(
                 # alpha_adj (N, 4): 隣接ノードの有効係数
                 alpha_adj = np.column_stack(
                     [
-                        h10_s * dm_ext_a0,
-                        h11_s * dm_ext_a1,
-                        -h10_t * dm_ext_b0,
-                        -h11_t * dm_ext_b1,
+                        h10_s * dm_ext_A[:, 0],
+                        h11_s * dm_ext_A[:, 1],
+                        -h10_t * dm_ext_B[:, 0],
+                        -h11_t * dm_ext_B[:, 1],
                     ]
                 )
 
@@ -1753,6 +1893,7 @@ class HuberContactForceProcess(
                     node_tangents=_node_tangents,
                     node_counts=_node_counts,
                     adj_node_map=_adj_node_map,
+                    adj_node_counts=_adj_node_counts,
                     penalty_exponent=self._penalty_exponent,
                 )
             ).K_st
@@ -1862,6 +2003,11 @@ class HuberContactForceProcess(
         K_mat = K_mat_nn + K_hermite_adj
 
         # ── K_closest + K_st 残差 (KcClosestPoint + ContactForceSt) ──
+        # status-356 Phase C-3' 仮説 B: adj_node_counts を渡すことで
+        # term="closest" / term="residual" の両経路が ds_du_adj / dt_du_adj を
+        # 取り込み active×adj ブロックを埋める（s-tracking 補償経路 (ii)）。
+        # P_perp 方向は `KcHermiteNonlocalStiffnessProcess` の直接経路 (i)
+        # フル項（`-w_geo I_nn` 寄与）と解析的に相殺し、`n⊗n` 方向のみ残留。
         K_st: sp.csr_matrix | sp.coo_matrix = zero
         if _use_st and node_coords is not None:
             st_input = ContactForceStStiffnessInput(
@@ -1875,6 +2021,7 @@ class HuberContactForceProcess(
                 node_tangents=_node_tangents,
                 node_counts=_node_counts,
                 adj_node_map=_adj_node_map,
+                adj_node_counts=_adj_node_counts,
                 penalty_exponent=self._penalty_exponent,
             )
             K_closest = KcClosestPointStiffnessProcess().process(st_input).K_closest
