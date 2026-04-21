@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-21 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-357（Phase E 着手 + 19 本 FD 再計測） — Phase C-3' 実機規模検証: 19 本撚線で frac=0.3739 退化 / mat_only rel_err mean=0.508（+15% 悪化）。gate の FD 機械精度達成は active 集合固定下限定、19 本 Type D stall（NR D+E:67%）の active 振動支配領域は未解決と判定、status-358 最優先を仮説 C（active 集合振動対策）に昇格。副次: C5 違反を `_batch_dm_ext_coeffs` module 関数化で解消。Phase E 着手: C18（`@verified_by` 紐付け検査）+ C19（`TermExpansionContract.providers` 実在検査）追加、5 term-provider Process に `@verified_by` 付与**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-21 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-358（Phase E C20 追加 + 仮説 C 候補 (a) 7本撚線 90° 反証） — status-357 の最優先 TODO（仮説 C 立案 + Phase E 仕上げ）に対応。(1) 仮説 C 候補 (a)（`smoothing_delta` 遷移帯 4x 拡大、default 2000→500）を 7本撚線 90° 曲げで実測。ベースライン frac=1.0000, incr=524, cb=57, 452.02s に対し候補 (a) は frac=0.9241 で未完走、cutback -14%/elapsed -17% の見かけ改善は解析の早期打切りで対策効果ではない。ユーザー指示「10% 以上改善 + frac=1.0 完走」未達で却下（revert）、コード変更なし、`work/beam_hysteresis/15_hypothesis_c_7strand.py` は失敗実験の記録として残置。(2) Phase E C20 追加: `TermExpansionContract` 双方向紐付け検査（providers ↔ contracts 同名契約宣言）を `validate_process_contracts.py` に追加、C18/C19 の片側更新による脱法すり抜けを防御、5 既存 providers で回帰なし**
 
 ### ターゲット
 
@@ -233,7 +233,8 @@ stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反
 - ~~status-355（Phase C-3' 診断）~~: 完了（`work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` 新設、rel_err 1.795% の 100% が active×adj ブロックに局在、仮説 B の定量目標 `||diff[ax]|| 98.52 → <1e-3` と実装パス ~45 行を確立）
 - ~~status-356（Phase C-3' 実装）~~: 完了（**仮説 A + 仮説 B 同時導入**で 2 経路 (i)(ii) の $P_\perp$ 成分を相殺、`test_helical_3d_hermite` rel_err **1.795% → 2.18e-07**、`||diff[ax]|| 98.52 → 4.75e-05` 達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / 診断裏付けに再構成。`_batch_dm_ext_coeffs` ヘルパ抽出で MCDD 脱法 3 回避）
 - ~~status-357（Phase E 着手 + 19 本 FD 再計測）~~: 完了（**frac=0.3739 退化 / mat_only rel_err +15% 悪化**。Phase C-3' の FD 機械精度達成は active 集合固定下限定、19 本 Type D stall の active 振動支配領域は未解決と判定。副次: C5 違反を `_batch_dm_ext_coeffs` module 関数化で解消。**Phase E 着手**: C18（`@verified_by` 紐付け検査）+ C19（`TermExpansionContract.providers` 実在検査）を `validate_process_contracts.py` に追加、5 term-provider Process に `@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)` 付与）
-- **status-358（次セッション・Phase E 完成 + 仮説 C）**: (1) **仮説 C（active 集合振動対策）立案 + 19 本 frac=1.0 完走** — status-357 で Phase C-3' が active 集合固定下限定と判定されたため、候補 (a) `smoothing_delta` 遷移帯広げ、(b) active 判定の履歴平滑化、(c) line search 強化、(d) 接触凍結モード（status-284）の 19 本適用 を検証。(2) **Phase E 仕上げ** — C20 以降の候補（`TermExpansionContract.term_names` と Process 出力形状一致の静的検査等）
+- ~~status-358（Phase E C20 + 仮説 C 候補 (a) 7本撚線 90° 実測）~~: 完了（**仮説 C 候補 (a) 却下** — `smoothing_delta=500`（default 2000 の 1/4、δ_h 4x 拡大）を 7本撚線 90° 曲げで実測、frac=0.9241 で未完走、cutback -14%/elapsed -17% の見かけ改善は解析の早期打切りで対策効果ではない。ユーザー指示「10% 以上改善 + frac=1.0 完走」未達で revert、コード変更なし、`15_hypothesis_c_7strand.py` は失敗実験の記録として残置。**Phase E C20 追加**: `TermExpansionContract` 双方向紐付け検査（providers ↔ contracts 同名契約宣言）を `validate_process_contracts.py` に追加、C18/C19 の片側更新による脱法すり抜けを防御、5 既存 providers で回帰なし）
+- **status-359（次セッション・仮説 C 続行 + Phase E 仕上げ）**: (1) **仮説 C 候補 (a') `smoothing_delta=1000` 7本撚線 90° 再試行** — 候補 (a) の δ_h 4x 拡大は厳し過ぎた。2x 拡大中間値（default 2000 の半分）なら精度と安定性のバランスで合否基準達成の可能性。`15_hypothesis_c_7strand.py` の `smoothing_delta=500.0` を `1000.0` に書き換え同 script を再実行、10% 未達なら revert。(2) **仮説 C 候補 (c) line search 強化**（(a') 効果薄の場合）: NR 反復途中の過剰 active flip を backtracking line search で rejection、`_newton_dynamic.py` に line search hook 追加。(3) **Phase E 仕上げ** — C21 以降の候補（`TermExpansionContract.term_names` / `providers` 重複検出、`contracts` ClassVar 同名契約重複検出、`@verified_by` VerifyProcess 側 SolverProcess 継承必須）
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）:
 

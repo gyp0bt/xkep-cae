@@ -17,7 +17,7 @@
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜358、status-354 で 1 status 後ろ倒し）を実施中
-> （**9/13 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357）。
+> （**10/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + **Phase E C20 追加 + 仮説 C 候補 (a) 反証 status-358**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -44,6 +44,19 @@
 > C18（`@verified_by` 紐付け）+ C19（`TermExpansionContract.providers` 実在）
 > を `contracts/validate_process_contracts.py` に追加、5 term-provider Process
 > に `@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)` 付与。
+> **status-358 仮説 C 候補 (a) 反証 + C20 追加**: 仮説 C 候補 (a)
+> （`smoothing_delta` 遷移帯 4x 拡大、default 2000→500）を 7本撚線 90° 曲げで
+> 実測（ユーザー指示「19本でなく 7本 90°、10% 以上改善 + frac=1.0 完走が採択基準」）。
+> ベースライン（frac=1.0000, incr=524, cb=57, 452.02s, チャタリング 166 件）に対し
+> **候補 (a) は frac=0.9241 で未完走**（converged=False）、cutback -14% /
+> elapsed -17% の見かけ改善は解析の早期打切りで対策効果ではない。**却下（revert）**、
+> コード変更なし、`work/beam_hysteresis/15_hypothesis_c_7strand.py` は失敗実験の
+> 記録として残置（status-354 方針）。次候補は (a') `smoothing_delta=1000`（2x 拡大
+> 中間値）再試行 or (c) line search 強化（`_newton_dynamic.py` に line search
+> hook 追加）。**Phase E C20 追加**: `TermExpansionContract.providers` に
+> 列挙された Process クラスが自身の `contracts` ClassVar で同名契約を宣言
+> しているかを静的検査。C18/C19 の片側更新による脱法すり抜けを防御、
+> 5 既存 providers で回帰なし（C18/C19/C20 含む 20 検査 OK）。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、
