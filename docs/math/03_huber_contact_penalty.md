@@ -203,8 +203,8 @@ $c_i c_j [w_{\mathrm{mat}}\,\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top - (p_n
 | `K_mat_nn` | $+c_i c_j\,w_{\mathrm{mat}}\,(\hat{\boldsymbol{n}}\hat{\boldsymbol{n}}^\top)$ | `KcNormalStiffnessProcess` | ✅ status-350/351（K_hermite_adj 分離後はペア局所のみ）|
 | `K_geo` | $-\,c_i c_j\,w_{\mathrm{geo}}\,\boldsymbol{P}_\perp$（$= p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ と同値）| `KcGeoStiffnessProcess` | ✅ status-350、**法線方向感度 $\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ を内包**（status-353 訂正）|
 | `K_closest` | $-\,p_n\,\hat{\boldsymbol{n}}\otimes\partial s/\partial \boldsymbol{u}$ 等（`dpn_ds * g_shape`）| `KcClosestPointStiffnessProcess` | ✅ status-351 で K_st 残差から分離 |
-| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$（mat-only、`w_mat * nn` のみ） | `KcHermiteNonlocalStiffnessProcess` | ✅ status-351（status-295 mat-only、**status-354 で I_nn フル項拡張の仮説 A は実験反証済み** — §7 参照） |
-| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか（K_closest 分離後の残差項）| `ContactForceStStiffnessProcess` | ✅ status-350/351 |
+| `K_hermite_adj` | 隣接ノード $\partial \boldsymbol{p}_A/\partial \boldsymbol{u}_{\mathrm{adj}}$ 直接経路 (i) フル項（`w_mat n⊗n - w_geo I_nn`）| `KcHermiteNonlocalStiffnessProcess` | ✅ status-356（status-354 の I_nn 単独追加反証を受けて s-tracking adj と同時導入で FD 機械精度一致）— §7 参照 |
+| `K_st` | $\partial \boldsymbol{f}_{\mathrm{raw}}/\partial s\;\otimes\;\partial s/\partial \boldsymbol{u}$ ほか（K_closest 分離後の残差項、status-356 で active×adj ブロックに拡張）| `ContactForceStStiffnessProcess` | ✅ status-350/351/356 |
 
 → 契約: `TermExpansionContract(name="K_c_term_expansion", total_name="K_c", term_names=("K_mat_nn","K_closest","K_hermite_adj","K_geo","K_st"), providers=(...), combinator="add_sub", equation_ref="03_huber_contact_penalty.md#eq-kc-full-decomposition")`
 
@@ -264,10 +264,12 @@ status-289〜344 の K_c FD 調査で「x/z 成分カップリング欠落」が
 
 status-344 で観測された x/z カップリング残差（`mat_only` rel_err mean=44%, comp_x max=98%）
 について、status-353 で提示された仮説 A（「`K_hermite_adj` の `I_nn` 隣接拡張
-追加で改善」）は **status-354 の直接実験で反証された**（`test_helical_3d_hermite`
-rel_err **1.795% → 38.49%**、§7 参照）。mat-only 近似は s-tracking 補償の
-実装上の要請であり、真の残差源は他の 3 経路（hypothesis B/C/D）に再配分する。
-詳細は status-354 および §7 を参照。
+追加で改善」）は status-354 の単独実装で反証された（rel_err 1.795%→38.49%）
+が、**status-356 で仮説 A と仮説 B（`K_closest` / `K_st` の active×adj 拡張）を
+同時導入して 2 経路を同時に実装すると $P_\perp$ 成分が相殺し、
+`test_helical_3d_hermite` の rel_err は 1.795% → 2.18e-07 に 5 桁改善した**
+（§7.3 参照）。すなわち仮説 A は数理的には正しく、単独では過剰計上だが
+仮説 B と同時適用することで機械精度に達する。
 
 → 実装: **既存 `KcGeoStiffnessProcess`** が $-p_n\,\partial\hat{\boldsymbol{n}}/\partial \boldsymbol{u}$ のペア局所形を担う。新規 Process 追加は不要。
 
@@ -382,36 +384,88 @@ $H_{10},H_{11}$ を介して非ゼロとなる。
 → 契約: status-351 で `KcHermiteNonlocalStiffnessProcess` が抽出され、
 `TermExpansionContract.term_names="K_hermite_adj"` で網羅性を要求している。
 
-**mat-only 形態の正当性（status-354 実験検証）**:
-status-353 で提示された仮説 A（「K_hermite_adj に `-w_geo * I_nn` の隣接
-ノード項を追加すると x/z 残差が改善する」）は **status-354 の実験で反証**
-された。`KcHermiteNonlocalStiffnessProcess` の `K_3x3_mat` を
-`w_mat * nn - w_geo * I_nn`（ペア局所と同形）に拡張して
-`test_kc_component_fd.py::test_helical_3d_hermite` を実行した結果:
+### 7.1 2 経路解析（status-354 実験 + status-356 解決）
 
-| 構成 | rel_err | 備考 |
-|------|---------|------|
-| mat-only（現行、status-295） | **1.795%** | 既存ゲートテスト合格 |
-| `mat + I_nn`（仮説 A 実装） | **38.49%** | 21 倍悪化、ゲートテスト fail |
+隣接ノード $\boldsymbol{x}_{\mathrm{adj}}$ の摂動に対する $\boldsymbol{f}_c$ の全微分は
+**chain-rule で 2 経路**に分解される:
 
-この反証の数理的解釈:  隣接ノード $\boldsymbol{x}_{\mathrm{adj}}$ の摂動は
-(i) Hermite 接線 $\boldsymbol{m}$ 経由で $\boldsymbol{p}_A$ を直接動かす
-成分と、(ii) min-distance 射影で $(s,t)$ を再決定する s-tracking
-補償成分の 2 経路を持つ。`I_nn` 方向（法線直交）の変動は (ii) により
-ほぼ相殺されるのに対し、`n⊗n` 方向（ギャップ方向）の変動は (i) から (ii) への
-漏出が小さく維持される。Process は (i) のみを計算するため、数学的に
-純粋な chain-rule（フル項）よりも **mat-only のほうが FD（実測）と一致する**
-（status-295 の設計意図の実証）。
+$$
+\frac{\mathrm{d}\boldsymbol{f}_c}{\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}}
+\;=\;
+\underbrace{\frac{\partial \boldsymbol{f}_c}{\partial \boldsymbol{u}_{\mathrm{adj}}}\bigg|_{s,t}}_{\text{(i) 直接経路}}
+\;+\;
+\underbrace{\frac{\partial \boldsymbol{f}_c}{\partial s}\,\frac{\mathrm{d}s}{\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}}
++\frac{\partial \boldsymbol{f}_c}{\partial t}\,\frac{\mathrm{d}t}{\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}}}_{\text{(ii) s-tracking 補償経路}}
+$$
 
-**Phase C-3 再々定義**: 19 本撚線 Type D stall の真の原因候補は以下に再配分:
+ここで:
 
-1. **B**: `KcClosestPointStiffnessProcess` を隣接ノード DOF 列にも拡張
-   （$\partial s/\partial \boldsymbol{u}_{\mathrm{adj}}$ / $\partial t/\partial \boldsymbol{u}_{\mathrm{adj}}$
-   を組み込み、上記 (ii) 経路を解析的に実装）
-2. **C**: NR 反復内の active set 凍結近似の弛緩（status-258 観察と整合）
-3. **D**: 摩擦 `K_st` 隣接拡張での類似項不整合
+- **(i) 直接経路**: $(s,t)$ 固定で $\boldsymbol{x}_{\mathrm{adj}}$ が Hermite 接線
+  $\boldsymbol{m}$ 経由で $\boldsymbol{p}_A$ を動かし、$p_n$ と $\hat{\boldsymbol{n}}$ の
+  両者を変化させる。`K_hermite_adj` が担当すべき経路。フル展開は
+  [#eq-kc-pair-block](#eq-kc-pair-block) と同じ $c_i c_j[w_{\mathrm{mat}}\,\hat{n}\hat{n}^\top - w_{\mathrm{geo}}\,P_\perp]$。
+- **(ii) s-tracking 補償経路**: min-distance 射影の停留条件
+  $\partial d^2/\partial s = 0$、$\partial d^2/\partial t = 0$ を
+  $\boldsymbol{u}_{\mathrm{adj}}$ で微分すると $\mathrm{d}s/\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}$、
+  $\mathrm{d}t/\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}$ が決まる。`KcClosestPointStiffnessProcess`
+  および `ContactForceStStiffnessProcess`（residual 項）が担当すべき経路。
 
-status-354 はコードの mat-only を維持し、数理台帳と実装の整合性を確認した。
+### 7.2 相殺定理（$P_\perp$ 成分の消去）
+
+停留条件から $\hat{\boldsymbol{n}}\perp \partial \boldsymbol{p}_A/\partial s$、
+$\hat{\boldsymbol{n}}\perp \partial \boldsymbol{p}_B/\partial t$ が成り立つため、
+(ii) の寄与は $\partial \boldsymbol{f}_c/\partial s$ と
+$\partial \boldsymbol{f}_c/\partial t$ を通じて **$P_\perp$ 方向にのみ** $\boldsymbol{f}_c$ を
+変化させる（$n\otimes n$ 方向は $\mathrm{d}g/\mathrm{d}\boldsymbol{u}_{\mathrm{adj}}$ に含まれ (i) 側に残る）。
+(i) のフル項 $w_{\mathrm{mat}}\,\hat{n}\hat{n}^\top - w_{\mathrm{geo}}\,P_\perp$ の
+うち $-w_{\mathrm{geo}}\,P_\perp$ 成分は (ii) の $P_\perp$ 寄与と**符号が逆で同じ
+オーダー**になり、(i)+(ii) 合計で $P_\perp$ が相殺し、FD で観測されるのは
+$w_{\mathrm{mat}}\,\hat{n}\hat{n}^\top$ に近い値になる。
+
+### 7.3 status-354 反証 ⇒ status-356 解決
+
+この数理は 2 回の実装実験で検証された:
+
+| 構成 | `K_hermite_adj` | `K_closest` / `K_st` adj | `test_helical_3d_hermite` rel_err | 観察 |
+|------|-----------------|---------------------------|-----------------------------------|------|
+| status-295〜353（ベースライン） | mat-only（`w_mat n⊗n` のみ）| 未拡張（0）| **1.795%** | (i) 部分のみ・(ii) 未実装で近似一致 |
+| status-354（仮説 A 単独）| フル項（`w_mat n⊗n - w_geo I_nn`） | 未拡張 | **38.49%**（21x 悪化） | (i) の $P_\perp$ を入れたが (ii) で相殺する相手がない |
+| status-356（仮説 A + 仮説 B 同時導入）| **フル項** | **active×adj 拡張** | **2.18e-07**（5 桁改善）| (i)+(ii) の $P_\perp$ が相殺し FD 機械精度一致 |
+
+status-354 の「mat-only が最良」という観察は **(ii) 未実装のワークアラウンド**
+であり、理論的には (i) のフル項を入れて (ii) と相殺させるのが正しい。
+status-356 は `KcHermiteNonlocalStiffnessProcess.process()` の `K_3x3_mat` を
+`w_mat * nn - w_geo * I_nn` に戻し、同時に `ContactForceStStiffnessProcess`
+の COO 構築で `ds_du_adj` / `dt_du_adj` 経由の active×adj ブロックを追加
+することで、両経路を同時に Process 側に実装した。
+
+### 7.4 診断裏付け（status-355/356）
+
+`work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` で `test_helical_3d_hermite`
+シナリオの $\boldsymbol{K}_c$ を (active, adj) × (active, adj) の 4 ブロックに
+分解した FD 診断:
+
+| ブロック | status-355 実測（ベースライン）| status-356 実測（両経路実装後）|
+|---|---|---|
+| active×active | $\lVert\mathrm{diff}\rVert = 1.20\mathrm{e}{-3}$（rel_err 2.2e-7）| 1.20e-3（不変） |
+| **active×adj** | $\lVert\mathrm{diff}\rVert = \mathbf{98.52}$（rel_err 16.4%）| **4.75e-05**（6 桁改善）|
+| adj×active | 0（f_c は active 行のみ出力）| 0（不変）|
+| adj×adj | 0 | 0（不変）|
+| **全体** | rel_err **1.795%** | **2.18e-07** |
+
+status-355 が予言した「active×adj ブロックに diff が 100% 局在」の仮説 B
+目標 `||diff[ax]|| 98.52 → <1e-3` は **4.75e-05 で約 6 桁オーバーシュート**
+で達成された（機械精度水準）。
+
+→ 実装: `strategy.py::KcHermiteNonlocalStiffnessProcess.process()` で
+`K_3x3_mat = w_mat * nn - w_geo * I_nn`（フル項）、
+`strategy.py::ContactForceStStiffnessProcess._process_batch_term` の
+`term in {"closest","residual"}` 両経路で
+$K_{\mathrm{local,adj}} = -(\partial \boldsymbol{f}/\partial s \otimes \mathrm{d}s/\mathrm{d}\boldsymbol{u}_{\mathrm{adj}} + \partial \boldsymbol{f}/\partial t \otimes \mathrm{d}t/\mathrm{d}\boldsymbol{u}_{\mathrm{adj}})$
+を `adj_gdofs` に COO 追加。`adj_node_counts` は
+`ContactForceStStiffnessInput` 新フィールドで `HuberContactForceProcess.tangent`
+から貫通配線、`_batch_dm_ext_coeffs` ヘルパで 2 箇所の dm_ext 計算を共通化
+（脱法実装 pattern 3「類似コード二重実装」回避）。
 
 ---
 
@@ -429,7 +483,7 @@ status-354 はコードの mat-only を維持し、数理台帳と実装の整�
 | [#sym-kmat](#sym-kmat) | — | 静的契約のみ、Phase E で C18 検査 |
 | [#eq-kc-fd](#eq-kc-fd) | `xkep_cae/verify/kc_component_fd.py` | `@verified_by` 紐付け予定 |
 | [#eq-kc-term-fd](#eq-kc-term-fd) | — | status-353 以降の項別 FD 整合性、tol 未決定 |
-| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` | status-271〜274 拡張、隣接 I_nn 非拡張は **status-354 で仮説 A 反証** — mat-only 継続（§7 参照） |
+| [#eq-hermite-pA](#eq-hermite-pA) | `_st_jacobian.py` + `strategy.py::KcHermiteNonlocalStiffnessProcess`（直接経路 i）+ `ContactForceStStiffnessProcess._process_batch_term`（s-tracking 経路 ii、active×adj COO）| status-271〜274 拡張、**status-356 で (i) フル項化 + (ii) adj 拡張を同時導入し FD 機械精度一致**（§7 参照） |
 
 ---
 
@@ -448,3 +502,5 @@ status-354 はコードの mat-only を維持し、数理台帳と実装の整�
 - status-352: 計画書ロスト記録 + Phase C-3 前提の数理検証（K_mat,ndir ≡ K_geo の指摘）
 - **status-353（§3/§4/§5/§8 訂正）**: K_mat,ndir と K_geo の同一性を確立し、6 項記述を 5 項に訂正。x/z カップリング残差の再原因候補を K_hermite_adj mat-only に再設定
 - **status-354（§7/§3.1/§4/§8 仲裁追記）**: 仮説 A（K_hermite_adj フル項拡張）を実験反証（`test_helical_3d_hermite` rel_err 1.795% → 38.49%）、mat-only 継続を実証。Phase C-3 再々定義 = hypothesis B/C/D 探索へ
+- **status-355（診断 + 実装計画）**: `K_c_analytical vs FD` を (active/adj) 4 ブロックに分解、rel_err 1.795% の **100% が active×adj ブロックに局在**することを確認。仮説 B の定量目標 `||diff[ax]|| 98.52 → <1e-3` と実装パス（~45 行）を確立
+- **status-356（§7 全面再構成、§3.1/§4/§8 訂正）**: 仮説 A + 仮説 B を同時導入し 2 経路 (i)(ii) を Process 側に実装。`K_hermite_adj` をフル項化 + `K_closest`/`K_st` を active×adj に拡張することで $P_\perp$ 相殺が成立し、`test_helical_3d_hermite` rel_err **1.795% → 2.18e-07**（5 桁改善）、`||diff[ax]||` **98.52 → 4.75e-05**（6 桁改善）。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドであったと訂正
