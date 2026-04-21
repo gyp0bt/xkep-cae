@@ -26,7 +26,8 @@ import scipy.sparse as sp
 from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
 from xkep_cae.contact.geometry._st_jacobian import ComputeStJacobianProcess
 from xkep_cae.core import ProcessMeta, SolverProcess
-from xkep_cae.mathematics import MathematicalContract, TermExpansionContract
+from xkep_cae.mathematics import MathematicalContract, TermExpansionContract, verified_by
+from xkep_cae.verify.kc_component_fd import ContactKcComponentFDDiagnosticProcess
 
 # ── K_c 項展開契約（status-350/351/353/354） ─────
 # 数理台帳 03 章の 5 項完全分解 (K_mat_nn / K_closest / K_hermite_adj / K_geo /
@@ -267,6 +268,51 @@ def _huber_deriv_scalar(x: float, delta: float) -> float:
     return (x + delta) / (2.0 * delta)
 
 
+def _batch_dm_ext_coeffs(
+    adj_node_counts: np.ndarray, nodes: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """バッチ dm_ext 係数計算 (N, 2) for A and B sides.
+
+    status-356: KcHermiteNonlocal / K_c_adj (tangent 内) でインライン計算
+    されていた dm_ext 係数を共通ヘルパへ抽出し、KcClosest 隣接拡張と
+    式を統一する（MCDD 脱法実装 pattern 3 の類似コード二重実装回避）。
+    status-357: C5（未宣言依存）解消のためモジュールレベルへ移動
+    （``HuberContactForceProcess`` の staticmethod から `_` prefix private
+    function へ。Process 間で参照しても uses 宣言不要となる）。
+
+    Hermite 接線ベクトル mA0, mA1 は有限差分
+        mA0 = (x_{A1} - x_{A-1}) / c_a0 (c_a0 >= 2 の内部ノード)
+            = (x_{A1} - x_{A0})         (c_a0 == 1 の端部ノード)
+    で構成されるため、隣接ノード座標 ``x_{A-1}, x_{A+2}`` に対する
+    ``∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}`` は以下の通り:
+        ``c >= 2`` ： ±1/c （隣接ノードが存在する内部ノード）
+        ``c == 1`` ： 0   （端部ノード — 隣接ノード微分はローカル dm に吸収）
+
+    nodes: (N, 4) [A0, A1, B0, B1]
+
+    Returns:
+        dm_ext_A: (N, 2) — [∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}] の係数
+        dm_ext_B: (N, 2) — [∂mB0/∂x_{B-1}, ∂mB1/∂x_{B+2}] の係数
+    """
+    c_a0 = np.maximum(adj_node_counts[nodes[:, 0]], 1.0)
+    c_a1 = np.maximum(adj_node_counts[nodes[:, 1]], 1.0)
+    c_b0 = np.maximum(adj_node_counts[nodes[:, 2]], 1.0)
+    c_b1 = np.maximum(adj_node_counts[nodes[:, 3]], 1.0)
+    dm_ext_A = np.column_stack(
+        [
+            np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0),
+            np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0),
+        ]
+    )
+    dm_ext_B = np.column_stack(
+        [
+            np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0),
+            np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0),
+        ]
+    )
+    return dm_ext_A, dm_ext_B
+
+
 # ── B1: ContactForceStStiffnessProcess ─────────────────────
 # 旧スカラー版 _add_kst_contact_to_coo は status-311 で削除
 # （バッチ版で完全置換済み。69-208x高速化: status-310）
@@ -307,6 +353,7 @@ class ContactForceStStiffnessOutput:
     K_st: sp.csr_matrix | sp.coo_matrix
 
 
+@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)
 class ContactForceStStiffnessProcess(
     SolverProcess[ContactForceStStiffnessInput, ContactForceStStiffnessOutput],
 ):
@@ -324,6 +371,8 @@ class ContactForceStStiffnessProcess(
     )
     uses = [ComputeStJacobianProcess]
     # status-350 Phase C-1: K_c 項展開契約の K_st プロバイダとして宣言
+    # status-357 Phase E: @verified_by で ContactKcComponentFDDiagnosticProcess と
+    # 紐付け（MCDD C18 脱法 pattern 2 対策）
     contracts: ClassVar[tuple[MathematicalContract, ...]] = (_K_C_TERM_EXPANSION_CONTRACT,)
 
     def process(self, inp: ContactForceStStiffnessInput) -> ContactForceStStiffnessOutput:
@@ -500,7 +549,7 @@ class ContactForceStStiffnessProcess(
             dm_ext_A_batch = None
             dm_ext_B_batch = None
             if _adj_enabled:
-                dm_ext_A_batch, dm_ext_B_batch = HuberContactForceProcess._batch_dm_ext_coeffs(
+                dm_ext_A_batch, dm_ext_B_batch = _batch_dm_ext_coeffs(
                     inp.adj_node_counts, nodes_act
                 )
             ds_du, dt_du, valid, ds_du_adj, dt_du_adj = _batch_st_jacobian_hermite(
@@ -959,6 +1008,7 @@ def _assemble_12x12_pair_block(
     ).tocsr()
 
 
+@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)
 class KcNormalStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcNormalStiffnessOutput],
 ):
@@ -1002,6 +1052,7 @@ class KcNormalStiffnessProcess(
         return KcNormalStiffnessOutput(K_mat=K_mat)
 
 
+@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)
 class KcHermiteNonlocalStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcHermiteNonlocalStiffnessOutput],
 ):
@@ -1068,9 +1119,7 @@ class KcHermiteNonlocalStiffnessProcess(
         elem_a_act = np.array([p.elem_a for p in pairs_active], dtype=int)
         elem_b_act = np.array([p.elem_b for p in pairs_active], dtype=int)
 
-        dm_ext_A, dm_ext_B = HuberContactForceProcess._batch_dm_ext_coeffs(
-            inp.adj_node_counts, nodes_act
-        )
+        dm_ext_A, dm_ext_B = _batch_dm_ext_coeffs(inp.adj_node_counts, nodes_act)
 
         s2_h, s3_h = s_act * s_act, s_act * s_act * s_act
         t2_h, t3_h = t_act * t_act, t_act * t_act * t_act
@@ -1128,6 +1177,7 @@ class KcHermiteNonlocalStiffnessProcess(
         return KcHermiteNonlocalStiffnessOutput(K_hermite_adj=K_hermite_adj)
 
 
+@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)
 class KcGeoStiffnessProcess(
     SolverProcess[KcTermAssemblyInput, KcGeoStiffnessOutput],
 ):
@@ -1166,6 +1216,7 @@ class KcGeoStiffnessProcess(
         return KcGeoStiffnessOutput(K_geo=K_geo)
 
 
+@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)
 class KcClosestPointStiffnessProcess(
     SolverProcess[ContactForceStStiffnessInput, KcClosestPointStiffnessOutput],
 ):
@@ -1488,48 +1539,6 @@ class HuberContactForceProcess(
         dm_B[:, 1, 1] = np.where(c_b1 < 1.5, 1.0, 0.0)
         return dm_A, dm_B
 
-    @staticmethod
-    def _batch_dm_ext_coeffs(
-        adj_node_counts: np.ndarray, nodes: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """バッチ dm_ext 係数計算 (N, 2) for A and B sides.
-
-        status-356: KcHermiteNonlocal / K_c_adj (tangent 内) でインライン計算
-        されていた dm_ext 係数を共通ヘルパへ抽出し、KcClosest 隣接拡張と
-        式を統一する（MCDD 脱法実装 pattern 3 の類似コード二重実装回避）。
-
-        Hermite 接線ベクトル mA0, mA1 は有限差分
-            mA0 = (x_{A1} - x_{A-1}) / c_a0 (c_a0 >= 2 の内部ノード)
-                = (x_{A1} - x_{A0})         (c_a0 == 1 の端部ノード)
-        で構成されるため、隣接ノード座標 ``x_{A-1}, x_{A+2}`` に対する
-        ``∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}`` は以下の通り:
-            ``c >= 2`` ： ±1/c （隣接ノードが存在する内部ノード）
-            ``c == 1`` ： 0   （端部ノード — 隣接ノード微分はローカル dm に吸収）
-
-        nodes: (N, 4) [A0, A1, B0, B1]
-
-        Returns:
-            dm_ext_A: (N, 2) — [∂mA0/∂x_{A-1}, ∂mA1/∂x_{A+2}] の係数
-            dm_ext_B: (N, 2) — [∂mB0/∂x_{B-1}, ∂mB1/∂x_{B+2}] の係数
-        """
-        c_a0 = np.maximum(adj_node_counts[nodes[:, 0]], 1.0)
-        c_a1 = np.maximum(adj_node_counts[nodes[:, 1]], 1.0)
-        c_b0 = np.maximum(adj_node_counts[nodes[:, 2]], 1.0)
-        c_b1 = np.maximum(adj_node_counts[nodes[:, 3]], 1.0)
-        dm_ext_A = np.column_stack(
-            [
-                np.where(c_a0 >= 1.5, -1.0 / c_a0, 0.0),
-                np.where(c_a1 >= 1.5, 1.0 / c_a1, 0.0),
-            ]
-        )
-        dm_ext_B = np.column_stack(
-            [
-                np.where(c_b0 >= 1.5, -1.0 / c_b0, 0.0),
-                np.where(c_b1 >= 1.5, 1.0 / c_b1, 0.0),
-            ]
-        )
-        return dm_ext_A, dm_ext_B
-
     def _batch_shape_coeffs(
         self,
         s: np.ndarray,
@@ -1808,8 +1817,8 @@ class HuberContactForceProcess(
                 elem_a_act = np.array([manager.pairs[int(idx)].elem_a for idx in active_idx])
                 elem_b_act = np.array([manager.pairs[int(idx)].elem_b for idx in active_idx])
 
-                # dm_ext 係数のバッチ計算（status-356: 共通ヘルパに統一）
-                dm_ext_A, dm_ext_B = self._batch_dm_ext_coeffs(_adj_node_counts, nodes_act)
+                # dm_ext 係数のバッチ計算（status-356: 共通ヘルパに統一、status-357: モジュール関数化）
+                dm_ext_A, dm_ext_B = _batch_dm_ext_coeffs(_adj_node_counts, nodes_act)
 
                 # Hermite tangent basis H10, H11
                 s2_h, s3_h = s_act * s_act, s_act * s_act * s_act

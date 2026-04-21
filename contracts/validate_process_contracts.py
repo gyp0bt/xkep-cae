@@ -20,6 +20,11 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
        __init__.py のクラス再エクスポートも型検査対象
 - C17: プライベートモジュール dataclass 衛生 — _xxx.py 内の dataclass が
        frozen=True でない場合、またはクラス名が Input/Output で終わらない場合を検出
+- C18: `@verified_by` 紐付け検査 — severity in {"hard", "nightly"} の
+       `MathematicalContract` ごとに `ProcessContractRegistry` に検証 Process
+       が紐付いているか検証（status-357 Phase E、MCDD 脱法 pattern 2 対策）
+- C19: `TermExpansionContract.providers` 実在検査 — 列挙された Process クラス名が
+       `ProcessRegistry` に実在するか検証（status-357 Phase E、MCDD 脱法 pattern 4 対策）
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -651,6 +656,83 @@ def check_c15_equation_refs(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c18_verified_by_binding(registry: dict[str, type]) -> list[str]:
+    """C18: `@verified_by` 紐付け検査（status-357 Phase E）.
+
+    MCDD 脱法 pattern 2（dummy VerifyProcess を `@verified_by` に紐付けて
+    C18 を通す）対策。各 Process の `contracts` ClassVar に宣言された
+    `MathematicalContract` のうち severity ∈ {"hard", "nightly"} のものには
+    `ProcessContractRegistry` で検証 Process が紐付いている必要がある。
+
+    `severity="soft"` の契約は人間可読ドキュメント扱いのため紐付け不要。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.mathematics import ProcessContractRegistry
+    except ImportError as exc:
+        errors.append(f"C18: mathematics パッケージのインポートに失敗: {exc}")
+        return errors
+
+    reg = ProcessContractRegistry.default()
+    bindings = reg.all_bindings()
+
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        for contract in contracts:
+            contract_name = getattr(contract, "name", "?")
+            severity = getattr(contract, "severity", "hard")
+            if severity == "soft":
+                continue
+            if (proc_name, contract_name) not in bindings:
+                errors.append(
+                    f"C18: {proc_name}.contracts[{contract_name!r}] "
+                    f"(severity={severity!r}) に @verified_by 紐付けが無い"
+                )
+    return errors
+
+
+def check_c19_term_providers_exist(registry: dict[str, type]) -> list[str]:
+    """C19: `TermExpansionContract.providers` 実在検査（status-357 Phase E）.
+
+    MCDD 脱法 pattern 4（KcNormalDirectionStiffnessProcess を rename で済ませる）
+    対策。`TermExpansionContract.providers` に列挙された Process クラス名が
+    `ProcessRegistry` に実在するかを検査する。`providers` は文字列保持
+    （循環 import 回避）なので実在確認は静的検査で担保する必要がある。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.mathematics.contracts import TermExpansionContract
+    except ImportError as exc:
+        errors.append(f"C19: mathematics.contracts のインポートに失敗: {exc}")
+        return errors
+
+    registry_names = set(registry.keys())
+    # contract-level 重複チェックを避けるため (contract_name, provider) で seen
+    seen: set[tuple[str, str]] = set()
+
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        for contract in contracts:
+            if not isinstance(contract, TermExpansionContract):
+                continue
+            contract_name = contract.name
+            for provider in contract.providers:
+                if (contract_name, provider) in seen:
+                    continue
+                seen.add((contract_name, provider))
+                if provider not in registry_names:
+                    errors.append(
+                        f"C19: TermExpansionContract[{contract_name!r}].providers "
+                        f"に宣言された {provider!r} が ProcessRegistry に存在しない"
+                        f"（宣言元 Process: {proc_name}）"
+                    )
+    return errors
+
+
 def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
     """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
 
@@ -1178,6 +1260,8 @@ def main() -> int:
         ("C13: CompatibilityProcess uses禁止", check_c13_compatibility_uses),
         ("C15: Strategy ドキュメント存在", check_c15_strategy_docs),
         ("C15(math): MathematicalContract.equation_ref 解決", check_c15_equation_refs),
+        ("C18: @verified_by 紐付け検査", check_c18_verified_by_binding),
+        ("C19: TermExpansionContract.providers 実在", check_c19_term_providers_exist),
     ]
 
     for label, check_fn in checks:
@@ -1267,6 +1351,10 @@ def main() -> int:
         print("  C16 → クラスは AbstractProcess/frozen dataclass/Enum のみ許可。")
         print("       純粋関数は Protocol/Strategy/Process に変換するか _ prefix で private 化")
         print("       __init__.py の re-export クラスも検査対象")
+        print("  C18 → @verified_by(contract_name, VerifyProcess) で契約に検証 Process を紐付け")
+        print("       dummy/trivial VerifyProcess は禁止（_is_trivial_stmt で弾かれる）")
+        print("  C19 → TermExpansionContract.providers の Process を ProcessRegistry に実装")
+        print("       文字列保持のため rename は静的検査で検出される（脱法 pattern 4 防止）")
         print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
         print("       クラス名は Input/Output で終わる命名が必要")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
