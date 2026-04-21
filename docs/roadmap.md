@@ -17,7 +17,7 @@
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜358、status-354 で 1 status 後ろ倒し）を実施中
-> （**8/13 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356）。
+> （**9/13 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -32,10 +32,18 @@
 > `K_st` active×adj 拡張 = (ii) s-tracking 経路）を**同時導入**することで
 > 2 経路の $P_\perp$ 成分が解析的に相殺し、`test_helical_3d_hermite`
 > **rel_err 1.795% → 2.18e-07**（FD 機械精度）、`||diff[ax]|| 98.52 → 4.75e-05`
-> （6 桁改善）達成。status-354 の「mat-only が最良」は (ii) 未実装時の
-> ワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / status-356
-> 解決 / 診断裏付けに再構成。次は status-357 で 19 本撚線 FD 再計測 +
-> Type D stall 再試行。
+> （6 桁改善）達成。
+> **status-357 実機規模検証 + Phase E 着手**: 19 本撚線 K_c FD 再計測で
+> **frac=0.3739（status-344 比 -22.7% 退化）、mat_only rel_err mean=0.508
+> （+15% 悪化）**。gate テスト rel_err 2.18e-07 達成は active 集合固定下の
+> 解析的 K_c 限定であり、19 本 Type D stall（NR Type D+E:67%, E:28%）の
+> active 集合振動支配領域には波及しないと判定。**仮説 C（active 集合振動対策）**
+> を status-358 最優先に昇格。副次: status-356 で混入していた C5 違反
+> （`KcHermiteNonlocalStiffnessProcess.process()` の `_batch_dm_ext_coeffs`
+> クラスメソッド直接参照）を module-level 関数化で解消。**Phase E 着手**:
+> C18（`@verified_by` 紐付け）+ C19（`TermExpansionContract.providers` 実在）
+> を `contracts/validate_process_contracts.py` に追加、5 term-provider Process
+> に `@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)` 付与。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、

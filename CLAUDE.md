@@ -83,7 +83,7 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-21 | 契約違反 **0件** | 条例違反 **0件** | **MCDD Phase C-3' 実装完了（status-356） — 仮説 A（`K_hermite_adj` フル項）+ 仮説 B（`K_closest`/`K_st` active×adj 拡張）同時導入で 2 経路 $P_\perp$ 相殺、`test_helical_3d_hermite` rel_err 1.795% → 2.18e-07（FD 機械精度）達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正。次は status-357 で 19 本撚線 FD 再計測 + Type D stall 再試行**
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** — 2026-04-21 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-357（Phase E 着手 + 19 本 FD 再計測） — Phase C-3' 実機規模検証: 19 本撚線で frac=0.3739 退化 / mat_only rel_err mean=0.508（+15% 悪化）。gate の FD 機械精度達成は active 集合固定下限定、19 本 Type D stall（NR D+E:67%）の active 振動支配領域は未解決と判定、status-358 最優先を仮説 C（active 集合振動対策）に昇格。副次: C5 違反を `_batch_dm_ext_coeffs` module 関数化で解消。Phase E 着手: C18（`@verified_by` 紐付け検査）+ C19（`TermExpansionContract.providers` 実在検査）追加、5 term-provider Process に `@verified_by` 付与**
 
 ### ターゲット
 
@@ -216,9 +216,12 @@ status-353 で **数理台帳訂正完了**（`K_mat,ndir` ≡ `K_geo` の同一
 rel_err が **1.795% → 38.49%** に 21 倍悪化して **反証**、mat-only（status-295）
 継続。数理台帳 §7/§3.1/§4/§8 に仲裁追記、`strategy.py` docstring に実測
 結果記録（実装変更なし）。Phase C-3 を **Phase C-3' 再々定義**
-（hypothesis B/C/D）へ再配分。次は **仮説 B（status-355）**:
-`KcClosestPointStiffnessProcess` の隣接ノード拡張で s-tracking 補償経路を
-解析的実装:
+（hypothesis B/C/D）へ再配分。status-355 で **Phase C-3' 診断完了**
+（active×adj ブロック局在化）、status-356 で **Phase C-3' 実装完了**
+（仮説 A + B 同時導入で FD 機械精度）。status-357 で **Phase E 着手 +
+19 本撚線実機規模検証**（Phase C-3' は active 集合固定下限定、19 本 Type D
+stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反解消 + C18/C19
+契約検査追加）:
 
 - ~~status-347（Phase A-2）~~: 完了
 - ~~status-348-349（Phase B）~~: 完了（6 章 / 55 アンカー + `equation_index.py` + C15 拡張）
@@ -229,8 +232,8 @@ rel_err が **1.795% → 38.49%** に 21 倍悪化して **反証**、mat-only�
 - ~~status-354（Phase C-3 再定義実験）~~: 完了（仮説 A = `K_hermite_adj` + `-w_geo * I_nn` を単独で実験、rel_err 1.795%→38.49% 21倍悪化、当時は revert・mat-only 継続、数理台帳 §7 仲裁追記、Phase C-3' 再々定義）
 - ~~status-355（Phase C-3' 診断）~~: 完了（`work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` 新設、rel_err 1.795% の 100% が active×adj ブロックに局在、仮説 B の定量目標 `||diff[ax]|| 98.52 → <1e-3` と実装パス ~45 行を確立）
 - ~~status-356（Phase C-3' 実装）~~: 完了（**仮説 A + 仮説 B 同時導入**で 2 経路 (i)(ii) の $P_\perp$ 成分を相殺、`test_helical_3d_hermite` rel_err **1.795% → 2.18e-07**、`||diff[ax]|| 98.52 → 4.75e-05` 達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / 診断裏付けに再構成。`_batch_dm_ext_coeffs` ヘルパ抽出で MCDD 脱法 3 回避）
-- **status-357（次セッション）**: **19 本撚線 K_c FD 再計測 + Type D stall 再試行**。`work/beam_hysteresis/13_kc_component_fd_19strand.py` を Phase C-3' 設定で実行し `mat_only` rel_err mean=44% の改善を定量測定、frac=0.48→1.0 完走を目標（status-339 で frac=0.484 止まり、status-341 で n_incr=40 リトライも frac=0.1991 退化）。接触あり 90° 曲げ重量回帰（status-298/299）でも回帰なし確認
-- **status-358（Phase E）**: C18（`@verified_by` 紐付け検査）+ C19（`term_processes` 実在検査）の追加
+- ~~status-357（Phase E 着手 + 19 本 FD 再計測）~~: 完了（**frac=0.3739 退化 / mat_only rel_err +15% 悪化**。Phase C-3' の FD 機械精度達成は active 集合固定下限定、19 本 Type D stall の active 振動支配領域は未解決と判定。副次: C5 違反を `_batch_dm_ext_coeffs` module 関数化で解消。**Phase E 着手**: C18（`@verified_by` 紐付け検査）+ C19（`TermExpansionContract.providers` 実在検査）を `validate_process_contracts.py` に追加、5 term-provider Process に `@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)` 付与）
+- **status-358（次セッション・Phase E 完成 + 仮説 C）**: (1) **仮説 C（active 集合振動対策）立案 + 19 本 frac=1.0 完走** — status-357 で Phase C-3' が active 集合固定下限定と判定されたため、候補 (a) `smoothing_delta` 遷移帯広げ、(b) active 判定の履歴平滑化、(c) line search 強化、(d) 接触凍結モード（status-284）の 19 本適用 を検証。(2) **Phase E 仕上げ** — C20 以降の候補（`TermExpansionContract.term_names` と Process 出力形状一致の静的検査等）
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）:
 
