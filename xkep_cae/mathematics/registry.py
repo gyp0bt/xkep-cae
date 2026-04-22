@@ -205,6 +205,7 @@ class ProcessContractRegistry:
         """
         # 遅延 import（循環回避）
         from xkep_cae.core.base import AbstractProcess
+        from xkep_cae.core.categories import SolverProcess, VerifyProcess
 
         name = _process_class_name(process_cls)
         key = (name, contract_name)
@@ -214,6 +215,19 @@ class ProcessContractRegistry:
             raise TypeError(
                 f"@verified_by({contract_name!r}): {verify_cls!r} は "
                 "AbstractProcess のサブクラスではありません"
+            )
+
+        # 1b. カテゴリチェック（status-360 C23: verifier は SolverProcess
+        # または VerifyProcess 継承必須）— PreProcess / PostProcess /
+        # BatchProcess / CompatibilityProcess を検証器に指定する脱法を排除。
+        # FD consistency verifier はソルバー相当（残差評価・接線 assemble）を
+        # 要するため SolverProcess、純粋な物理量検査は VerifyProcess を想定。
+        if not issubclass(verify_cls, (SolverProcess, VerifyProcess)):
+            raise TypeError(
+                f"@verified_by({contract_name!r}): {verify_cls.__name__} は "
+                f"SolverProcess / VerifyProcess のいずれも継承していません。"
+                "検証 Process のカテゴリは SolverProcess（ソルバー相当検査）または "
+                "VerifyProcess（物理量検査）必須です (脱法実装防止)"
             )
 
         # 2. 具象クラスチェック

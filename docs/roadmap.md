@@ -16,8 +16,8 @@
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜359、status-354 で 1 status 後ろ倒し）を実施中
-> （**11/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 追加 + 仮説 C 候補 (a) 反証 status-358 + **仮説 C 候補 (a') smoothing_delta=1000 採択（elapsed -42.5%、frac=1.0 完走）status-359**）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜360、status-354 で 1 status 後ろ倒し）を実施中
+> （**12/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 追加 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') smoothing_delta=1000 採択 status-359 + **status-360: 仮説 C 候補 (a') 19本撚線検証で却下 + Phase E C21/C22/C23 追加**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -69,6 +69,14 @@
 > 次セッション最優先は (i) 仮説 C (a') の 19 本撚線検証 → (ii) default 化
 > 判断 / 失敗時 (c) line search 強化（`_newton_dynamic.py` に line search
 > hook 追加）。
+> **status-360**: 仮説 C (a') を 19 本撚線に適用、**frac=0.3723（baseline 0.4839
+> 比 -23.1% 退化）で却下**。δ_h 2x 拡大は Type D stall 領域で逆効果。default
+> 変更は実施せず、`16_hypothesis_c_aprime_19strand.py` を**失敗実験記録**として
+> 残置。次候補は **(c) line search 強化**（`_newton_dynamic.py` に backtracking
+> hook 追加）。副次: **Phase E C21/C22/C23 追加** — C21 `TermExpansionContract.
+> term_names` 重複静的検出、C22 `contracts` ClassVar 同名契約重複検出、
+> C23 `@verified_by` 検証 Process カテゴリ（SolverProcess / VerifyProcess 必須）。
+> 2 テスト追加で mathematics/tests 97 passed、全 23 契約検査 OK。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、
