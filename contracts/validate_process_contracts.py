@@ -25,6 +25,10 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
        が紐付いているか検証（status-357 Phase E、MCDD 脱法 pattern 2 対策）
 - C19: `TermExpansionContract.providers` 実在検査 — 列挙された Process クラス名が
        `ProcessRegistry` に実在するか検証（status-357 Phase E、MCDD 脱法 pattern 4 対策）
+- C20: `TermExpansionContract` 双方向紐付け整合性検査 — `providers` に列挙された
+       Process クラスが、自身の `contracts` ClassVar で **同一の** `TermExpansion
+       Contract` を宣言していることを検証（status-358 Phase E、MCDD 脱法 pattern 4
+       の rename 亜種「providers 追加のみで provider 側の contracts 宣言漏れ」対策）
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -733,6 +737,64 @@ def check_c19_term_providers_exist(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c20_term_expansion_bidirectional(registry: dict[str, type]) -> list[str]:
+    """C20: `TermExpansionContract` 双方向紐付け整合性検査（status-358 Phase E）.
+
+    MCDD 脱法 pattern 4 の rename 亜種対策。`TermExpansionContract.providers`
+    に列挙された Process クラスが、自身の `contracts` ClassVar で**同一の**
+    `TermExpansionContract`（`name` が一致するインスタンス）を宣言していることを
+    検証する。
+
+    C19 は providers の「registry 実在」のみを検査し、双方向整合性
+    （provider → contract の逆方向宣言）は検査していない。これを放置すると:
+
+    - 既存 Process に対して「providers に追加」だけ行い、Process 側の
+      `contracts` 宣言を更新し忘れる。orchestrator `tangent_components()`
+      からは呼ばれないまま契約には列挙されている状態。
+    - rename（pattern 4）で新クラスを作成したが `contracts` 宣言を継承
+      し忘れた場合（C19 は新クラス名が registry にあれば通る）。
+
+    いずれも実行経路と契約宣言の乖離を招くため、型レベルで排除する。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.mathematics.contracts import TermExpansionContract
+    except ImportError as exc:
+        errors.append(f"C20: mathematics.contracts のインポートに失敗: {exc}")
+        return errors
+
+    # (contract_name, provider_name) 組を 1 度だけ検査
+    seen: set[tuple[str, str]] = set()
+
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        for contract in contracts:
+            if not isinstance(contract, TermExpansionContract):
+                continue
+            contract_name = contract.name
+            for provider in contract.providers:
+                key = (contract_name, provider)
+                if key in seen:
+                    continue
+                seen.add(key)
+                provider_cls = registry.get(provider)
+                if provider_cls is None:
+                    # C19 側で検出される（C20 では provider 実在は前提）
+                    continue
+                provider_contracts = getattr(provider_cls, "contracts", ())
+                provider_contract_names = {getattr(c, "name", None) for c in provider_contracts}
+                if contract_name not in provider_contract_names:
+                    errors.append(
+                        f"C20: TermExpansionContract[{contract_name!r}].providers "
+                        f"に列挙された {provider!r} が自身の contracts で"
+                        f" 同名契約を宣言していない"
+                        f"（宣言元 Process: {proc_name}、双方向紐付け不整合）"
+                    )
+    return errors
+
+
 def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
     """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
 
@@ -1234,7 +1296,7 @@ def check_o3_test_backend_configure() -> list[str]:
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C16 + O1-O3）")
+    print("プロセス契約違反検出スクリプト（C3-C20 + O1-O3）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -1262,6 +1324,7 @@ def main() -> int:
         ("C15(math): MathematicalContract.equation_ref 解決", check_c15_equation_refs),
         ("C18: @verified_by 紐付け検査", check_c18_verified_by_binding),
         ("C19: TermExpansionContract.providers 実在", check_c19_term_providers_exist),
+        ("C20: TermExpansionContract 双方向紐付け", check_c20_term_expansion_bidirectional),
     ]
 
     for label, check_fn in checks:
@@ -1355,6 +1418,8 @@ def main() -> int:
         print("       dummy/trivial VerifyProcess は禁止（_is_trivial_stmt で弾かれる）")
         print("  C19 → TermExpansionContract.providers の Process を ProcessRegistry に実装")
         print("       文字列保持のため rename は静的検査で検出される（脱法 pattern 4 防止）")
+        print("  C20 → providers に列挙した Process は自身の contracts で同名契約を宣言")
+        print("       双方向紐付けで providers 追加のみ / 宣言漏れ rename を検出")
         print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
         print("       クラス名は Input/Output で終わる命名が必要")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
