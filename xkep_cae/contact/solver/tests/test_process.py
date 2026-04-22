@@ -40,6 +40,9 @@ from xkep_cae.contact.solver._initial_penetration import (
 )
 from xkep_cae.contact.solver._newton_dynamic import NewtonDynamicInput, NewtonDynamicProcess
 from xkep_cae.contact.solver._newton_steps import (
+    ContactBacktrackingLineSearchInput,
+    ContactBacktrackingLineSearchOutput,
+    ContactBacktrackingLineSearchProcess,
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
     ConvergenceCheckOutput,
@@ -990,6 +993,172 @@ class TestLineSearchUpdateProcessAPI:
 
 
 # UzawaUpdateProcess は status-222 で削除。
+
+
+# ── ContactBacktrackingLineSearchProcess テスト（status-362: 仮説 C (c)） ──
+
+
+@binds_to(ContactBacktrackingLineSearchProcess)
+class TestContactBacktrackingLineSearchProcessAPI:
+    """ContactBacktrackingLineSearchProcess の API テスト."""
+
+    def test_protocol_conformance(self):
+        assert issubclass(ContactBacktrackingLineSearchProcess, SolverProcess)
+
+    def test_accept_alpha_one_when_no_flip(self):
+        """active flip + 接触残差とも閾値内なら α=1.0 即採択."""
+        proc = ContactBacktrackingLineSearchProcess()
+        u = np.zeros(4)
+        du = np.array([0.1, 0.1, 0.1, 0.1])
+
+        def _trial(u_eval: np.ndarray) -> tuple[float, int]:
+            return 1.0, 5  # contact_res=1.0, n_active=5
+
+        out = proc.process(
+            ContactBacktrackingLineSearchInput(
+                u=u,
+                du=du,
+                n_active_pre=5,
+                contact_res_pre=1.0,
+                compute_trial=_trial,
+                max_steps=4,
+                active_flip_threshold=3,
+                residual_ratio_threshold=2.0,
+                alpha_decay=0.5,
+                min_alpha=0.0625,
+            )
+        )
+        assert isinstance(out, ContactBacktrackingLineSearchOutput)
+        assert out.alpha == 1.0
+        assert out.reason == "accepted"
+        assert out.n_bt_iter == 0
+        np.testing.assert_allclose(out.du_accepted, du)
+
+    def test_backtrack_on_excessive_active_flip(self):
+        """active flip が閾値超過なら α を段階的に減らす."""
+        proc = ContactBacktrackingLineSearchProcess()
+        u = np.zeros(4)
+        du = np.ones(4)
+
+        calls = {"n": 0}
+
+        def _trial(u_eval: np.ndarray) -> tuple[float, int]:
+            # α=1.0 で 20 flip → reject、α=0.5 で 10 flip → reject、
+            # α=0.25 で 3 flip → accept
+            calls["n"] += 1
+            mag = float(np.max(np.abs(u_eval)))
+            if mag > 0.75:
+                return 1.0, 25
+            if mag > 0.375:
+                return 1.0, 15
+            return 1.0, 8  # flip=3 → accept at α=0.25
+
+        out = proc.process(
+            ContactBacktrackingLineSearchInput(
+                u=u,
+                du=du,
+                n_active_pre=5,
+                contact_res_pre=1.0,
+                compute_trial=_trial,
+                max_steps=4,
+                active_flip_threshold=3,
+                residual_ratio_threshold=5.0,
+                alpha_decay=0.5,
+                min_alpha=0.0625,
+            )
+        )
+        assert out.reason == "accepted"
+        assert out.alpha == pytest.approx(0.25)
+        assert out.n_bt_iter == 2
+        np.testing.assert_allclose(out.du_accepted, 0.25 * du)
+
+    def test_backtrack_on_contact_residual_growth(self):
+        """接触残差比が閾値超過なら α を減らす."""
+        proc = ContactBacktrackingLineSearchProcess()
+        u = np.zeros(4)
+        du = np.ones(4)
+
+        def _trial(u_eval: np.ndarray) -> tuple[float, int]:
+            mag = float(np.max(np.abs(u_eval)))
+            # α=1.0: res=5.0 (比 5.0, reject), α=0.5: res=1.5 (比 1.5, accept)
+            if mag > 0.75:
+                return 5.0, 5
+            return 1.5, 5
+
+        out = proc.process(
+            ContactBacktrackingLineSearchInput(
+                u=u,
+                du=du,
+                n_active_pre=5,
+                contact_res_pre=1.0,
+                compute_trial=_trial,
+                max_steps=4,
+                active_flip_threshold=10,
+                residual_ratio_threshold=2.0,
+                alpha_decay=0.5,
+                min_alpha=0.0625,
+            )
+        )
+        assert out.reason == "accepted"
+        assert out.alpha == pytest.approx(0.5)
+
+    def test_min_alpha_guard(self):
+        """min_alpha 未満は却下で打ち切る."""
+        proc = ContactBacktrackingLineSearchProcess()
+        u = np.zeros(2)
+        du = np.ones(2)
+
+        def _trial(u_eval: np.ndarray) -> tuple[float, int]:
+            return 100.0, 50  # 常に reject
+
+        out = proc.process(
+            ContactBacktrackingLineSearchInput(
+                u=u,
+                du=du,
+                n_active_pre=0,
+                contact_res_pre=1.0,
+                compute_trial=_trial,
+                max_steps=10,
+                active_flip_threshold=0,
+                residual_ratio_threshold=2.0,
+                alpha_decay=0.5,
+                min_alpha=0.125,
+            )
+        )
+        # alpha=1→0.5→0.25→0.125 の時点で次の半減値が min_alpha 未満 → 打切
+        assert out.reason == "min_alpha"
+        assert out.alpha >= 0.125
+
+    def test_trial_failure_halves_alpha(self):
+        """compute_trial の例外発生時は α を半減して継続."""
+        proc = ContactBacktrackingLineSearchProcess()
+        u = np.zeros(2)
+        du = np.ones(2)
+        state = {"calls": 0}
+
+        def _trial(u_eval: np.ndarray) -> tuple[float, int]:
+            state["calls"] += 1
+            if state["calls"] <= 1:
+                raise RuntimeError("simulated failure")
+            return 1.0, 0
+
+        out = proc.process(
+            ContactBacktrackingLineSearchInput(
+                u=u,
+                du=du,
+                n_active_pre=0,
+                contact_res_pre=1.0,
+                compute_trial=_trial,
+                max_steps=4,
+                active_flip_threshold=3,
+                residual_ratio_threshold=2.0,
+                alpha_decay=0.5,
+                min_alpha=0.0625,
+            )
+        )
+        assert out.reason == "accepted"
+        assert out.alpha == pytest.approx(0.5)
+
 
 # =====================================================================
 # ContactManager Process ラッパーのテスト
