@@ -324,3 +324,10 @@ class TermExpansionContract(MathematicalContract):
             raise ValueError(
                 f"TermExpansionContract({self.name}): providers に重複: {self.providers}"
             )
+        # term_names の重複チェック（status-360 C21: 同名項の二重宣言を禁止）
+        # 項展開の網羅性が保証されないため（同名項が 2 つ存在すると合計検証が
+        # 誤った Σ 参照を持つ）、構造的に排除する。
+        if len(set(self.term_names)) != len(self.term_names):
+            raise ValueError(
+                f"TermExpansionContract({self.name}): term_names に重複: {self.term_names}"
+            )

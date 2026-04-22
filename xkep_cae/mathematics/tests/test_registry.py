@@ -13,7 +13,7 @@ from typing import ClassVar
 import pytest
 
 from xkep_cae.core.base import AbstractProcess, ProcessMeta
-from xkep_cae.core.categories import SolverProcess, VerifyProcess
+from xkep_cae.core.categories import PreProcess, SolverProcess, VerifyProcess
 from xkep_cae.mathematics import (
     DummyVerifyProcessError,
     FDConsistencyContract,
@@ -140,6 +140,24 @@ class _DummyNotImplementedVerifyProcess(VerifyProcess[object, bool]):
 
     def process(self, input_data: object) -> bool:
         raise NotImplementedError("未実装")
+
+
+class _InvalidCategoryVerifier(PreProcess[object, bool]):
+    """SolverProcess/VerifyProcess いずれも継承しない Process（status-360 C23 拒否対象）."""
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_InvalidCategoryVerifier",
+        module="pre",
+        version="0.1.0",
+        document_path=_DOC_REL,
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: object) -> bool:
+        # 実装中身あり（dummy 検査は通過、カテゴリ検査で落ちるべき）
+        return bool(input_data) and True
 
 
 # ======================================================================
@@ -327,6 +345,18 @@ class TestBindVerifier:
         """dummy（pass/.../None 裸 return/NotImplementedError 単体）は AST 検査で拒否."""
         with pytest.raises(DummyVerifyProcessError, match="dummy"):
             self.registry.bind_verifier(_TargetProcess, "K_c_fd_consistency", dummy_cls)
+
+    def test_bind_invalid_category_rejected(self) -> None:
+        """SolverProcess/VerifyProcess いずれも継承しない verifier は拒否（status-360 C23）."""
+        with pytest.raises(
+            TypeError,
+            match="SolverProcess / VerifyProcess のいずれも継承していません",
+        ):
+            self.registry.bind_verifier(
+                _TargetProcess,
+                "K_c_fd_consistency",
+                _InvalidCategoryVerifier,
+            )
 
     def test_unverified_contracts(self) -> None:
         """紐付け前は契約が `unverified`、紐付け後は空."""

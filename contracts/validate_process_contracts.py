@@ -29,6 +29,18 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
        Process クラスが、自身の `contracts` ClassVar で **同一の** `TermExpansion
        Contract` を宣言していることを検証（status-358 Phase E、MCDD 脱法 pattern 4
        の rename 亜種「providers 追加のみで provider 側の contracts 宣言漏れ」対策）
+- C21: `TermExpansionContract.term_names` / `providers` 重複検出 — 各 Process の
+       `contracts` ClassVar に宣言された `TermExpansionContract` について、
+       term_names・providers の要素重複を静的に検出（status-360 Phase E、
+       __post_init__ が通る同名項の二重宣言シナリオは無いはずだが belt-and-suspenders）
+- C22: `contracts` ClassVar 同名契約重複検出 — 同一 Process 内の `contracts`
+       ClassVar に同一 `name` の `MathematicalContract` が複数存在するケースを
+       検出（status-360 Phase E、`ProcessContractRegistry.register_contracts`
+       の動的検査を静的検査で先行させる補強）
+- C23: `@verified_by` 検証 Process カテゴリ検査 — `ProcessContractRegistry`
+       に登録された VerifyProcess 側が `SolverProcess` もしくは `VerifyProcess`
+       カテゴリを継承していることを検証（status-360 Phase E、`bind_verifier`
+       の動的検査の静的版。PreProcess 等を verifier に指定する脱法を排除）
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -795,6 +807,122 @@ def check_c20_term_expansion_bidirectional(registry: dict[str, type]) -> list[st
     return errors
 
 
+def check_c21_term_expansion_no_duplicates(registry: dict[str, type]) -> list[str]:
+    """C21: `TermExpansionContract.term_names` / `providers` 重複検出（status-360 Phase E）.
+
+    `TermExpansionContract.__post_init__` が生成時に重複を弾くため、
+    通常は静的検査でもヒットしない想定だが、以下の脱法すり抜けシナリオに備える:
+
+    - `object.__setattr__` 等で __post_init__ を跳ね飛ばして frozen dataclass を
+      再構成する。
+    - 異なる Process で同一契約インスタンスを共有した際に重複項が生まれる
+      ような副作用的 mutation（frozen 回避経路）。
+
+    本検査はレジストリ走査により term_names・providers のセット化で重複を
+    再検出することで二重の防御線を敷く。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.mathematics.contracts import TermExpansionContract
+    except ImportError as exc:
+        errors.append(f"C21: mathematics.contracts のインポートに失敗: {exc}")
+        return errors
+
+    seen_contracts: set[tuple[str, int]] = set()
+
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        for contract in contracts:
+            if not isinstance(contract, TermExpansionContract):
+                continue
+            key = (proc_name, id(contract))
+            if key in seen_contracts:
+                continue
+            seen_contracts.add(key)
+            if len(set(contract.term_names)) != len(contract.term_names):
+                errors.append(
+                    f"C21: TermExpansionContract[{contract.name!r}] の"
+                    f" term_names に重複: {contract.term_names}"
+                    f"（宣言元 Process: {proc_name}）"
+                )
+            if len(set(contract.providers)) != len(contract.providers):
+                errors.append(
+                    f"C21: TermExpansionContract[{contract.name!r}] の"
+                    f" providers に重複: {contract.providers}"
+                    f"（宣言元 Process: {proc_name}）"
+                )
+    return errors
+
+
+def check_c22_contracts_no_duplicate_names(registry: dict[str, type]) -> list[str]:
+    """C22: `contracts` ClassVar 同名契約重複検出（status-360 Phase E）.
+
+    `ProcessContractRegistry.register_contracts` は動的に同名契約の重複を
+    弾いているが、静的検査として登録前（AbstractProcess.__init_subclass__
+    による自動登録に依存しない経路）で先行検出する。
+
+    単一 Process の `contracts` ClassVar に同一 `name` の
+    `MathematicalContract` が複数存在するケースを検出する。
+    """
+    errors: list[str] = []
+
+    for proc_name, cls in sorted(registry.items()):
+        contracts = getattr(cls, "contracts", ())
+        if not contracts:
+            continue
+        seen_names: dict[str, int] = {}
+        for contract in contracts:
+            name = getattr(contract, "name", None)
+            if not isinstance(name, str) or not name:
+                continue
+            seen_names[name] = seen_names.get(name, 0) + 1
+        duplicated = {n: cnt for n, cnt in seen_names.items() if cnt >= 2}
+        for dup_name, cnt in sorted(duplicated.items()):
+            errors.append(
+                f"C22: {proc_name}.contracts に同名契約 {dup_name!r} が"
+                f" {cnt} 回登場（同名契約の重複宣言は禁止）"
+            )
+    return errors
+
+
+def check_c23_verifier_category(registry: dict[str, type]) -> list[str]:
+    """C23: `@verified_by` 検証 Process カテゴリ検査（status-360 Phase E）.
+
+    `ProcessContractRegistry.bind_verifier` は登録時に `SolverProcess` /
+    `VerifyProcess` カテゴリ継承を要求するが、本検査は登録後の紐付け
+    スナップショットを走査して静的に再確認する。レジストリが何らかの形で
+    外部 mutate された場合の二重防御線。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.core.categories import SolverProcess, VerifyProcess
+        from xkep_cae.mathematics import ProcessContractRegistry
+    except ImportError as exc:
+        errors.append(f"C23: 依存モジュールのインポートに失敗: {exc}")
+        return errors
+
+    reg = ProcessContractRegistry.default()
+    bindings = reg.all_bindings()
+
+    for (proc_name, contract_name), verify_cls in sorted(bindings.items()):
+        if not isinstance(verify_cls, type):
+            errors.append(
+                f"C23: {proc_name}.contracts[{contract_name!r}] の紐付け "
+                f"{verify_cls!r} が type ではない"
+            )
+            continue
+        if not issubclass(verify_cls, (SolverProcess, VerifyProcess)):
+            bases = ", ".join(b.__name__ for b in verify_cls.__mro__[1:4])
+            errors.append(
+                f"C23: {proc_name}.contracts[{contract_name!r}] の紐付け "
+                f"{verify_cls.__name__} が SolverProcess / VerifyProcess の"
+                f" いずれも継承していない（mro 上位: {bases}）"
+            )
+    return errors
+
+
 def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
     """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
 
@@ -1296,7 +1424,7 @@ def check_o3_test_backend_configure() -> list[str]:
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C20 + O1-O3）")
+    print("プロセス契約違反検出スクリプト（C3-C23 + O1-O3）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -1325,6 +1453,9 @@ def main() -> int:
         ("C18: @verified_by 紐付け検査", check_c18_verified_by_binding),
         ("C19: TermExpansionContract.providers 実在", check_c19_term_providers_exist),
         ("C20: TermExpansionContract 双方向紐付け", check_c20_term_expansion_bidirectional),
+        ("C21: TermExpansionContract 項名/providers 重複", check_c21_term_expansion_no_duplicates),
+        ("C22: contracts ClassVar 同名契約重複", check_c22_contracts_no_duplicate_names),
+        ("C23: @verified_by 検証器カテゴリ", check_c23_verifier_category),
     ]
 
     for label, check_fn in checks:
@@ -1420,6 +1551,12 @@ def main() -> int:
         print("       文字列保持のため rename は静的検査で検出される（脱法 pattern 4 防止）")
         print("  C20 → providers に列挙した Process は自身の contracts で同名契約を宣言")
         print("       双方向紐付けで providers 追加のみ / 宣言漏れ rename を検出")
+        print("  C21 → TermExpansionContract の term_names / providers の重複を除去")
+        print("       __post_init__ が通る異常経路（frozen 回避等）の構造的検出")
+        print("  C22 → 同一 Process の contracts ClassVar に同名契約を複数並べない")
+        print("       各契約に固有の name を付与すること")
+        print("  C23 → @verified_by の検証器は SolverProcess / VerifyProcess 継承必須")
+        print("       PreProcess / PostProcess / BatchProcess は検証器不可")
         print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
         print("       クラス名は Input/Output で終わる命名が必要")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")

@@ -374,6 +374,20 @@ class TestTermExpansionContract:
                 providers=("P1", "P1"),
             )
 
+    def test_duplicate_term_names_rejected(self) -> None:
+        """term_names 重複は ValueError（status-360 C21）.
+
+        項名の重複は合計検証 Σ K_k の参照同一性を崩すため構造的に排除する。
+        """
+        with pytest.raises(ValueError, match="term_names に重複"):
+            TermExpansionContract(
+                name="t",
+                equation_ref="m#e",
+                total_name="K",
+                term_names=("K1", "K1"),
+                providers=("P1", "P2"),
+            )
+
     def test_sum_combinator(self) -> None:
         """sum パターン（全項加算）も受理."""
         c = TermExpansionContract(
