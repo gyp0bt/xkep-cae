@@ -465,6 +465,30 @@ class ContactFrictionProcess(
             chattering_freeze_max_cycles=getattr(input_data, "chattering_freeze_max_cycles", 5),
             chattering_freeze_nr_max=getattr(input_data, "chattering_freeze_nr_max", 15),
             chattering_freeze_tol_factor=getattr(input_data, "chattering_freeze_tol_factor", 10.0),
+            # 接触 backtracking line search（status-362）
+            contact_backtracking_enabled=getattr(input_data, "contact_backtracking_enabled", False),
+            contact_backtracking_max_steps=getattr(input_data, "contact_backtracking_max_steps", 4),
+            contact_backtracking_active_flip_threshold=getattr(
+                input_data, "contact_backtracking_active_flip_threshold", 3
+            ),
+            contact_backtracking_active_flip_ratio=getattr(
+                input_data, "contact_backtracking_active_flip_ratio", 0.3
+            ),
+            contact_backtracking_residual_ratio=getattr(
+                input_data, "contact_backtracking_residual_ratio", 2.0
+            ),
+            contact_backtracking_alpha_decay=getattr(
+                input_data, "contact_backtracking_alpha_decay", 0.5
+            ),
+            contact_backtracking_min_alpha=getattr(
+                input_data, "contact_backtracking_min_alpha", 0.0625
+            ),
+            contact_backtracking_mixed_only=getattr(
+                input_data, "contact_backtracking_mixed_only", True
+            ),
+            contact_backtracking_rate_threshold=getattr(
+                input_data, "contact_backtracking_rate_threshold", 0.85
+            ),
         )
         nr_process_dyn = NewtonDynamicProcess()
 

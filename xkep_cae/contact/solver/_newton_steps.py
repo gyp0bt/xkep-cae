@@ -789,6 +789,125 @@ class LineSearchUpdateProcess(
 
 
 # ================================================================
+# 5b. ContactBacktrackingLineSearchProcess
+#     （status-362: 仮説 C 候補 (c) mixed (C+D) 対策 backtracking）
+# ================================================================
+
+
+@dataclass(frozen=True)
+class ContactBacktrackingLineSearchInput:
+    """接触残差 / active flip を基準とする backtracking line search の入力.
+
+    既存の NCPLineSearchProcess は ||R_u|| 全体の発散のみで判定するため、
+    19 本撚線のような接触密度が高いケースで mixed (C+D) 領域（active flip +
+    tangent 不整合の同時発生）の step を抑制できない。status-361 の Type
+    分布実測で 19 本重荷重のみ mixed 16.6% が突出する所見に対応する。
+
+    ``compute_trial`` は ``u_eval`` を受け、``(contact_residual_norm,
+    n_active)`` を返す callable。呼び出し側は事前にペア状態のスナップショット
+    を保存し、本 Process の呼び出し後に復元する責務を持つ。
+    """
+
+    u: np.ndarray
+    du: np.ndarray
+    n_active_pre: int
+    contact_res_pre: float
+    compute_trial: object  # Callable[[np.ndarray], tuple[float, int]]
+    max_steps: int = 4
+    active_flip_threshold: int = 3  # 絶対許容 flip 数（最低値）
+    active_flip_ratio: float = 0.3  # n_active_pre に対する相対許容 flip 比率
+    residual_ratio_threshold: float = 2.0
+    alpha_decay: float = 0.5
+    min_alpha: float = 0.0625  # 1/16: これ以上縮めると NR 進行が事実上停止
+
+
+@dataclass(frozen=True)
+class ContactBacktrackingLineSearchOutput:
+    """Backtracking line search の出力."""
+
+    du_accepted: np.ndarray
+    alpha: float
+    n_bt_iter: int
+    reason: str  # "accepted"/"active_flip"/"residual_growth"/"min_alpha"/"max_steps"/"trial_failed"
+
+
+class ContactBacktrackingLineSearchProcess(
+    SolverProcess[ContactBacktrackingLineSearchInput, ContactBacktrackingLineSearchOutput],
+):
+    """接触残差 / active flip 増加を基準に backtracking line search を行う.
+
+    status-362 仮説 C 候補 (c)。既存 line search 後の du を受け、
+    u_try = u + α·du に対し接触残差・active ペア数を実測し、過剰な
+    増加を検知したら α を半減して再評価する。
+    """
+
+    meta = ProcessMeta(
+        name="ContactBacktrackingLineSearch",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/newton_solver.md",
+    )
+
+    def process(
+        self, inp: ContactBacktrackingLineSearchInput
+    ) -> ContactBacktrackingLineSearchOutput:
+        alpha = 1.0
+        last_reason = "max_steps"
+        last_flip = 0
+        last_ratio = 1.0
+        for n_iter in range(inp.max_steps + 1):
+            u_try = inp.u + alpha * inp.du
+            try:
+                contact_res_try, n_active_try = inp.compute_trial(u_try)
+            except Exception:
+                last_reason = "trial_failed"
+                if alpha * inp.alpha_decay < inp.min_alpha:
+                    break
+                alpha *= inp.alpha_decay
+                continue
+
+            flip = abs(int(n_active_try) - int(inp.n_active_pre))
+            # 絶対閾値 max(abs, ratio * n_active_pre) を上限とする
+            _flip_abs = max(
+                int(inp.active_flip_threshold),
+                int(inp.active_flip_ratio * max(int(inp.n_active_pre), 0)),
+            )
+            flip_ok = flip <= _flip_abs
+
+            if inp.contact_res_pre > 1e-30:
+                res_ratio = float(contact_res_try) / inp.contact_res_pre
+            else:
+                res_ratio = 1.0
+            res_ok = res_ratio <= inp.residual_ratio_threshold
+
+            last_flip = flip
+            last_ratio = res_ratio
+
+            if flip_ok and res_ok:
+                return ContactBacktrackingLineSearchOutput(
+                    du_accepted=alpha * inp.du,
+                    alpha=alpha,
+                    n_bt_iter=n_iter,
+                    reason="accepted",
+                )
+
+            last_reason = "active_flip" if not flip_ok else "residual_growth"
+            if alpha * inp.alpha_decay < inp.min_alpha:
+                last_reason = "min_alpha"
+                break
+            alpha *= inp.alpha_decay
+
+        # 採択できなかった場合でも最終 α で du を返す（進行停止を回避）
+        _ = (last_flip, last_ratio)  # デバッグ時に参照
+        return ContactBacktrackingLineSearchOutput(
+            du_accepted=alpha * inp.du,
+            alpha=alpha,
+            n_bt_iter=min(inp.max_steps, n_iter + 1),
+            reason=last_reason,
+        )
+
+
+# ================================================================
 # 6. TangentFDDiagnosticProcess（接線剛性FD方向診断: status-256）
 # ================================================================
 

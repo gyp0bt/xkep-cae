@@ -233,6 +233,17 @@ class ContactFrictionInputData:
     chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サ��クル数
     chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
     chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
+    # 接触残差 / active flip backtracking line search（status-362: 仮説 C 候補 (c)）
+    # mixed (C+D) 領域（active flip + tangent 不整合）の直接抑制。default OFF。
+    contact_backtracking_enabled: bool = False
+    contact_backtracking_max_steps: int = 4
+    contact_backtracking_active_flip_threshold: int = 3
+    contact_backtracking_active_flip_ratio: float = 0.3
+    contact_backtracking_residual_ratio: float = 2.0
+    contact_backtracking_alpha_decay: float = 0.5
+    contact_backtracking_min_alpha: float = 0.0625
+    contact_backtracking_mixed_only: bool = True
+    contact_backtracking_rate_threshold: float = 0.85
     # Hertz型非線形ペナルティ（status-285）
     penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
     # チェックポイント復元: frac途中再開（status-279）

@@ -223,6 +223,22 @@ def _dict_to_yaml(d: dict, indent: int = 0) -> str:
 
 
 @dataclass(frozen=True)
+class PostProcessSpec:
+    """BenchmarkRunInput に渡す PostProcess 仕様（status-362 追加）.
+
+    runner 実行完了後に PostProcess を自動起動する設定。
+    `input_builder(result)` が main result から PostProcess の入力を構築、
+    `process` がその入力で起動される。例外時は `abort_on_error=False` なら
+    エラーサマリに記録して継続。
+    """
+
+    process: Any  # PostProcess instance
+    input_builder: Callable[[Any], Any]
+    name: str = ""  # manifest 記録用、空なら process クラス名
+    abort_on_error: bool = False
+
+
+@dataclass(frozen=True)
 class BenchmarkRunInput(Generic[TIn]):
     """BenchmarkRunnerProcess の入力."""
 
@@ -234,6 +250,8 @@ class BenchmarkRunInput(Generic[TIn]):
     capture_profile: bool = True  # ProcessMetaclass._profile_data を採取
     profile_sort_by: str = "total"  # "total" | "avg" | "n" | "name"
     profile_top_n: int | None = None  # 上位 N 件のみ保存（None=全件）
+    # 実行後に自動起動する PostProcess 群（status-362: 可視化自動化）
+    post_processes: tuple[PostProcessSpec, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -243,6 +261,7 @@ class BenchmarkRunResult(Generic[TOut]):
     result: TOut
     manifest: RunManifest
     manifest_path: str | None = None  # 保存先パス
+    post_process_results: tuple[tuple[str, Any], ...] = ()  # (name, result | exception)
 
 
 class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResult"]):
@@ -333,13 +352,27 @@ class BenchmarkRunnerProcess(BatchProcess["BenchmarkRunInput", "BenchmarkRunResu
             profile_breakdown=profile_breakdown,
         )
 
-        # 6. YAML ファイル保存
+        # 6. PostProcess 自動起動（status-362）
+        post_results: list[tuple[str, Any]] = []
+        for spec in input_data.post_processes:
+            name = spec.name or type(spec.process).__name__
+            try:
+                pp_input = spec.input_builder(result)
+                pp_result = spec.process.process(pp_input)
+                post_results.append((name, pp_result))
+            except Exception as e:
+                post_results.append((name, e))
+                if spec.abort_on_error:
+                    raise
+
+        # 7. YAML ファイル保存
         manifest_path = self._save_manifest(manifest, input_data.output_dir)
 
         return BenchmarkRunResult(
             result=result,
             manifest=manifest,
             manifest_path=manifest_path,
+            post_process_results=tuple(post_results),
         )
 
     def _save_manifest(self, manifest: RunManifest, output_dir: str | None) -> str | None:

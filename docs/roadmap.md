@@ -14,10 +14,10 @@
 
 ## 現在地（2026-04-22）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜360、status-354 で 1 status 後ろ倒し）を実施中
-> （**12/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 追加 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') smoothing_delta=1000 採択 status-359 + **status-360: 仮説 C 候補 (a') 19本撚線検証で却下 + Phase E C21/C22/C23 追加**）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜362、status-354 で 1 status 後ろ倒し）を実施中
+> （**14/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + **status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -77,6 +77,32 @@
 > term_names` 重複静的検出、C22 `contracts` ClassVar 同名契約重複検出、
 > C23 `@verified_by` 検証 Process カテゴリ（SolverProcess / VerifyProcess 必須）。
 > 2 テスト追加で mathematics/tests 97 passed、全 23 契約検査 OK。
+> **status-361 挙動反転原因切分**: 7/19 本挙動反転の原因を (1) 幾何モデル検証
+> （逆巻き S/Z は正常実装、ただし全層同一 pitch で外層ヘリックス角 2x、接触
+> ペア密度 8.5x）、(2) 19 本軽荷重 κ=0.005 で frac=1.0 完走 → **幾何モデル
+> 自体は正常、挙動反転は接触密度依存の数値問題**、(3) Type 分布実測で
+> **19 本重荷重のみ mixed (C+D) 16.6% 突出**（他 3 ケース 1-4%）、K_c x/z
+> カップリング不整合が active flip と同時発火する領域が本質。δ_h 拡大は
+> mixed (C+D) に悪化。次手は (c) line search 強化で mixed 領域を直接抑制。
+> **status-362 仮説 C 候補 (c) 実装 + 実機検証（部分的前進）**:
+> `ContactBacktrackingLineSearchProcess` 新設（`_newton_steps.py` +112 行）
+> で既存 `NCPLineSearch` の ||R_u|| 全体発散判定では捉えられない**接触残差比
+> / active flip 過剰増加**を検知し α を半減する backtracking を
+> `_newton_dynamic.py` NR 主ループに組込。トリガー条件 `att≥2 &
+> n_active≥1 & active_set_changed & _conv_rate>0.85` で mixed 狭義検知、
+> `active_flip_threshold` は `max(abs=3, ratio=0.3 × n_active_pre)` の
+> 相対判定。4 層で 9 field plumb-through、**default OFF で既存動作不変**。
+> `TestContactBacktrackingLineSearchProcessAPI` 6 テスト + default OFF
+> regression 163 passed 6 skipped 1 xfailed で回帰なし。
+> **実機検証結果**: 7 本撚線（status-359 設定）**frac=1.0000 完走 /
+> elapsed=285.64s（+9.9%、20% 許容内）で回帰なし**。19 本撚線（baseline
+> `frac=0.4839` stall）**frac=0.5153（+6.5% 改善）/ cb 39→38（-2.6%）/
+> elapsed 534→729s（+36.4%）** で MCDD 凍結解除条件「frac=1.0 完走」
+> **未達**。最終停滞時 NR Type 分布 `D+E:51%, E:43%`（baseline `D+E:67%,
+> E:28%` より mixed 減、BT 部分効果を示唆）。BT 発動数 52（全 NR 反復の
+> ~1%）で trigger が保守的過ぎる可能性、次候補は (c) パラメータ感度
+> 探索（`rate_threshold=0.7` / `active_flip_ratio=0.15` / `mixed_only=False`
+> の掃引） or (d) 接触凍結モード 19 本適用。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、

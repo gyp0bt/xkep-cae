@@ -20,6 +20,8 @@ from xkep_cae.contact.solver._diagnostics import (
     classify_chattering_type,
 )
 from xkep_cae.contact.solver._newton_steps import (
+    ContactBacktrackingLineSearchInput,
+    ContactBacktrackingLineSearchProcess,
     ContactForceAssemblyInput,
     ContactForceAssemblyProcess,
     ConvergenceCheckInput,
@@ -114,6 +116,24 @@ class NewtonDynamicInput:
     # K_mat/K_geo/K_st を個別取得し、4 組み合わせで FD 相対誤差を報告。
     # x 成分 68% 不整合（status-342）の部分行列由来を切り分ける。
     kc_component_fd_diagnostic: bool = False  # True なら K_c 成分分解 FD 診断も出力
+    # 接触残差 / active flip backtracking line search（status-362: 仮説 C 候補 (c)）
+    # 既存 NCPLineSearch は ||R_u|| 全体でしか発散判定しないため、mixed (C+D)
+    # 領域（active flip + tangent 不整合同時発生）の step を抑制できない。
+    # status-361 の Type 分布実測で 19 本重荷重のみ mixed 16.6% 突出を受けた
+    # 仮説 C (c) line search 強化。`ContactBacktrackingLineSearchProcess` が
+    # u_try = u + α·du で接触残差・active 数を再評価し、過剰増加時に α 半減。
+    # デフォルト OFF（実験的機能、7 本撚線回帰なしを前提に opt-in）。
+    contact_backtracking_enabled: bool = False
+    contact_backtracking_max_steps: int = 4
+    contact_backtracking_active_flip_threshold: int = 3
+    contact_backtracking_active_flip_ratio: float = 0.3
+    contact_backtracking_residual_ratio: float = 2.0
+    contact_backtracking_alpha_decay: float = 0.5
+    contact_backtracking_min_alpha: float = 0.0625
+    # mixed (C+D) 検知時のみ発動（Falseなら毎反復発動、コスト約 2x）
+    contact_backtracking_mixed_only: bool = True
+    # 発動判定閾値: active_set_changed かつ 収束率 > rate_threshold なら mixed 候補
+    contact_backtracking_rate_threshold: float = 0.85
 
 
 @dataclass(frozen=True)
@@ -170,6 +190,7 @@ class NewtonDynamicProcess(
         TangentAssemblyProcess,
         LinearSolveProcess,
         LineSearchUpdateProcess,
+        ContactBacktrackingLineSearchProcess,
         TangentFDDiagnosticProcess,
         ContactKcComponentFDDiagnosticProcess,
     ]
@@ -207,6 +228,7 @@ class NewtonDynamicProcess(
         _tangent_proc = TangentAssemblyProcess()
         _solve_proc = LinearSolveProcess()
         _linesearch_proc = LineSearchUpdateProcess()
+        _bt_proc = ContactBacktrackingLineSearchProcess()
 
         diag = ConvergenceDiagnosticsOutput(step=increment_display, load_frac=load_frac)
         total_attempts = 0
@@ -1115,6 +1137,95 @@ class NewtonDynamicProcess(
                 )
             )
             du = ls_out.du_scaled
+
+            # ── ステップ 9b: 接触 backtracking line search（status-362: 仮説 C (c)） ──
+            # 既存 line search 後の du に対し、接触残差・active ペア数の過剰増加を
+            # 再評価し、mixed (C+D) 領域の暴走 step を抑制する。
+            # 発動時はペア状態をスナップショットし、復元後に本採択 du を適用する
+            # （次 NR 反復冒頭の force_proc 呼び出しで manager 状態は再構築される）。
+            #
+            # トリガー条件（mixed (C+D) の狭義検知）:
+            #   (1) att >= 2: att=0/1 は収束率の履歴が短いため除外
+            #   (2) n_active >= 1: 接触未活性化の初期侵入 step は除外
+            #   (3) active_set_changed: 今回の NR 反復で active 集合が変化
+            #   (4) _conv_rate > rate_threshold: 収束率が悪い（Type D 気味）
+            if cfg.contact_backtracking_enabled and not _freeze_active:
+                _bt_trigger = True
+                if cfg.contact_backtracking_mixed_only:
+                    _bt_trigger = (
+                        att >= 2
+                        and n_active >= 1
+                        and _nr_snap.active_set_changed
+                        and _conv_rate > cfg.contact_backtracking_rate_threshold
+                    )
+                if _bt_trigger and hasattr(manager, "pairs"):
+                    _pairs_snapshot = list(manager.pairs)
+
+                    def _compute_contact_metrics(
+                        u_eval: np.ndarray,
+                    ) -> tuple[float, int]:
+                        _trial_fr = _force_proc.process(
+                            ContactForceAssemblyInput(
+                                u=u_eval,
+                                f_ext=f_ext,
+                                fixed_dofs=input_data.fixed_dofs,
+                                manager=manager,
+                                node_coords_ref=input_data.node_coords_ref,
+                                contact_force_strategy=_contact_force_strategy,
+                                friction_strategy=_friction_strategy,
+                                coating_strategy=_coating_strategy,
+                                k_pen=k_pen,
+                                mu=mu,
+                                u_ref=u_ref,
+                                load_frac=load_frac,
+                                load_frac_prev=load_frac_prev,
+                                increment_display=increment_display,
+                                ndof_per_node=cfg.ndof_per_node,
+                                use_coating=input_data.use_coating,
+                                assemble_internal_force=input_data.assemble_internal_force,
+                                connectivity=input_data.connectivity,
+                            )
+                        )
+                        _R_trial = _trial_fr.R_u
+                        if dt_sub > 1e-30:
+                            _R_trial = _time_strategy.effective_residual(_R_trial, dt_sub)
+                            _R_trial[input_data.fixed_dofs] = 0.0
+                        _c_mask_tr = np.zeros(len(_R_trial), dtype=bool)
+                        _n_act_tr = 0
+                        for _p_tr in manager.pairs:
+                            if hasattr(_p_tr, "state") and _p_tr.state.p_n > 0.0:
+                                _n_act_tr += 1
+                                _cd_tr = _contact_dofs(_p_tr, cfg.ndof_per_node)
+                                _vd_tr = _cd_tr[_cd_tr < len(_R_trial)]
+                                _c_mask_tr[_vd_tr] = True
+                        _cres_tr = (
+                            float(np.linalg.norm(_R_trial[_c_mask_tr])) if _c_mask_tr.any() else 0.0
+                        )
+                        return _cres_tr, _n_act_tr
+
+                    _bt_out = _bt_proc.process(
+                        ContactBacktrackingLineSearchInput(
+                            u=u,
+                            du=du,
+                            n_active_pre=n_active,
+                            contact_res_pre=_contact_res,
+                            compute_trial=_compute_contact_metrics,
+                            max_steps=cfg.contact_backtracking_max_steps,
+                            active_flip_threshold=cfg.contact_backtracking_active_flip_threshold,
+                            active_flip_ratio=cfg.contact_backtracking_active_flip_ratio,
+                            residual_ratio_threshold=cfg.contact_backtracking_residual_ratio,
+                            alpha_decay=cfg.contact_backtracking_alpha_decay,
+                            min_alpha=cfg.contact_backtracking_min_alpha,
+                        )
+                    )
+                    du = _bt_out.du_accepted
+                    manager.pairs[:] = _pairs_snapshot
+                    if cfg.show_progress and _bt_out.alpha < 1.0:
+                        print(
+                            f"  [BT:{_bt_out.reason}] Incr {increment_display} "
+                            f"att={att}, α={_bt_out.alpha:.3f}, "
+                            f"n_iter={_bt_out.n_bt_iter}, n_active_pre={n_active}"
+                        )
             u += du
 
             # MPC制約をNR更新後のuに再射影（slave DOFの整合性維持）

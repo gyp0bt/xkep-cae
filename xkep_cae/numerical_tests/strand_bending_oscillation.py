@@ -180,6 +180,17 @@ class StrandBendingOscillationConfig:
     )
     tangent_fd_diagnostic: bool = False  # ストール時FD接線診断（status-257）
     kc_component_fd_diagnostic: bool = False  # K_c 成分分解 FD 診断（status-343/344）
+    # 接触残差 / active flip backtracking line search（status-362: 仮説 C 候補 (c)）
+    # mixed (C+D) 領域（active flip + tangent 不整合）の直接抑制。default OFF。
+    contact_backtracking_enabled: bool = False
+    contact_backtracking_max_steps: int = 4
+    contact_backtracking_active_flip_threshold: int = 3
+    contact_backtracking_active_flip_ratio: float = 0.3
+    contact_backtracking_residual_ratio: float = 2.0
+    contact_backtracking_alpha_decay: float = 0.5
+    contact_backtracking_min_alpha: float = 0.0625
+    contact_backtracking_mixed_only: bool = True
+    contact_backtracking_rate_threshold: float = 0.85
     smoothing_delta: float = 0.0  # 0=自動推定（1000/wire_radius）, >0=手動指定
     huber_delta_h: float = 0.0  # >0: Huber遷移幅を直接指定（k_penスケール非依存, status-261）
     du_norm_cap: float = 0.0  # NR更新キャップ（0=制限なし）
@@ -852,6 +863,16 @@ class StrandBendingOscillationProcess(
             du_norm_cap=cfg.du_norm_cap,
             load_frac_start=_frac_start,
             penalty_exponent=cfg.penalty_exponent,
+            # 接触 backtracking line search（status-362）
+            contact_backtracking_enabled=cfg.contact_backtracking_enabled,
+            contact_backtracking_max_steps=cfg.contact_backtracking_max_steps,
+            contact_backtracking_active_flip_threshold=cfg.contact_backtracking_active_flip_threshold,
+            contact_backtracking_active_flip_ratio=cfg.contact_backtracking_active_flip_ratio,
+            contact_backtracking_residual_ratio=cfg.contact_backtracking_residual_ratio,
+            contact_backtracking_alpha_decay=cfg.contact_backtracking_alpha_decay,
+            contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
+            contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
+            contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1158,6 +1179,16 @@ class StrandBendingOscillationProcess(
                 mk_moment_dofs=tuple(prescribed_dofs_list),
                 mk_curvature_func=_mk_curvature_func if cfg.track_contact_mk else None,
                 track_contact_pairs=cfg.track_contact_pairs,
+                # 接触 backtracking line search（status-362）
+                contact_backtracking_enabled=cfg.contact_backtracking_enabled,
+                contact_backtracking_max_steps=cfg.contact_backtracking_max_steps,
+                contact_backtracking_active_flip_ratio=cfg.contact_backtracking_active_flip_ratio,
+                contact_backtracking_active_flip_threshold=cfg.contact_backtracking_active_flip_threshold,
+                contact_backtracking_residual_ratio=cfg.contact_backtracking_residual_ratio,
+                contact_backtracking_alpha_decay=cfg.contact_backtracking_alpha_decay,
+                contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
+                contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
+                contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1327,6 +1358,16 @@ class StrandBendingOscillationProcess(
                 mk_moment_dofs=_osc_mk_dofs,
                 mk_curvature_func=_mk_curvature_func_osc,
                 track_contact_pairs=cfg.track_contact_pairs,
+                # 接触 backtracking line search（status-362）
+                contact_backtracking_enabled=cfg.contact_backtracking_enabled,
+                contact_backtracking_active_flip_ratio=cfg.contact_backtracking_active_flip_ratio,
+                contact_backtracking_max_steps=cfg.contact_backtracking_max_steps,
+                contact_backtracking_active_flip_threshold=cfg.contact_backtracking_active_flip_threshold,
+                contact_backtracking_residual_ratio=cfg.contact_backtracking_residual_ratio,
+                contact_backtracking_alpha_decay=cfg.contact_backtracking_alpha_decay,
+                contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
+                contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
+                contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
