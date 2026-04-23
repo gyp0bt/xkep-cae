@@ -159,6 +159,57 @@ default `smoothing_delta=2000` + `contact_backtracking_enabled=True`）:
 
 これらは「mixed (C+D) 狭義検知」という仮説 C (c) の意図に整合する。
 
+## 6. 3D 可視化インフラ（PostProcess 化 + runner 統合）
+
+status-362 追加実装として 3D パイプコンターレンダリングを正式 PostProcess
+として整備し、BenchmarkRunner に自動起動フックを追加した。
+
+### `Strand3DContourProcess`（`xkep_cae/output/strand_contour.py` +480 行）
+
+`SolverResultData` + `MeshData` を受けて 6 種のフィールドを 3D パイプで
+可視化する PostProcess:
+
+| フィールド | 色付け | 計算元 |
+|------------|-------|--------|
+| `contact` | binary（赤=接触, 青=非接触）| `manager.pairs` の `p_n > 0` |
+| `contact_force` | hot colormap | 各要素に作用する p_n 合計 |
+| `stress` | coolwarm | 軸ひずみ × Young 率 |
+| `curvature` | viridis | 隣接要素の接線ベクトル差 / 要素長 |
+| `chatter_binary` | binary | increment 間 flip 検出 |
+| `chatter_score` | magma | (activation_flip + stick_slide_flip) / n_increments |
+
+各 PNG は side view (XZ) + 3D oblique の 2 subplot 構成。単体テスト 8 件
+（API + 純粋ヘルパー）を追加、全て pass。
+
+### BenchmarkRunner `post_processes` フィールド（status-362 追加）
+
+`BenchmarkRunInput.post_processes: tuple[PostProcessSpec, ...]` を新設。
+`PostProcessSpec(process, input_builder, name, abort_on_error)` で、runner
+実行後に任意の PostProcess を自動起動可能に。例外は `abort_on_error=False`
+なら捕捉して結果に記録、`True` なら即時 raise。
+
+ユーザー指示「可視化は runner か dialog に引っ付けて毎回出力されてほしい」
+への応答として、可視化 PostProcess を runner 実行時に自動実行する経路を
+整備した。単体テスト 2 件（正常 / 例外）追加。
+
+### 実測結果（19本撚線 BT、max_increments=150 打切り）
+
+`work/beam_hysteresis/21_render_19strand_3d.py` で実測:
+
+- frac=0.3052, incr=150, 194.8s
+- **接触要素**: 282/304（92.8%）
+- **チャタリング要素**: 48/304（15.8%）、score mean=0.004, max=0.087
+- チャタリング集中は**曲げ最大部（上端 Z≈80-100 mm）**に局在、status-361
+  の「mixed (C+D) 領域」予測と視覚的整合
+
+生成 PNG 6 枚:
+- `19strand_contact_frac0.305.png`
+- `19strand_contact_force_frac0.305.png`
+- `19strand_stress_frac0.305.png`
+- `19strand_curvature_frac0.305.png`
+- `19strand_chatter_binary_frac0.305.png`
+- `19strand_chatter_score_frac0.305.png`
+
 ## ファイル変更
 
 | ファイル | 変更 |
@@ -170,8 +221,17 @@ default `smoothing_delta=2000` + `contact_backtracking_enabled=True`）:
 | `xkep_cae/contact/solver/process.py` | `NewtonDynamicInput` への bridge 9 field |
 | `xkep_cae/numerical_tests/strand_bending_oscillation.py` | `StrandBendingOscillationConfig` 9 field + 3 箇所 plumb-through |
 | `xkep_cae/contact/solver/tests/test_process.py` | `TestContactBacktrackingLineSearchProcessAPI` 6 テスト |
-| `work/beam_hysteresis/19_hypothesis_c_backtracking_7strand.py` | **新規**: 7 本撚線 opt-in 回帰検証 |
-| `work/beam_hysteresis/20_hypothesis_c_backtracking_19strand.py` | **新規**: 19 本撚線 MCDD 凍結解除条件検証 |
+| `xkep_cae/output/strand_contour.py` | **新規 480 行**: `Strand3DContourProcess` + 6 フィールド可視化 |
+| `xkep_cae/output/docs/strand_contour.md` | **新規**: 設計仕様 |
+| `xkep_cae/output/tests/test_strand_contour.py` | **新規**: PostProcess API + 純粋ヘルパーテスト 8 件 |
+| `xkep_cae/output/__init__.py` | Strand3DContour export 追加 |
+| `xkep_cae/core/benchmark.py` | `PostProcessSpec` + `BenchmarkRunInput.post_processes` + 自動起動ロジック |
+| `xkep_cae/core/__init__.py` | `PostProcessSpec` export |
+| `tests/test_benchmark_runner.py` | `post_processes` 自動起動テスト 2 件追加 |
+| `work/beam_hysteresis/19_hypothesis_c_backtracking_7strand.py` | **新規**: 7 本撚線 opt-in 回帰検証 + Strand3DContour 呼出 |
+| `work/beam_hysteresis/20_hypothesis_c_backtracking_19strand.py` | **新規**: 19 本撚線 MCDD 凍結解除条件検証 + Strand3DContour 呼出 |
+| `work/beam_hysteresis/21_render_19strand_3d.py` | **新規**: 19 本撚線 3D 可視化（初期実装、status-363 以降は Strand3DContourProcess 直接利用推奨）|
+| `docs/verification/19strand_3d/*.png` | **新規 6 枚**: contact/force/stress/curvature/chatter_binary/chatter_score |
 | `docs/status/status-362.md` | **新規**: 本ファイル |
 | `docs/status/status-index.md` | status-362 行追加 |
 | `README.md` | status-362 要約追記 |
@@ -199,9 +259,18 @@ default `smoothing_delta=2000` + `contact_backtracking_enabled=True`）:
 2. **候補 (d) 接触凍結モードの 19 本適用**（(c) 感度探索で効果不十分な場合）:
    status-284 の 7 本 frac 0.40→0.70 達成手法を 19 本に適用、
    `chattering_freeze_enabled=True` のパラメータチューニング。
-3. **候補 (e) Phase C-3' s-tracking 経路の再検討**（最終手段）:
+3. **候補 (e) 接触減衰の実用的 escape hatch**（ユーザー提案、status-362
+   セッション内 Q&A）: 非物理的だが実務的に有効な手段として `contact
+   damping coefficient c_n` の opt-in 実装 + energy budget 制約
+   （`E_damp / E_strain < budget_ratio` で超過時警告/エラー）を検討。
+   budget_ratio は Papailiou 解析解 vs 減衰レベル（1/2/5/10/20%）の
+   empirical validation case で決定する設計。
+4. **候補 (f) Phase C-3' s-tracking 経路の再検討**（最終手段）:
    status-357 で active 集合振動支配領域には波及しないと判定された
    Phase C-3' の (ii) s-tracking 経路を 19 本実機で再評価、active 集合
    振動中の FD 整合性を直接改善するアプローチ。
-4. **Phase E C24 候補**: `@verified_by` VerifyProcess の `process()` 内で
+5. **Phase E C24 候補**: `@verified_by` VerifyProcess の `process()` 内で
    実際に FD 整合検証が呼ばれるか AST 検査（MCDD 脱法パターン 2 裏口対策）。
+6. **`Strand3DContourProcess` の既存 BeamRender/StressContour3D との
+   統合**: 3 Process 間でコード重複（tube rendering / color mapping）が
+   あるため、共通ユーティリティ化で DRY 化を検討。

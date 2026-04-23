@@ -74,6 +74,8 @@ def main() -> int:
         contact_backtracking_residual_ratio=2.0,
         contact_backtracking_max_steps=4,
         contact_backtracking_rate_threshold=0.85,
+        # チャタリング可視化のため per-increment 接触ペア履歴を記録
+        track_contact_pairs=True,
     )
     print(
         f"cfg: n_strands={cfg.n_strands}, κ_max={cfg.bending_curvature}, "
@@ -129,6 +131,31 @@ def main() -> int:
     ok = frac >= 0.9999
     print()
     print(f"判定: frac=1.0 完走 {'OK (MCDD 凍結解除条件達成)' if ok else 'NG (未完走)'}")
+
+    # 3D パイプコンターレンダリング（status-362: 可視化恒常化）
+    try:
+        from xkep_cae.output import Strand3DContourConfig, Strand3DContourProcess
+
+        print()
+        print("=" * 70)
+        print("3D コンターレンダリング（Strand3DContourProcess）")
+        print("=" * 70)
+        render_out = Strand3DContourProcess().process(
+            Strand3DContourConfig(
+                solver_result=sr,
+                mesh=result.mesh,
+                output_dir="docs/verification/19strand_bt",
+                prefix="19strand_bt",
+            )
+        )
+        for path in render_out.image_paths:
+            print(f"  [render] {path}")
+        print(
+            f"  接触要素 {render_out.n_contact_elements}, "
+            f"チャタリング要素 {render_out.n_chattering_elements}"
+        )
+    except ImportError as e:
+        print(f"  [render] matplotlib 未インストールのため skip: {e}")
 
     return 0 if sr.converged and ok else 1
 

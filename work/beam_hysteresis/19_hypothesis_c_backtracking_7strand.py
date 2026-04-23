@@ -69,6 +69,8 @@ def main() -> int:
         contact_backtracking_active_flip_threshold=3,
         contact_backtracking_residual_ratio=2.0,
         contact_backtracking_max_steps=4,
+        # チャタリング可視化のため per-increment 接触ペア履歴を記録
+        track_contact_pairs=True,
     )
     print(
         f"cfg: n_strands={cfg.n_strands}, κ_max={cfg.bending_curvature}, "
@@ -125,6 +127,31 @@ def main() -> int:
         f"判定: frac=1.0 完走 {'OK' if ok else 'NG'}, "
         f"elapsed <= {slow_cap:.2f}x {'OK' if fast_ok else 'NG (許容超過)'}"
     )
+
+    # 3D パイプコンターレンダリング（status-362: 可視化恒常化）
+    try:
+        from xkep_cae.output import Strand3DContourConfig, Strand3DContourProcess
+
+        print()
+        print("=" * 70)
+        print("3D コンターレンダリング（Strand3DContourProcess）")
+        print("=" * 70)
+        render_out = Strand3DContourProcess().process(
+            Strand3DContourConfig(
+                solver_result=sr,
+                mesh=result.mesh,
+                output_dir="docs/verification/7strand_bt",
+                prefix="7strand_bt",
+            )
+        )
+        for path in render_out.image_paths:
+            print(f"  [render] {path}")
+        print(
+            f"  接触要素 {render_out.n_contact_elements}, "
+            f"チャタリング要素 {render_out.n_chattering_elements}"
+        )
+    except ImportError as e:
+        print(f"  [render] matplotlib 未インストールのため skip: {e}")
 
     return 0 if sr.converged and ok else 1
 
