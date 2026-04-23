@@ -73,6 +73,8 @@ def run_solver_and_pickle(pkl_path: Path) -> tuple[object, object]:
         contact_backtracking_residual_ratio=2.0,
         contact_backtracking_max_steps=4,
         contact_backtracking_rate_threshold=0.85,
+        # チャタリング可視化のため per-increment 接触ペア履歴を記録
+        track_contact_pairs=True,
     )
 
     t0 = time.perf_counter()
@@ -84,7 +86,7 @@ def run_solver_and_pickle(pkl_path: Path) -> tuple[object, object]:
     print()
     print(f"  frac={frac:.4f}, incr={sr.n_increments}, cb={sr.n_cutbacks}, elapsed={elapsed:.1f}s")
 
-    # pickle 保存（mesh / u / contact pairs のみ、軽量）
+    # pickle 保存（mesh / u / contact pairs + pair history）
     mesh = result.mesh
     manager = sr.final_contact_manager
     pairs_snapshot = []
@@ -108,6 +110,22 @@ def run_solver_and_pickle(pkl_path: Path) -> tuple[object, object]:
                     }
                 )
 
+    # 各 increment の active ペアスナップショット履歴（チャタリング可視化用）
+    pair_history: list[tuple[float, list[dict]]] = []
+    for frac_i, entries in sr.contact_pair_history:
+        entry_dicts = []
+        for e in entries:
+            entry_dicts.append(
+                {
+                    "elem_a": int(e.elem_a),
+                    "elem_b": int(e.elem_b),
+                    "p_n": float(e.p_n),
+                    "gap": float(e.gap),
+                    "stick": bool(e.stick),
+                }
+            )
+        pair_history.append((float(frac_i), entry_dicts))
+
     data = {
         "result": {
             "u": sr.u.copy(),
@@ -117,6 +135,7 @@ def run_solver_and_pickle(pkl_path: Path) -> tuple[object, object]:
             "converged": sr.converged,
             "elapsed": elapsed,
             "pairs_snapshot": pairs_snapshot,
+            "pair_history": pair_history,  # 新規: per-increment チャタリング解析用
             "node_coords": mesh.node_coords.copy(),
             "connectivity": mesh.connectivity.copy(),
             "radii": mesh.radii if np.isscalar(mesh.radii) else mesh.radii.copy(),
@@ -235,6 +254,78 @@ def element_axial_stress(
             eps = (L1 - L0) / L0
             stress[e] = young * eps
     return stress
+
+
+def element_chattering_score(
+    n_elems: int,
+    pair_history: list[tuple[float, list[dict]]],
+) -> tuple[np.ndarray, np.ndarray]:
+    """pair_history から要素ごとのチャタリングスコアを算出.
+
+    チャタリングスコア定義:
+      s_e = (# activation flips + # stick/slide flips) / # increments
+
+    各ペア (elem_a, elem_b) について:
+      - increment 間で active(p_n>0) → inactive → active の遷移を activation_flip として数える
+      - stick=True ↔ False の遷移を stick_slide_flip として数える
+    要素 e のスコアは、e を含む全ペアの flip 数合計を #increments で正規化。
+
+    戻り値: (chatter_score, has_chattering_mask)
+      - chatter_score: 要素ごとの float スコア（0 = 安定、大きい = チャタリング）
+      - has_chattering_mask: score > 0 の binary 判定
+    """
+    if not pair_history:
+        return np.zeros(n_elems), np.zeros(n_elems, dtype=bool)
+
+    n_increments = len(pair_history)
+
+    # (elem_a, elem_b) キーで各 increment の状態を集約
+    from collections import defaultdict
+
+    pair_history_by_id: dict[tuple[int, int], list[tuple[bool, bool]]] = defaultdict(list)
+    # 各 increment で出現する (elem_a, elem_b) を記録（欠落増分は inactive 扱い）
+    all_pair_ids: set[tuple[int, int]] = set()
+    per_incr_pair_states: list[dict[tuple[int, int], tuple[bool, bool]]] = []
+    for _frac_i, entries in pair_history:
+        state_map: dict[tuple[int, int], tuple[bool, bool]] = {}
+        for e in entries:
+            key = (int(e["elem_a"]), int(e["elem_b"]))
+            # (is_active, is_stick)
+            state_map[key] = (e["p_n"] > 0.0, bool(e["stick"]))
+            all_pair_ids.add(key)
+        per_incr_pair_states.append(state_map)
+
+    for key in all_pair_ids:
+        # 各 increment の状態（欠落 = (False, False) = inactive）
+        history = []
+        for state_map in per_incr_pair_states:
+            if key in state_map:
+                history.append(state_map[key])
+            else:
+                history.append((False, False))
+        pair_history_by_id[key] = history
+
+    chatter_score = np.zeros(n_elems)
+    for key, history in pair_history_by_id.items():
+        elem_a, elem_b = key
+        activation_flips = 0
+        stick_slide_flips = 0
+        for i in range(1, len(history)):
+            prev_active, prev_stick = history[i - 1]
+            curr_active, curr_stick = history[i]
+            if prev_active != curr_active:
+                activation_flips += 1
+            # stick/slide flips のみ両 increment で active な場合にカウント
+            if prev_active and curr_active and prev_stick != curr_stick:
+                stick_slide_flips += 1
+        pair_score = (activation_flips + stick_slide_flips) / max(n_increments, 1)
+        if 0 <= elem_a < n_elems:
+            chatter_score[elem_a] += pair_score
+        if 0 <= elem_b < n_elems:
+            chatter_score[elem_b] += pair_score
+
+    has_chattering = chatter_score > 0.0
+    return chatter_score, has_chattering
 
 
 def render_3d_pipes(
@@ -392,6 +483,10 @@ def main() -> int:
     curvature = element_curvature(deformed, connectivity, strand_ids)
     stress = element_axial_stress(deformed, node_coords, connectivity, young=130.0e3)
 
+    # チャタリング解析（pair_history が保存されている場合のみ）
+    pair_history = result.get("pair_history", [])
+    chatter_score, has_chatter = element_chattering_score(n_elems, pair_history)
+
     print()
     print("=" * 70)
     print(f"レンダリング統計（frac={frac:.4f}, n_elems={n_elems}）")
@@ -405,6 +500,13 @@ def main() -> int:
     print(f"  接触力 max: {float(force_per_elem.max()):.3e}")
     print(f"  軸応力 [MPa]: min={float(stress.min()):.2e}, max={float(stress.max()):.2e}")
     print(f"  曲率 [1/mm]: min={float(curvature.min()):.2e}, max={float(curvature.max()):.2e}")
+    n_chatter = int(has_chatter.sum())
+    print(
+        f"  チャタリング要素: {n_chatter} / {n_elems} "
+        f"({100.0 * n_chatter / n_elems:.1f}%, score mean={float(chatter_score.mean()):.3f}, "
+        f"max={float(chatter_score.max()):.3f})"
+    )
+    print(f"  pair_history 長: {len(pair_history)} increments")
 
     suffix = f"frac{frac:.3f}"
 
@@ -447,9 +549,41 @@ def main() -> int:
         vmin=0.0,
     )
 
+    # チャタリング可視化（pair_history あり時のみ）
+    if len(pair_history) >= 2:
+        render_3d_pipes(
+            deformed,
+            connectivity,
+            radii,
+            has_chatter,
+            title=(
+                f"19-strand BT stall — chattering detected (frac={frac:.4f}, "
+                f"{n_chatter}/{n_elems}={100.0 * n_chatter / n_elems:.1f}%)"
+            ),
+            output_path=output_dir / f"19strand_chatter_binary_{suffix}.png",
+            binary=True,
+        )
+        render_3d_pipes(
+            deformed,
+            connectivity,
+            radii,
+            chatter_score,
+            title=(
+                f"19-strand BT stall — chattering intensity score "
+                f"(frac={frac:.4f}, max={float(chatter_score.max()):.3f})"
+            ),
+            output_path=output_dir / f"19strand_chatter_score_{suffix}.png",
+            cmap="magma",
+            vmin=0.0,
+        )
+        n_images = 6
+    else:
+        print("  (pair_history が 2 increment 未満のためチャタリング可視化 skip)")
+        n_images = 4
+
     print()
     print("=" * 70)
-    print(f"完了: PNG 4 枚保存 → {output_dir}")
+    print(f"完了: PNG {n_images} 枚保存 → {output_dir}")
     print("=" * 70)
     return 0
 
