@@ -41,6 +41,13 @@ process-architecture.md §13 で定義された契約抜け腐敗シナリオを
        に登録された VerifyProcess 側が `SolverProcess` もしくは `VerifyProcess`
        カテゴリを継承していることを検証（status-360 Phase E、`bind_verifier`
        の動的検査の静的版。PreProcess 等を verifier に指定する脱法を排除）
+- C24: `@verified_by` 検証 Process 本体計算痕跡検査 — 紐付けられた
+       VerifyProcess の `process()` 本体が (a) 入力パラメータを参照し
+       (b) `BinOp` / `Compare` / 非定数 `Call` のいずれかで計算痕跡を持つ
+       ことを AST で検証（status-364 Phase E、MCDD 脱法実装 pattern 2 の
+       『裏口: non-trivial だが計算しない verifier』を静的検出）。
+       `_reject_dummy_process` は trivial 文のみ弾くため、定数のみ返す
+       Output コンストラクタは通過してしまう穴を塞ぐ。
 
 条例（O: Ordinance）:
 - O1: テストが Process ラッパーのある関数を直接呼び出していないか検出
@@ -923,6 +930,114 @@ def check_c23_verifier_category(registry: dict[str, type]) -> list[str]:
     return errors
 
 
+def check_c24_verify_has_computation(registry: dict[str, type]) -> list[str]:
+    """C24: `@verified_by` 検証 Process 本体計算痕跡検査（status-364 Phase E）.
+
+    MCDD 脱法実装 pattern 2 の裏口対策。`bind_verifier` の `_reject_dummy_process`
+    は ``pass`` / ``...`` / 裸 ``return`` / ``raise NotImplementedError`` のみ
+    の本体を弾くが、以下のような *non-trivial だが計算していない* 本体は通過:
+
+    - ``return True`` / ``return False``（定数 return）
+    - ``return MyOutput()`` / ``return MyOutput(rel_err=0.0, passed=True)``
+      （全引数 constant の Output コンストラクタ）
+    - 入力を一切読まず、``report=""`` のような定数だけで Output を組み立てる
+
+    本検査は `ProcessContractRegistry.all_bindings()` の全紐付けを走査し、
+    `xkep_cae.mathematics.registry._collect_verifier_body_signals` で AST
+    シグナルを取得、以下いずれかの条件に該当すれば error を返す:
+
+    1. 第1引数（通常 ``input_data``）が本体内で `ast.Name` として一度も
+       参照されない（入力読み取り痕跡なし）。
+    2. 本体に `ast.BinOp` / `ast.Compare` / 非定数引数を持つ `ast.Call` の
+       いずれも存在しない（計算痕跡なし）。
+
+    `bind_verifier` にも同等の `_reject_hollow_process` runtime guard を
+    配置しており、本検査はその静的 double check（レジストリが外部 mutate
+    された場合の二重防御線）。
+    """
+    errors: list[str] = []
+    try:
+        from xkep_cae.mathematics import ProcessContractRegistry
+        from xkep_cae.mathematics.registry import (
+            _collect_verifier_body_signals,
+            _extract_process_method_source,
+        )
+    except ImportError as exc:
+        errors.append(f"C24: 依存モジュールのインポートに失敗: {exc}")
+        return errors
+
+    reg = ProcessContractRegistry.default()
+    bindings = reg.all_bindings()
+
+    # 同一 verify_cls が複数契約に紐付くケースの重複検査を避ける
+    seen_verify: set[type] = set()
+
+    for (proc_name, contract_name), verify_cls in sorted(bindings.items()):
+        if not isinstance(verify_cls, type):
+            # C23 側で検出される
+            continue
+        if verify_cls in seen_verify:
+            continue
+        seen_verify.add(verify_cls)
+
+        src = _extract_process_method_source(verify_cls)
+        if src is None:
+            # ソース取得不能は検査スキップ（動的生成クラス等、runtime guard 側でも警告ログ）
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError as err:
+            errors.append(
+                f"C24: {verify_cls.__name__}.process() の AST 解析に失敗: {err}"
+                f"（紐付け: {proc_name}.contracts[{contract_name!r}]）"
+            )
+            continue
+
+        func_defs = [
+            node
+            for node in ast.iter_child_nodes(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        if not func_defs:
+            continue
+        func = func_defs[0]
+        args = func.args.args
+        if len(args) < 2:
+            continue
+        param_name = args[1].arg  # self の次（input_data 相当）
+
+        body: list[ast.stmt] = list(func.body)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        if not body:
+            errors.append(
+                f"C24: {verify_cls.__name__}.process() の本体が空"
+                f"（紐付け: {proc_name}.contracts[{contract_name!r}]）"
+            )
+            continue
+
+        signals = _collect_verifier_body_signals(body, param_name)
+        if not signals["reads_input"]:
+            errors.append(
+                f"C24: {verify_cls.__name__}.process() が入力 {param_name!r} を"
+                f" 一度も参照していない（紐付け: {proc_name}.contracts[{contract_name!r}]）"
+            )
+            continue
+        if not signals["has_computation"]:
+            errors.append(
+                f"C24: {verify_cls.__name__}.process() に計算痕跡"
+                f"（BinOp/Compare/非定数 Call）が存在しない"
+                f"（紐付け: {proc_name}.contracts[{contract_name!r}]）"
+            )
+
+    return errors
+
+
 def _check_reexported_class(cls: type, cls_name: str, rel: Path) -> list[str]:
     """__init__.py から再エクスポートされたクラスの C16 準拠を検査.
 
@@ -1424,7 +1539,7 @@ def check_o3_test_backend_configure() -> list[str]:
 def main() -> int:
     """全チェックを実行し、結果を表示."""
     print("=" * 60)
-    print("プロセス契約違反検出スクリプト（C3-C23 + O1-O3）")
+    print("プロセス契約違反検出スクリプト（C3-C24 + O1-O3）")
     print("=" * 60)
 
     print("\nモジュールインポート中...")
@@ -1456,6 +1571,7 @@ def main() -> int:
         ("C21: TermExpansionContract 項名/providers 重複", check_c21_term_expansion_no_duplicates),
         ("C22: contracts ClassVar 同名契約重複", check_c22_contracts_no_duplicate_names),
         ("C23: @verified_by 検証器カテゴリ", check_c23_verifier_category),
+        ("C24: @verified_by 検証器本体計算痕跡", check_c24_verify_has_computation),
     ]
 
     for label, check_fn in checks:
@@ -1557,6 +1673,8 @@ def main() -> int:
         print("       各契約に固有の name を付与すること")
         print("  C23 → @verified_by の検証器は SolverProcess / VerifyProcess 継承必須")
         print("       PreProcess / PostProcess / BatchProcess は検証器不可")
+        print("  C24 → @verified_by の検証器 process() は入力参照 + 計算痕跡が必須")
+        print("       定数のみ返す hollow verifier は禁止（脱法 pattern 2 裏口）")
         print("  C17 → プライベートモジュール内 dataclass は frozen=True 必須。")
         print("       クラス名は Input/Output で終わる命名が必要")
         print("  O1  → テストで Process ラッパーのある関数を直接呼ばず Process API を使用")
