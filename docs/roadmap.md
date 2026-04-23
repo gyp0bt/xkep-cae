@@ -84,18 +84,25 @@
 > **19 本重荷重のみ mixed (C+D) 16.6% 突出**（他 3 ケース 1-4%）、K_c x/z
 > カップリング不整合が active flip と同時発火する領域が本質。δ_h 拡大は
 > mixed (C+D) に悪化。次手は (c) line search 強化で mixed 領域を直接抑制。
-> **status-362 仮説 C 候補 (c) 実装**: `ContactBacktrackingLineSearchProcess`
-> 新設（`_newton_steps.py` +112 行）で既存 `NCPLineSearch` の ||R_u|| 全体
-> 発散判定では捉えられない**接触残差比 / active flip 過剰増加**を検知し
-> α を半減する backtracking を `_newton_dynamic.py` NR 主ループに組込。
-> トリガー条件 `att≥2 & n_active≥1 & active_set_changed & _conv_rate>0.85`
-> で mixed 狭義検知、`active_flip_threshold` は `max(abs=3, ratio=0.3 ×
-> n_active_pre)` の相対判定。`NewtonDynamicInput` / `ContactFrictionInputData`
-> / `StrandBendingOscillationConfig` / `ContactFrictionProcess` の 4 層で 9
-> field を整備、**default OFF で既存動作不変**。`TestContactBacktracking
-> LineSearchProcessAPI` 6 テスト + default OFF regression 163 passed
-> 6 skipped 1 xfailed で回帰なし。`19_hypothesis_c_backtracking_7strand.py`
-> + `20_hypothesis_c_backtracking_19strand.py` 新設で opt-in 実測検証。
+> **status-362 仮説 C 候補 (c) 実装 + 実機検証（部分的前進）**:
+> `ContactBacktrackingLineSearchProcess` 新設（`_newton_steps.py` +112 行）
+> で既存 `NCPLineSearch` の ||R_u|| 全体発散判定では捉えられない**接触残差比
+> / active flip 過剰増加**を検知し α を半減する backtracking を
+> `_newton_dynamic.py` NR 主ループに組込。トリガー条件 `att≥2 &
+> n_active≥1 & active_set_changed & _conv_rate>0.85` で mixed 狭義検知、
+> `active_flip_threshold` は `max(abs=3, ratio=0.3 × n_active_pre)` の
+> 相対判定。4 層で 9 field plumb-through、**default OFF で既存動作不変**。
+> `TestContactBacktrackingLineSearchProcessAPI` 6 テスト + default OFF
+> regression 163 passed 6 skipped 1 xfailed で回帰なし。
+> **実機検証結果**: 7 本撚線（status-359 設定）**frac=1.0000 完走 /
+> elapsed=285.64s（+9.9%、20% 許容内）で回帰なし**。19 本撚線（baseline
+> `frac=0.4839` stall）**frac=0.5153（+6.5% 改善）/ cb 39→38（-2.6%）/
+> elapsed 534→729s（+36.4%）** で MCDD 凍結解除条件「frac=1.0 完走」
+> **未達**。最終停滞時 NR Type 分布 `D+E:51%, E:43%`（baseline `D+E:67%,
+> E:28%` より mixed 減、BT 部分効果を示唆）。BT 発動数 52（全 NR 反復の
+> ~1%）で trigger が保守的過ぎる可能性、次候補は (c) パラメータ感度
+> 探索（`rate_threshold=0.7` / `active_flip_ratio=0.15` / `mixed_only=False`
+> の掃引） or (d) 接触凍結モード 19 本適用。
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、
