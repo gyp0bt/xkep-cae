@@ -113,9 +113,7 @@ class StressContour3DProcess(PostProcess[StressContour3DConfig, StressContour3DR
         deformation_scale = _auto_deformation_scale(cfg)
 
         # 初期形状の軸範囲を固定（アスペクト比維持）
-        axis_ranges = _compute_fixed_axis_ranges(
-            cfg.node_coords_initial, cfg.wire_radius
-        )
+        axis_ranges = _compute_fixed_axis_ranges(cfg.node_coords_initial, cfg.wire_radius)
 
         # 各フレームの変形後座標を事前計算
         deformed_coords_cache: dict[int, np.ndarray] = {}
@@ -159,11 +157,7 @@ class StressContour3DProcess(PostProcess[StressContour3DConfig, StressContour3DR
 
                 for fi, snap_idx in enumerate(frame_indices):
                     data = cf.snapshots[snap_idx]
-                    t_val = (
-                        cfg.time_values[snap_idx]
-                        if snap_idx < len(cfg.time_values)
-                        else 0.0
-                    )
+                    t_val = cfg.time_values[snap_idx] if snap_idx < len(cfg.time_values) else 0.0
                     coords = deformed_coords_cache[int(snap_idx)]
                     conn = cfg.mesh.connectivity
 
@@ -172,8 +166,14 @@ class StressContour3DProcess(PostProcess[StressContour3DConfig, StressContour3DR
                     # 正面ビュー（XY平面）
                     ax1 = fig.add_subplot(121, projection="3d")
                     _render_tube_3d(
-                        ax1, coords, conn, data,
-                        cfg.wire_radius, cfg.tube_segments, cmap, norm,
+                        ax1,
+                        coords,
+                        conn,
+                        data,
+                        cfg.wire_radius,
+                        cfg.tube_segments,
+                        cmap,
+                        norm,
                     )
                     _apply_fixed_axes(ax1, axis_ranges)
                     ax1.set_xlabel("X [mm]")
@@ -185,8 +185,14 @@ class StressContour3DProcess(PostProcess[StressContour3DConfig, StressContour3DR
                     # 斜視ビュー
                     ax2 = fig.add_subplot(122, projection="3d")
                     _render_tube_3d(
-                        ax2, coords, conn, data,
-                        cfg.wire_radius, cfg.tube_segments, cmap, norm,
+                        ax2,
+                        coords,
+                        conn,
+                        data,
+                        cfg.wire_radius,
+                        cfg.tube_segments,
+                        cmap,
+                        norm,
                     )
                     _apply_fixed_axes(ax2, axis_ranges)
                     ax2.set_xlabel("X [mm]")
@@ -210,9 +216,7 @@ class StressContour3DProcess(PostProcess[StressContour3DConfig, StressContour3DR
                     )
                     fig.tight_layout(rect=[0, 0, 1, 0.93])
 
-                    img_path = str(
-                        output_dir / f"{cfg.prefix}_{fname}_{fi:03d}.png"
-                    )
+                    img_path = str(output_dir / f"{cfg.prefix}_{fname}_{fi:03d}.png")
                     fig.savefig(img_path, dpi=150, bbox_inches="tight")
                     plt.close(fig)
                     image_paths.append(img_path)
@@ -374,9 +378,7 @@ def _render_time_history(
     colors = ["r", "g", "m", "c", "orange"]
     for i, cf in enumerate(cfg.contour_fields):
         label = _FIELD_LABELS.get(cf.name, cf.name)
-        max_vals = np.array(
-            [float(np.max(np.abs(s))) if len(s) > 0 else 0.0 for s in cf.snapshots]
-        )
+        max_vals = np.array([float(np.max(np.abs(s))) if len(s) > 0 else 0.0 for s in cf.snapshots])
         ax = axes[i + 1]
         ax.plot(t_ms, max_vals, f"{colors[i % len(colors)]}-", linewidth=0.8)
         ax.set_ylabel(f"Max {cf.name}")

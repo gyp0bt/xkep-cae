@@ -19,11 +19,12 @@ from xkep_cae.core.base import ProcessMeta
 from xkep_cae.core.benchmark import (
     BenchmarkRunInput,
     BenchmarkRunnerProcess,
+    PostProcessSpec,
     RunManifest,
     capture_environment,
     serialize_config,
 )
-from xkep_cae.core.categories import PreProcess
+from xkep_cae.core.categories import PostProcess, PreProcess
 from xkep_cae.core.testing import binds_to
 
 # --- テスト用ダミープロセス ---
@@ -288,6 +289,102 @@ class TestBenchmarkRunnerProcessAPI:
             )
             run_result = BenchmarkRunnerProcess().process(run_input)
             assert "ERROR" in str(run_result.manifest.results_summary["bad_key"])
+
+    def test_post_processes_auto_invoked(self):
+        """post_processes が runner 実行後に自動起動される（status-362）."""
+        cfg = _DummyConfig(x=2.0, n=4)
+        proc = _DummyProcess()
+
+        # ダミー PostProcess: 入力値を 2 倍にして返す
+        @dataclass(frozen=True)
+        class _PPInput:
+            value: float
+
+        @dataclass(frozen=True)
+        class _PPOutput:
+            doubled: float
+
+        class _DoublerPostProcess(PostProcess["_PPInput", "_PPOutput"]):
+            meta: ClassVar[ProcessMeta] = ProcessMeta(
+                name="_DoublerPostProcess",
+                module="post",
+                version="0.1.0",
+                document_path="../xkep_cae/core/docs/benchmark_runner.md",
+                stability="experimental",
+                support_tier="dev-only",
+            )
+            _skip_registry = True
+
+            def process(self, input_data):
+                return _PPOutput(doubled=input_data.value * 2.0)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                post_processes=(
+                    PostProcessSpec(
+                        process=_DoublerPostProcess(),
+                        input_builder=lambda r: _PPInput(value=r.value),
+                        name="doubler",
+                    ),
+                ),
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+
+        # main result: 2.0 * 4 = 8.0
+        assert run_result.result.value == 8.0
+        # post_process: 8.0 * 2 = 16.0
+        assert len(run_result.post_process_results) == 1
+        name, pp_result = run_result.post_process_results[0]
+        assert name == "doubler"
+        assert pp_result.doubled == 16.0
+
+    def test_post_processes_error_not_aborting(self):
+        """PostProcess の例外は abort_on_error=False なら継続、結果に例外記録."""
+        cfg = _DummyConfig()
+        proc = _DummyProcess()
+
+        @dataclass(frozen=True)
+        class _PPInput:
+            value: float
+
+        class _FailingPostProcess(PostProcess["_PPInput", "_PPInput"]):
+            meta: ClassVar[ProcessMeta] = ProcessMeta(
+                name="_FailingPostProcess",
+                module="post",
+                version="0.1.0",
+                document_path="../xkep_cae/core/docs/benchmark_runner.md",
+                stability="experimental",
+                support_tier="dev-only",
+            )
+            _skip_registry = True
+
+            def process(self, input_data):
+                raise RuntimeError("simulated failure")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_input = BenchmarkRunInput(
+                process=proc,
+                config=cfg,
+                output_dir=tmpdir,
+                post_processes=(
+                    PostProcessSpec(
+                        process=_FailingPostProcess(),
+                        input_builder=lambda r: _PPInput(value=r.value),
+                        name="failing",
+                        abort_on_error=False,
+                    ),
+                ),
+            )
+            run_result = BenchmarkRunnerProcess().process(run_input)
+
+        # 例外は捕捉され、post_process_results に記録される
+        assert len(run_result.post_process_results) == 1
+        name, pp_result = run_result.post_process_results[0]
+        assert name == "failing"
+        assert isinstance(pp_result, RuntimeError)
 
     def test_environment_captured(self):
         """環境情報がマニフェストに含まれる."""
