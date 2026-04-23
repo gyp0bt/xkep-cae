@@ -12,12 +12,12 @@
 
 ---
 
-## 現在地（2026-04-22）
+## 現在地（2026-04-23）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜362、status-354 で 1 status 後ろ倒し）を実施中
-> （**14/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + **status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装**）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜363、status-354 で 1 status 後ろ倒し）を実施中
+> （**15/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + **status-363: 仮説 C 候補 (c) パラメータ感度掃引 — 4 ケース全却下・BT 既定が局所最適・候補 (c) クローズ**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -103,6 +103,24 @@
 > ~1%）で trigger が保守的過ぎる可能性、次候補は (c) パラメータ感度
 > 探索（`rate_threshold=0.7` / `active_flip_ratio=0.15` / `mixed_only=False`
 > の掃引） or (d) 接触凍結モード 19 本適用。
+>
+> **status-363 仮説 C (c) パラメータ感度掃引 — 4 ケース全却下、BT 既定が
+> 局所最適**: `work/beam_hysteresis/22_bt_parameter_sweep_19strand.py`
+> 新設で 3 軸 4 ケース（A: rate_threshold=0.70 relaxed / B:
+> active_flip_ratio=0.15 strict / C: mixed_only=False always_on / D:
+> A+B+C combined）を 19 本撚線 90° 曲げで実測。結果: **全ケース
+> frac<1.0 未達**（A=0.5153 BT default 同値 / B=0.4701 **-8.8% 悪化** /
+> C=0.4817 -6.5% 悪化 / D=0.5156 +0.06% 実測誤差範囲）、**BT 既定設定が
+> 本掃引で局所最適**として確認。default 値変更は実施せず、
+> **候補 (c) line search 強化はクローズ**（status-362 で効果ほぼ全量抽出
+> 済み、パラメータチューニングで frac は伸びない）。最終 NR Type 分布
+> `D+E:68%, E:26%`（mixed 比率むしろ高い）で **line search では active
+> 集合振動を根本抑制できない**ことを確定。次候補は **(e) 接触減衰
+> escape hatch（最有力）** / 副次 (d) 接触凍結モード 19 本適用 / (f)
+> Phase C-3' s-tracking の 19 本再評価。`22_bt_parameter_sweep_19strand.py`
+> は失敗実験の記録として残置、実装本体（`xkep_cae/`、`tests/`、
+> `contracts/`）は**無変更**。
+>
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
 > 離散化方程式の正規参照は [`docs/math/`](math/README.md) 全 6 章（status-348〜349 整備、
@@ -216,6 +234,8 @@
 | **MCDD Phase C-3 再定義実験** | **`K_hermite_adj` フル項拡張の仮説 A 反証**（status-354）— `KcHermiteNonlocalStiffnessProcess` に `-w_geo * I_nn` 隣接ノード項を追加する仮説 A を直接実験、gate テスト `test_kc_component_fd.py::test_helical_3d_hermite` rel_err が **1.795% → 38.49%（21倍悪化）** で反証、mat-only（status-295）継続。隣接ノード摂動の `I_nn` 方向は min-distance 射影の s-tracking 経路で補償されるため Process 側追加は FD 乖離拡大を招く。数理台帳 03 章 §7/§3.1/§4/§8 に仲裁追記、`strategy.py` モジュールコメント + `KcHermiteNonlocalStiffnessProcess` docstring に実測結果記録（実装変更なし）。Phase C-3 を **Phase C-3' 再々定義**（hypothesis B/C/D）へ再配分 |
 | **MCDD Phase C-3' 仮説 B 診断** | **K_closest 隣接拡張で埋めるべき量を active×adj ブロックに局在化**（status-355）— `work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` 新設、`test_helical_3d_hermite` シナリオで `diff = K_c_analytical - FD_Kc` を 4 ブロック (active/adj×active/adj) に分解。**rel_err 1.795% の 100% が active×adj ブロックに局在**（aa rel_err=2.2e-7、ax ||diff||=98.52、xa/xx=0）。comp_z 77% は adj 列 z (76.11) そのもの。`||FD[ax]||=601.5` vs `||K_c[ax]||=593.4` で K_hermite_adj が一部埋めるも 16.4% 不足、**98.52 が仮説 B で埋めるべき解析量と一致**。実装コスト評価 ~45 行（`_batch_st_jacobian_hermite` 既存 `ds_du_adj` 活用、`adj_node_counts` 追加、`term="closest"` adj 列分岐）、公開 API 非破壊。コード変更なし診断 status |
 | **次（MCDD Phase C-3' 実装本体）** | **仮説 B 実装 — `KcClosestPointStiffnessProcess` の隣接ノード拡張**（status-356）— status-355 診断で局在化した active×adj ブロック 98.52 を埋める ~45 行の実装。`ContactForceStStiffnessInput` に `adj_node_counts` 追加、`_process_batch_term` で `dm_ext_A/B` 計算 + `_batch_st_jacobian_hermite` 既存 `ds_du_adj`/`dt_du_adj` 捕捉、`term="closest"` 分岐で adj 列 COO エントリ追加。ゲート条件: `||diff[ax]||<1e-3` + `test_helical_3d_hermite` rel_err < 1e-4、19 本撚線 K_c FD 再計測で `mat_only` rel_err mean=44% の改善、19 本 frac=0.48→1.0 完走を目標。後続: Phase D 診断ディスパッチャ（status-357）→ Phase E C18/C19 契約検査（status-358）|
+| **仮説 C (c) 実装 + 実機検証** | **`ContactBacktrackingLineSearchProcess` 新設**（status-362）— `_newton_steps.py` +112 行で接触残差比 / active flip 過剰増加検知に基づく α 半減 backtracking を NR 主ループに追加。`_newton_dynamic.py` のトリガー `att≥2 & n_active≥1 & active_set_changed & _conv_rate>0.85` で mixed 狭義検知、4 層で 9 field plumb-through、default OFF。`TestContactBacktrackingLineSearchProcessAPI` 6 テスト、default OFF regression 163 passed。**実機**: 7本 frac=1.0000 / elapsed +9.9% 回帰なし、19本 frac 0.4839→0.5153（+6.5% 改善）/ elapsed +36.4% で **MCDD 凍結解除条件未達**。併せて `Strand3DContourProcess` + BenchmarkRunner `post_processes` + 6 フィールド 3D 可視化、19 本撚線 3D レンダリング 6 PNG を出力 |
+| **仮説 C (c) パラメータ感度掃引（クローズ）** | **4 ケース全却下、BT 既定が局所最適**（status-363）— `work/beam_hysteresis/22_bt_parameter_sweep_19strand.py` 新設（+228 行）で 3 軸 4 ケース（A: rate_threshold=0.70 relaxed / B: active_flip_ratio=0.15 strict / C: mixed_only=False always_on / D: A+B+C combined）を 19 本撚線 90° 曲げで実測。結果: 全ケース frac<1.0 未達（A=0.5153 BT default 同値 / B=0.4701 **-8.8% 悪化** / C=0.4817 -6.5% 悪化 / D=0.5156 +0.06% 実測誤差範囲）。**BT 既定が実測最良点**、default 変更なし、**候補 (c) クローズ**。最終 NR Type 分布 `D+E:68%, E:26%` で line search は active 集合振動を根本抑制できないと確定。次候補: (e) 接触減衰 escape hatch（最有力）/ (d) 接触凍結モード 19 本適用 / (f) Phase C-3' s-tracking の 19 本再評価。実装本体無変更 |
 
 ---
 
