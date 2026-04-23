@@ -68,6 +68,32 @@ class DummyVerifyProcessError(TypeError):
     """
 
 
+class HollowVerifyProcessError(DummyVerifyProcessError):
+    """`@verified_by` で中身の無い（計算しない） VerifyProcess を紐付けた際の例外.
+
+    `_reject_dummy_process` は `pass` / `...` / 裸 `return` / `raise NotImplementedError`
+    のみの本体を弾くが、以下のような **non-trivial だが計算していない** 本体は通過
+    してしまう（status-363 引継ぎ 4. の Phase E C24 で特定されたMCDD 脱法実装
+    pattern 2 の裏口）:
+
+    - `return True` / `return False`（定数 return）
+    - `return MyOutput()` / `return MyOutput(rel_err=0.0, passed=True)`
+      （全引数 constant の Output コンストラクタ）
+    - 入力を一切読まず、`report=""` のような定数だけで Output を組み立てる
+
+    `_reject_hollow_process` は AST 検査で以下を必須とする:
+
+    1. 第1引数（`input_data` 等）が本体内で `ast.Name` として少なくとも1回参照される
+       （入力読み取りの痕跡）
+    2. 本体に `ast.BinOp`（arithmetic）/ `ast.Compare`（threshold check）/ 非定数
+       引数を持つ `ast.Call` のいずれかが存在する（計算の痕跡）
+
+    両方を満たさない場合 `HollowVerifyProcessError` を送出する。
+    `DummyVerifyProcessError` のサブクラスなので、既存の
+    `except DummyVerifyProcessError` はそのまま hollow verifier も捕捉する。
+    """
+
+
 def _process_class_name(cls_or_name: type | str) -> str:
     """`type` または `str` から一貫してクラス名を取り出す."""
     if isinstance(cls_or_name, str):
@@ -248,6 +274,10 @@ class ProcessContractRegistry:
 
         # 4. dummy 本体チェック（脱法実装 pattern 2 の構造的封じ込め）
         _reject_dummy_process(verify_cls)
+
+        # 4b. hollow 本体チェック（status-364 Phase E C24、
+        # 脱法実装 pattern 2 の裏口『non-trivial だが計算しない verifier』対策）
+        _reject_hollow_process(verify_cls)
 
         # 二重紐付けは「同じ verify_cls」なら idempotent、違うクラスならエラー
         existing = self._verifiers.get(key)
@@ -477,8 +507,151 @@ def _reject_dummy_process(verify_cls: type) -> None:
         )
 
 
+# ======================================================================
+# 内部ヘルパ: hollow VerifyProcess 検出 (status-364 Phase E C24)
+# ======================================================================
+
+
+def _call_has_nonconstant_arg(call: ast.Call) -> bool:
+    """`ast.Call` の位置/キーワード引数に非 Constant が 1 つ以上存在するか."""
+    for arg in call.args:
+        if not isinstance(arg, ast.Constant):
+            return True
+    for kw in call.keywords:
+        if not isinstance(kw.value, ast.Constant):
+            return True
+    return False
+
+
+def _collect_verifier_body_signals(body: list[ast.stmt], param_name: str) -> dict[str, bool]:
+    """VerifyProcess.process() の本体 AST から hollow 検出用シグナルを収集する.
+
+    Args:
+        body: docstring 除外後の stmt リスト。
+        param_name: 第1引数の識別子名（通常 ``input_data``）。
+
+    Returns:
+        ``{"reads_input": bool, "has_computation": bool}`` の dict。
+
+        - ``reads_input``: `param_name` が `ast.Name` として本体内で参照されたか
+          （Attribute / Subscript / 直接 Name として使用されれば True）。
+        - ``has_computation``: 本体に `ast.BinOp` / `ast.Compare` / 非定数引数の
+          `ast.Call` のいずれかが存在するか。
+    """
+    reads_input = False
+    has_computation = False
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Name) and node.id == param_name:
+                reads_input = True
+            if isinstance(node, (ast.BinOp, ast.Compare)):
+                has_computation = True
+            if isinstance(node, ast.Call) and _call_has_nonconstant_arg(node):
+                has_computation = True
+            if reads_input and has_computation:
+                break
+        if reads_input and has_computation:
+            break
+    return {"reads_input": reads_input, "has_computation": has_computation}
+
+
+def _reject_hollow_process(verify_cls: type) -> None:
+    """`verify_cls.process()` が hollow（計算不在）なら `HollowVerifyProcessError`.
+
+    判定基準（`_collect_verifier_body_signals` 参照）:
+
+    - 第1引数（`input_data` 等）を `ast.Name` として1度も参照していない、
+      または本体に `BinOp` / `Compare` / 非定数 `Call` がいずれも存在しない場合は
+      hollow と判定。
+    - docstring は除外（最初が文字列定数 Expr なら読み飛ばす）。
+    - `_reject_dummy_process` で trivial と判定される本体は本チェック到達前に
+      弾かれる想定（`bind_verifier` の呼出順で dummy → hollow の順に検査）。
+    - ソース取得不能な場合は検査スキップ（動的生成クラス等）。警告ログ。
+
+    脱法実装 pattern 2 の裏口（『non-trivial だが計算しない verifier』）の
+    構造的封じ込め（MCDD Phase E C24、status-364 で追加）。
+    """
+    src = _extract_process_method_source(verify_cls)
+    if src is None:
+        logger.warning(
+            "_reject_hollow_process: %s.process のソースを取得できないため hollow 検査をスキップします",
+            verify_cls.__name__,
+        )
+        return
+
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as err:
+        logger.warning(
+            "_reject_hollow_process: %s.process の AST 解析に失敗したため hollow 検査をスキップ: %s",
+            verify_cls.__name__,
+            err,
+        )
+        return
+
+    func_defs = [
+        node
+        for node in ast.iter_child_nodes(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    ]
+    if not func_defs:
+        logger.warning(
+            "_reject_hollow_process: %s.process の FunctionDef が見つからないため検査スキップ",
+            verify_cls.__name__,
+        )
+        return
+
+    func = func_defs[0]
+    args = func.args.args
+    # self + input_data の2引数が期待される。self 無しの特殊ケース等は検査スキップ
+    if len(args) < 2:
+        logger.warning(
+            "_reject_hollow_process: %s.process の引数数が想定外 (%d) のため検査スキップ",
+            verify_cls.__name__,
+            len(args),
+        )
+        return
+    param_name = args[1].arg  # self の次、すなわち input_data 相当
+
+    body: list[ast.stmt] = list(func.body)
+    # 先頭 docstring を除外（_reject_dummy_process と同じ扱い）
+    if (
+        body
+        and isinstance(body[0], ast.Expr)
+        and isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        body = body[1:]
+
+    if not body:
+        # 本来は _reject_dummy_process で弾かれているが念のため
+        raise HollowVerifyProcessError(
+            f"@verified_by: {verify_cls.__name__}.process() の本体が空です "
+            "(hollow 検査、脱法実装 pattern 2 裏口対策)"
+        )
+
+    signals = _collect_verifier_body_signals(body, param_name)
+
+    if not signals["reads_input"]:
+        raise HollowVerifyProcessError(
+            f"@verified_by: {verify_cls.__name__}.process() 本体が入力 "
+            f"'{param_name}' を一度も参照していません。検証 Process は "
+            "入力を読み取って計算する必要があります "
+            "(hollow VerifyProcess の紐付けは禁止、脱法実装 pattern 2 裏口対策)"
+        )
+
+    if not signals["has_computation"]:
+        raise HollowVerifyProcessError(
+            f"@verified_by: {verify_cls.__name__}.process() 本体に "
+            "計算痕跡 (BinOp / Compare / 非定数引数の Call) が存在しません。"
+            "定数のみを返す hollow VerifyProcess の紐付けは禁止されています "
+            "(脱法実装 pattern 2 裏口対策)"
+        )
+
+
 __all__ = [
     "DummyVerifyProcessError",
+    "HollowVerifyProcessError",
     "ProcessContractRegistry",
     "verified_by",
 ]

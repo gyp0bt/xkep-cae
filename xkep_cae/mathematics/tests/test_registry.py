@@ -17,6 +17,7 @@ from xkep_cae.core.categories import PreProcess, SolverProcess, VerifyProcess
 from xkep_cae.mathematics import (
     DummyVerifyProcessError,
     FDConsistencyContract,
+    HollowVerifyProcessError,
     IdentityContract,
     ProcessContractRegistry,
     SymmetryContract,
@@ -140,6 +141,71 @@ class _DummyNotImplementedVerifyProcess(VerifyProcess[object, bool]):
 
     def process(self, input_data: object) -> bool:
         raise NotImplementedError("未実装")
+
+
+class _HollowConstantReturnVerifyProcess(VerifyProcess[object, bool]):
+    """定数 `return True` のみで計算不在の hollow VerifyProcess（C24 拒否対象）.
+
+    `_reject_dummy_process` は `return None` / `return ...` しか弾かないため、
+    `return True` / `return False` は通過してしまう。C24 はこの裏口を塞ぐ。
+    """
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_HollowConstantReturnVerifyProcess",
+        module="verify",
+        version="0.1.0",
+        document_path=_DOC_REL,
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: object) -> bool:
+        return True
+
+
+class _HollowConstantArgsOutputVerifyProcess(VerifyProcess[object, dict]):
+    """Output コンストラクタ呼出だが全引数 constant の hollow verifier（C24 拒否対象）.
+
+    入力 `input_data` を一切参照せず、定数のみで Output を組み立てる。
+    `ast.Call` ノードは存在するが引数が全て `ast.Constant` なので
+    「計算痕跡」としてカウントしない。
+    """
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_HollowConstantArgsOutputVerifyProcess",
+        module="verify",
+        version="0.1.0",
+        document_path=_DOC_REL,
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: object) -> dict:
+        return dict(rel_err=0.0, passed=True, report="")
+
+
+class _HollowInputUnreadComputationVerifyProcess(VerifyProcess[object, float]):
+    """BinOp はあるが入力を読まない hollow verifier（C24 拒否対象、reads_input 欠落）.
+
+    `1.0 + 2.0` のように計算はあるが、入力 `input_data` が AST 上
+    `ast.Name` として本体に現れないため reads_input=False となる。
+    """
+
+    meta: ClassVar[ProcessMeta] = ProcessMeta(
+        name="_HollowInputUnreadComputationVerifyProcess",
+        module="verify",
+        version="0.1.0",
+        document_path=_DOC_REL,
+        stability="experimental",
+        support_tier="dev-only",
+    )
+    _skip_registry = True
+
+    def process(self, input_data: object) -> float:
+        val = 1.0 + 2.0  # 入力を参照しないダミー計算
+        return val
 
 
 class _InvalidCategoryVerifier(PreProcess[object, bool]):
@@ -358,6 +424,50 @@ class TestBindVerifier:
                 _InvalidCategoryVerifier,
             )
 
+    @pytest.mark.parametrize(
+        "hollow_cls, expected_match",
+        [
+            (
+                _HollowConstantReturnVerifyProcess,
+                "一度も参照していません",
+            ),
+            (
+                _HollowConstantArgsOutputVerifyProcess,
+                "一度も参照していません",
+            ),
+            (
+                _HollowInputUnreadComputationVerifyProcess,
+                "一度も参照していません",
+            ),
+        ],
+    )
+    def test_bind_hollow_rejected(
+        self, hollow_cls: type[AbstractProcess], expected_match: str
+    ) -> None:
+        """hollow（非 trivial だが計算不在）な verifier は C24 で拒否（status-364）.
+
+        `_reject_dummy_process` を通過する「定数 return」「constant-only
+        Output コンストラクタ」「入力を読まない計算」を `_reject_hollow_process`
+        が全て拒否する。
+        """
+        with pytest.raises(HollowVerifyProcessError, match=expected_match):
+            self.registry.bind_verifier(_TargetProcess, "K_c_fd_consistency", hollow_cls)
+
+    def test_hollow_error_is_dummy_subclass(self) -> None:
+        """`HollowVerifyProcessError` は `DummyVerifyProcessError` のサブクラス.
+
+        既存の `except DummyVerifyProcessError` ハンドラが変更なしで
+        hollow verifier も捕捉することを保証する（status-364 導入時の
+        下位互換）。
+        """
+        assert issubclass(HollowVerifyProcessError, DummyVerifyProcessError)
+        with pytest.raises(DummyVerifyProcessError):
+            self.registry.bind_verifier(
+                _TargetProcess,
+                "K_c_fd_consistency",
+                _HollowConstantReturnVerifyProcess,
+            )
+
     def test_unverified_contracts(self) -> None:
         """紐付け前は契約が `unverified`、紐付け後は空."""
         assert self.registry.unverified_contracts(_TargetProcess) == (self.contract,)
@@ -541,7 +651,142 @@ class TestPackageExports:
             "ProcessContractRegistry",
             "verified_by",
             "DummyVerifyProcessError",
+            "HollowVerifyProcessError",
         }
         assert expected.issubset(set(m.__all__))
         for name in expected:
             assert hasattr(m, name)
+
+
+class TestVerifierBodySignals:
+    """`_collect_verifier_body_signals` ヘルパの単体テスト（status-364 Phase E C24）.
+
+    C24 静的検査の核となる AST シグナル抽出を、`bind_verifier` 経由ではなく
+    ヘルパ単体に対してテストする。`_reject_hollow_process` の runtime guard を
+    経由せずに reads_input / has_computation の真偽を直接確認。
+    """
+
+    @staticmethod
+    def _signals_of(verify_cls: type) -> dict[str, bool]:
+        import ast
+
+        from xkep_cae.mathematics.registry import (
+            _collect_verifier_body_signals,
+            _extract_process_method_source,
+        )
+
+        src = _extract_process_method_source(verify_cls)
+        assert src is not None
+        tree = ast.parse(src)
+        func = next(
+            n
+            for n in ast.iter_child_nodes(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        )
+        param_name = func.args.args[1].arg
+        body = list(func.body)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            body = body[1:]
+        return _collect_verifier_body_signals(body, param_name)
+
+    def test_proper_verifier_has_both_signals(self) -> None:
+        signals = self._signals_of(_ProperVerifyProcess)
+        assert signals == {"reads_input": True, "has_computation": True}
+
+    def test_hollow_constant_return_missing_both(self) -> None:
+        signals = self._signals_of(_HollowConstantReturnVerifyProcess)
+        # `return True` のみ: 入力参照なし、BinOp/Compare/非定数 Call なし
+        assert signals == {"reads_input": False, "has_computation": False}
+
+    def test_hollow_constant_args_output_missing_both(self) -> None:
+        signals = self._signals_of(_HollowConstantArgsOutputVerifyProcess)
+        # dict(...) は Call だが keyword values が全て Constant → has_computation=False
+        assert signals == {"reads_input": False, "has_computation": False}
+
+    def test_hollow_input_unread_but_computes(self) -> None:
+        signals = self._signals_of(_HollowInputUnreadComputationVerifyProcess)
+        # 1.0 + 2.0 は BinOp なので has_computation=True、ただし input_data 参照なし
+        assert signals == {"reads_input": False, "has_computation": True}
+
+
+class TestCheckC24StaticValidator:
+    """`contracts/validate_process_contracts.py::check_c24_verify_has_computation`
+    の振る舞いを fresh registry に対して確認（status-364 Phase E C24）.
+    """
+
+    def setup_method(self) -> None:
+        self._saved = ProcessContractRegistry.default()
+        self._fresh = ProcessContractRegistry()
+        ProcessContractRegistry._set_default(self._fresh)
+        # テスト用契約を先に登録（bind 時に要る）
+        self._contract = FDConsistencyContract(
+            name="K_c_fd_consistency",
+            equation_ref="m#e",
+            vector_name="f_c",
+            jacobian_name="K_c",
+            tol_rel=5e-3,
+        )
+        self._fresh.register_contracts(_TargetProcess, (self._contract,))
+
+    def teardown_method(self) -> None:
+        ProcessContractRegistry._set_default(self._saved)
+
+    @staticmethod
+    def _import_checker() -> object:
+        import importlib.util
+        import sys
+        from pathlib import Path
+
+        mod_path = (
+            Path(__file__).resolve().parents[3] / "contracts" / "validate_process_contracts.py"
+        )
+        spec = importlib.util.spec_from_file_location("_contracts_validator_for_c24_test", mod_path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        return module
+
+    def test_proper_verifier_passes(self) -> None:
+        """真っ当な verifier を直接 registry に差し込むと C24 は空 error."""
+        # bind_verifier は _reject_hollow_process を通るため、ここでは
+        # `_verifiers` へ直接書き込んで C24 静的検査のみを単体評価
+        key = ("_TargetProcess", "K_c_fd_consistency")
+        self._fresh._verifiers[key] = _ProperVerifyProcess
+
+        mod = self._import_checker()
+        errors = mod.check_c24_verify_has_computation({"_TargetProcess": _TargetProcess})  # type: ignore[attr-defined]
+        assert errors == []
+
+    def test_hollow_constant_return_detected(self) -> None:
+        key = ("_TargetProcess", "K_c_fd_consistency")
+        self._fresh._verifiers[key] = _HollowConstantReturnVerifyProcess
+
+        mod = self._import_checker()
+        errors = mod.check_c24_verify_has_computation({"_TargetProcess": _TargetProcess})  # type: ignore[attr-defined]
+        assert any("_HollowConstantReturnVerifyProcess" in e for e in errors)
+        assert any("一度も参照していない" in e for e in errors)
+
+    def test_hollow_constant_args_output_detected(self) -> None:
+        key = ("_TargetProcess", "K_c_fd_consistency")
+        self._fresh._verifiers[key] = _HollowConstantArgsOutputVerifyProcess
+
+        mod = self._import_checker()
+        errors = mod.check_c24_verify_has_computation({"_TargetProcess": _TargetProcess})  # type: ignore[attr-defined]
+        assert any("_HollowConstantArgsOutputVerifyProcess" in e for e in errors)
+
+    def test_hollow_input_unread_but_computes_detected(self) -> None:
+        """reads_input=False なら has_computation=True でも C24 は弾く."""
+        key = ("_TargetProcess", "K_c_fd_consistency")
+        self._fresh._verifiers[key] = _HollowInputUnreadComputationVerifyProcess
+
+        mod = self._import_checker()
+        errors = mod.check_c24_verify_has_computation({"_TargetProcess": _TargetProcess})  # type: ignore[attr-defined]
+        assert any("_HollowInputUnreadComputationVerifyProcess" in e for e in errors)
+        # reads_input=False が優先で検出される（「参照していない」理由文言）
+        assert any("一度も参照していない" in e for e in errors)
