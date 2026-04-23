@@ -36,3 +36,6 @@ output/
 scripts/results/
 docs/generated/
 .claude/
+# 大容量 pickle（レンダリング中間データ、PNG は commit）
+docs/verification/**/*.pkl
+work/**/*.pkl
