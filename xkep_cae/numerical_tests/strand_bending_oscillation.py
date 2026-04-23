@@ -248,6 +248,16 @@ class StrandBendingOscillationConfig:
     # track_contact_pairs=True で各収束インクリメントの接触ペア状態をスナップショット保存。
     track_contact_mk: bool = False
     track_contact_pairs: bool = False
+    # 接触法線減衰 escape hatch（status-365 Phase 1: 保有のみ、Phase 2 で solver 配線）
+    # 候補 (e) (status-363 §4) — Type D stall の震源である active×mixed 領域に
+    # 対し、f_damp = -c_n * v_n * n̂ の法線減衰を接触ペア単位で組立て。c1 = γ/(β·dt)
+    # の整合接線剛性 K_damp = c_n * c1 * (g_shape ⊗ g_shape) も併せて加算。
+    # 0 = 無効（default）。有効化時は ContactDampingEnergyMonitorProcess（Phase 2
+    # 新設）で E_damp / E_strain 比を監査し budget 超過を警告する。
+    contact_damping_coefficient: float = 0.0
+    # E_damp_total / E_strain の許容上限。Phase 2 で Energy Monitor が超過を検知。
+    # 0 = チェック無効（default）。推奨: 0.05〜0.20（5〜20% 散逸許容）。
+    contact_damping_energy_budget_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
