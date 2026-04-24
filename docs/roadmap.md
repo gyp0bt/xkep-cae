@@ -17,7 +17,7 @@
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜369、status-354 で 1 status 後ろ倒し）を実施中
-> （**20/N 完了 維持** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ **status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）**）。
+> （**21/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）+ **status-370: Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定（20 測定点全て rel_err=2.18e-07〜2.20e-07、新項追加不要、候補 (g) 3 サブライン再配分）**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -148,6 +148,23 @@
 > rel_err <1e-5 維持 / 新 gate <1e-4 / 19 本 mat_only rel_err mean <0.25 /
 > 19 本 frac≥0.8）明記。実装本体（`xkep_cae/`、`tests/`、`contracts/`）は
 > **無変更**。
+>
+> **status-370 Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定**:
+> `14_kc_active_boundary_diagnostic.py` 新設（+280 行、3 Block 構成）、
+> `test_helical_3d_hermite` で gap_target を deep contact から active 境界まで
+> sweep + 強制 flip を加え K_c 解析値 vs FD の rel_err を 20 測定点計測。
+> **全 20 点で rel_err が status-356 の機械精度 2.18e-07〜2.20e-07 に張り付き**
+> （baseline=2.180e-07 / worst boundary=2.192e-07 / degradation=1.01x +0.00 桁
+> / smoothed ゾーン worst=2.201e-07 / 強制 flip (eps=1e-7) worst=2.20e-07）。
+> eps=1e-4 の 2.19e-04 は FD truncation (O(eps))、K_c 不整合ではない。diff の
+> 99%+ が active×active ブロックに局在（adj ≤0.4%）。**結果 B 確定**で当初計画の
+> 新項 `KcActiveFlipStiffness` 追加は不要、19 本 Type D stall は K_c 項欠落では
+> なく **NR alg 側動力学**（反復間 active 振動 / pair 間相互作用 / 摩擦活性
+> 切替）と確定。`phase_c3prime_19strand_plan.md` §3.2 を候補 (g) 3 サブライン
+> 再配分: **(g1) active 履歴平滑化**（最優先、~130 行、`p_n_eff = α·p_n_new +
+> (1-α)·p_n_prev`）/ (g3) pair-wise relaxation / (g2) AL 再導入。診断限界:
+> 単一 pair / 摩擦なし / 静的（多 pair / 摩擦 / NR 振動未捕捉）。実装本体は
+> **無変更**、diagnostic script 追加と plan doc 再配分のみ。
 >
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
