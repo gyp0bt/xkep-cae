@@ -33,6 +33,7 @@ from xkep_cae.contact._manager_process import (
     UpdateGeometryProcess,
 )
 from xkep_cae.contact.contact_force.strategy import HuberContactForceProcess
+from xkep_cae.contact.damping.strategy import ContactNormalDampingProcess
 from xkep_cae.contact.friction.strategy import CoulombReturnMappingProcess
 from xkep_cae.contact.geometry.strategy import LineToLineGaussProcess
 from xkep_cae.contact.solver._adaptive_stepping import (
@@ -140,6 +141,16 @@ class ContactFrictionProcess(
         object,
         required=False,
         default_types=(LineToLineGaussProcess,),
+    )
+    # status-366 Phase 2: 接触法線減衰 escape hatch（候補 (e)、status-363 §4）.
+    # default_types に ContactNormalDampingProcess を宣言して StrategySlot 経由で
+    # `uses` グラフから到達可能化する。default OFF（c_n=0）なので
+    # `ContactFrictionInputData.contact_damping_coefficient > 0` のときのみ
+    # NR ループで f_damp / K_damp を加算する。
+    damping_slot = StrategySlot(
+        object,
+        required=False,
+        default_types=(ContactNormalDampingProcess,),
     )
 
     def __init__(self, strategies: object | None = None) -> None:
@@ -489,6 +500,8 @@ class ContactFrictionProcess(
             contact_backtracking_rate_threshold=getattr(
                 input_data, "contact_backtracking_rate_threshold", 0.85
             ),
+            # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+            contact_damping_coefficient=getattr(input_data, "contact_damping_coefficient", 0.0),
         )
         nr_process_dyn = NewtonDynamicProcess()
 
@@ -503,6 +516,10 @@ class ContactFrictionProcess(
         _disp_history: list[np.ndarray] = []
         _contact_force_history: list[float] = []
         _graph_snapshots: list[object] = []
+        # 接触法線減衰エネルギー履歴（status-366 Phase 2、候補 (e)）
+        # 成功インクリメント毎に (load_frac, E_damp_cumulative) を追記。
+        _damping_energy_history: list[tuple[float, float]] = []
+        _damping_energy_cumulative: float = 0.0
         # 微小dt対策: 成功インクリメントのf_refを追跡し、下限値として使用（status-297）
         _global_f_ref: float = 0.0
         # status-307: 収束型インクリメント統計
@@ -696,6 +713,7 @@ class ContactFrictionProcess(
                         final_node_coords_ref=state.node_coords_ref.copy(),
                         moment_curvature_history=tuple(_mk_history),
                         contact_pair_history=tuple(_pair_history),
+                        damping_energy_history=tuple(_damping_energy_history),
                     )
 
             # ==============================================================
@@ -973,6 +991,13 @@ class ContactFrictionProcess(
             _u_hist = ul_assembler.u_total_accum + state.u if _ul else state.u.copy()
             _disp_history.append(_u_hist.copy() if _ul else _u_hist)
             _contact_force_history.append(_fc_norm)
+            # 接触法線減衰エネルギー累積（status-366 Phase 2、候補 (e)）
+            # DynamicStepOutput.damping_energy_rate は NR 最終反復の瞬時消散率。
+            # dt 乗算で増分あたりの消散エネルギーに換算し累積する。
+            _damp_rate = getattr(step_result, "damping_energy_rate", 0.0)
+            if _damp_rate > 0.0 and dt_sub > 0.0:
+                _damping_energy_cumulative += _damp_rate * dt_sub
+                _damping_energy_history.append((load_frac, _damping_energy_cumulative))
             # status-333: 接触ペアスナップショット記録
             if _track_pairs and manager.pairs:
                 from xkep_cae.core.data import ContactPairSnapshotEntry
@@ -1042,4 +1067,5 @@ class ContactFrictionProcess(
             final_node_coords_ref=state.node_coords_ref.copy(),
             moment_curvature_history=tuple(_mk_history),
             contact_pair_history=tuple(_pair_history),
+            damping_energy_history=tuple(_damping_energy_history),
         )

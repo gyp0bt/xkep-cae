@@ -13,6 +13,10 @@ from dataclasses import dataclass
 import numpy as np
 
 from xkep_cae.contact._assembly_utils import _contact_dofs
+from xkep_cae.contact.damping.strategy import (
+    ContactNormalDampingInput,
+    ContactNormalDampingProcess,
+)
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
     NRIterationSnapshotOutput,
@@ -56,6 +60,10 @@ class DynamicStepOutput:
     f_ref_used: float = 0.0  # 実際に使用されたf_ref（status-297: global追跡用）
     convergence_type: str = ""  # "force"/"disp"/"energy"/""（status-307: 収束型追跡）
     failure_reason: str = ""  # "nr_limit"/"diverged"/"relax_fail"/"solve_fail"/""（status-307）
+    # 接触法線減衰（status-366 Phase 2、候補 (e)）
+    # 収束時の瞬時消散率 Σ c_n v_n² [エネルギー/時間]。
+    # 呼び出し側が dt 乗算して E_damp_cumulative を累積する。
+    damping_energy_rate: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -134,6 +142,12 @@ class NewtonDynamicInput:
     contact_backtracking_mixed_only: bool = True
     # 発動判定閾値: active_set_changed かつ 収束率 > rate_threshold なら mixed 候補
     contact_backtracking_rate_threshold: float = 0.85
+    # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+    # c_n > 0 のとき、NR 反復内で f_damp = -c_n v_n n̂ を R_u に、
+    # K_damp = c_n (γ/(β·dt)) (g_shape⊗g_shape) を K_T に加算する。
+    # Generalized-α の C 行列を書き換えず、ペア単位で組み立てた粘性力を
+    # 残差/接線に差し込む設計（時間積分モジュール無変更）。
+    contact_damping_coefficient: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -193,6 +207,7 @@ class NewtonDynamicProcess(
         ContactBacktrackingLineSearchProcess,
         TangentFDDiagnosticProcess,
         ContactKcComponentFDDiagnosticProcess,
+        ContactNormalDampingProcess,
     ]
 
     def process(  # noqa: C901, PLR0912, PLR0915
@@ -229,6 +244,11 @@ class NewtonDynamicProcess(
         _solve_proc = LinearSolveProcess()
         _linesearch_proc = LineSearchUpdateProcess()
         _bt_proc = ContactBacktrackingLineSearchProcess()
+        # 接触法線減衰（status-366 Phase 2、候補 (e)）— c_n > 0 のときのみ有効
+        _c_damp = cfg.contact_damping_coefficient
+        _damping_enabled = _c_damp > 0.0
+        _damp_proc = ContactNormalDampingProcess() if _damping_enabled else None
+        _damp_energy_rate_last = 0.0
 
         diag = ConvergenceDiagnosticsOutput(step=increment_display, load_frac=load_frac)
         total_attempts = 0
@@ -355,6 +375,25 @@ class NewtonDynamicProcess(
                 _time_strategy.correct(u, np.zeros_like(u), dt_sub)
                 R_u = _time_strategy.effective_residual(R_u, dt_sub)
                 R_u[input_data.fixed_dofs] = 0.0
+
+            # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+            # 時間積分の C 行列経路とは独立にペア単位で f_damp を残差に加算。
+            # `correct()` 後の self.vel が converge 進行中の速度。
+            if _damping_enabled and dt_sub > 1e-30 and manager.pairs:
+                _c1 = _time_strategy.gamma / (_time_strategy.beta * dt_sub)
+                _damp_out_iter = _damp_proc.process(
+                    ContactNormalDampingInput(
+                        pairs=manager.pairs,
+                        velocity=_time_strategy.vel,
+                        c_n=_c_damp,
+                        stiffness_factor=_c1,
+                        ndof_total=ndof,
+                        ndof_per_node=cfg.ndof_per_node,
+                    )
+                )
+                R_u = R_u + _damp_out_iter.f_damp
+                R_u[input_data.fixed_dofs] = 0.0
+                _damp_energy_rate_last = _damp_out_iter.energy_rate
 
             coords_def = force_out.coords_def
 
@@ -900,6 +939,24 @@ class NewtonDynamicProcess(
             # 動的: 質量・減衰を接線剛性に加算
             if dt_sub > 1e-30:
                 K_T = _time_strategy.effective_stiffness(K_T, dt_sub)
+
+            # 接触法線減衰接線（status-366 Phase 2、候補 (e)）
+            # K_damp = c_n * c1 * (g_shape ⊗ g_shape) を K_T に加算。
+            # K_damp は常に対称半正定値（c_n ≥ 0）で NR 安定化側。
+            if _damping_enabled and dt_sub > 1e-30 and manager.pairs:
+                _c1_tan = _time_strategy.gamma / (_time_strategy.beta * dt_sub)
+                _damp_out_K = _damp_proc.process(
+                    ContactNormalDampingInput(
+                        pairs=manager.pairs,
+                        velocity=_time_strategy.vel,
+                        c_n=_c_damp,
+                        stiffness_factor=_c1_tan,
+                        ndof_total=ndof,
+                        ndof_per_node=cfg.ndof_per_node,
+                    )
+                )
+                if _damp_out_K.K_damp.nnz > 0:
+                    K_T = K_T + _damp_out_K.K_damp
 
             # ── 条件数診断（オプション） ──
             if cfg.compute_condition_number:
@@ -1511,6 +1568,7 @@ class NewtonDynamicProcess(
             f_ref_used=_incr_f_ref,
             convergence_type=_convergence_type,
             failure_reason=_failure_reason,
+            damping_energy_rate=_damp_energy_rate_last,
         )
 
 
