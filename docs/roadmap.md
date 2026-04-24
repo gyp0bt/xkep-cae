@@ -12,12 +12,12 @@
 
 ---
 
-## 現在地（2026-04-23）
+## 現在地（2026-04-24）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜365、status-354 で 1 status 後ろ倒し）を実施中
-> （**20/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ **status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）**）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜369、status-354 で 1 status 後ろ倒し）を実施中
+> （**20/N 完了 維持** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ **status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -120,6 +120,34 @@
 > Phase C-3' s-tracking の 19 本再評価。`22_bt_parameter_sweep_19strand.py`
 > は失敗実験の記録として残置、実装本体（`xkep_cae/`、`tests/`、
 > `contracts/`）は**無変更**。
+>
+> **status-368 候補 (d) 接触凍結モード 19 本再評価 — nr_max=30 で +16.6%、
+> frac=1.0 未達で候補クローズ**: `chattering_freeze_*` 3 パラメータ × 6
+> ケース感度掃引で **Case B `chattering_freeze_nr_max=30`（default 15 の
+> 2x）のみ有意改善 frac=0.5642（default 0.3739 比 +50.9%、status-339
+> baseline 0.4839 比 +16.6%）**、他 5 ケース効果軽微〜悪化。disabled は
+> `D+E:98%` 200 反復ハマり（**freeze mode が D+E ロック回避の支柱**と確定）。
+> MCDD 凍結解除条件未達で候補 (d) クローズ、default 変更は実施せず（7 本向け
+> 最適化維持、19 本 opt-in escape hatch として運用）。次候補は (f) Phase C-3'
+> s-tracking 19 本再評価（症状緩和 4 候補 (c)/(d)/(e) 全クローズで MCDD 本命
+> K_c x/z カップリング不整合に復帰）。
+>
+> **status-369 Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3'
+> 実験計画 策定（documentation status）**: status-368 §6 引継ぎに対応した
+> documentation status。(1) `chattering_freeze_nr_max=30` を 19 本以上向けの
+> opt-in escape hatch として `StrandBendingOscillationConfig` docstring +
+> 本 roadmap §推奨ソルバー構成下の「撚線規模別 opt-in チューニング」表
+> （4 項目）に明記。(2) `xkep_cae/mathematics/docs/phase_c3prime_19strand_plan.md`
+> 新設（+107 行）で候補 (f) を **Step 3.1 active 境界 FD 診断**（~30 分、
+> `14_kc_active_boundary_diagnostic.py` 新設、g=±10^-3 active 境界
+> perturbation で status-356 rel_err=2.18e-07 機械精度が境界で何桁悪化するか
+> 定量）/ **Step 3.2 新項 `KcActiveFlipStiffness` 追加設計**（~2 時間、
+> `TermExpansionContract` 6 項目化、Huber 2 階微分相当項を
+> `HuberContactForceProcess.tangent()` で評価）に分割 scoping。MCDD 脱法
+> パターン 1/4/5/6 回避チェックリスト + gate 基準（`test_helical_3d_hermite`
+> rel_err <1e-5 維持 / 新 gate <1e-4 / 19 本 mat_only rel_err mean <0.25 /
+> 19 本 frac≥0.8）明記。実装本体（`xkep_cae/`、`tests/`、`contracts/`）は
+> **無変更**。
 >
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
@@ -325,6 +353,23 @@ S7 (GPU)
 | **線形ソルバー** | DOF閾値自動切替（直接法 / GMRES+ILU） | スケーラビリティ |
 
 > AL法（`solver_hooks.py`）は status-167 で完全削除済み。NCP一本化。
+
+### 撚線規模別 opt-in チューニング
+
+`StrandBendingOscillationConfig` の既定値は 7 本撚線向けに最適化済み。
+19 本以上の Type D stall 支配領域（status-339〜/357/368）では以下を明示指定する。
+
+| 項目 | 7 本既定 | 19 本推奨 | 効果 / 根拠 |
+|------|---------|----------|-----------|
+| `chattering_freeze_nr_max` | **15** | **30** | frac 0.3739 → 0.5642（+50.9%、status-339 baseline 0.4839 比 +16.6%）。NR Type 分布の mixed (D+E) 比率 69% → 56%（status-368 Case B）。代償 elapsed +251%。**frac=1.0 未達のため default 変更せず、opt-in として公開**。|
+| `contact_damping_coefficient` | **0.0** | 適用非推奨 | 7 本で c_n=1000 が frac=1.0 完走 + elapsed -56.8% を達成したが 19 本では frac=0.47（baseline -2.9%）で却下（status-367）。局所減衰は K_c x/z カップリング不整合を解消できない。|
+| `smoothing_delta` | 自動（2000） | 既定維持 | 7 本では `smoothing_delta=1000`（2x δ_h 拡大）で elapsed -42.5% を達成（status-359）。19 本では frac -23.1% 退化で却下（status-360）。|
+| `contact_backtracking_*` | OFF | 部分効果 | 19 本 `frac=0.5153`（+6.5%、status-362）。パラメータ掃引でも frac=1.0 未達（status-363 候補 (c) クローズ）。|
+
+> **MCDD 凍結解除条件未達**: 上記 opt-in は全て症状緩和であり、19 本 Type D
+> stall の根本原因 `mat_only rel_err 44%`（K_c x/z カップリング不整合、
+> status-344）の解消ではない。MCDD 本命は候補 (f) Phase C-3' s-tracking の
+> 19 本再評価（`docs/mcdd/phase_c3prime_19strand_plan.md` 参照）。
 
 ---
 
