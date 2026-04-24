@@ -12,6 +12,7 @@
 | [penalty.md](../../xkep_cae/contact/penalty/docs/penalty.md) | `xkep_cae/contact/penalty/docs/` | Penalty Strategy（k_pen推定 + 法線力） | 完了 |
 | [friction.md](../../xkep_cae/contact/friction/docs/friction.md) | `xkep_cae/contact/friction/docs/` | Friction Strategy（Coulomb return mapping） | 完了 |
 | [fiber_beam_strand.md](../../xkep_cae/elements/docs/fiber_beam_strand.md) | `xkep_cae/elements/docs/` | 撚線用ファイバー梁要素 設計仕様（内部摩擦ヒステリシス） | **Phase F1 実装中** |
+| [phase_c3prime_19strand_plan.md](../../xkep_cae/mathematics/docs/phase_c3prime_19strand_plan.md) | `xkep_cae/mathematics/docs/` | Phase C-3' 19 本撚線再評価 実験計画（候補 (f)、status-369 策定） | 計画段階 |
 
 > 新 xkep_cae のモジュールが増えるに伴い、ここにドキュメントリンクを追加していく。
 
