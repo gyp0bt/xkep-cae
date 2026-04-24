@@ -41,7 +41,7 @@ status-355/356 で確立した 2 経路 (i)/(ii) の解析:
 
 ## 3. 次 status で実施する 2 ステップ実験
 
-### Step 3.1: active 変動下診断（所要 ~30 分）
+### Step 3.1: active 変動下診断（status-370 で実施完了）
 
 **目的**: 既存 Phase C-3' 実装（仮説 A + B）が active 集合変化点で破綻する
 ことを数値的に実証する。
@@ -57,21 +57,49 @@ status-355/356 で確立した 2 経路 (i)/(ii) の解析:
 
 **出力**: `14_kc_active_boundary_diagnostic.py` のレポート（20 行テーブル）。
 
-### Step 3.2: 6 項目化の設計判断（所要 ~2 時間）
+**実測結果**（status-370, 2026-04-24）: **結果 B 確定**。
 
-Step 3.1 の結果に応じて以下のいずれか:
+| Block | 条件 | worst rel_err |
+|-------|------|:-------------:|
+| 1 | δ_h=0, gap ∈ [-1e-2, -1e-6] | **2.19e-07** |
+| 2 | δ_h=5 (smoothing_delta=2000), gap ∈ [-1e-3, +5e-4]（平滑化ゾーン全域跨ぎ） | **2.20e-07** |
+| 3 | 強制 flip (fd_eps ≥ \|gap\|): gap=-5e-8/eps=1e-7, gap=+1e-8/eps=1e-7 | **2.20e-07** |
+| 3 | 強制 flip (eps=1e-4 大きめ): gap=-1e-5 | 2.19e-04（= `eps` 由来 FD truncation、K_c 不整合ではない） |
 
-- **結果 A: active 境界で rel_err 悪化** → 新項 `KcActiveFlipStiffness` を
-  `TermExpansionContract` に 6 項目として追加。`d p_n / d u_Heaviside` の
-  smoothing 補正項（Huber の 2 階微分相当）を `HuberContactForceProcess.tangent()`
-  で評価、`term="active_flip"` で分配。設計仕様を
-  `docs/math/03_huber_contact_penalty.md` §9（新設）に記述。
-  - 実装規模見積もり: ~200 行（Process 本体 150 + 配線 30 + テスト 40）
-  - gate: `test_kc_active_boundary_fd.py`（新規）で rel_err < 1e-4
+20 測定点全てで rel_err が status-356 の機械精度 2.18e-07 に張り付いた。
+active 境界跨ぎ・平滑化ゾーン内遷移・flip 強制のいずれでも K_c 解析値は FD
+と一致。Phase C-3' 実装（仮説 A + B 同時導入）は **active 集合固定下限定**
+どころか **active flip を含む 2 素線設定全域で FD-整合**。
 
-- **結果 B: active 境界でも rel_err 健全** → 問題は項の欠落ではなく NR
-  アルゴリズム側（active 判定の履歴平滑化、low-pass、あるいは
-  augmented-Lagrangian-like 再導入）。候補 (g) として別ラインで再計画。
+**帰結**: 19 本 Type D stall の主因は **K_c 項の欠落ではなく NR alg 側の
+動力学**（反復間 active 振動、pair 間相互作用、摩擦活性切替）である。
+Step 3.2 は下記の通り「結果 B」分岐で確定。
+
+### Step 3.2: 結果 B 分岐で候補 (g) へ（status-371+ 継続）
+
+Step 3.1 の結果 B 確定により、**新項追加は不要**。問題は項の欠落ではなく
+NR アルゴリズム側であり、候補 (g) を以下の 3 サブラインで 1 つずつ
+検証していく:
+
+- **(g1) active 履歴平滑化**: 反復間で active 集合を low-pass 化。`p_n_smooth
+  = α·p_n_new + (1-α)·p_n_prev` で NR を安定化。`HuberContactForceProcess`
+  に `active_ema_alpha` を追加、NR ソルバー側で反復ごとに勘定。α=0.3 程度。
+- **(g2) augmented Lagrangian 再導入**: status-221 で凍結した Uzawa ループを
+  **外側ループ 1〜2 回**に制限して再導入。N-R 反復内では固定 λ で解き、
+  外側で λ 更新。K_c の非一意性を λ で吸収する古典的アプローチ。
+- **(g3) pair-wise relaxation**: pair level の trust region / relaxation を
+  加える。status-284 の接触凍結モードを pair granularity に拡張して、
+  チャタリング pair だけを freeze。
+
+**実装優先度**: (g1) → (g3) → (g2)。(g1) が最小実装で効果が見込める（~100 行
++ NR 側 plumb-through ~30 行）。(g2) は拡大ラグランジアン凍結の根拠
+（status-221）に矛盾しないか数理台帳で再確認が必要。
+
+**gate 基準（全 g1/g2/g3 共通）**:
+- 7 本撚線 90° frac=1.0 維持（status-299/336 baseline）
+- 19 本撚線 90° frac ≥ 0.6（status-357 baseline 0.3739 の 60% 改善）
+- `test_helical_3d_hermite` rel_err < 1e-5 維持（status-356 機械精度）
+- 候補間は competitive、効果の薄い候補は即 close
 
 ## 4. MCDD 脱法回避チェックリスト
 
@@ -102,8 +130,10 @@ Step 3.1 の結果に応じて以下のいずれか:
 - 実装: `xkep_cae/contact/contact_force/strategy.py` の
   `KcHermiteNonlocalStiffnessProcess` / `KcClosestPointStiffnessProcess`
   / `ContactForceStStiffnessProcess`
+- 診断スクリプト: `work/beam_hysteresis/14_kc_active_boundary_diagnostic.py`（status-370 新設）
 - 過去 status: [status-354](../../../docs/status/status-354.md)（仮説 A 反証）
   / [status-355](../../../docs/status/status-355.md)（仮説 B 診断）
   / [status-356](../../../docs/status/status-356.md)（仮説 A+B 同時導入で機械精度）
   / [status-357](../../../docs/status/status-357.md)（19 本退化検出）
   / [status-368](../../../docs/status/status-368.md)（候補 (d) クローズ、(f) に戻る決定）
+  / [status-370](../../../docs/status/status-370.md)（Step 3.1 完了、結果 B 確定、候補 (g) へ）
