@@ -258,11 +258,21 @@ class StrandBendingOscillationConfig:
     # E_damp_total / E_strain の許容上限。Phase 2 で Energy Monitor が超過を検知。
     # 0 = チェック無効（default）。推奨: 0.05〜0.20（5〜20% 散逸許容）。
     contact_damping_energy_budget_ratio: float = 0.0
-    # チャタリング検知→接触凍結モード（status-284/368: 候補 (d) 19 本再評価）.
+    # チャタリング検知→接触凍結モード（status-284/368/369: 候補 (d) 19 本再評価）.
     # 既定値は 7 本撚線用に status-284 でチューニング済み。19 本 Type D stall
     # 本体では freeze_max_cycles / freeze_nr_max / freeze_tol_factor の掃引が
     # 必要。StrandBendingOscillationConfig から直接指定可能にして
     # work/beam_hysteresis/25_freeze_param_sweep_19strand.py で掃引する。
+    #
+    # 19 本以上の大規模撚線向け opt-in 推奨（status-368 Case B / status-369 明記）:
+    #     chattering_freeze_nr_max = 30   # default 15 の 2x
+    #
+    # 実測効果（status-368 19 本 90° 曲げ）: frac 0.3739 → 0.5642（+50.9%、
+    # status-339 baseline 0.4839 比 +16.6%）。最終 NR Type 分布の mixed (D+E)
+    # 比率が 69% → 56% に低下（BT line search と同パターン）。代償として
+    # elapsed +251%（245s → 863s）。MCDD 凍結解除条件（frac=1.0 完走）未達
+    # のため default 変更は実施せず（7 本系の回帰リスク回避）。19 本以上で
+    # frac=1.0 が未達な系には `chattering_freeze_nr_max=30` を明示指定する。
     chattering_freeze_enabled: bool = True
     chattering_freeze_max_cycles: int = 5
     chattering_freeze_nr_max: int = 15
