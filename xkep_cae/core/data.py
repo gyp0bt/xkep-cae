@@ -101,6 +101,10 @@ class SolverStrategies:
     contact_force: object | None = None  # Phase 5後半で注入
     contact_geometry: object | None = None  # Phase 5後半で注入
     coating: object | None = None  # status-169: CoatingStrategy
+    # status-366 Phase 2: 接触法線減衰 escape hatch（候補 (e)、status-363 §4）.
+    # default インスタンス（ContactNormalDampingProcess）。NR ループは
+    # ContactFrictionInputData.contact_damping_coefficient > 0 のときのみ発動。
+    damping: object | None = None
 
 
 def default_strategies(
@@ -137,6 +141,7 @@ def default_strategies(
     from xkep_cae.contact.contact_force.strategy import (
         _create_contact_force_strategy,
     )
+    from xkep_cae.contact.damping.strategy import ContactNormalDampingProcess
     from xkep_cae.contact.friction.strategy import _create_friction_strategy
     from xkep_cae.contact.geometry.strategy import (
         _create_contact_geometry_strategy,
@@ -180,6 +185,7 @@ def default_strategies(
         coating=_create_coating_strategy(
             coating_stiffness=coating_stiffness,
         ),
+        damping=ContactNormalDampingProcess(),
     )
 
 
@@ -244,6 +250,15 @@ class ContactFrictionInputData:
     contact_backtracking_min_alpha: float = 0.0625
     contact_backtracking_mixed_only: bool = True
     contact_backtracking_rate_threshold: float = 0.85
+    # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e) / status-363 §4）
+    # f_damp = -c_n * v_n * n̂ をペア単位で NR 残差に加算。
+    # K_damp = c_n * (γ/(β·dt)) * (g_shape ⊗ g_shape) を接線剛性に加算。
+    # c_n = 0 で完全無効化（default）。19 本撚線 Type D stall の
+    # active×mixed 振動を粘性で escape させる MCDD 凍結解除待機中の最有力候補。
+    contact_damping_coefficient: float = 0.0
+    # E_damp_total / E_strain 許容上限（ContactDampingEnergyMonitorProcess が監査）.
+    # 0 = チェック無効（default）。推奨: 0.05〜0.20（5〜20% 散逸許容）。
+    contact_damping_energy_budget_ratio: float = 0.0
     # Hertz型非線形ペナルティ（status-285）
     penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
     # チェックポイント復元: frac途中再開（status-279）
@@ -306,6 +321,11 @@ class SolverResultData:
     # 接触ペア履歴（status-333: インクリメント毎の接触ペアスナップショット）
     # tuple of (load_frac, tuple[ContactPairSnapshotEntry, ...])
     contact_pair_history: tuple = ()
+    # 接触法線減衰エネルギー履歴（status-366 Phase 2、候補 (e)）
+    # 成功インクリメント毎の (load_frac, E_damp_cumulative) タプル列。
+    # ContactFrictionInputData.contact_damping_coefficient > 0 のみ非空。
+    # ContactDampingEnergyMonitorProcess で E_damp / E_strain を監査。
+    damping_energy_history: tuple = ()
 
 
 @dataclass(frozen=True)

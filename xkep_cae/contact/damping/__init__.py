@@ -31,6 +31,11 @@ c1 = γ/(β·dt) は Generalized-α の速度-変位感度で、effective_stiffn
 での C 寄与係数と整合する（docs/contact_friction.md の時間積分節参照）。
 """
 
+from xkep_cae.contact.damping.monitor import (
+    ContactDampingEnergyMonitorInput,
+    ContactDampingEnergyMonitorOutput,
+    ContactDampingEnergyMonitorProcess,
+)
 from xkep_cae.contact.damping.strategy import (
     ContactNormalDampingInput,
     ContactNormalDampingOutput,
@@ -38,6 +43,9 @@ from xkep_cae.contact.damping.strategy import (
 )
 
 __all__ = [
+    "ContactDampingEnergyMonitorInput",
+    "ContactDampingEnergyMonitorOutput",
+    "ContactDampingEnergyMonitorProcess",
     "ContactNormalDampingInput",
     "ContactNormalDampingOutput",
     "ContactNormalDampingProcess",

@@ -883,6 +883,9 @@ class StrandBendingOscillationProcess(
             contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
             contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
             contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
+            # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+            contact_damping_coefficient=cfg.contact_damping_coefficient,
+            contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1199,6 +1202,9 @@ class StrandBendingOscillationProcess(
                 contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
                 contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
                 contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
+                # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+                contact_damping_coefficient=cfg.contact_damping_coefficient,
+                contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1378,6 +1384,9 @@ class StrandBendingOscillationProcess(
                 contact_backtracking_min_alpha=cfg.contact_backtracking_min_alpha,
                 contact_backtracking_mixed_only=cfg.contact_backtracking_mixed_only,
                 contact_backtracking_rate_threshold=cfg.contact_backtracking_rate_threshold,
+                # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
+                contact_damping_coefficient=cfg.contact_damping_coefficient,
+                contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

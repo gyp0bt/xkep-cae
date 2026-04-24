@@ -74,18 +74,25 @@ E_damp_rate = Σ_active c_n * v_n²   [エネルギー/時間]
 | Process | 用途 |
 |---------|------|
 | `ContactNormalDampingProcess` | 接触ペアごとに `f_damp` / `K_damp` / `energy_rate` を組み立てる単体 Process |
+| `ContactDampingEnergyMonitorProcess` | `SolverResultData.damping_energy_history` と `EnergyHistory.entries[].strain_energy` を照合し、E_damp_cumulative / E_strain 比の最大値 / 最終値 / budget 超過件数を出力する PostProcess（Phase 2 追加） |
 
-## Phase 2（status-366 予定）の配線計画
+## Phase 2（status-366 完了）の配線
 
-1. `ContactFrictionProcess` に optional StrategySlot（`damping_slot`）を追加、
-   default は OFF（`c_n=0`）
-2. `_newton_dynamic.py` の NR ループで `tangent_components()` と並行に
-   `ContactNormalDampingProcess` を呼び、`f_int`/`K` に加算
-3. `StrandBendingOscillationConfig.contact_damping_coefficient` /
-   `contact_damping_energy_budget_ratio` を NR に連結
-4. `ContactDampingEnergyMonitorProcess`（仮称）で 10 step 毎に
-   E_damp_total / E_strain の比を出力、budget 超過で警告
-5. 7本撚線で 1/2/5/10/20% 減衰 budget 実測 → 19本 Type D stall 検証
+1. `ContactFrictionProcess.damping_slot` = `StrategySlot(object, required=False,
+   default_types=(ContactNormalDampingProcess,))` を追加（`uses` グラフ経由で
+   到達可能化）、default は `c_n=0` で no-op
+2. `_newton_dynamic.py` の NR 反復内で、`effective_residual`/`effective_stiffness`
+   適用後に `R_u += f_damp` / `K_T += K_damp` を加算（`c_n>0` かつ
+   `manager.pairs` が非空、`dt_sub>1e-30` のときのみ）
+3. `ContactFrictionInputData.contact_damping_coefficient` /
+   `contact_damping_energy_budget_ratio` を `StrandBendingOscillationConfig`
+   → `ContactFrictionInputData` → `NewtonDynamicInput` の 3 層で plumb through
+4. `DynamicStepOutput.damping_energy_rate` を追加、`ContactFrictionProcess` が
+   dt を乗じて `damping_energy_history` に累積、`SolverResultData` に公開
+5. `ContactDampingEnergyMonitorProcess` を新設（PostProcess）。成功後に
+   E_damp / E_strain の最大値・最終値・budget 超過件数を report 出力
+6. 7本撚線で 1/2/5/10/20% 減衰 budget 実測 → 19本 Type D stall 検証
+   （MCDD 凍結解除条件: frac=1.0 完走 + E_damp/E_strain < budget）
 
 ## MCDD との関係
 
