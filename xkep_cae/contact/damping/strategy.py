@@ -71,12 +71,22 @@ class ContactNormalDampingInput:
 class ContactNormalDampingOutput:
     """接触法線減衰の出力.
 
+    符号規約（status-367 訂正）:
+        Process は物理ドラッグ力 `f_damp = -c_n v_n g`（動きを妨げる向き）を返す。
+        残差 `R = f_int + f_c - f_ext + M·a + C·v` の規約（C·v は正寄与）に揃える
+        ため、NR では `R_u -= f_damp`（符号反転で `+c_n v_n g` を残差加算）。
+        K_damp は **`-∂f_damp/∂u = +c_n·c1·g⊗g`** の正の rank-1 で、
+        `∂(-f_damp)/∂u` と一致するため `K_T += K_damp` で整合。ユニットテスト
+        `test_tangent_matches_fd_under_v_is_c1_u` は `K_provided ≈ -J_fd` を
+        検証する形でこの同値性を保証する（J_fd = ∂f_damp/∂u < 0）。
+
     Attributes:
-        f_damp: 全体減衰力ベクトル (ndof_total,)。NR 残差に **加算** する
-            （`R_eff += f_damp` の向き。物理符号は負で `-c_n v_n n̂` だが、
-            本フィールドにはその符号で格納済み）
+        f_damp: 物理ドラッグ力ベクトル `-c_n v_n g` (ndof_total,)。NR 残差へは
+            **符号反転して加算**（`R_u -= f_damp`）する。f_damp 自体は motion
+            を妨げる向き（closing 時 A 側は -n̂、B 側は +n̂）で格納。
         K_damp: 全体減衰接線剛性 (ndof_total, ndof_total) CSR。NR K に
-            **加算** する（ `K_eff += K_damp`）。常に対称半正定値。
+            **加算** する（`K_T += K_damp`）。`-∂f_damp/∂u` に等しい
+            正の rank-1 outer product `c_n·c1·(g⊗g)` で、常に対称半正定値。
         energy_rate: 瞬時消散エネルギー率 Σ c_n v_n² [力·距離/時間] = [エネルギー/時間]。
             dt 乗算は呼び出し側（Phase 2 の Energy Monitor）で行う。
         n_active_pairs: 組み立て対象となった active ペア数（診断用）

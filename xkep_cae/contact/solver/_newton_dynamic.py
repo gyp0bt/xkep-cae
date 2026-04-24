@@ -377,8 +377,13 @@ class NewtonDynamicProcess(
                 R_u[input_data.fixed_dofs] = 0.0
 
             # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
-            # 時間積分の C 行列経路とは独立にペア単位で f_damp を残差に加算。
+            # 時間積分の C 行列経路とは独立にペア単位で damping を残差に加算。
             # `correct()` 後の self.vel が converge 進行中の速度。
+            # 符号規約（status-367 で訂正）: Process は物理ドラッグ力
+            # `f_damp = -c_n v_n g` を返すため、R = f_int + f_c - f_ext + M·a + C·v
+            # の残差規約（C·v は正寄与）に揃えるには `R_u -= f_damp`（符号反転で
+            # `+c_n v_n g` を加算）。K_damp = -∂f_damp/∂u = +c_n·c1·g⊗g は既に
+            # 正の rank-1 形で、`∂(-f_damp)/∂u` と一致するため `K_T += K_damp`。
             if _damping_enabled and dt_sub > 1e-30 and manager.pairs:
                 _c1 = _time_strategy.gamma / (_time_strategy.beta * dt_sub)
                 _damp_out_iter = _damp_proc.process(
@@ -391,7 +396,7 @@ class NewtonDynamicProcess(
                         ndof_per_node=cfg.ndof_per_node,
                     )
                 )
-                R_u = R_u + _damp_out_iter.f_damp
+                R_u = R_u - _damp_out_iter.f_damp
                 R_u[input_data.fixed_dofs] = 0.0
                 _damp_energy_rate_last = _damp_out_iter.energy_rate
 
