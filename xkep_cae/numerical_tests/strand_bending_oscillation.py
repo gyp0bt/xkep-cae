@@ -258,6 +258,15 @@ class StrandBendingOscillationConfig:
     # E_damp_total / E_strain の許容上限。Phase 2 で Energy Monitor が超過を検知。
     # 0 = チェック無効（default）。推奨: 0.05〜0.20（5〜20% 散逸許容）。
     contact_damping_energy_budget_ratio: float = 0.0
+    # チャタリング検知→接触凍結モード（status-284/368: 候補 (d) 19 本再評価）.
+    # 既定値は 7 本撚線用に status-284 でチューニング済み。19 本 Type D stall
+    # 本体では freeze_max_cycles / freeze_nr_max / freeze_tol_factor の掃引が
+    # 必要。StrandBendingOscillationConfig から直接指定可能にして
+    # work/beam_hysteresis/25_freeze_param_sweep_19strand.py で掃引する。
+    chattering_freeze_enabled: bool = True
+    chattering_freeze_max_cycles: int = 5
+    chattering_freeze_nr_max: int = 15
+    chattering_freeze_tol_factor: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -886,6 +895,11 @@ class StrandBendingOscillationProcess(
             # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
             contact_damping_coefficient=cfg.contact_damping_coefficient,
             contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
+            # チャタリング検知→接触凍結モード（status-368 候補 (d)）
+            chattering_freeze_enabled=cfg.chattering_freeze_enabled,
+            chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
+            chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
+            chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1205,6 +1219,11 @@ class StrandBendingOscillationProcess(
                 # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
                 contact_damping_coefficient=cfg.contact_damping_coefficient,
                 contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
+                # チャタリング検知→接触凍結モード（status-368 候補 (d)）
+                chattering_freeze_enabled=cfg.chattering_freeze_enabled,
+                chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
+                chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
+                chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1387,6 +1406,11 @@ class StrandBendingOscillationProcess(
                 # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
                 contact_damping_coefficient=cfg.contact_damping_coefficient,
                 contact_damping_energy_budget_ratio=cfg.contact_damping_energy_budget_ratio,
+                # チャタリング検知→接触凍結モード（status-368 候補 (d)）
+                chattering_freeze_enabled=cfg.chattering_freeze_enabled,
+                chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
+                chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
+                chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
