@@ -420,6 +420,7 @@ S7 (GPU)
 | `smoothing_delta` | 自動（2000） | 既定維持 | 7 本では `smoothing_delta=1000`（2x δ_h 拡大）で elapsed -42.5% を達成（status-359）。19 本では frac -23.1% 退化で却下（status-360）。|
 | `contact_backtracking_*` | OFF | 部分効果 | 19 本 `frac=0.5153`（+6.5%、status-362）。パラメータ掃引でも frac=1.0 未達（status-363 候補 (c) クローズ）。|
 | `active_ema_alpha` | **0.0** | 適用非推奨 | 7 本では `active_ema_alpha=0.5` で frac=1.0 維持 + cb 57→22（**-61%**）+ elapsed -11%（status-372）。**α=0.10 のみ早期 stall**（弱平滑化逆効果）。19 本では gate「frac ≥ 0.6」全ケース未達、α=0.50 で frac=0.5133（+37% 改善）でも elapsed +131% で却下（status-372）。|
+| `solver_mode`（status-374 以降実装） | **"implicit"** | **"restart"** | 動的摩擦接触ソルバーの I/O リファクタリング。`(u, v, a, 接触ペア)` を初期条件として受け取り同型を返す Process I/O 化により `update_reference` 跨ぎの `f_int=0` 問題（status-330 TL 経緯）を構造的回避し、解析ステップ単位リスタートを可能化。設計仕様: `xkep_cae/mathematics/docs/phase_c3prime_19strand_plan.md` §4'。default は陰解法、リスタートは明示的 opt-in（status-373 設計確定）。|
 
 > **MCDD 凍結解除条件未達**: 上記 opt-in は全て症状緩和であり、19 本 Type D
 > stall の根本原因 `mat_only rel_err 44%`（K_c x/z カップリング不整合、
