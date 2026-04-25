@@ -128,6 +128,7 @@ def default_strategies(
     smoothing_delta: float = 0.0,
     huber_delta_h: float = 0.0,
     penalty_exponent: float = 1.0,
+    active_ema_alpha: float = 0.0,
     coating_stiffness: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
@@ -176,6 +177,7 @@ def default_strategies(
             smoothing_delta=smoothing_delta,
             huber_delta_h=huber_delta_h,
             penalty_exponent=penalty_exponent,
+            active_ema_alpha=active_ema_alpha,
         ),
         contact_geometry=_create_contact_geometry_strategy(
             line_contact=line_contact,
@@ -261,6 +263,13 @@ class ContactFrictionInputData:
     contact_damping_energy_budget_ratio: float = 0.0
     # Hertz型非線形ペナルティ（status-285）
     penalty_exponent: float = 1.0  # 1.0=線形, 1.5=Hertz型
+    # active 履歴平滑化（status-371: 候補 (g1)）.
+    # NR 反復間で p_n を低域通過化し、active 集合振動を抑制する escape hatch:
+    #     p_n_eff = α·p_n_new + (1-α)·p_n_prev   （α ∈ (0,1]、1.0=平滑化なし）
+    # 0.0 = 完全に無効（既定、回帰防止）。19 本撚線 Type D stall の
+    # NR alg 側動力学（status-370 結果 B）に対する候補 (g1) の opt-in 入口。
+    # 0.1〜0.5 の範囲で掃引推奨。値が小さいほど強い平滑化（前反復に重み）。
+    active_ema_alpha: float = 0.0
     # チェックポイント復元: frac途中再開（status-279）
     load_frac_start: float = 0.0  # >0: 指定fracから荷重増分を再開
     # チェックポイント保存（status-286: pickle API化）

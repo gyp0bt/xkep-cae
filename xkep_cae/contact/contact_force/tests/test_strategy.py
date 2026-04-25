@@ -381,3 +381,151 @@ class TestHertzTangentFD:
                 f"analytical={dpn_dg_analytical:.6e}, FD={dpn_dg_fd:.6e}, "
                 f"rel_err={rel_err:.3e}"
             )
+
+
+class TestActiveEmaSmoothing:
+    """active 履歴 EMA 平滑化（status-371: 候補 (g1)）のテスト.
+
+    `p_n_eff = α·p_n_new + (1-α)·p_n_prev` を NR 反復間で適用し、active
+    集合振動を抑制する escape hatch。default α=0.0 で完全無効化。
+    """
+
+    def test_default_alpha_is_zero(self):
+        """デフォルトで EMA 平滑化なし（後方互換）."""
+        proc = HuberContactForceProcess(ndof=24)
+        assert proc._active_ema_alpha == 0.0
+        assert proc._p_n_prev_array is None
+
+    def test_alpha_field_stored(self):
+        """active_ema_alpha が float として保存される."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=0.3)
+        assert proc._active_ema_alpha == pytest.approx(0.3)
+
+    def test_factory_passes_alpha(self):
+        """ファクトリ経由で active_ema_alpha が貫通する."""
+        s = _create_contact_force_strategy(ndof=24, active_ema_alpha=0.5)
+        assert s._active_ema_alpha == pytest.approx(0.5)
+
+    def test_alpha_zero_no_smoothing(self):
+        """α=0.0 では p_n_prev_array を更新しない（完全無効）."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=0.0)
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        # α=0 のとき履歴ストレージは触らない
+        assert proc._p_n_prev_array is None
+
+    def test_alpha_first_iter_no_history(self):
+        """履歴なし（_p_n_prev_array=None）の初回反復は raw p_n を採用."""
+        proc_smooth = HuberContactForceProcess(ndof=24, active_ema_alpha=0.3)
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc_smooth.evaluate(np.zeros(24), manager, k_pen=1e4)
+        smoothed_first = manager.pairs[0].state.p_n
+
+        proc_raw = HuberContactForceProcess(ndof=24, active_ema_alpha=0.0)
+        pair2 = _make_pair(gap=-0.01)
+        manager2 = _MockManager([pair2])
+        proc_raw.evaluate(np.zeros(24), manager2, k_pen=1e4)
+        raw_first = manager2.pairs[0].state.p_n
+
+        assert smoothed_first == pytest.approx(raw_first), (
+            "初回反復は履歴がないため raw p_n と一致する"
+        )
+        # 1回目で履歴は記録される
+        assert proc_smooth._p_n_prev_array is not None
+
+    def test_alpha_second_iter_blends(self):
+        """2 回目反復で p_n_eff = α·p_n_new + (1-α)·p_n_prev が適用される."""
+        alpha = 0.3
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=alpha)
+
+        # 1回目: gap=-0.01 → p_n1
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        p_n_prev = manager.pairs[0].state.p_n
+
+        # 2回目: gap=-0.02 でより深く貫入 → raw p_n_new=2*p_n_prev
+        from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+
+        manager.pairs[0] = _evolve_pair(
+            manager.pairs[0], state=_evolve_state(manager.pairs[0].state, gap=-0.02)
+        )
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        p_n_smoothed = manager.pairs[0].state.p_n
+
+        # 期待値: α·(k_pen·0.02) + (1-α)·p_n_prev
+        p_n_new_expected = 1e4 * 0.02
+        expected = alpha * p_n_new_expected + (1.0 - alpha) * p_n_prev
+        assert p_n_smoothed == pytest.approx(expected, rel=1e-10)
+
+    def test_reset_ema_state_clears_history(self):
+        """reset_ema_state() で履歴がクリアされる."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=0.3)
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        assert proc._p_n_prev_array is not None
+
+        proc.reset_ema_state()
+        assert proc._p_n_prev_array is None
+
+    def test_reset_between_increments(self):
+        """reset 後の次反復は raw p_n に戻る（インクリメント境界の効果）."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=0.5)
+
+        # 1回目: gap=-0.01
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+
+        # reset → 履歴クリア
+        proc.reset_ema_state()
+
+        # 2回目: gap=-0.02。reset 後なので履歴なし → raw p_n をそのまま採用
+        from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+
+        manager.pairs[0] = _evolve_pair(
+            manager.pairs[0], state=_evolve_state(manager.pairs[0].state, gap=-0.02)
+        )
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        p_n_after_reset = manager.pairs[0].state.p_n
+        # raw p_n_new = k_pen * 0.02 = 200.0
+        assert p_n_after_reset == pytest.approx(1e4 * 0.02, rel=1e-10)
+
+    def test_alpha_one_recovers_raw_pn(self):
+        """α=1.0 は EMA 無効化と同等（前反復の重み 0）."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=1.0)
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+
+        manager.pairs[0] = _evolve_pair(
+            manager.pairs[0], state=_evolve_state(manager.pairs[0].state, gap=-0.05)
+        )
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        # α=1 なので p_n_eff = 1·p_n_new + 0·p_n_prev = raw p_n
+        assert manager.pairs[0].state.p_n == pytest.approx(1e4 * 0.05, rel=1e-10)
+
+    def test_pair_count_change_skips_smoothing(self):
+        """ペア数が変わったら平滑化をスキップ（shape mismatch 安全策）."""
+        proc = HuberContactForceProcess(ndof=24, active_ema_alpha=0.3)
+
+        pair1 = _make_pair(gap=-0.01)
+        manager = _MockManager([pair1])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+
+        # ペアを追加 → shape が変わる
+        pair2 = _make_pair(gap=-0.02)
+        manager.pairs.append(pair2)
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+
+        # 2 つ目のペアは履歴なし扱い → raw p_n を採用
+        # 1 つ目も shape mismatch で平滑化スキップ → raw p_n
+        assert manager.pairs[0].state.p_n == pytest.approx(1e4 * 0.01, rel=1e-10)
+        assert manager.pairs[1].state.p_n == pytest.approx(1e4 * 0.02, rel=1e-10)
+        # 履歴は新 shape で更新される
+        assert proc._p_n_prev_array is not None
+        assert proc._p_n_prev_array.shape == (2,)

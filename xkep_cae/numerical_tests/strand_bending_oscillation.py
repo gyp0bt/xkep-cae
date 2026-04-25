@@ -277,6 +277,14 @@ class StrandBendingOscillationConfig:
     chattering_freeze_max_cycles: int = 5
     chattering_freeze_nr_max: int = 15
     chattering_freeze_tol_factor: float = 10.0
+    # active 履歴平滑化（status-371: 候補 (g1)）.
+    # NR 反復間で p_n を低域通過フィルタする escape hatch:
+    #     p_n_eff = α·p_n_new + (1-α)·p_n_prev
+    # 0.0=無効（既定）。0.1〜0.5 で掃引推奨（小さいほど強平滑化）。
+    # status-370 結果 B（K_c は active 境界でも FD 機械精度）を踏まえ、
+    # 19 本 Type D stall の NR alg 側動力学（反復間 active 振動）を
+    # 直接抑制する目的で導入。default=0.0 で 7 本撚線回帰なし。
+    active_ema_alpha: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -910,6 +918,8 @@ class StrandBendingOscillationProcess(
             chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
             chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
             chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
+            # active 履歴平滑化（status-371 候補 (g1)）
+            active_ema_alpha=cfg.active_ema_alpha,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1234,6 +1244,8 @@ class StrandBendingOscillationProcess(
                 chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
                 chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
                 chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
+                # active 履歴平滑化（status-371 候補 (g1)）
+                active_ema_alpha=cfg.active_ema_alpha,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1421,6 +1433,8 @@ class StrandBendingOscillationProcess(
                 chattering_freeze_max_cycles=cfg.chattering_freeze_max_cycles,
                 chattering_freeze_nr_max=cfg.chattering_freeze_nr_max,
                 chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
+                # active 履歴平滑化（status-371 候補 (g1)）
+                active_ema_alpha=cfg.active_ema_alpha,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
