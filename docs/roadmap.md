@@ -17,7 +17,7 @@
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
 > **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜369、status-354 で 1 status 後ろ倒し）を実施中
-> （**21/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）+ **status-370: Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定（20 測定点全て rel_err=2.18e-07〜2.20e-07、新項追加不要、候補 (g) 3 サブライン再配分）**）。
+> （**22/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）+ status-370: Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定（20 測定点全て rel_err=2.18e-07〜2.20e-07、新項追加不要、候補 (g) 3 サブライン再配分）+ **status-371: 候補 (g1) active 履歴 EMA 平滑化 実装（`HuberContactForceProcess.active_ema_alpha`、4 層 1 field plumb-through、10 単体テスト + 診断スクリプト 150 行、default α=0.0 で既存挙動維持）**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -165,6 +165,25 @@
 > (1-α)·p_n_prev`）/ (g3) pair-wise relaxation / (g2) AL 再導入。診断限界:
 > 単一 pair / 摩擦なし / 静的（多 pair / 摩擦 / NR 振動未捕捉）。実装本体は
 > **無変更**、diagnostic script 追加と plan doc 再配分のみ。
+>
+> **status-371 候補 (g1) active 履歴 EMA 平滑化 実装**: status-370 §5 最優先
+> TODO に対応、`HuberContactForceProcess` に `active_ema_alpha: float = 0.0`
+> field を追加 + `_p_n_prev_array` 保有 + `reset_ema_state()` メソッド +
+> `evaluate()` 内で `p_n_eff = α·p_n_new + (1-α)·p_n_prev` ブレンド
+> （α=0 で履歴ストレージにも書き込まない byte-identical 動作）。
+> `NewtonDynamicProcess.process()` の NR ループ突入時に `reset_ema_state()`
+> を呼び出してインクリメント境界で履歴をクリア（責務分離: HuberContactForce
+> は履歴保有 + blending のみ、NR ソルバーが境界を制御）。4 層 1 field plumb
+> -through（`_create_contact_force_strategy` / `default_strategies` /
+> `ContactFrictionInputData` / `StrandBendingOscillationConfig`）+ 3 経路（曲げ
+> / 揺動 / free_end）。`TestActiveEmaSmoothing` 10 単体テスト + 診断スクリプト
+> `work/beam_hysteresis/26_active_ema_alpha_sweep.py`（150 行、`--n-strands
+> {7,19}` × `--alphas` で α 掃引と gate 判定）。実機 α 掃引は **status-372
+> に分離**（status-365/366/367 と同じ Phase 1+2 構成、各 status は 1 PR 粒度
+> を維持）。EMA 平滑化は K_c 自体を変更しないため `TermExpansionContract`
+> 5 項分解の整合性に影響なし、C18-C24 全 24 検査は無変更で OK。default
+> α=0.0 で `pytest xkep_cae/contact/` 446 → **456 passed**（baseline 全 pass、
+> +10 EMA テスト）、`test_helical_3d_hermite` rel_err=2.18e-07 維持。
 >
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
