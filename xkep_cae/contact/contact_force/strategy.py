@@ -1288,6 +1288,7 @@ class HuberContactForceProcess(
         smoothing_delta: float = 0.0,
         huber_delta_h: float = 0.0,
         penalty_exponent: float = 1.0,
+        active_ema_alpha: float = 0.0,
     ) -> None:
         self._ndof = ndof
         self._ndof_per_node = ndof_per_node
@@ -1299,6 +1300,15 @@ class HuberContactForceProcess(
         # penalty_exponent=1.5: Hertz型（p_n ∝ δ^1.5）
         # 接触ON/OFF境界で力が緩やかに立ち上がり、活性集合の離散的切替を平滑化。
         self._penalty_exponent = penalty_exponent
+        # active 履歴平滑化（status-371: 候補 (g1)）.
+        # NR 反復間で p_n を低域通過化し、active 集合振動を抑制する。
+        # p_n_eff = α·p_n_new + (1-α)·p_n_prev（α ∈ (0,1]、1.0=平滑化なし）
+        # 0.0 = 完全に無効（既定値、回帰防止）。
+        # _p_n_prev_array は NR 反復跨ぎでのみ意味を持つため、
+        # NewtonDynamicProcess が新しいインクリメント開始時に
+        # `reset_ema_state()` を呼んで履歴をクリアする。
+        self._active_ema_alpha = float(active_ema_alpha)
+        self._p_n_prev_array: np.ndarray | None = None
 
     def set_delta_h_boost(self, factor: float) -> None:
         """Huber遷移幅のブースト倍率を設定（status-268: チャタリング対策）.
@@ -1307,6 +1317,15 @@ class HuberContactForceProcess(
         evaluate() と assemble_tangent() 両方に一貫して適用される。
         """
         self._delta_h_boost = max(1.0, factor)
+
+    def reset_ema_state(self) -> None:
+        """active 履歴 EMA の前反復値をクリア（status-371 候補 (g1)）.
+
+        NewtonDynamicProcess が新しい荷重インクリメントの NR ループ開始時に
+        呼び出す。これにより前インクリメントで蓄積された p_n_prev が
+        持ち越されず、初回反復は raw p_n が採用される（α 値に関わらず）。
+        """
+        self._p_n_prev_array = None
 
     def _resolve_delta_h(self, k_pen: float) -> float:
         """Huber遷移幅を解決: huber_delta_h直接指定 > smoothing_delta間接指定 > 0."""
@@ -1604,6 +1623,20 @@ class HuberContactForceProcess(
         if self._penalty_exponent != 1.0:
             p_n_all = self._apply_power_law(p_n_all, k_pen)
         p_n_all[~has_state] = 0.0
+
+        # active 履歴平滑化（status-371 候補 (g1)）.
+        # 前 NR 反復で記録した p_n_prev とブレンドし、active 集合振動を抑制する:
+        #     p_n_eff = α·p_n_new + (1-α)·p_n_prev
+        # 反復 0（_p_n_prev_array が None）あるいは pair 数が変わった場合は
+        # 平滑化をスキップし、raw p_n をそのまま採用する（履歴なし）。
+        # α=0.0（既定）では恒等変換で完全無効化（回帰防止）。
+        if self._active_ema_alpha > 0.0:
+            alpha = self._active_ema_alpha
+            prev = self._p_n_prev_array
+            if prev is not None and prev.shape == p_n_all.shape:
+                p_n_all = alpha * p_n_all + (1.0 - alpha) * prev
+                p_n_all[~has_state] = 0.0
+            self._p_n_prev_array = p_n_all.copy()
 
         # 残差計算
         residuals = np.where(
@@ -2059,6 +2092,7 @@ def _create_contact_force_strategy(
     smoothing_delta: float = 0.0,
     huber_delta_h: float = 0.0,
     penalty_exponent: float = 1.0,
+    active_ema_alpha: float = 0.0,
 ) -> HuberContactForceProcess:
     """接触力 Strategy ファクトリ（status-222 で一本化）."""
     return HuberContactForceProcess(
@@ -2067,4 +2101,5 @@ def _create_contact_force_strategy(
         smoothing_delta=smoothing_delta,
         huber_delta_h=huber_delta_h,
         penalty_exponent=penalty_exponent,
+        active_ema_alpha=active_ema_alpha,
     )

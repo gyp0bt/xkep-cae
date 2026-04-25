@@ -298,6 +298,14 @@ class NewtonDynamicProcess(
         _type_d_fd_triggered = False  # FD診断を既にトリガー済みか
         _type_d_fd_result: str | None = None  # FD診断結果サマリ
 
+        # active 履歴平滑化の前反復値を新インクリメントごとにクリア
+        # （status-371: 候補 (g1)、active_ema_alpha=0 では no-op）.
+        # NR 反復跨ぎでのみ意味を持つ p_n_prev_array を、インクリメント境界で
+        # 必ずリセットすることで「前の荷重ステップ最終 p_n が初期値として
+        # 染み込む」副作用を防ぐ。
+        if hasattr(_contact_force_strategy, "reset_ema_state"):
+            _contact_force_strategy.reset_ema_state()
+
         att = -1
         while att + 1 < _effective_max:
             att += 1

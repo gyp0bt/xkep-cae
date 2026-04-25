@@ -212,6 +212,7 @@ class ContactFrictionProcess(
             smoothing_delta=manager.config.smoothing_delta,
             huber_delta_h=manager.config.huber_delta_h,
             penalty_exponent=input_data.penalty_exponent,
+            active_ema_alpha=input_data.active_ema_alpha,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
