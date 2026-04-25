@@ -10,7 +10,7 @@ stall は NR alg 側動力学）を受け、status-371 で候補 (g1) **active �
 
 を適用し、active 集合振動を直接低域通過化する escape hatch。
 
-本スクリプトは α ∈ {0.1, 0.3, 0.5} を **7 本 / 19 本撚線 90° 曲げ** で
+本スクリプトは α ∈ {0.0, 0.1, 0.3, 0.5} を **7 本 / 19 本撚線 90° 曲げ** で
 掃引し、frac / cutback / elapsed の変化を計測する。gate 基準:
 
 - 7 本: frac=1.0 維持（status-336 baseline）
@@ -27,7 +27,43 @@ stall は NR alg 側動力学）を受け、status-371 で候補 (g1) **active �
 
 引数:
     --n-strands {7,19}     掃引対象の撚線本数（既定: 7）
-    --alphas A1,A2,...     α 値の CSV（既定: 0.1,0.3,0.5）
+    --alphas A1,A2,...     α 値の CSV（既定: 0.0,0.1,0.3,0.5）
+
+status-372 実測結果（記録）:
+
+7 本撚線 90° 曲げ（baseline 設定、status-358 互換）:
+
+    α     frac     n_inc  n_cb  elapsed[s]
+    0.00  1.0000   524    57    298.55
+    0.10  0.3350   170    15    74.76    ← 早期 stall（弱平滑化が逆効果）
+    0.30  1.0000   793    14    305.00   ← cb -75%（57→14）/ incr +51%
+    0.50  1.0000   647    22    265.10   ← cb -61%（57→22）/ elapsed -11%
+
+7 本では α=0.30/0.50 で frac=1.0 維持し cutback 大幅削減（チャタリング抑制）、
+α=0.10 のみ早期 stall（弱平滑化が active 集合の短周期振動を固定する逆効果と
+解釈、smoothing_delta 非単調性 status-262 と類似）。
+
+19 本撚線 90° 曲げ（status-339 系設定）:
+
+    α     frac     n_inc  n_cb  elapsed[s]
+    0.00  0.3739   177    18    251.77   ← status-357 baseline 一致
+    0.10  0.2225   158    17    282.27   ← -41% 退化
+    0.30  0.1988   113    16    149.68   ← -47% 退化
+    0.50  0.5133   332    19    582.05   ← +37% 改善（ただし status-339
+                                            baseline 0.4839 比 +6% で gate 未達）
+
+19 本では gate「frac ≥ 0.6」**全ケース未達**で候補 (g1) 却下方向。α=0.50 の
++37% 部分改善は記録に残すが、elapsed +131%（251→582s）でコスト過大。
+α=0.10/0.30 の退化は 7 本 α=0.10 と同じ「弱平滑化逆効果」現象。
+
+`StrandBendingOscillationConfig.active_ema_alpha` の default 変更（0.0→0.5
+等）は実施しない。19 本 frac=1.0 完走には到達できず、MCDD 凍結解除条件未達。
+ただし `active_ema_alpha=0.5` は **7 本系 cutback 削減 opt-in escape hatch**
+として運用可能（status-368 `chattering_freeze_nr_max=30` と同パターン、
+status-369 §「撚線規模別 opt-in チューニング」表に反映）。
+
+次候補は (g3) pair-wise relaxation（status-284 接触凍結を pair granularity
+拡張）→ (g2) AL 再導入。
 """
 
 from __future__ import annotations

@@ -277,13 +277,25 @@ class StrandBendingOscillationConfig:
     chattering_freeze_max_cycles: int = 5
     chattering_freeze_nr_max: int = 15
     chattering_freeze_tol_factor: float = 10.0
-    # active 履歴平滑化（status-371: 候補 (g1)）.
+    # active 履歴平滑化（status-371: 候補 (g1) 実装、status-372: 実機 α 掃引）.
     # NR 反復間で p_n を低域通過フィルタする escape hatch:
     #     p_n_eff = α·p_n_new + (1-α)·p_n_prev
-    # 0.0=無効（既定）。0.1〜0.5 で掃引推奨（小さいほど強平滑化）。
-    # status-370 結果 B（K_c は active 境界でも FD 機械精度）を踏まえ、
-    # 19 本 Type D stall の NR alg 側動力学（反復間 active 振動）を
-    # 直接抑制する目的で導入。default=0.0 で 7 本撚線回帰なし。
+    # 0.0=無効（既定）。
+    #
+    # status-372 実機 α 掃引結果:
+    #
+    # - **7 本系 opt-in 推奨**: `active_ema_alpha=0.5` で frac=1.0 維持 +
+    #   cutback 57→22（**-61% 削減**）+ elapsed -11%（298→265s）。
+    #   α=0.30 でも frac=1.0 維持（cb -75%）だが elapsed ほぼ同等。
+    #   **α=0.10 は早期 stall** で却下（弱平滑化が逆効果、status-262
+    #   smoothing_delta 非単調性と類似）。
+    # - **19 本以上は却下方向**: 全 α で gate「frac ≥ 0.6」未達。
+    #   α=0.50 で frac=0.5133（baseline 0.3739 比 +37%、status-339 baseline
+    #   0.4839 比 +6%）の部分改善はあるが elapsed +131% でコスト過大。
+    #
+    # default=0.0 で 7 本撚線回帰なし（456 contact tests 全 pass）。
+    # 7 本系で cutback 削減 opt-in としては `active_ema_alpha=0.5` を推奨
+    # （`docs/roadmap.md` §「撚線規模別 opt-in チューニング」表参照）。
     active_ema_alpha: float = 0.0
 
 
