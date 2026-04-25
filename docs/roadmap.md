@@ -12,12 +12,12 @@
 
 ---
 
-## 現在地（2026-04-24）
+## 現在地（2026-04-25）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜369、status-354 で 1 status 後ろ倒し）を実施中
-> （**22/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）+ status-370: Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定（20 測定点全て rel_err=2.18e-07〜2.20e-07、新項追加不要、候補 (g) 3 サブライン再配分）+ **status-371: 候補 (g1) active 履歴 EMA 平滑化 実装（`HuberContactForceProcess.active_ema_alpha`、4 層 1 field plumb-through、10 単体テスト + 診断スクリプト 150 行、default α=0.0 で既存挙動維持）**）。
+> **★ 最優先**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜372、status-354 で 1 status 後ろ倒し）を実施中
+> （**23/N 完了** — Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362: 仮説 C 候補 (c) `ContactBacktrackingLineSearchProcess` 実装 + status-363: 仮説 C 候補 (c) パラメータ感度掃引（候補 (c) クローズ） + status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め（脱法 pattern 2 裏口対策）+ status-365: 候補 (e) 接触減衰 escape hatch — Phase 1（Process 単体実装 + 12 ユニットテスト、solver 未配線）+ status-366: 候補 (e) 接触減衰 escape hatch — Phase 2（NR ソルバー配線 + ContactDampingEnergyMonitorProcess + 7 テスト）+ status-367: 候補 (e) 接触減衰 validation（符号訂正 + 7本採択方向 -57% + 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、frac=1.0 未達で候補クローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定（documentation status）+ status-370: Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定（20 測定点全て rel_err=2.18e-07〜2.20e-07、新項追加不要、候補 (g) 3 サブライン再配分）+ status-371: 候補 (g1) active 履歴 EMA 平滑化 実装（`HuberContactForceProcess.active_ema_alpha`、4 層 1 field plumb-through、10 単体テスト + 診断スクリプト 150 行、default α=0.0 で既存挙動維持）+ **status-372: 候補 (g1) α 掃引実機検証（7 本部分達成: α=0.30/0.50 frac=1.0 + cb -61〜-75% / 19 本却下: gate 未達、α=0.50 frac=0.5133 で elapsed +131% コスト過大、`active_ema_alpha=0.5` を 7 本 opt-in に追加、次候補 (g3) pair-wise relaxation）**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・
 > `docs/status/status-{N}.md` に転記して運用する。
@@ -184,6 +184,24 @@
 > 5 項分解の整合性に影響なし、C18-C24 全 24 検査は無変更で OK。default
 > α=0.0 で `pytest xkep_cae/contact/` 446 → **456 passed**（baseline 全 pass、
 > +10 EMA テスト）、`test_helical_3d_hermite` rel_err=2.18e-07 維持。
+>
+> **status-372 候補 (g1) α 掃引 実機検証 — 7 本部分達成 / 19 本却下**:
+> α ∈ {0.0, 0.1, 0.3, 0.5} を **7 本 / 19 本撚線 90° 曲げ**で実測。
+> **7 本**: α=0.30/0.50 で frac=1.0 維持 + **cb -61〜-75% 削減**（57→14/22）、
+> α=0.50 で elapsed -11%（298→265s）。α=0.10 のみ早期 stall（frac=0.3350、
+> 弱平滑化逆効果、status-262 smoothing_delta 非単調性と類似）。
+> **19 本**: gate「frac ≥ 0.6」**全ケース未達**で候補 (g1) **却下方向**。
+> α=0.50 で frac=0.5133（baseline 0.3739 比 +37.3% / status-339 baseline
+> 0.4839 比 +6.1%）の部分改善はあるが elapsed +131%（251→582s）でコスト
+> 過大、α=0.10/0.30 は -41%/-47% 退化。**default 変更なし**:
+> `StrandBendingOscillationConfig.active_ema_alpha` の default=0.0 を維持、
+> `active_ema_alpha=0.5` を 7 本系 cutback 削減 opt-in escape hatch として
+> 「撚線規模別 opt-in チューニング」表（5 項目目）に追加。
+> `26_active_ema_alpha_sweep.py` docstring に 8 ケース実測結果を埋込。
+> 次候補は **(g3) pair-wise relaxation**（status-284 接触凍結を pair
+> granularity 拡張、~150 行）→ (g2) AL 再導入。実装本体は**無変更**、
+> 456 contact tests + 109 mathematics tests 全 pass、`test_helical_3d_hermite`
+> rel_err=2.18e-07 維持。Phase A〜E / status-346〜372 の **23/N 完了**。
 >
 > **他 TODO（7本ピッチ依存性 / ファイバー梁キャリブレーション / リスタート
 > 方式 / 被膜圧縮モデル改善 / 空間ブロック分離）は MCDD 完了まで凍結**。
@@ -401,6 +419,8 @@ S7 (GPU)
 | `contact_damping_coefficient` | **0.0** | 適用非推奨 | 7 本で c_n=1000 が frac=1.0 完走 + elapsed -56.8% を達成したが 19 本では frac=0.47（baseline -2.9%）で却下（status-367）。局所減衰は K_c x/z カップリング不整合を解消できない。|
 | `smoothing_delta` | 自動（2000） | 既定維持 | 7 本では `smoothing_delta=1000`（2x δ_h 拡大）で elapsed -42.5% を達成（status-359）。19 本では frac -23.1% 退化で却下（status-360）。|
 | `contact_backtracking_*` | OFF | 部分効果 | 19 本 `frac=0.5153`（+6.5%、status-362）。パラメータ掃引でも frac=1.0 未達（status-363 候補 (c) クローズ）。|
+| `active_ema_alpha` | **0.0** | 適用非推奨 | 7 本では `active_ema_alpha=0.5` で frac=1.0 維持 + cb 57→22（**-61%**）+ elapsed -11%（status-372）。**α=0.10 のみ早期 stall**（弱平滑化逆効果）。19 本では gate「frac ≥ 0.6」全ケース未達、α=0.50 で frac=0.5133（+37% 改善）でも elapsed +131% で却下（status-372）。|
+| `solver_mode`（status-374 以降実装） | **"implicit"** | **"restart"** | 動的摩擦接触ソルバーの I/O リファクタリング。`(u, v, a, 接触ペア)` を初期条件として受け取り同型を返す Process I/O 化により `update_reference` 跨ぎの `f_int=0` 問題（status-330 TL 経緯）を構造的回避し、解析ステップ単位リスタートを可能化。設計仕様: `xkep_cae/mathematics/docs/phase_c3prime_19strand_plan.md` §4'。default は陰解法、リスタートは明示的 opt-in（status-373 設計確定）。|
 
 > **MCDD 凍結解除条件未達**: 上記 opt-in は全て症状緩和であり、19 本 Type D
 > stall の根本原因 `mat_only rel_err 44%`（K_c x/z カップリング不整合、

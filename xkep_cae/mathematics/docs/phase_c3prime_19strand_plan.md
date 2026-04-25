@@ -124,6 +124,46 @@ NR アルゴリズム側であり、候補 (g) を以下の 3 サブラインで
 
 上記 4 条件を揃えて status-357 の `mat_only rel_err < 1e-2` 目標に接続する。
 
+## 4'. solver_mode 併存方針（status-373 追加）
+
+19 本 Type D stall 解消の本命候補 (g3) に加え、リスタート解析方式（CLAUDE.md
+status-345 まで「次の課題」に記載されていた I/O リファクタリング）を **opt-in
+の `solver_mode` フラグ**として現行陰解法と併存させる。default は陰解法のまま、
+リスタート方式は明示的 opt-in でのみ有効化。
+
+### 4'.1 切替境界の I/O 契約
+
+- **入力**: 動的摩擦接触ソルバーは `(u, v, a, 接触ペア)` を初期条件として
+  受け取る Process I/O を持つ
+- **出力**: 同型 `(u, v, a, 接触ペア)` を返す
+- **境界条件**: 曲げ・揺動は薄いラッパーで `BoundaryCondition` を渡すのみ
+- **`update_reference` 跨ぎなし**: CR 梁 UL の `f_int=0` 問題を構造的に回避
+  （status-330 TL 定式化と同方針、解析ステップ単位でリスタート可能）
+
+### 4'.2 設定 API（案、status-374 以降で実装）
+
+```python
+StrandBendingOscillationConfig(
+    solver_mode="implicit",  # default; "restart" で opt-in
+    ...
+)
+```
+
+### 4'.3 候補 (g3) との関係
+
+- 候補 (g3) `PairwiseFreezingProcess` は陰解法側の改善（NR 反復内）
+- `solver_mode="restart"` は **解析ステップ間** のリスタート I/O 整備
+- 両者は直交、同時 opt-in 可。ただし default は両方 OFF
+- (g3) で 19 本 frac=1.0 達成できればリスタート方式は subsequent 高速化として
+  位置づけ、達成できなければ I/O 整備が次の本命候補
+
+### 4'.4 status-373 時点の進捗
+
+- 設計のみ。実装は status-374 以降
+- `docs/roadmap.md`「撚線規模別 opt-in チューニング」表に `solver_mode` 行を
+  追加済み（status-368 `chattering_freeze_nr_max=30` / status-372
+  `active_ema_alpha=0.5` と同レイヤ）
+
 ## 6. 関連
 
 - 数理台帳: [`docs/math/03_huber_contact_penalty.md`](../../../docs/math/03_huber_contact_penalty.md) §7（status-356 再構成）
