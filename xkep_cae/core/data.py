@@ -241,6 +241,15 @@ class ContactFrictionInputData:
     chattering_freeze_max_cycles: int = 5  # 凍結→再評価の最大サ��クル数
     chattering_freeze_nr_max: int = 15  # 凍結中の構造NR最大反復数
     chattering_freeze_tol_factor: float = 10.0  # 凍結中の収束判定緩和倍率
+    # pair-wise relaxation（status-374/375: 候補 (g3) Phase 2 NR 配線）.
+    # status-284 全体凍結を pair granularity に拡張する escape hatch。
+    # `pairwise_freeze_enabled=True` のとき、`PairwiseFreezingProcess` を NR
+    # 反復ごとに呼び、per-pair active flip 履歴 ≥ flip_threshold のペアの DOF
+    # ブロックを snapshot 値に固定する（既存全体凍結 chattering_freeze_* は
+    # 排他で無効化）。default OFF。
+    pairwise_freeze_enabled: bool = False
+    pairwise_freeze_flip_threshold: int = 3
+    pairwise_freeze_skip_type_d: bool = True
     # 接触残差 / active flip backtracking line search（status-362: 仮説 C 候補 (c)）
     # mixed (C+D) 領域（active flip + tangent 不整合）の直接抑制。default OFF。
     contact_backtracking_enabled: bool = False

@@ -34,6 +34,7 @@ from xkep_cae.contact._manager_process import (
 )
 from xkep_cae.contact.contact_force.strategy import HuberContactForceProcess
 from xkep_cae.contact.damping.strategy import ContactNormalDampingProcess
+from xkep_cae.contact.freeze.strategy import PairwiseFreezingProcess
 from xkep_cae.contact.friction.strategy import CoulombReturnMappingProcess
 from xkep_cae.contact.geometry.strategy import LineToLineGaussProcess
 from xkep_cae.contact.solver._adaptive_stepping import (
@@ -151,6 +152,15 @@ class ContactFrictionProcess(
         object,
         required=False,
         default_types=(ContactNormalDampingProcess,),
+    )
+    # status-374/375 Phase 2: pair-wise relaxation（候補 (g3)）.
+    # `pairwise_freeze_enabled=True` のときのみ NR 反復で
+    # `PairwiseFreezingProcess` を呼び、per-pair active flip 履歴に基づき
+    # 凍結フラグを取得して、freeze=True のペアの DOF を snapshot に固定する。
+    freeze_slot = StrategySlot(
+        object,
+        required=False,
+        default_types=(PairwiseFreezingProcess,),
     )
 
     def __init__(self, strategies: object | None = None) -> None:
@@ -503,6 +513,10 @@ class ContactFrictionProcess(
             ),
             # 接触法線減衰 escape hatch（status-366 Phase 2、候補 (e)）
             contact_damping_coefficient=getattr(input_data, "contact_damping_coefficient", 0.0),
+            # pair-wise relaxation（status-374/375、候補 (g3) Phase 2）
+            pairwise_freeze_enabled=getattr(input_data, "pairwise_freeze_enabled", False),
+            pairwise_freeze_flip_threshold=getattr(input_data, "pairwise_freeze_flip_threshold", 3),
+            pairwise_freeze_skip_type_d=getattr(input_data, "pairwise_freeze_skip_type_d", True),
         )
         nr_process_dyn = NewtonDynamicProcess()
 

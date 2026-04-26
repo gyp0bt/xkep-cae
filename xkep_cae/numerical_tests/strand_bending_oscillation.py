@@ -297,6 +297,15 @@ class StrandBendingOscillationConfig:
     # 7 本系で cutback 削減 opt-in としては `active_ema_alpha=0.5` を推奨
     # （`docs/roadmap.md` §「撚線規模別 opt-in チューニング」表参照）。
     active_ema_alpha: float = 0.0
+    # pair-wise relaxation（status-374/375: 候補 (g3) Phase 2 NR 配線）.
+    # status-284 全体凍結を pair granularity に拡張する escape hatch。
+    # `pairwise_freeze_enabled=True` のとき、NR 反復ごとに per-pair の active
+    # 履歴 (≥ flip_threshold) で凍結対象ペアを判定し、当該ペアの DOF ブロックを
+    # snapshot 値に固定する。既存全体凍結 chattering_freeze_* は pair-wise が
+    # 有効な間は排他で無効化される。default OFF（19 本撚線 Type D stall opt-in）。
+    pairwise_freeze_enabled: bool = False
+    pairwise_freeze_flip_threshold: int = 3
+    pairwise_freeze_skip_type_d: bool = True
 
 
 @dataclass(frozen=True)
@@ -932,6 +941,10 @@ class StrandBendingOscillationProcess(
             chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
             # active 履歴平滑化（status-371 候補 (g1)）
             active_ema_alpha=cfg.active_ema_alpha,
+            # pair-wise relaxation（status-374/375 候補 (g3) Phase 2）
+            pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
+            pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
+            pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1258,6 +1271,10 @@ class StrandBendingOscillationProcess(
                 chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
                 # active 履歴平滑化（status-371 候補 (g1)）
                 active_ema_alpha=cfg.active_ema_alpha,
+                # pair-wise relaxation（status-374/375 候補 (g3) Phase 2）
+                pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
+                pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
+                pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1447,6 +1464,10 @@ class StrandBendingOscillationProcess(
                 chattering_freeze_tol_factor=cfg.chattering_freeze_tol_factor,
                 # active 履歴平滑化（status-371 候補 (g1)）
                 active_ema_alpha=cfg.active_ema_alpha,
+                # pair-wise relaxation（status-374/375 候補 (g3) Phase 2）
+                pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
+                pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
+                pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

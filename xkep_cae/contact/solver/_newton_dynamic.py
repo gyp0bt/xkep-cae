@@ -17,6 +17,11 @@ from xkep_cae.contact.damping.strategy import (
     ContactNormalDampingInput,
     ContactNormalDampingProcess,
 )
+from xkep_cae.contact.freeze.strategy import (
+    PairwiseFreezingInput,
+    PairwiseFreezingProcess,
+    _update_pair_active_flips,
+)
 from xkep_cae.contact.solver._diagnostics import (
     ConvergenceDiagnosticsOutput,
     NRIterationSnapshotOutput,
@@ -148,6 +153,14 @@ class NewtonDynamicInput:
     # Generalized-α の C 行列を書き換えず、ペア単位で組み立てた粘性力を
     # 残差/接線に差し込む設計（時間積分モジュール無変更）。
     contact_damping_coefficient: float = 0.0
+    # pair-wise relaxation（status-374/375: 候補 (g3) Phase 2 NR 配線）
+    # `pairwise_freeze_enabled=True` のとき、PairwiseFreezingProcess を NR
+    # 反復ごとに呼び、per-pair active flip 履歴 ≥ flip_threshold のペアの
+    # DOF ブロックを snapshot 値に固定する。既存全体凍結 chattering_freeze_*
+    # は排他で無効化（pair-wise が有効な間は status-284 全体凍結発動を抑制）。
+    pairwise_freeze_enabled: bool = False
+    pairwise_freeze_flip_threshold: int = 3
+    pairwise_freeze_skip_type_d: bool = True
 
 
 @dataclass(frozen=True)
@@ -208,6 +221,7 @@ class NewtonDynamicProcess(
         TangentFDDiagnosticProcess,
         ContactKcComponentFDDiagnosticProcess,
         ContactNormalDampingProcess,
+        PairwiseFreezingProcess,
     ]
 
     def process(  # noqa: C901, PLR0912, PLR0915
@@ -306,6 +320,26 @@ class NewtonDynamicProcess(
         if hasattr(_contact_force_strategy, "reset_ema_state"):
             _contact_force_strategy.reset_ema_state()
 
+        # pair-wise relaxation（status-375 Phase 2、候補 (g3)）
+        # default OFF。pairwise_freeze_enabled=True 時のみ NR 反復で
+        # PairwiseFreezingProcess を呼び、per-pair active flip 履歴に基づき
+        # 凍結対象ペアの DOF を snapshot に固定する。chattering_freeze_* は
+        # 排他で無効化（_freeze_active 経路に分岐させない）。
+        _pairwise_enabled = bool(cfg.pairwise_freeze_enabled)
+        _pwise_proc: PairwiseFreezingProcess | None = (
+            PairwiseFreezingProcess() if _pairwise_enabled else None
+        )
+        _pwise_n_pairs = (
+            int(len(manager.pairs)) if _pairwise_enabled and hasattr(manager, "pairs") else 0
+        )
+        _pwise_flip_counts = (
+            np.zeros(_pwise_n_pairs, dtype=np.int64) if _pwise_n_pairs > 0 else None
+        )
+        _pwise_active_prev: np.ndarray | None = None
+        _pwise_freeze_dof_mask: np.ndarray | None = None
+        _pwise_freeze_f_c: np.ndarray | None = None
+        _pwise_n_frozen_last = 0
+
         att = -1
         while att + 1 < _effective_max:
             att += 1
@@ -353,9 +387,85 @@ class NewtonDynamicProcess(
                         R_u = R_u - f_c_orig + f_c
                         R_u[input_data.fixed_dofs] = 0.0
 
+            # ── pair-wise relaxation（status-375 Phase 2、候補 (g3)） ──
+            # 各 NR 反復で is_active_now を構築 → flip_counts 更新 →
+            # PairwiseFreezingProcess を呼び、freeze=True ペアの DOF を
+            # snapshot 値に固定する（DOF block 上書き、status-374 §3）.
+            # chattering_freeze_* （全体凍結）と排他: pairwise 有効時は
+            # _freeze_active には入らない（cfg.chattering_freeze_enabled が
+            # True でも _pairwise_enabled が真なら凍結発動側のロジックで抑止）.
+            if _pairwise_enabled and _pwise_proc is not None and hasattr(manager, "pairs"):
+                _is_active_now = np.fromiter(
+                    (
+                        bool(getattr(p, "state", None) is not None and p.state.p_n > 0.0)
+                        for p in manager.pairs
+                    ),
+                    count=_pwise_n_pairs,
+                    dtype=bool,
+                )
+                # flip_counts 更新（前反復との比較）
+                if _pwise_active_prev is not None and _pwise_flip_counts is not None:
+                    _pwise_flip_counts = _update_pair_active_flips(
+                        _pwise_flip_counts,
+                        _is_active_now,
+                        _pwise_active_prev,
+                    )
+                # 現反復の chattering_type 推定（前回スナップショットから）
+                _chatter_for_pwise = ""
+                if diag.nr_iteration_snapshots:
+                    _chatter_for_pwise = classify_chattering_type(diag.nr_iteration_snapshots[-1])
+                _pwise_out = _pwise_proc.process(
+                    PairwiseFreezingInput(
+                        n_pairs=_pwise_n_pairs,
+                        pair_active_flip_counts=(
+                            _pwise_flip_counts
+                            if _pwise_flip_counts is not None
+                            else np.zeros(_pwise_n_pairs, dtype=np.int64)
+                        ),
+                        is_active_now=_is_active_now,
+                        flip_threshold=int(cfg.pairwise_freeze_flip_threshold),
+                        chattering_type=_chatter_for_pwise,
+                        skip_when_type_d_dominant=bool(cfg.pairwise_freeze_skip_type_d),
+                    ),
+                )
+                _pwise_active_prev = _is_active_now
+                # freeze 発動: 当該ペアの DOF mask を構築し、snapshot 値で f_c
+                # を上書き、R_u を `R_u - f_c + f_c_snap` で差し替える。
+                if not _pwise_out.skip_freeze_global and int(_pwise_out.n_frozen) > 0:
+                    if _pwise_freeze_f_c is None:
+                        _pwise_freeze_f_c = f_c.copy()
+                    _new_mask = np.zeros(ndof, dtype=bool)
+                    for _ki in np.where(_pwise_out.pair_freeze_flags)[0]:
+                        _pair_k = manager.pairs[int(_ki)]
+                        _cd_k = _contact_dofs(_pair_k, cfg.ndof_per_node)
+                        _vd_k = _cd_k[_cd_k < ndof]
+                        if _vd_k.size > 0:
+                            _new_mask[_vd_k] = True
+                    _pwise_freeze_dof_mask = _new_mask
+                    _f_c_orig_pwise = f_c
+                    f_c = f_c.copy()
+                    f_c[_pwise_freeze_dof_mask] = _pwise_freeze_f_c[_pwise_freeze_dof_mask]
+                    R_u = R_u - _f_c_orig_pwise + f_c
+                    R_u[input_data.fixed_dofs] = 0.0
+                    if cfg.show_progress and int(_pwise_out.n_frozen) != _pwise_n_frozen_last:
+                        print(
+                            f"  [pairwise_freeze] Incr {increment_display} "
+                            f"att={att}, n_frozen={int(_pwise_out.n_frozen)}/"
+                            f"{int(_pwise_out.n_active_pairs)} "
+                            f"(threshold={int(cfg.pairwise_freeze_flip_threshold)}, "
+                            f"chatter={_chatter_for_pwise!r})"
+                        )
+                    _pwise_n_frozen_last = int(_pwise_out.n_frozen)
+                else:
+                    # skip_freeze_global or n_frozen=0: 既存 mask を解除
+                    _pwise_freeze_dof_mask = None
+                    _pwise_n_frozen_last = 0
+
             # ── 接触凍結モード（status-284: 陽解法スイッチ） ──
             # 凍結中: 実際の接触力 f_c を凍結値 _freeze_f_c で差し替え。
             # 接触力を外力として固定し、構造系のみでNR収束を求める。
+            # status-375: pair-wise 有効時は全体凍結発動側で抑止されるため、
+            # ここに入るのは _freeze_active=True で全体凍結が既に走っている場合のみ。
             if _freeze_active and _freeze_f_c is not None:
                 R_u = R_u - f_c + _freeze_f_c
                 R_u[input_data.fixed_dofs] = 0.0
@@ -715,6 +825,7 @@ class NewtonDynamicProcess(
                 att >= 15
                 and not _relax_active
                 and not _freeze_active
+                and not _pairwise_enabled
                 and cfg.chattering_freeze_enabled
                 and _freeze_cycle < cfg.chattering_freeze_max_cycles
                 and _cur_ratio > cfg.tol_force
@@ -787,8 +898,10 @@ class NewtonDynamicProcess(
                         classify_chattering_type(_nr_snap) if diag.nr_iteration_snapshots else "-"
                     )
                     # status-284: 接触凍結モード（最優先）
+                    # status-375: pair-wise 有効時は排他で抑止
                     if (
                         cfg.chattering_freeze_enabled
+                        and not _pairwise_enabled
                         and _active_changed
                         and _freeze_cycle < cfg.chattering_freeze_max_cycles
                     ):
