@@ -306,6 +306,14 @@ class StrandBendingOscillationConfig:
     pairwise_freeze_enabled: bool = False
     pairwise_freeze_flip_threshold: int = 3
     pairwise_freeze_skip_type_d: bool = True
+    # Augmented Lagrangian 外側ループ（status-376: 候補 (g2)、status-221 凍結解除）.
+    # `al_outer_enabled=True` のとき、NR 内側 + AL 外側 (max al_n_uzawa_max cycle) の
+    # 二重ループ化。各 NR 収束後に Uzawa 更新 `λ_new = max(0, p_n_eff_converged)` を
+    # per-pair で実施。法線成分のみ AL（摩擦は status-147 NCP 鞍点系符号問題回避のため
+    # 対象外）。default OFF。19 本撚線 Type D stall 候補 (g) 最後のサブライン。
+    # 数理台帳: docs/math/03_huber_contact_penalty.md §5。
+    al_outer_enabled: bool = False
+    al_n_uzawa_max: int = 2
 
 
 @dataclass(frozen=True)
@@ -945,6 +953,9 @@ class StrandBendingOscillationProcess(
             pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
             pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
             pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
+            # Augmented Lagrangian 外側ループ（status-376）
+            al_outer_enabled=cfg.al_outer_enabled,
+            al_n_uzawa_max=cfg.al_n_uzawa_max,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1275,6 +1286,9 @@ class StrandBendingOscillationProcess(
                 pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
                 pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
                 pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
+                # Augmented Lagrangian 外側ループ（status-376）
+                al_outer_enabled=cfg.al_outer_enabled,
+                al_n_uzawa_max=cfg.al_n_uzawa_max,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1468,6 +1482,9 @@ class StrandBendingOscillationProcess(
                 pairwise_freeze_enabled=cfg.pairwise_freeze_enabled,
                 pairwise_freeze_flip_threshold=cfg.pairwise_freeze_flip_threshold,
                 pairwise_freeze_skip_type_d=cfg.pairwise_freeze_skip_type_d,
+                # Augmented Lagrangian 外側ループ（status-376）
+                al_outer_enabled=cfg.al_outer_enabled,
+                al_n_uzawa_max=cfg.al_n_uzawa_max,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
