@@ -250,6 +250,12 @@ class ContactFrictionInputData:
     pairwise_freeze_enabled: bool = False
     pairwise_freeze_flip_threshold: int = 3
     pairwise_freeze_skip_type_d: bool = True
+    # Augmented Lagrangian 外側ループ（status-376: 候補 (g2)、status-221 凍結解除）.
+    # `al_outer_enabled=True` のとき NR を内側、`al_n_uzawa_max` 回まで Uzawa 更新で
+    # 外側ループ。法線成分のみ AL（摩擦は status-147 NCP 鞍点系符号問題回避のため対象外）。
+    # default OFF。19 本撚線 Type D stall 候補 (g) 最後のサブライン（数理台帳 §5）。
+    al_outer_enabled: bool = False
+    al_n_uzawa_max: int = 2
     # 接触残差 / active flip backtracking line search（status-362: 仮説 C 候補 (c)）
     # mixed (C+D) 領域（active flip + tangent 不整合）の直接抑制。default OFF。
     contact_backtracking_enabled: bool = False

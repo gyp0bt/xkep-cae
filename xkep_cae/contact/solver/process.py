@@ -517,6 +517,9 @@ class ContactFrictionProcess(
             pairwise_freeze_enabled=getattr(input_data, "pairwise_freeze_enabled", False),
             pairwise_freeze_flip_threshold=getattr(input_data, "pairwise_freeze_flip_threshold", 3),
             pairwise_freeze_skip_type_d=getattr(input_data, "pairwise_freeze_skip_type_d", True),
+            # Augmented Lagrangian 外側ループ（status-376、候補 (g2)）
+            al_outer_enabled=getattr(input_data, "al_outer_enabled", False),
+            al_n_uzawa_max=getattr(input_data, "al_n_uzawa_max", 2),
         )
         nr_process_dyn = NewtonDynamicProcess()
 

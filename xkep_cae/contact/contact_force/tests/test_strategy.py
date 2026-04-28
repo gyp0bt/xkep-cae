@@ -529,3 +529,147 @@ class TestActiveEmaSmoothing:
         # 履歴は新 shape で更新される
         assert proc._p_n_prev_array is not None
         assert proc._p_n_prev_array.shape == (2,)
+
+
+class TestAugmentedLagrangianOffset:
+    """Augmented Lagrangian λ オフセット（status-376: 候補 (g2)）のテスト.
+
+    `p_n_eff = max(0, p_n_huber + λ)` を NR 内側で固定値の λ_offset として適用し、
+    外側 Uzawa 更新で `λ_new = max(0, p_n_eff_converged)` を反映する escape hatch。
+    default は無効化（_lambda_offset_pairs = None）。
+    """
+
+    def test_default_lambda_is_none(self):
+        """デフォルトで AL λ オフセットなし（後方互換）."""
+        proc = HuberContactForceProcess(ndof=24)
+        assert proc._lambda_offset_pairs is None
+        assert proc._last_p_n_eff is None
+
+    def test_set_al_lambda_offset_stores_copy(self):
+        """set_al_lambda_offset が配列を copy 保持し、外部変更の影響を受けない."""
+        proc = HuberContactForceProcess(ndof=24)
+        lam = np.array([1.0, 2.0, 3.0])
+        proc.set_al_lambda_offset(lam)
+        assert proc._lambda_offset_pairs is not None
+        np.testing.assert_array_equal(proc._lambda_offset_pairs, lam)
+        # 外部 lam を破壊しても strategy 内部に影響しない
+        lam[0] = 999.0
+        assert proc._lambda_offset_pairs[0] == pytest.approx(1.0)
+
+    def test_set_al_lambda_offset_none_clears(self):
+        """None で AL を完全無効化する."""
+        proc = HuberContactForceProcess(ndof=24)
+        proc.set_al_lambda_offset(np.ones(3))
+        assert proc._lambda_offset_pairs is not None
+        proc.set_al_lambda_offset(None)
+        assert proc._lambda_offset_pairs is None
+
+    def test_lambda_zero_no_op(self):
+        """λ=0 のとき p_n_eff は p_n_huber と同値（既定動作と等価）."""
+        proc_no_al = HuberContactForceProcess(ndof=24)
+        pair_no = _make_pair(gap=-0.01)
+        manager_no = _MockManager([pair_no])
+        proc_no_al.evaluate(np.zeros(24), manager_no, k_pen=1e4)
+        p_n_no_al = manager_no.pairs[0].state.p_n
+
+        proc_al = HuberContactForceProcess(ndof=24)
+        proc_al.set_al_lambda_offset(np.array([0.0]))
+        pair_al = _make_pair(gap=-0.01)
+        manager_al = _MockManager([pair_al])
+        proc_al.evaluate(np.zeros(24), manager_al, k_pen=1e4)
+        p_n_al = manager_al.pairs[0].state.p_n
+
+        assert p_n_al == pytest.approx(p_n_no_al, rel=1e-12)
+
+    def test_lambda_positive_augments_p_n(self):
+        """λ > 0 のとき p_n_eff = p_n_huber + λ（active pair で加算）."""
+        proc = HuberContactForceProcess(ndof=24)
+        lam = 50.0
+        proc.set_al_lambda_offset(np.array([lam]))
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        # p_n_huber = k_pen·|gap| = 100, p_n_eff = 100 + 50 = 150
+        expected = 1e4 * 0.01 + lam
+        assert manager.pairs[0].state.p_n == pytest.approx(expected, rel=1e-10)
+
+    def test_lambda_keeps_inactive_pair_active(self):
+        """gap > 0（非接触）でも λ > 0 で p_n_eff = λ > 0 となり active 扱い."""
+        proc = HuberContactForceProcess(ndof=24)
+        lam = 25.0
+        proc.set_al_lambda_offset(np.array([lam]))
+        # gap=+0.01 (no penetration), p_n_huber = 0
+        pair = _make_pair(gap=+0.01)
+        manager = _MockManager([pair])
+        f, _ = proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        assert manager.pairs[0].state.p_n == pytest.approx(lam, rel=1e-10)
+        # f_c も非ゼロ（λ 駆動の力）
+        assert np.any(f != 0.0)
+
+    def test_lambda_clamped_to_nonneg(self):
+        """λ + p_n_huber < 0（負の λ で p_n_huber を打ち消す）でも p_n_eff ≥ 0."""
+        proc = HuberContactForceProcess(ndof=24)
+        # 負の λ は本来 Uzawa 更新で生成されないが、API 安全策として max(0, ...) で保護
+        proc.set_al_lambda_offset(np.array([-1e6]))
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        assert manager.pairs[0].state.p_n == pytest.approx(0.0, abs=1e-12)
+
+    def test_get_last_p_n_eff_after_evaluate(self):
+        """evaluate() 後に get_last_p_n_eff() が p_n_eff スナップショットを返す."""
+        proc = HuberContactForceProcess(ndof=24)
+        proc.set_al_lambda_offset(np.array([10.0]))
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        snap = proc.get_last_p_n_eff()
+        assert snap is not None
+        assert snap.shape == (1,)
+        # p_n_eff = 100 + 10 = 110
+        assert snap[0] == pytest.approx(110.0, rel=1e-10)
+
+    def test_get_last_p_n_eff_before_evaluate_is_none(self):
+        """evaluate() 前は get_last_p_n_eff() が None."""
+        proc = HuberContactForceProcess(ndof=24)
+        assert proc.get_last_p_n_eff() is None
+
+    def test_lambda_shape_mismatch_skips_offset(self):
+        """λ 配列の shape が pair 数と異なる場合は AL を no-op（安全策）."""
+        proc = HuberContactForceProcess(ndof=24)
+        proc.set_al_lambda_offset(np.array([10.0, 20.0]))  # shape (2,)
+        # ペア 1 つだけ → shape mismatch
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        # AL 適用されず raw p_n_huber のみ
+        assert manager.pairs[0].state.p_n == pytest.approx(1e4 * 0.01, rel=1e-10)
+
+    def test_uzawa_update_pattern(self):
+        """1 サイクル目で λ=0 → 収束 → λ_new=p_n_converged → 2 サイクル目で再評価."""
+        proc = HuberContactForceProcess(ndof=24)
+
+        # サイクル 1: λ=0 (no AL)
+        proc.set_al_lambda_offset(np.array([0.0]))
+        pair = _make_pair(gap=-0.01)
+        manager = _MockManager([pair])
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        p_n_cycle1 = manager.pairs[0].state.p_n
+        snap1 = proc.get_last_p_n_eff()
+        assert p_n_cycle1 == pytest.approx(100.0, rel=1e-10)
+        assert snap1[0] == pytest.approx(p_n_cycle1, rel=1e-10)
+
+        # Uzawa 更新: λ_new = max(0, p_n_eff_converged) = 100
+        lambda_new = np.maximum(0.0, snap1)
+        proc.set_al_lambda_offset(lambda_new)
+
+        # サイクル 2: 同じ gap で再評価 → p_n_eff = 100 + 100 = 200
+        from xkep_cae.contact._contact_pair import _evolve_pair, _evolve_state
+
+        manager.pairs[0] = _evolve_pair(
+            manager.pairs[0], state=_evolve_state(manager.pairs[0].state, p_n=0.0)
+        )
+        proc.evaluate(np.zeros(24), manager, k_pen=1e4)
+        p_n_cycle2 = manager.pairs[0].state.p_n
+        # p_n_huber は同じ (100)、λ=100 で p_n_eff=200
+        assert p_n_cycle2 == pytest.approx(200.0, rel=1e-10)

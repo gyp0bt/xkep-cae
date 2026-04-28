@@ -1309,6 +1309,15 @@ class HuberContactForceProcess(
         # `reset_ema_state()` を呼んで履歴をクリアする。
         self._active_ema_alpha = float(active_ema_alpha)
         self._p_n_prev_array: np.ndarray | None = None
+        # Augmented Lagrangian λ オフセット（status-376: 候補 (g2)）.
+        # 外側 Uzawa ループから設定される per-pair λ ≥ 0。NR 反復内では固定値で
+        # `p_n_eff = max(0, p_n_huber + λ)` として f_c に寄与する。dλ/du = 0 なので
+        # K_mat（dp_n_huber/du 由来）は無変更でよく、K_geo は `p_n_eff` を pair.state.p_n
+        # 経由で読むため自動整合（数理台帳 03_huber_contact_penalty.md §5 参照）。
+        # None または全要素 0 の場合は完全無効化（既定、回帰防止）。
+        self._lambda_offset_pairs: np.ndarray | None = None
+        # 直近 evaluate() で計算された p_n_eff のスナップショット（Uzawa 更新用）.
+        self._last_p_n_eff: np.ndarray | None = None
 
     def set_delta_h_boost(self, factor: float) -> None:
         """Huber遷移幅のブースト倍率を設定（status-268: チャタリング対策）.
@@ -1326,6 +1335,28 @@ class HuberContactForceProcess(
         持ち越されず、初回反復は raw p_n が採用される（α 値に関わらず）。
         """
         self._p_n_prev_array = None
+
+    def set_al_lambda_offset(self, lam: np.ndarray | None) -> None:
+        """Augmented Lagrangian λ オフセット配列を設定（status-376 候補 (g2)）.
+
+        外側 Uzawa ループ（NewtonDynamicProcess の AL 外側）が NR インナー
+        開始前に呼ぶ。`lam[k]` は pair k 単位の Lagrange 乗数（≥ 0）で、
+        NR 内では固定。`p_n_eff = max(0, p_n_huber + λ)` が f_c に寄与する。
+        None または全要素 0 で完全無効化（既定動作と等価）。
+        """
+        if lam is None:
+            self._lambda_offset_pairs = None
+        else:
+            self._lambda_offset_pairs = np.asarray(lam, dtype=float).copy()
+
+    def get_last_p_n_eff(self) -> np.ndarray | None:
+        """直近 evaluate() の p_n_eff スナップショットを返す（Uzawa 更新用）.
+
+        外側 AL ループは内側 NR 収束後にこれを読み取り、`λ_new = p_n_eff` で
+        Lagrange 乗数を更新する。スナップショットは pair 順 (0..n_pairs-1)。
+        evaluate() 未呼出または pair 数 0 では None を返す。
+        """
+        return self._last_p_n_eff
 
     def _resolve_delta_h(self, k_pen: float) -> float:
         """Huber遷移幅を解決: huber_delta_h直接指定 > smoothing_delta間接指定 > 0."""
@@ -1637,6 +1668,21 @@ class HuberContactForceProcess(
                 p_n_all = alpha * p_n_all + (1.0 - alpha) * prev
                 p_n_all[~has_state] = 0.0
             self._p_n_prev_array = p_n_all.copy()
+
+        # Augmented Lagrangian λ オフセット（status-376 候補 (g2)）.
+        # `p_n_eff = max(0, p_n_huber + λ)` で AL 寄与を p_n_all に内包する。
+        # K_geo は pair.state.p_n（後段で p_n_eff に更新される）を読むため自動整合。
+        # K_mat は dp_n_huber/du のみ捕捉し dλ/du = 0 で正しい
+        # （数理台帳 03_huber_contact_penalty.md §5 参照）。
+        # `_lambda_offset_pairs` が None または shape 不一致の場合は no-op。
+        if (
+            self._lambda_offset_pairs is not None
+            and self._lambda_offset_pairs.shape == p_n_all.shape
+        ):
+            p_n_all = np.maximum(0.0, p_n_all + self._lambda_offset_pairs)
+            p_n_all[~has_state] = 0.0
+        # 直近 p_n_eff をスナップショット（外側 AL ループが Uzawa 更新で読む）
+        self._last_p_n_eff = p_n_all.copy()
 
         # 残差計算
         residuals = np.where(

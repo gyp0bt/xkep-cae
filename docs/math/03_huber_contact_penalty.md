@@ -469,6 +469,103 @@ $K_{\mathrm{local,adj}} = -(\partial \boldsymbol{f}/\partial s \otimes \mathrm{d
 
 ---
 
+## 9. Augmented Lagrangian 動機と Uzawa 外側ループ（status-221 凍結 / status-376 限定再導入）
+
+<a id="sec-al"></a>
+
+### 9.1 古典的 Augmented Lagrangian と Uzawa 反復
+
+純粋ペナルティ法は $k_{\mathrm{pen}} \to \infty$ の漸近で接触制約 $g \ge 0$ を厳密化する
+が、有限 $k_{\mathrm{pen}}$ では微小貫入 $g < 0$ が残る。Augmented Lagrangian
+（拡大ラグランジアン）は **per-pair Lagrange 乗数** $\lambda_k \ge 0$ を導入し、
+ペナルティ力を補強する:
+
+<a id="eq-al-pn"></a>
+
+$$
+p_n^{\mathrm{AL}}(g, \lambda) \;=\; \max\bigl(0,\; \lambda + p_n^{\mathrm{huber}}(g)\bigr)
+$$
+
+ここで $p_n^{\mathrm{huber}}(g) = \operatorname{huber}(k_{\mathrm{pen}}(-g), \delta_h)$
+は §1 のペナルティ力。NR 内側ループでは $\lambda$ を**固定値**として扱い、$p_n^{\mathrm{AL}}$ を
+$f_c$ アセンブリと $K_c$ 線形化の両方で使用する。NR 収束後、外側ループで
+**Uzawa 更新**を行う:
+
+<a id="eq-uzawa"></a>
+
+$$
+\lambda_k \;\leftarrow\; \max\bigl(0,\; p_n^{\mathrm{AL},*}_k\bigr) \;=\; \max\bigl(0,\; \lambda_k + p_n^{\mathrm{huber}}(g^*_k)\bigr)
+$$
+
+ここで $g^*_k$ は内側 NR が収束したときの gap。AL の漸近収束（$\lambda \to$ 真の
+Lagrange 乗数 = 接触圧）により、有限 $k_{\mathrm{pen}}$ で残存していた貫入が
+反復ごとに減少する。
+
+### 9.2 K_c の整合性（modified Newton 不要）
+
+$\lambda$ は NR 内側で定数（$\partial\lambda/\partial \boldsymbol{u} = \boldsymbol{0}$）
+なので、AL を導入しても $K_c$ の形は変わらず、ただし重み係数が:
+
+| 項 | 重み（純ペナルティ） | 重み（AL 適用時） |
+|---|---|---|
+| $K_{\mathrm{mat,nn}}$ | $w_{\mathrm{mat}} = h'(x) k_{\mathrm{pen}}$ | 不変（$\partial p_n^{\mathrm{huber}}/\partial \boldsymbol{u}$ のみ捕捉） |
+| $K_{\mathrm{geo}}$ | $w_{\mathrm{geo}} = p_n^{\mathrm{huber}}/d$ | $w_{\mathrm{geo}} = p_n^{\mathrm{AL}}/d$（$\lambda$ 寄与込み）|
+
+実装上は `pair.state.p_n` を $p_n^{\mathrm{AL}}$ で更新するだけで $K_{\mathrm{geo}}$ が
+自動的に整合する（[#eq-dn-du](#eq-dn-du) と $K_{\mathrm{geo}}$ の同一性、§4 参照）。
+$K_{\mathrm{mat,nn}}$ は $h'(x)$ 由来の penalty 接線そのままで正しく、$\lambda$ の
+$\partial/\partial \boldsymbol{u}$ がゼロであることを忠実に反映する。
+
+### 9.3 status-221 における凍結根拠
+
+status-219〜221 で動的接触三点曲げが収束しないバグの原因究明過程で、Uzawa 外側
+ループ (`n_uzawa_max=5`) の効果を実測した結果、以下が判明した:
+
+1. `n_uzawa_max=1`（純粋ペナルティ）と `n_uzawa_max≥2`（AL 反復）の最終解はほぼ
+   同等（接触力 132N、変位差 < 1%）
+2. $k_{\mathrm{pen}}$ の自動推定（`AutoEALPenalty` の `c0·M_ii·0.2`）が十分大きく、
+   有限 $k_{\mathrm{pen}}$ 由来の貫入が既に許容範囲（< 0.01·radius）
+3. AL ループの追加コスト（NR 反復 ×2〜5）に見合う精度向上が観測されない
+4. **摩擦接線剛性の符号問題**（status-147、§9.5 参照）が NCP 鞍点系で再発しやすい
+
+これら 4 点から status-221 で `n_uzawa_max=1` をデフォルトに固定し、status-222 で
+Uzawa 関連の `lam_all` 管理 / `UzawaUpdateProcess` / `n_uzawa_max` パラメータを
+**完全削除**した（凍結ではなく削除）。
+
+### 9.4 status-376 限定再導入の動機
+
+status-357〜375 で 19 本撚線 90° 曲げの Type D stall（K_c x/z カップリング不整合
+領域）に対して候補 (a)/(a')/(c)/(d)/(e)/(g1)/(g3) を全て却下した結果、
+**候補 (g) サブライン最後の (g2) AL 限定再導入**が残存した。status-373/374/375
+の引継ぎでは:
+
+- 内側 NR（純粋ペナルティ） + **AL 外側ループ最大 1〜2 サイクル** の二重ループ化
+- $k_{\mathrm{pen}}$ 自動推定値の周辺で $\lambda$ を 1〜2 回更新することで「19 本
+  Type D stall 断面（active 集合振動 + tangent 不整合）」を escape できるか検証
+- 法線成分のみ AL 適用（摩擦は §9.5 の符号問題回避のため対象外）
+
+を gate `19 本 frac ≥ 0.6`（baseline 0.3739 比 +60%）で評価する。
+
+### 9.5 摩擦接線剛性の符号問題（status-147 残存リスク）
+
+status-147 で NCP 鞍点系の摩擦接線剛性 `K_t` の符号が以下の二者択一であることが判明:
+
+- **正符号** $K_t = +k_t (g_t \otimes g_t)$: 正定値で線形ソルブは安定だが、
+  Newton が **slip 平衡に収束**して stick が成立しない
+- **負符号** $K_t = -k_t (g_t \otimes g_t)$（解析的に正しい）: 不定値となり Schur
+  complement 分解が不安定化
+
+NCP では Alart-Curnier 拡大鞍点系での解決が必要だが実装が複雑。一方
+**smooth penalty + Uzawa 外側ループ**（本章 §9.1 形式）では NCP 鞍点系を経由しないため
+この符号問題は構造的に回避される（status-147 の `verify_smooth_penalty_friction_bend.py`
+で実証済）。
+
+status-376 の AL 再導入は **法線成分 $\lambda$ のみ更新**し、摩擦の rate-mapping
+は status-225 で確立した `K_t` 構成（$dq/du \otimes G_{t\alpha} + q_\alpha \cdot dG_{t\alpha}/du$）を
+そのまま使用する。これにより status-147 の摩擦接線符号問題は再活性化しない設計とする。
+
+---
+
 ## 8. 既存実装との trace（status-353 時点）
 
 | 数式 | 実装位置 | 備考 |
