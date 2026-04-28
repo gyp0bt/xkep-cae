@@ -12,6 +12,7 @@ import scipy.sparse as sp
 from xkep_cae.core.strategies import TimeIntegrationStrategy
 from xkep_cae.core.testing import binds_to
 from xkep_cae.time_integration import (
+    ExplicitCentralDifferenceProcess,
     GeneralizedAlphaProcess,
     QuasiStaticProcess,
     TimeIntegrationInput,
@@ -33,6 +34,10 @@ class TestTimeIntegrationProtocolConformance:
             (QuasiStaticProcess, {}),
             (
                 GeneralizedAlphaProcess,
+                {"mass_matrix": sp.eye(6, format="csr")},
+            ),
+            (
+                ExplicitCentralDifferenceProcess,
                 {"mass_matrix": sp.eye(6, format="csr")},
             ),
         ],
@@ -274,3 +279,241 @@ class TestCreateTimeIntegrationStrategy:
         )
         assert isinstance(s, GeneralizedAlphaProcess)
         assert s.C is not None
+
+    def test_explicit_mode_returns_explicit_process(self):
+        M = sp.eye(4, format="csr")
+        s = _create_time_integration_strategy(
+            mass_matrix=M,
+            dt_physical=0.01,
+            solver_mode="explicit",
+        )
+        assert isinstance(s, ExplicitCentralDifferenceProcess)
+
+    def test_explicit_mode_with_initial_state(self):
+        M = sp.eye(4, format="csr")
+        v0 = np.ones(4) * 0.3
+        s = _create_time_integration_strategy(
+            mass_matrix=M,
+            dt_physical=0.01,
+            solver_mode="explicit",
+            velocity=v0,
+        )
+        assert isinstance(s, ExplicitCentralDifferenceProcess)
+        np.testing.assert_array_equal(s.vel, v0)
+
+    def test_implicit_mode_default(self):
+        M = sp.eye(4, format="csr")
+        s = _create_time_integration_strategy(mass_matrix=M, dt_physical=0.01)
+        assert isinstance(s, GeneralizedAlphaProcess)
+
+
+# ── ExplicitCentralDifference ─────────────────────────────
+
+
+@binds_to(ExplicitCentralDifferenceProcess)
+class TestExplicitCentralDifferenceProcess:
+    """ExplicitCentralDifferenceProcess の単体テスト（status-377 Phase 1）."""
+
+    @pytest.fixture()
+    def proc6(self):
+        """6DOF の中央差分インスタンス（質量 2.0 / DOF）."""
+        M = sp.eye(6, format="csr") * 2.0
+        return ExplicitCentralDifferenceProcess(mass_matrix=M)
+
+    def test_is_dynamic(self, proc6):
+        assert proc6.is_dynamic is True
+
+    def test_lumped_mass_row_sum(self):
+        M = sp.csr_matrix(np.array([[2.0, 1.0], [1.0, 2.0]]))
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_lumping="row_sum")
+        np.testing.assert_array_almost_equal(proc.M_lump, np.array([3.0, 3.0]))
+
+    def test_lumped_mass_diagonal(self):
+        M = sp.csr_matrix(np.array([[2.0, 1.0], [1.0, 4.0]]))
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_lumping="diagonal")
+        np.testing.assert_array_almost_equal(proc.M_lump, np.array([2.0, 4.0]))
+
+    def test_lumped_mass_invalid_raises(self):
+        M = sp.eye(3, format="csr")
+        with pytest.raises(ValueError, match="unknown mass_lumping"):
+            ExplicitCentralDifferenceProcess(mass_matrix=M, mass_lumping="bogus")
+
+    def test_invert_diagonal_zero_safe(self):
+        M = sp.csr_matrix(np.diag([2.0, 0.0, 4.0]))
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_lumping="diagonal")
+        np.testing.assert_array_almost_equal(proc.M_lump_inv, np.array([0.5, 0.0, 0.25]))
+
+    def test_critical_dt_basic(self, proc6):
+        # ω_max = sqrt(λ_max), dt_c = 2/ω_max
+        dt_c = proc6.critical_dt(k_max_eigenvalue=4.0)  # ω_max = 2 → dt_c = 1
+        assert dt_c == pytest.approx(1.0)
+
+    def test_critical_dt_zero_returns_inf(self, proc6):
+        assert proc6.critical_dt(k_max_eigenvalue=0.0) == float("inf")
+
+    def test_step_zero_dt_returns_copy(self, proc6):
+        u = np.ones(6) * 0.5
+        u_new = proc6.step(u, np.zeros(6), np.zeros(6), dt=0.0)
+        np.testing.assert_array_equal(u_new, u)
+        assert u_new is not u
+
+    def test_step_unit_force_advances_velocity(self, proc6):
+        # M_lump = 2.0, F_ext = 1.0 → a = 0.5, v_new = 0 + dt·0.5
+        u = np.zeros(6)
+        f_ext = np.ones(6)
+        proc6.step(u, f_ext, np.zeros(6), dt=0.01)
+        np.testing.assert_array_almost_equal(proc6.acc, np.ones(6) * 0.5)
+        np.testing.assert_array_almost_equal(proc6.vel, np.ones(6) * 0.005)
+
+    def test_step_fixed_dofs_zeroed(self, proc6):
+        u = np.zeros(6)
+        f_ext = np.ones(6)
+        fixed = np.array([0, 3])
+        proc6.step(u, f_ext, np.zeros(6), dt=0.01, fixed_dofs=fixed)
+        assert proc6.acc[0] == 0.0
+        assert proc6.acc[3] == 0.0
+        assert proc6.vel[0] == 0.0
+        assert proc6.vel[3] == 0.0
+        # 自由 DOF は更新される
+        assert proc6.acc[1] == pytest.approx(0.5)
+
+    def test_sdof_free_vibration_period(self):
+        """SDoF 自由振動: 1 周期後の戻り誤差検証.
+
+        Symplectic Euler (semi-implicit) の位相誤差は O(dt·ω) per step。
+        dt = T/100（100 step/period）で 1 周期戻り誤差 < 5%。
+        """
+        m = 1.0
+        k = 100.0  # ω = 10, T ≈ 0.6283
+        omega = float(np.sqrt(k / m))
+        period = 2.0 * np.pi / omega
+        dt = period / 100.0  # 100 step / period（CFL 比 dt/dt_c ≈ 0.16）
+
+        M = sp.csr_matrix([[m]])
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc.set_initial_state(velocity=np.array([0.0]), acceleration=np.array([0.0]))
+
+        u = np.array([1.0])
+        n_steps = int(round(period / dt))
+        for _ in range(n_steps):
+            f_int = k * u
+            u = proc.step(u, np.zeros(1), f_int, dt=dt)
+
+        assert abs(u[0] - 1.0) < 0.05
+
+    def test_sdof_energy_bounded(self):
+        """SDoF 自由振動: symplectic 性で E がドリフトせず有界."""
+        m = 1.0
+        k = 100.0
+        omega = float(np.sqrt(k / m))
+        period = 2.0 * np.pi / omega
+        dt = period / 100.0
+
+        M = sp.csr_matrix([[m]])
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc.set_initial_state(velocity=np.array([0.0]))
+
+        u = np.array([1.0])
+        E0 = 0.5 * k * u[0] ** 2  # 初期ポテンシャル
+        E_max = E0
+        for _ in range(int(round(5.0 * period / dt))):  # 5 周期
+            f_int = k * u
+            u = proc.step(u, np.zeros(1), f_int, dt=dt)
+            E = 0.5 * k * u[0] ** 2 + 0.5 * m * proc.vel[0] ** 2
+            E_max = max(E_max, E)
+
+        # symplectic Euler は long-term で energy が有界（10% 以内）
+        assert E_max < 1.10 * E0
+
+    def test_sdof_critical_dt_courant(self):
+        """Courant 条件越えで発散することを確認."""
+        m = 1.0
+        k = 100.0
+        M = sp.csr_matrix([[m]])
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        # Courant 条件: dt_c = 2/ω = 2/10 = 0.2
+        dt_c = proc.critical_dt(k_max_eigenvalue=k)
+        assert dt_c == pytest.approx(0.2)
+
+        dt_unstable = 1.5 * dt_c  # 明確に超過
+        u = np.array([1.0])
+        proc.set_initial_state(velocity=np.array([0.0]))
+        for _ in range(20):
+            f_int = k * u
+            u = proc.step(u, np.zeros(1), f_int, dt=dt_unstable)
+
+        # 不安定で振幅が爆発（初期 1.0 から発散）
+        assert abs(u[0]) > 100.0
+
+    def test_damping_term_in_step(self):
+        """C·v が step() 内で残差から減算される."""
+        M = sp.csr_matrix([[1.0]])
+        C = sp.csr_matrix([[10.0]])
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, damping_matrix=C)
+        proc.set_initial_state(velocity=np.array([1.0]))
+
+        # F_ext = 0, F_int = 0, C·v = 10 → a = -10
+        proc.step(np.zeros(1), np.zeros(1), np.zeros(1), dt=0.01)
+        assert proc.acc[0] == pytest.approx(-10.0)
+
+    def test_set_initial_state(self, proc6):
+        v0 = np.ones(6) * 0.5
+        a0 = np.ones(6) * -0.1
+        proc6.set_initial_state(velocity=v0, acceleration=a0)
+        np.testing.assert_array_equal(proc6.vel, v0)
+        np.testing.assert_array_equal(proc6.acc, a0)
+
+    def test_checkpoint_restore(self, proc6):
+        proc6.set_initial_state(velocity=np.ones(6) * 3.0)
+        proc6.checkpoint()
+        proc6.set_initial_state(velocity=np.zeros(6))
+        proc6.restore_checkpoint()
+        np.testing.assert_array_equal(proc6.vel, np.ones(6) * 3.0)
+
+    def test_effective_stiffness_diagonal_mass(self, proc6):
+        K = sp.eye(6, format="csr")  # 捨てられる
+        K_eff = proc6.effective_stiffness(K, dt=0.01)
+        # M_lump=2.0, dt²=1e-4 → diag = 2.0 / 1e-4 = 2e4
+        diag = K_eff.diagonal()
+        np.testing.assert_array_almost_equal(diag, np.ones(6) * 2.0e4)
+
+    def test_effective_stiffness_small_dt_passthrough(self, proc6):
+        K = sp.eye(6, format="csr")
+        K_eff = proc6.effective_stiffness(K, dt=0.0)
+        np.testing.assert_array_equal(K_eff.toarray(), K.toarray())
+
+    def test_effective_residual_no_damping(self, proc6):
+        R = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+        R_eff = proc6.effective_residual(R, dt=0.01)
+        np.testing.assert_array_equal(R_eff, R)
+
+    def test_effective_residual_with_damping(self):
+        M = sp.eye(2, format="csr")
+        C = sp.eye(2, format="csr") * 0.5
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, damping_matrix=C)
+        proc.set_initial_state(velocity=np.array([2.0, -1.0]))
+        R = np.array([1.0, 1.0])
+        R_eff = proc.effective_residual(R, dt=0.01)
+        # R_eff = R − C·v = (1, 1) − (1.0, −0.5) = (0, 1.5)
+        np.testing.assert_array_almost_equal(R_eff, np.array([0.0, 1.5]))
+
+    def test_dense_mass_matrix_converted(self):
+        M_dense = np.eye(3) * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M_dense)
+        assert sp.issparse(proc.M)
+        np.testing.assert_array_almost_equal(proc.M_lump, np.ones(3) * 2.0)
+
+    def test_dense_damping_matrix_converted(self):
+        M = sp.eye(3, format="csr")
+        C_dense = np.eye(3) * 0.1
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, damping_matrix=C_dense)
+        assert sp.issparse(proc.C)
+
+    def test_process_returns_output(self, proc6):
+        inp = TimeIntegrationInput(
+            u=np.ones(6),
+            du=np.zeros(6),
+            dt=0.01,
+        )
+        out = proc6.process(inp)
+        assert isinstance(out, TimeIntegrationOutput)
