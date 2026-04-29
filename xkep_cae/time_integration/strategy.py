@@ -2,9 +2,10 @@
 
 TimeIntegrationStrategy Protocol に従い、時間積分方法を実装する Process 群。
 
-2クラス構成:
+3クラス構成:
 - QuasiStaticProcess: 準静的（荷重制御）— 時間積分なし
 - GeneralizedAlphaProcess: Generalized-α 動的解析（Chung & Hulbert 1993）
+- ExplicitCentralDifferenceProcess: 陽的中央差分（status-377 Phase 1）
 """
 
 from __future__ import annotations
@@ -232,6 +233,230 @@ class GeneralizedAlphaProcess(
         return TimeIntegrationOutput(u=u_pred)
 
 
+class ExplicitCentralDifferenceProcess(
+    SolverProcess[TimeIntegrationInput, TimeIntegrationOutput],
+):
+    """陽的中央差分法（status-377 Phase 1）.
+
+    集中質量 M_lump を用いた陽解法時間積分:
+
+        a_n     = M_lump^{-1} · (F_ext_n − F_int(u_n) − C·v_{n−1/2})
+        v_{n+1/2} = v_{n−1/2} + dt · a_n
+        u_{n+1} = u_n + dt · v_{n+1/2}
+
+    NR 反復を要さず、各時間ステップで F_int / F_ext の 1 回評価で進む。
+    Courant 安定条件 dt ≤ dt_c = 2/ω_max（接線剛性 K の最大固有振動数）が必要。
+
+    19 本以上の K_c x/z カップリング不整合（status-344）に対し、陰解法 NR の
+    active 集合振動を時間積分自体で抑制することを意図する。
+
+    **Phase 1 (status-377) 制約**:
+    - Process 単体実装 + 単体テスト + 設計仕様のみ
+    - solver path への配線は Phase 2（次 status）で実施
+    - default `solver_mode="implicit"` で既存挙動不変
+
+    集中質量近似:
+        M_lump[i,i] = Σ_j M_consistent[i,j]（行和ロンピング）
+
+    Protocol 適合のため `predict / correct / effective_stiffness / effective_residual`
+    は提供するが、陽解法は NR 反復を経ず `step()` で 1 step 完結する。
+    """
+
+    meta = ProcessMeta(
+        name="ExplicitCentralDifference",
+        module="solve",
+        version="1.0.0",
+        document_path="docs/time_integration_explicit.md",
+    )
+
+    def __init__(
+        self,
+        mass_matrix: sp.csr_matrix | np.ndarray,
+        *,
+        damping_matrix: sp.csr_matrix | np.ndarray | None = None,
+        mass_lumping: str = "row_sum",
+    ) -> None:
+        """陽解法時間積分 Process を初期化.
+
+        Args:
+            mass_matrix: 一貫質量 M または既に集中質量化された対角行列
+            damping_matrix: 減衰行列 C（None で減衰なし）
+            mass_lumping: "row_sum"（行和）/ "diagonal"（対角抽出）/ "none"
+                既に集中質量化済みなら "none" を指定する
+        """
+        M_consistent = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
+        self.M = M_consistent
+        self.M_lump = self._lump_mass(M_consistent, mass_lumping)
+        self.M_lump_inv = self._invert_diagonal(self.M_lump)
+
+        self.C = (
+            sp.csr_matrix(damping_matrix)
+            if damping_matrix is not None and not sp.issparse(damping_matrix)
+            else damping_matrix
+        )
+
+        ndof = self.M.shape[0]
+        self.vel = np.zeros(ndof)
+        self.acc = np.zeros(ndof)
+        self._vel_old = np.zeros(ndof)
+        self._acc_old = np.zeros(ndof)
+        self._u_pred = np.zeros(ndof)
+        self._vel_ckpt: np.ndarray | None = None
+        self._acc_ckpt: np.ndarray | None = None
+
+    @staticmethod
+    def _lump_mass(M: sp.csr_matrix, lumping: str) -> np.ndarray:
+        """質量行列を集中質量に変換し対角ベクトルを返す."""
+        if lumping == "row_sum":
+            # 行和ロンピング: m_i = Σ_j M[i,j]
+            return np.asarray(M.sum(axis=1)).flatten()
+        if lumping == "diagonal":
+            return np.asarray(M.diagonal()).flatten()
+        if lumping == "none":
+            return np.asarray(M.diagonal()).flatten()
+        raise ValueError(f"unknown mass_lumping: {lumping!r}")
+
+    @staticmethod
+    def _invert_diagonal(m_lump: np.ndarray) -> np.ndarray:
+        """対角質量の逆数を返す（0 要素は 0 のまま、固定 DOF 想定）."""
+        inv = np.zeros_like(m_lump)
+        nonzero = m_lump > 0.0
+        inv[nonzero] = 1.0 / m_lump[nonzero]
+        return inv
+
+    @property
+    def is_dynamic(self) -> bool:
+        return True
+
+    def set_initial_state(
+        self,
+        velocity: np.ndarray | None = None,
+        acceleration: np.ndarray | None = None,
+    ) -> None:
+        """初期速度・加速度を設定."""
+        if velocity is not None:
+            self.vel = velocity.copy()
+        if acceleration is not None:
+            self.acc = acceleration.copy()
+
+    def critical_dt(self, k_max_eigenvalue: float) -> float:
+        """Courant 臨界時間刻み dt_c = 2/ω_max を返す.
+
+        Args:
+            k_max_eigenvalue: 接線剛性 K の最大一般化固有値 λ_max(K, M)
+
+        Returns:
+            dt_c [s]。安全側で 0.9·dt_c 程度を実運用 dt として推奨。
+        """
+        if k_max_eigenvalue <= 0.0:
+            return float("inf")
+        omega_max = float(np.sqrt(k_max_eigenvalue))
+        return 2.0 / omega_max
+
+    def step(
+        self,
+        u: np.ndarray,
+        f_ext: np.ndarray,
+        f_int: np.ndarray,
+        dt: float,
+        *,
+        fixed_dofs: np.ndarray | None = None,
+    ) -> np.ndarray:
+        """陽的中央差分 1 ステップを実行し u_{n+1} を返す.
+
+        集中質量 M_lump と直接 a_n = M_lump^{-1}·(F_ext − F_int − C·v) を計算し、
+        v_{n+1/2}・u_{n+1} を更新する。NR 反復は要さない。
+
+        Args:
+            u: 現時刻変位 u_n（in-place 更新しない、戻り値が u_{n+1}）
+            f_ext: 外力ベクトル F_ext_n
+            f_int: 内力ベクトル F_int(u_n) = K_struct·u_n + f_contact 等
+            dt: 時間刻み
+            fixed_dofs: 拘束 DOF（acc / vel をゼロに固定する）
+
+        Returns:
+            u_{n+1}（新しい配列）
+
+        Note:
+            Courant 条件 dt ≤ dt_c を満たさない場合、解は数値的に発散する。
+            呼び出し側で `critical_dt()` から推定した dt_c に対し dt = 0.9·dt_c
+            程度を与えること。
+        """
+        if dt <= 0.0:
+            return u.copy()
+
+        residual = f_ext - f_int
+        if self.C is not None:
+            residual = residual - self.C @ self.vel
+
+        a_n = self.M_lump_inv * residual
+        if fixed_dofs is not None and len(fixed_dofs) > 0:
+            a_n[fixed_dofs] = 0.0
+
+        self._acc_old = self.acc.copy()
+        self._vel_old = self.vel.copy()
+        self.acc = a_n
+        self.vel = self.vel + dt * a_n
+        if fixed_dofs is not None and len(fixed_dofs) > 0:
+            self.vel[fixed_dofs] = 0.0
+
+        return u + dt * self.vel
+
+    def predict(self, u: np.ndarray, dt: float) -> np.ndarray:
+        """陽解法用予測子: u_pred = u + dt·v_n + 0.5·dt²·a_n（Verlet 形）.
+
+        NR 反復を経由しない陽解法では `step()` の方が直接的だが、Protocol 適合と
+        将来の対称化（陰陽混合）のため Verlet 予測子を提供する。
+        """
+        self._acc_old = self.acc.copy()
+        self._vel_old = self.vel.copy()
+        self._u_pred = u + dt * self.vel + 0.5 * dt**2 * self.acc
+        return self._u_pred.copy()
+
+    def correct(self, u: np.ndarray, du: np.ndarray, dt: float) -> None:
+        """陽解法補正子: 中央差分から v_{n+1/2} を逆算.
+
+        u_{n+1} = u_n + dt·v_{n+1/2} より v_{n+1/2} = (u_{n+1} − u_n) / dt。
+        """
+        if dt < 1e-30:
+            return
+        self.vel = (u - (self._u_pred - 0.5 * dt**2 * self._acc_old - dt * self._vel_old)) / dt
+
+    def effective_stiffness(self, K: sp.csr_matrix, dt: float) -> sp.csr_matrix:
+        """有効剛性: 陽解法では K_eff = M_lump/dt² の対角行列のみ.
+
+        K の項を捨て、集中質量で割ることで NR 1 反復が陽的中央差分と等価になる。
+        ただし default 運用では NR を経由せず `step()` で直接前進する。
+        """
+        if dt < 1e-30:
+            return K
+        ndof = self.M.shape[0]
+        return sp.diags(self.M_lump / (dt * dt), format="csr", shape=(ndof, ndof))
+
+    def effective_residual(self, R: np.ndarray, dt: float) -> np.ndarray:
+        """有効残差: 陽解法では R_eff = R（外力 − 内力）+ 慣性項."""
+        R_eff = R.copy()
+        if self.C is not None:
+            R_eff -= self.C @ self.vel
+        return R_eff
+
+    def checkpoint(self) -> None:
+        """速度・加速度のチェックポイントを保存."""
+        self._vel_ckpt = self.vel.copy()
+        self._acc_ckpt = self.acc.copy()
+
+    def restore_checkpoint(self) -> None:
+        """速度・加速度をチェックポイントから復元."""
+        if self._vel_ckpt is not None:
+            self.vel = self._vel_ckpt.copy()
+        if self._acc_ckpt is not None:
+            self.acc = self._acc_ckpt.copy()
+
+    def process(self, input_data: TimeIntegrationInput) -> TimeIntegrationOutput:
+        u_pred = self.predict(input_data.u, input_data.dt)
+        return TimeIntegrationOutput(u=u_pred)
+
+
 # ── ファクトリ ─────────────────────────────────────────────
 
 
@@ -243,7 +468,9 @@ def _create_time_integration_strategy(
     rho_inf: float = 0.9,
     velocity: np.ndarray | None = None,
     acceleration: np.ndarray | None = None,
-) -> QuasiStaticProcess | GeneralizedAlphaProcess:
+    solver_mode: str = "implicit",
+    mass_lumping: str = "row_sum",
+) -> QuasiStaticProcess | GeneralizedAlphaProcess | ExplicitCentralDifferenceProcess:
     """時間積分 Strategy ファクトリ.
 
     Args:
@@ -253,13 +480,24 @@ def _create_time_integration_strategy(
         rho_inf: Generalized-α スペクトル半径（0.0-1.0）
         velocity: 初期速度
         acceleration: 初期加速度
+        solver_mode: "implicit"（default、Generalized-α）/ "explicit"（中央差分）
+        mass_lumping: 陽解法時の集中質量化方式（"row_sum" / "diagonal" / "none"）
 
     Returns:
-        QuasiStaticProcess または GeneralizedAlphaProcess
+        QuasiStaticProcess / GeneralizedAlphaProcess / ExplicitCentralDifferenceProcess
     """
     is_dynamic = mass_matrix is not None and dt_physical > 0.0
     if not is_dynamic:
         return QuasiStaticProcess()
+
+    if solver_mode == "explicit":
+        strategy_explicit = ExplicitCentralDifferenceProcess(
+            mass_matrix=mass_matrix,
+            damping_matrix=damping_matrix,
+            mass_lumping=mass_lumping,
+        )
+        strategy_explicit.set_initial_state(velocity=velocity, acceleration=acceleration)
+        return strategy_explicit
 
     strategy = GeneralizedAlphaProcess(
         mass_matrix=mass_matrix,

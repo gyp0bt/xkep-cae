@@ -79,6 +79,29 @@ class TestStrandBendingOscillationProcessAPI:
         cfg = StrandBendingOscillationConfig(free_end_mode=True)
         assert cfg.free_end_mode is True
 
+    def test_solver_mode_default_implicit(self) -> None:
+        """solver_mode デフォルトは "implicit"（status-377 Phase 1）."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.solver_mode == "implicit"
+
+    def test_solver_mode_explicit_constructible(self) -> None:
+        """solver_mode="explicit" は config 側で受理（実行は Phase 2 待機）."""
+        cfg = StrandBendingOscillationConfig(solver_mode="explicit")
+        assert cfg.solver_mode == "explicit"
+
+    def test_solver_mode_explicit_raises_not_implemented(self) -> None:
+        """status-377 Phase 1: solver_mode="explicit" 実行時は NotImplementedError."""
+        from xkep_cae.numerical_tests.strand_bending_oscillation import (
+            StrandBendingOscillationProcess,
+        )
+
+        cfg = StrandBendingOscillationConfig(solver_mode="explicit")
+        proc = StrandBendingOscillationProcess()
+        import pytest
+
+        with pytest.raises(NotImplementedError, match="status-377 Phase 1"):
+            proc.process(cfg)
+
 
 class TestCollectEndNodes:
     """端部節点収集のテスト."""

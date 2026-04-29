@@ -4,6 +4,7 @@
 """
 
 from xkep_cae.time_integration.strategy import (
+    ExplicitCentralDifferenceProcess,
     GeneralizedAlphaProcess,
     QuasiStaticProcess,
     TimeIntegrationInput,
@@ -13,6 +14,7 @@ from xkep_cae.time_integration.strategy import (
 __all__ = [
     "QuasiStaticProcess",
     "GeneralizedAlphaProcess",
+    "ExplicitCentralDifferenceProcess",
     "TimeIntegrationInput",
     "TimeIntegrationOutput",
 ]

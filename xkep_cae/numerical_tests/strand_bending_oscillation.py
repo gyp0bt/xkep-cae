@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import scipy.sparse as sp
@@ -314,6 +315,19 @@ class StrandBendingOscillationConfig:
     # 数理台帳: docs/math/03_huber_contact_penalty.md §5。
     al_outer_enabled: bool = False
     al_n_uzawa_max: int = 2
+    # 時間積分 solver_mode（status-377 Phase 1: ExplicitCentralDifferenceProcess 単体実装）.
+    # "implicit"（default）: 既存 Generalized-α + NR ループ（GeneralizedAlphaProcess）.
+    # "explicit": 中央差分 + 集中質量（ExplicitCentralDifferenceProcess）.
+    #   候補 (g) 全候補（NR alg 側 escape hatch）が gate frac=0.6 未達だったことを受けて、
+    #   19 本以上の K_c x/z カップリング不整合（status-344）を時間積分自体で安定化する目的で
+    #   status-377 Phase 1 で導入。
+    #
+    # **Phase 1 (status-377) 制約**: Process 単体実装 + 単体テスト + 設計仕様のみ。
+    # solver path への配線は Phase 2（次 status）で実施。`solver_mode="explicit"` 指定時は
+    # NotImplementedError が発生し、Phase 2 待機を明示する。
+    #
+    # 設計仕様: xkep_cae/time_integration/docs/time_integration_explicit.md
+    solver_mode: Literal["implicit", "explicit"] = "implicit"
 
 
 @dataclass(frozen=True)
@@ -620,6 +634,17 @@ class StrandBendingOscillationProcess(
     ) -> StrandBendingOscillationResult:
         """撚線曲げ揺動を実行."""
         cfg = input_data
+
+        # ── status-377 Phase 1: solver_mode="explicit" は Phase 2 待機 ──
+        # ExplicitCentralDifferenceProcess 単体実装は完了しているが、
+        # 専用 solver path の配線は次 status で実施する。
+        if cfg.solver_mode == "explicit":
+            raise NotImplementedError(
+                "solver_mode='explicit' は status-377 Phase 1 で時間積分 Process 単体"
+                "（ExplicitCentralDifferenceProcess）のみ実装済み。"
+                "陽解法 solver path の配線は Phase 2（次 status）で実施する。"
+                "詳細: xkep_cae/time_integration/docs/time_integration_explicit.md"
+            )
 
         # ── ファイバー梁モード分岐（Phase F5） ──
         if cfg.use_fiber_beam:
