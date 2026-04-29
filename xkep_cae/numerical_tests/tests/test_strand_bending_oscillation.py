@@ -85,22 +85,18 @@ class TestStrandBendingOscillationProcessAPI:
         assert cfg.solver_mode == "implicit"
 
     def test_solver_mode_explicit_constructible(self) -> None:
-        """solver_mode="explicit" は config 側で受理（実行は Phase 2 待機）."""
+        """solver_mode="explicit" は config 側で受理（status-378 Phase 2 で実行可能）."""
         cfg = StrandBendingOscillationConfig(solver_mode="explicit")
         assert cfg.solver_mode == "explicit"
 
-    def test_solver_mode_explicit_raises_not_implemented(self) -> None:
-        """status-377 Phase 1: solver_mode="explicit" 実行時は NotImplementedError."""
-        from xkep_cae.numerical_tests.strand_bending_oscillation import (
-            StrandBendingOscillationProcess,
-        )
+    def test_solver_mode_explicit_propagates_to_solver_input(self) -> None:
+        """status-378 Phase 2: solver_mode が ContactFrictionInputData に伝搬する."""
+        from xkep_cae.core.data import ContactFrictionInputData
 
-        cfg = StrandBendingOscillationConfig(solver_mode="explicit")
-        proc = StrandBendingOscillationProcess()
-        import pytest
-
-        with pytest.raises(NotImplementedError, match="status-377 Phase 1"):
-            proc.process(cfg)
+        # ContactFrictionInputData に solver_mode field が存在し、default は implicit
+        sig = ContactFrictionInputData.__dataclass_fields__
+        assert "solver_mode" in sig
+        assert sig["solver_mode"].default == "implicit"
 
 
 class TestCollectEndNodes:

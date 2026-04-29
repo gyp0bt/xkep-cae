@@ -328,6 +328,10 @@ class StrandBendingOscillationConfig:
     #
     # 設計仕様: xkep_cae/time_integration/docs/time_integration_explicit.md
     solver_mode: Literal["implicit", "explicit"] = "implicit"
+    # 陽解法 driver パラメータ（status-378 Phase 2、solver_mode="explicit" のみ有効）.
+    explicit_courant_safety: float = 0.9
+    explicit_courant_check_interval: int = 50
+    explicit_mass_lumping: str = "row_sum"
 
 
 @dataclass(frozen=True)
@@ -635,16 +639,10 @@ class StrandBendingOscillationProcess(
         """撚線曲げ揺動を実行."""
         cfg = input_data
 
-        # ── status-377 Phase 1: solver_mode="explicit" は Phase 2 待機 ──
-        # ExplicitCentralDifferenceProcess 単体実装は完了しているが、
-        # 専用 solver path の配線は次 status で実施する。
-        if cfg.solver_mode == "explicit":
-            raise NotImplementedError(
-                "solver_mode='explicit' は status-377 Phase 1 で時間積分 Process 単体"
-                "（ExplicitCentralDifferenceProcess）のみ実装済み。"
-                "陽解法 solver path の配線は Phase 2（次 status）で実施する。"
-                "詳細: xkep_cae/time_integration/docs/time_integration_explicit.md"
-            )
+        # status-378 Phase 2: solver_mode="explicit" 時は ExplicitDynamicProcess
+        # （陽的中央差分 + ContactForceAssemblyProcess）が ContactFrictionProcess
+        # 内部で起動される。NR 反復を経由しない 1 増分 1 step driver。
+        # 詳細: xkep_cae/time_integration/docs/time_integration_explicit.md §Phase 2
 
         # ── ファイバー梁モード分岐（Phase F5） ──
         if cfg.use_fiber_beam:
@@ -981,6 +979,11 @@ class StrandBendingOscillationProcess(
             # Augmented Lagrangian 外側ループ（status-376）
             al_outer_enabled=cfg.al_outer_enabled,
             al_n_uzawa_max=cfg.al_n_uzawa_max,
+            # 陽的中央差分時間積分（status-378 Phase 2）
+            solver_mode=cfg.solver_mode,
+            explicit_courant_safety=cfg.explicit_courant_safety,
+            explicit_courant_check_interval=cfg.explicit_courant_check_interval,
+            explicit_mass_lumping=cfg.explicit_mass_lumping,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1314,6 +1317,8 @@ class StrandBendingOscillationProcess(
                 # Augmented Lagrangian 外側ループ（status-376）
                 al_outer_enabled=cfg.al_outer_enabled,
                 al_n_uzawa_max=cfg.al_n_uzawa_max,
+                # 陽的中央差分時間積分（status-378 Phase 2）
+                solver_mode=cfg.solver_mode,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1510,6 +1515,8 @@ class StrandBendingOscillationProcess(
                 # Augmented Lagrangian 外側ループ（status-376）
                 al_outer_enabled=cfg.al_outer_enabled,
                 al_n_uzawa_max=cfg.al_n_uzawa_max,
+                # 陽的中央差分時間積分（status-378 Phase 2）
+                solver_mode=cfg.solver_mode,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
