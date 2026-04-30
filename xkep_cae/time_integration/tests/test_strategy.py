@@ -517,3 +517,80 @@ class TestExplicitCentralDifferenceProcess:
         )
         out = proc6.process(inp)
         assert isinstance(out, TimeIntegrationOutput)
+
+
+# ── Mass scaling（status-379 Phase 3 候補 (h1)） ───────────────
+
+
+class TestExplicitCentralDifferenceMassScaling:
+    """質量スケーリング β² · M_lump（Belytschko §6.4.2）の単体テスト.
+
+    `TestExplicitCentralDifferenceProcess` に `@binds_to` が付いているため
+    本クラスは binds なしで Process メソッドを直接検証する。
+    """
+
+    def test_default_beta_one_unchanged(self):
+        """デフォルト β=1.0 で集中質量は raw と一致."""
+        M = sp.eye(4, format="csr") * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        np.testing.assert_array_almost_equal(proc.M_lump, np.ones(4) * 2.0)
+        assert proc.mass_scaling_beta == 1.0
+
+    def test_beta_squared_scales_lumped_mass(self):
+        """β=10 で M_lump → 100·M_lump_raw."""
+        M = sp.eye(3, format="csr") * 1.5
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=10.0)
+        np.testing.assert_array_almost_equal(proc.M_lump, np.ones(3) * 150.0)
+        np.testing.assert_array_almost_equal(proc.M_lump_inv, np.ones(3) / 150.0)
+
+    def test_beta_below_one_raises(self):
+        """β<1 は Δt_c を縮小するだけなので拒否."""
+        M = sp.eye(3, format="csr")
+        with pytest.raises(ValueError, match="mass_scaling_beta must be >= 1.0"):
+            ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=0.5)
+
+    def test_beta_scales_critical_dt(self):
+        """β=4 で集中質量を 16 倍に増やすと、同じ K に対する critical_dt が 4 倍化."""
+        M = sp.eye(2, format="csr")
+        proc_raw = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc_scaled = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=4.0)
+        K_max_raw = 100.0
+        K_max_scaled = K_max_raw / proc_scaled.M_lump[0]
+        assert proc_raw.critical_dt(K_max_raw) == pytest.approx(0.2)
+        assert proc_scaled.critical_dt(K_max_scaled) == pytest.approx(0.8)
+
+    def test_set_mass_scaling_beta_increases(self):
+        """set_mass_scaling_beta() で β を上方更新できる."""
+        M = sp.eye(3, format="csr") * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc.set_mass_scaling_beta(5.0)
+        assert proc.mass_scaling_beta == 5.0
+        np.testing.assert_array_almost_equal(proc.M_lump, np.ones(3) * 50.0)
+
+    def test_set_mass_scaling_beta_monotone(self):
+        """set_mass_scaling_beta() は単調増加のみ（既存 β 以下では何もしない）."""
+        M = sp.eye(3, format="csr") * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=3.0)
+        proc.set_mass_scaling_beta(2.0)
+        assert proc.mass_scaling_beta == 3.0
+        np.testing.assert_array_almost_equal(proc.M_lump, np.ones(3) * 18.0)
+
+    def test_set_mass_scaling_beta_invalid_raises(self):
+        """β<1 で set_mass_scaling_beta は ValueError."""
+        M = sp.eye(2, format="csr")
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        with pytest.raises(ValueError, match="mass_scaling_beta must be >= 1.0"):
+            proc.set_mass_scaling_beta(0.5)
+
+    def test_factory_passes_mass_scaling_beta(self):
+        """_create_time_integration_strategy で β が伝搬する."""
+        M = sp.eye(4, format="csr")
+        s = _create_time_integration_strategy(
+            mass_matrix=M,
+            dt_physical=0.01,
+            solver_mode="explicit",
+            mass_scaling_beta=7.0,
+        )
+        assert isinstance(s, ExplicitCentralDifferenceProcess)
+        assert s.mass_scaling_beta == 7.0
+        np.testing.assert_array_almost_equal(s.M_lump, np.ones(4) * 49.0)

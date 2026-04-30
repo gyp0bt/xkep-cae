@@ -126,6 +126,157 @@ class TestExplicitDynamicProcessRequiresExplicitStrategy:
             )
 
 
+class TestMassScalingAutoTune:
+    """status-379 Phase 3 候補 (h1) auto-tune の単体検証.
+
+    `mass_scaling_auto=True` で Courant 違反検知時に β を逆算更新する。
+    """
+
+    def test_auto_tune_disabled_returns_courant_failure(self):
+        """auto=False（既定）で Courant 違反は failure_reason='courant'."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        # K_max=100, M=eps→ ω=large → dt_c=tiny → 必ず違反
+        M = sp.eye(ndof, format="csr") * 1e-6
+        contact = _make_contact_setup(mesh)
+        callbacks = _make_simple_callbacks_high_K(ndof)
+
+        # 直接 ExplicitDynamic を呼ぶ
+        strats = default_strategies(
+            ndof=ndof,
+            mass_matrix=M,
+            dt_physical=1.0,
+            solver_mode="explicit",
+        )
+        cfg = ExplicitDynamicInput(
+            courant_check_interval=1,  # 毎 increment 検査
+            mass_scaling_auto=False,
+        )
+        proc = ExplicitDynamicProcess()
+        u = np.zeros(ndof)
+        result = proc.process(
+            ExplicitDynamicStepInput(
+                config=cfg,
+                u=u,
+                f_ext=np.zeros(ndof),
+                fixed_dofs=np.arange(6),
+                assemble_tangent=callbacks.assemble_tangent,
+                assemble_internal_force=callbacks.assemble_internal_force,
+                manager=contact.manager,
+                node_coords_ref=mesh.node_coords.copy(),
+                strategies=strats,
+                k_pen=contact.k_pen,
+                mu=0.15,
+                u_ref=u.copy(),
+                load_frac=0.05,
+                load_frac_prev=0.0,
+                increment_display=1,
+                dt_sub=0.5,
+                use_coating=False,
+                connectivity=mesh.connectivity,
+            )
+        )
+        assert result.diverged is True
+        assert result.failure_reason == "courant"
+
+    def test_auto_tune_scales_beta_within_cap(self):
+        """auto=True + 違反検知で β が上方更新され、failure ではなく converged を返す."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        M = sp.eye(ndof, format="csr") * 1e-6
+        contact = _make_contact_setup(mesh)
+        callbacks = _make_simple_callbacks_high_K(ndof)
+
+        strats = default_strategies(
+            ndof=ndof,
+            mass_matrix=M,
+            dt_physical=1.0,
+            solver_mode="explicit",
+        )
+        time_strategy = strats.time_integration
+        beta_initial = time_strategy.mass_scaling_beta
+
+        cfg = ExplicitDynamicInput(
+            courant_check_interval=1,
+            mass_scaling_auto=True,
+            mass_scaling_max_beta=1.0e6,  # 十分大きく取る
+        )
+        proc = ExplicitDynamicProcess()
+        u = np.zeros(ndof)
+        result = proc.process(
+            ExplicitDynamicStepInput(
+                config=cfg,
+                u=u,
+                f_ext=np.zeros(ndof),
+                fixed_dofs=np.arange(6),
+                assemble_tangent=callbacks.assemble_tangent,
+                assemble_internal_force=callbacks.assemble_internal_force,
+                manager=contact.manager,
+                node_coords_ref=mesh.node_coords.copy(),
+                strategies=strats,
+                k_pen=contact.k_pen,
+                mu=0.15,
+                u_ref=u.copy(),
+                load_frac=0.05,
+                load_frac_prev=0.0,
+                increment_display=1,
+                dt_sub=0.5,
+                use_coating=False,
+                connectivity=mesh.connectivity,
+            )
+        )
+        # 違反だったが auto-tune で β 上方更新 + ステップ前進
+        assert time_strategy.mass_scaling_beta > beta_initial
+        assert result.diverged is False
+        assert result.converged is True
+
+    def test_auto_tune_cap_reached_returns_courant_cap(self):
+        """auto=True + max_beta cap に到達した場合は failure_reason='courant_cap'."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        M = sp.eye(ndof, format="csr") * 1e-6
+        contact = _make_contact_setup(mesh)
+        callbacks = _make_simple_callbacks_high_K(ndof)
+
+        strats = default_strategies(
+            ndof=ndof,
+            mass_matrix=M,
+            dt_physical=1.0,
+            solver_mode="explicit",
+        )
+        cfg = ExplicitDynamicInput(
+            courant_check_interval=1,
+            mass_scaling_auto=True,
+            mass_scaling_max_beta=1.5,  # 著しく小さい cap
+        )
+        proc = ExplicitDynamicProcess()
+        u = np.zeros(ndof)
+        result = proc.process(
+            ExplicitDynamicStepInput(
+                config=cfg,
+                u=u,
+                f_ext=np.zeros(ndof),
+                fixed_dofs=np.arange(6),
+                assemble_tangent=callbacks.assemble_tangent,
+                assemble_internal_force=callbacks.assemble_internal_force,
+                manager=contact.manager,
+                node_coords_ref=mesh.node_coords.copy(),
+                strategies=strats,
+                k_pen=contact.k_pen,
+                mu=0.15,
+                u_ref=u.copy(),
+                load_frac=0.05,
+                load_frac_prev=0.0,
+                increment_display=1,
+                dt_sub=0.5,
+                use_coating=False,
+                connectivity=mesh.connectivity,
+            )
+        )
+        assert result.diverged is True
+        assert result.failure_reason == "courant_cap"
+
+
 class TestExplicitContactFrictionIntegration:
     """ContactFrictionProcess + solver_mode="explicit" の統合 smoke test.
 
@@ -216,6 +367,21 @@ def _make_simple_callbacks(ndof: int) -> AssembleCallbacks:
 
     def assemble_internal_force(u: np.ndarray) -> np.ndarray:
         return u * 1.0
+
+    return AssembleCallbacks(
+        assemble_tangent=assemble_tangent,
+        assemble_internal_force=assemble_internal_force,
+    )
+
+
+def _make_simple_callbacks_high_K(ndof: int) -> AssembleCallbacks:
+    """高剛性 K=diag(100) のアセンブリコールバック（Courant 違反誘発用）."""
+
+    def assemble_tangent(u: np.ndarray) -> sp.csr_matrix:
+        return sp.eye(ndof, format="csr") * 100.0
+
+    def assemble_internal_force(u: np.ndarray) -> np.ndarray:
+        return u * 100.0
 
     return AssembleCallbacks(
         assemble_tangent=assemble_tangent,

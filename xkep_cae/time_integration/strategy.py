@@ -258,6 +258,12 @@ class ExplicitCentralDifferenceProcess(
     集中質量近似:
         M_lump[i,i] = Σ_j M_consistent[i,j]（行和ロンピング）
 
+    質量スケーリング（status-379 Phase 3, 候補 (h1)）:
+        M_lump_scaled = β² · M_lump（β >= 1.0）で集中質量を倍化することで
+        Δt_c → β·Δt_c に拡大。準静的近似 ε = E_kin/E_strain ≪ 1 を保つ範囲で
+        β > 1 を指定。Belytschko §6.4.2。`set_mass_scaling_beta()` で
+        実行時に β を上方更新（auto-tune 用）。
+
     Protocol 適合のため `predict / correct / effective_stiffness / effective_residual`
     は提供するが、陽解法は NR 反復を経ず `step()` で 1 step 完結する。
     """
@@ -275,6 +281,7 @@ class ExplicitCentralDifferenceProcess(
         *,
         damping_matrix: sp.csr_matrix | np.ndarray | None = None,
         mass_lumping: str = "row_sum",
+        mass_scaling_beta: float = 1.0,
     ) -> None:
         """陽解法時間積分 Process を初期化.
 
@@ -283,10 +290,22 @@ class ExplicitCentralDifferenceProcess(
             damping_matrix: 減衰行列 C（None で減衰なし）
             mass_lumping: "row_sum"（行和）/ "diagonal"（対角抽出）/ "none"
                 既に集中質量化済みなら "none" を指定する
+            mass_scaling_beta: 質量スケーリング係数 β（status-379 候補 (h1)）。
+                M_lump → β² · M_lump で集中質量を倍化することで Δt_c → β·Δt_c。
+                準静的近似 ε = E_kin / E_strain ≪ 1 を保つ範囲で β > 1.0 を指定。
+                既定 1.0（スケーリング無効）。Belytschko §6.4.2。
         """
+        if mass_scaling_beta < 1.0:
+            raise ValueError(
+                f"mass_scaling_beta must be >= 1.0 (got {mass_scaling_beta}). "
+                "β < 1 shrinks Δt_c and provides no benefit."
+            )
         M_consistent = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
         self.M = M_consistent
-        self.M_lump = self._lump_mass(M_consistent, mass_lumping)
+        self._mass_lumping = mass_lumping
+        self._M_lump_raw = self._lump_mass(M_consistent, mass_lumping)
+        self.mass_scaling_beta = float(mass_scaling_beta)
+        self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
 
         self.C = (
@@ -303,6 +322,23 @@ class ExplicitCentralDifferenceProcess(
         self._u_pred = np.zeros(ndof)
         self._vel_ckpt: np.ndarray | None = None
         self._acc_ckpt: np.ndarray | None = None
+
+    def set_mass_scaling_beta(self, beta: float) -> None:
+        """質量スケーリング係数 β を実行時に更新する（status-379 auto-tune 用）.
+
+        ExplicitDynamicProcess の Courant 監視で要求 β を逆算した際に呼ばれる。
+        β² · M_lump_raw で集中質量を再計算し、逆数も更新する。
+
+        Args:
+            beta: 新しい β（>= 1.0）。既存値以下なら何もしない（β は単調増加のみ）。
+        """
+        if beta < 1.0:
+            raise ValueError(f"mass_scaling_beta must be >= 1.0 (got {beta})")
+        if beta <= self.mass_scaling_beta:
+            return
+        self.mass_scaling_beta = float(beta)
+        self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
+        self.M_lump_inv = self._invert_diagonal(self.M_lump)
 
     @staticmethod
     def _lump_mass(M: sp.csr_matrix, lumping: str) -> np.ndarray:
@@ -470,6 +506,7 @@ def _create_time_integration_strategy(
     acceleration: np.ndarray | None = None,
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
+    mass_scaling_beta: float = 1.0,
 ) -> QuasiStaticProcess | GeneralizedAlphaProcess | ExplicitCentralDifferenceProcess:
     """時間積分 Strategy ファクトリ.
 
@@ -482,6 +519,8 @@ def _create_time_integration_strategy(
         acceleration: 初期加速度
         solver_mode: "implicit"（default、Generalized-α）/ "explicit"（中央差分）
         mass_lumping: 陽解法時の集中質量化方式（"row_sum" / "diagonal" / "none"）
+        mass_scaling_beta: 陽解法時の質量スケーリング係数（status-379 候補 (h1)）。
+            既定 1.0（スケーリング無効）。
 
     Returns:
         QuasiStaticProcess / GeneralizedAlphaProcess / ExplicitCentralDifferenceProcess
@@ -495,6 +534,7 @@ def _create_time_integration_strategy(
             mass_matrix=mass_matrix,
             damping_matrix=damping_matrix,
             mass_lumping=mass_lumping,
+            mass_scaling_beta=mass_scaling_beta,
         )
         strategy_explicit.set_initial_state(velocity=velocity, acceleration=acceleration)
         return strategy_explicit

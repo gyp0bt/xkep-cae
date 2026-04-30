@@ -215,6 +215,8 @@ class ContactFrictionProcess(
         # default は "implicit" で既存挙動完全不変。
         _solver_mode = getattr(input_data, "solver_mode", "implicit")
         _mass_lumping = getattr(input_data, "explicit_mass_lumping", "row_sum")
+        # status-379 Phase 3: mass scaling 候補 (h1).
+        _mass_scaling_beta = getattr(input_data, "explicit_mass_scaling_beta", 1.0)
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -235,6 +237,7 @@ class ContactFrictionProcess(
             active_ema_alpha=input_data.active_ema_alpha,
             solver_mode=_solver_mode,
             mass_lumping=_mass_lumping,
+            mass_scaling_beta=_mass_scaling_beta,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -536,6 +539,7 @@ class ContactFrictionProcess(
         nr_process_dyn = NewtonDynamicProcess()
 
         # status-378 Phase 2: 陽解法 driver（solver_mode="explicit" のみ使用）
+        # status-379 Phase 3: mass scaling auto-tune（候補 (h1)）
         _explicit_proc = ExplicitDynamicProcess() if _solver_mode == "explicit" else None
         _explicit_cfg = (
             ExplicitDynamicInput(
@@ -543,6 +547,11 @@ class ContactFrictionProcess(
                 ndof_per_node=6,
                 courant_safety=getattr(input_data, "explicit_courant_safety", 0.9),
                 courant_check_interval=getattr(input_data, "explicit_courant_check_interval", 50),
+                mass_scaling_auto=getattr(input_data, "explicit_mass_scaling_auto", False),
+                mass_scaling_max_beta=getattr(input_data, "explicit_mass_scaling_max_beta", 100.0),
+                kinetic_energy_budget_ratio=getattr(
+                    input_data, "explicit_kinetic_energy_budget_ratio", 0.0
+                ),
             )
             if _solver_mode == "explicit"
             else None
