@@ -130,6 +130,8 @@ def default_strategies(
     penalty_exponent: float = 1.0,
     active_ema_alpha: float = 0.0,
     coating_stiffness: float = 0.0,
+    solver_mode: str = "implicit",
+    mass_lumping: str = "row_sum",
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
 
@@ -170,6 +172,8 @@ def default_strategies(
             rho_inf=rho_inf,
             velocity=velocity,
             acceleration=acceleration,
+            solver_mode=solver_mode,
+            mass_lumping=mass_lumping,
         ),
         contact_force=_create_contact_force_strategy(
             ndof=ndof,
@@ -306,6 +310,15 @@ class ContactFrictionInputData:
     # 接触ペア履歴記録（status-333: 素線間接触力・滑り量の直接観測）
     # track_contact_pairs=True で各収束インクリメントの活性接触ペア状態をスナップショット保存。
     track_contact_pairs: bool = False
+    # 時間積分 solver_mode（status-378 Phase 2）.
+    # "implicit"（default）: Generalized-α + NR ループ（NewtonDynamicProcess）.
+    # "explicit": 陽的中央差分 + 集中質量（ExplicitDynamicProcess + ExplicitCentralDifferenceProcess）.
+    # 設計仕様: xkep_cae/time_integration/docs/time_integration_explicit.md
+    solver_mode: str = "implicit"
+    # 陽解法 driver パラメータ（solver_mode="explicit" のみ有効）.
+    explicit_courant_safety: float = 0.9
+    explicit_courant_check_interval: int = 50
+    explicit_mass_lumping: str = "row_sum"
 
     @property
     def is_dynamic(self) -> bool:

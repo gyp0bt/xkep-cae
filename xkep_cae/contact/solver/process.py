@@ -55,6 +55,11 @@ from xkep_cae.contact.solver._energy_diagnostics import (
     StepEnergyDiagnosticsProcess,
     StepEnergyInput,
 )
+from xkep_cae.contact.solver._explicit_dynamic import (
+    ExplicitDynamicInput,
+    ExplicitDynamicProcess,
+    ExplicitDynamicStepInput,
+)
 from xkep_cae.contact.solver._initial_penetration import (
     InitialPenetrationInput,
     InitialPenetrationProcess,
@@ -106,6 +111,7 @@ class ContactFrictionProcess(
     )
     uses = [
         NewtonDynamicProcess,
+        ExplicitDynamicProcess,
         UnifiedTimeStepProcess,
         InitialPenetrationProcess,
         ContactGraphProcess,
@@ -205,6 +211,10 @@ class ContactFrictionProcess(
             )
             _beam_L = float(np.mean(_lens))
 
+        # status-378 Phase 2: solver_mode で陰解法 / 陽解法を切替.
+        # default は "implicit" で既存挙動完全不変。
+        _solver_mode = getattr(input_data, "solver_mode", "implicit")
+        _mass_lumping = getattr(input_data, "explicit_mass_lumping", "row_sum")
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -223,6 +233,8 @@ class ContactFrictionProcess(
             huber_delta_h=manager.config.huber_delta_h,
             penalty_exponent=input_data.penalty_exponent,
             active_ema_alpha=input_data.active_ema_alpha,
+            solver_mode=_solver_mode,
+            mass_lumping=_mass_lumping,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -523,6 +535,19 @@ class ContactFrictionProcess(
         )
         nr_process_dyn = NewtonDynamicProcess()
 
+        # status-378 Phase 2: 陽解法 driver（solver_mode="explicit" のみ使用）
+        _explicit_proc = ExplicitDynamicProcess() if _solver_mode == "explicit" else None
+        _explicit_cfg = (
+            ExplicitDynamicInput(
+                show_progress=True,
+                ndof_per_node=6,
+                courant_safety=getattr(input_data, "explicit_courant_safety", 0.9),
+                courant_check_interval=getattr(input_data, "explicit_courant_check_interval", 50),
+            )
+            if _solver_mode == "explicit"
+            else None
+        )
+
         # --- 最終診断 ---
         last_diag = None
         _energy_history = EnergyHistory()
@@ -574,9 +599,9 @@ class ContactFrictionProcess(
             _state_set(state, "increment_display", state.increment_display + 1)
             f_ext = f_ext_base + load_frac * f_ext_total
 
-            # 接線予測子
+            # 接線予測子（陽解法は step() が直接前進するため predict() を経由しない）
             dt_sub = query_out.dt_sub
-            if hasattr(_time_strategy, "predict"):
+            if _solver_mode != "explicit" and hasattr(_time_strategy, "predict"):
                 _state_set(state, "u", _time_strategy.predict(state.u, dt_sub))
 
             # 処方変位
@@ -600,7 +625,8 @@ class ContactFrictionProcess(
                 # time integrator の予測子もMPC射影（status-255）:
                 # correct() で acc = c0*(u - u_pred) を計算するため、
                 # u_pred もMPC整合でないと slave DOF の加速度が不正になる。
-                if hasattr(_time_strategy, "_u_pred"):
+                # 陽解法は predict()/correct() を経由しないため射影不要。
+                if _solver_mode != "explicit" and hasattr(_time_strategy, "_u_pred"):
                     _up_red = _time_strategy._u_pred[_mpc.independent_dofs]
                     _up_proj = _mpc.T @ _up_red
                     if hasattr(_up_proj, "toarray"):
@@ -637,34 +663,57 @@ class ContactFrictionProcess(
             )
             manager = _ug_step.manager
 
-            # --- NR 実行（動的のみ） ---
-            step_input = NewtonDynamicStepInput(
-                config=nr_config_dyn,
-                u=state.u,
-                f_ext=f_ext,
-                f_ext_ref_norm=f_ext_ref_norm,
-                fixed_dofs=fixed_dofs,
-                assemble_tangent=_asm_tangent,
-                assemble_internal_force=_asm_internal_force,
-                manager=manager,
-                node_coords_ref=state.node_coords_ref,
-                strategies=strategies,
-                k_pen=k_pen,
-                mu=mu,
-                u_ref=state.u_ref,
-                load_frac=load_frac,
-                load_frac_prev=state.load_frac_prev,
-                increment_display=state.increment_display,
-                dt_sub=dt_sub,
-                use_coating=use_coating,
-                dynamic_ref=dynamic_ref,
-                connectivity=connectivity,
-                mpc_transform=_mpc_current,
-                # status-297: 通常インクリメントの力収束水準を絶対許容値として渡す
-                # atol = global_f_ref × tol_force → 微小dtでも通常スケールの収束水準で判定
-                atol_force=_global_f_ref * nr_config_dyn.tol_force,
-            )
-            step_result = nr_process_dyn.process(step_input)
+            # --- 1 増分 step 実行（NR or 陽解法） ---
+            if _solver_mode == "explicit":
+                explicit_step_input = ExplicitDynamicStepInput(
+                    config=_explicit_cfg,
+                    u=state.u,
+                    f_ext=f_ext,
+                    fixed_dofs=fixed_dofs,
+                    assemble_tangent=_asm_tangent,
+                    assemble_internal_force=_asm_internal_force,
+                    manager=manager,
+                    node_coords_ref=state.node_coords_ref,
+                    strategies=strategies,
+                    k_pen=k_pen,
+                    mu=mu,
+                    u_ref=state.u_ref,
+                    load_frac=load_frac,
+                    load_frac_prev=state.load_frac_prev,
+                    increment_display=state.increment_display,
+                    dt_sub=dt_sub,
+                    use_coating=use_coating,
+                    connectivity=connectivity,
+                )
+                step_result = _explicit_proc.process(explicit_step_input)
+            else:
+                step_input = NewtonDynamicStepInput(
+                    config=nr_config_dyn,
+                    u=state.u,
+                    f_ext=f_ext,
+                    f_ext_ref_norm=f_ext_ref_norm,
+                    fixed_dofs=fixed_dofs,
+                    assemble_tangent=_asm_tangent,
+                    assemble_internal_force=_asm_internal_force,
+                    manager=manager,
+                    node_coords_ref=state.node_coords_ref,
+                    strategies=strategies,
+                    k_pen=k_pen,
+                    mu=mu,
+                    u_ref=state.u_ref,
+                    load_frac=load_frac,
+                    load_frac_prev=state.load_frac_prev,
+                    increment_display=state.increment_display,
+                    dt_sub=dt_sub,
+                    use_coating=use_coating,
+                    dynamic_ref=dynamic_ref,
+                    connectivity=connectivity,
+                    mpc_transform=_mpc_current,
+                    # status-297: 通常インクリメントの力収束水準を絶対許容値として渡す
+                    # atol = global_f_ref × tol_force → 微小dtでも通常スケールの収束水準で判定
+                    atol_force=_global_f_ref * nr_config_dyn.tol_force,
+                )
+                step_result = nr_process_dyn.process(step_input)
             _state_set(state, "total_newton", state.total_attempts + step_result.n_attempts)
             last_diag = step_result.diagnostics
 
@@ -828,8 +877,8 @@ class ContactFrictionProcess(
                         ),
                     )
 
-            # 速度・加速度更新
-            if dt_sub > 1e-30:
+            # 速度・加速度更新（陽解法では step() 内で更新済み）
+            if _solver_mode != "explicit" and dt_sub > 1e-30:
                 _time_strategy.correct(state.u, np.zeros_like(state.u), dt_sub)
 
             # UL参照配置更新（status-281: 大変形ヘリカル素線対応）
