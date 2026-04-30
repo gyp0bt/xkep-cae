@@ -82,20 +82,57 @@ status-379 採択設定（`solver_mode="explicit"`、`mass_scaling_auto=True`、
 
 ## 2. なぜ frac=1.0 + E_kin/E_strain<5% でも発散するのか
 
-### 2.1 mass scaling の数学的盲点
+### 2.0 接触なし単梁での切り分け（追加検証、根本原因は **mass scaling 実装そのもの**）
 
-`mass_scaling_beta` は集中質量を β² 倍化する:
+ユーザー指摘「まずは接触なしの単梁からやるべき」を受けて
+`work/beam_hysteresis/32_explicit_single_beam_no_contact.py`（新規 +180 行）で
+**`n_strands=1` + `contact_enabled=False`** の最も単純な構成で 90° 曲げを実行:
+
+| 系 | implicit max\|u_trans\| | explicit max\|u_trans\| | 判定 |
+|----|----------------------|----------------------|------|
+| 接触なし単梁（n_strands=1）| **7.045 × 10¹ mm（妥当）** | **1.582 × 10⁸ mm（発散）** | exp FAIL |
+| 7 本撚線 | 1.594 × 10² mm | 1.584 × 10⁸ mm | exp FAIL |
+| 19 本撚線 | 0.5746 stall | 1.588 × 10⁸ mm | exp FAIL |
+
+**接触なし単梁でも explicit 解は発散** することが確定。これにより:
+
+- 接触ペナルティとの相互作用 **ではない**
+- **mass scaling 実装そのものに根本的な問題がある**
+
+### 2.1 数学的盲点と実装上の疑念
+
+mass scaling は集中質量を β² 倍化する:
 $$ M_\text{scaled} = \beta^2 \cdot M_\text{lump}, \quad \Delta t_c = \beta \cdot \Delta t_{c,\text{raw}} $$
 
-中央差分法では:
-$$ \ddot{u}_n = M_\text{scaled}^{-1} (f_\text{ext} - f_\text{int} - f_c) $$
+中央差分の数学的構造としては変位増分は β に独立のはず:
+$$ \ddot u = (1/\beta^2) M_\text{raw}^{-1}(F-Cu), \quad \Delta t = \beta \Delta t_c
+\Rightarrow (\Delta t)^2 \ddot u = \Delta t_c^2 \cdot M_\text{raw}^{-1} F $$
 
-質量を β² 倍化すると加速度は 1/β² にスケールするが、**外力 / 内力 / 接触力は
-β に依存しない**。1 ステップあたりの変位増分は $\Delta u \propto \dot{u} \cdot \Delta t$
-で保たれるが、剛性が小さい / 接触ペナルティが弱い領域で慣性が支配的になり、
-撚線が大きく飛散する可能性がある（剛体運動的解）。
+それでも発散するということは、**実装上の整合性違反**が疑われる:
 
-### 2.2 E_kin / E_strain 比の幻惑
+- (h-bug-1) `set_mass_scaling_beta()` の動的更新で **既存の速度・加速度を新質量に
+  対してリスケールしていない**（運動量 / 運動エネルギー保存則違反）
+- (h-bug-2) Verlet 予測子 `u_{n+1} = u_n + \dot u_n \Delta t + 0.5 (\Delta t)^2 \ddot u_n`
+  の各項で β スケーリング前後の状態が混在している可能性
+- (h-bug-3) `auto_tune` で β を急激に増加（`1.0 → 4.7×10⁴` を 1 増分で）すると
+  運動エネルギーが β² 倍化されるが、これは「物理的なエネルギー注入」ではなく
+  「数値スケーリング」なので、後続の物理応答に整合しない
+
+status-380 では実装の根本見直しまでは踏み込まず、**status-379 の達成判定撤回**
+と **mass scaling 実装の bug 仮説** の記録に留める。次 status で:
+
+1. `set_mass_scaling_beta()` 動的更新時に `velocity *= beta_old / beta_new`、
+   `acceleration *= (beta_old / beta_new)²` の状態リスケーリングを検証
+2. β を解析開始前に固定（auto_tune 無効）して同じ単梁テストで検証
+3. 接触なし単梁を **mass scaling 実装の最小再現テスト** として
+   `xkep_cae/time_integration/tests/` に追加
+
+### 2.2 両 gate が数学的構造由来で発散時にも PASS する性質
+
+`load_history[-1]=1.0` は **処方変位 BC が完了した** ことだけを意味する。
+explicit ソルバーでは時間積分の各ステップで処方 DOF を BC として固定しており、
+これは「BC 値が達成された」ことを保証するだけで、内部 DOF が物理的に
+妥当な解に到達したかは別問題。
 
 mass scaling は kinetic energy も β² 倍化するが、status-379 で報告された
 1.15% は **両方が β² 倍化された後の比**である。比率は β に独立で、
@@ -108,13 +145,6 @@ mass scaling は kinetic energy も β² 倍化するが、status-379 で報告�
 → 解析中に撚線が圧倒的に変形し、SE スケールが 7 桁減少。
 これは「動的緩和」ではなく、「変位が物理的範囲を逸脱した結果として
 内力が再評価されただけ」と解釈すべき。
-
-### 2.3 frac=1.0 完走の意味
-
-`load_history[-1]=1.0` は **処方変位 BC が完了した** ことだけを意味する。
-explicit ソルバーでは時間積分の各ステップで処方 DOF を BC として固定しており、
-これは「BC 値が達成された」ことを保証するだけで、内部 DOF が物理的に
-妥当な解に到達したかは別問題。
 
 ## 3. 対応
 
@@ -149,7 +179,21 @@ CLAUDE.md `凍結解除条件` を以下に**訂正**:
 
 ## 4. 次の課題（次 status へ）
 
-### 4.1 mass scaling auto-tune の再検討（最優先）
+### 4.0 mass scaling 実装 bug 修正（**最優先、§2.0 切り分けで確定**）
+
+接触なし単梁でも発散することから、(h1) mass scaling 実装そのものに bug があると
+確定。次 status で:
+
+| 仮説 | 検証方法 |
+|------|----------|
+| (h-bug-1) `set_mass_scaling_beta()` で速度 / 加速度の状態リスケール欠落 | β 動的更新前後で運動量保存をユニットテストで検証 |
+| (h-bug-2) Verlet 予測子で β スケーリング前後の状態混在 | β 固定（auto_tune 無効）で同じ単梁テスト → 妥当なら h-bug-1/3 |
+| (h-bug-3) auto_tune で β 急増時の運動エネルギー β² 倍化が物理応答と非整合 | β を緩やかに増やす（1.05x ステップ等）スケジューリングで再試行 |
+
+接触なし単梁テスト `32_explicit_single_beam_no_contact.py` を **mass scaling 実装の
+最小再現テスト** とし、修正後の回帰確認に使用。
+
+### 4.1 mass scaling auto-tune の再検討（並行候補、(h-bug) 修正後）
 
 candidate (h1) が gate 設計の盲点で「達成」と誤判定されただけで、
 **実質的には未達**と確定。次の選択肢:
@@ -178,7 +222,7 @@ mass scaling は status-378 7 本 smoke（`bending_curvature=0.0005`、線形領
 ## 5. 実装変更
 
 実装本体（`xkep_cae/`、`tests/`、`contracts/`）は **無変更**:
-- 検証スクリプト 2 本新設のみ（`work/beam_hysteresis/30_*.py`、`31_*.py`）
+- 検証スクリプト 3 本新設のみ（`work/beam_hysteresis/30_*.py`、`31_*.py`、`32_*.py`）
 - 3D 可視化 PNG 出力（`docs/verification/7strand_imp_vs_exp/` 8 枚 +
   `docs/verification/19strand_explicit/` 6 枚）
 - 回帰: 691 passed 5 skipped（status-379 と同一）/ 全 24 契約検査 OK / ruff pass
