@@ -132,6 +132,7 @@ def default_strategies(
     coating_stiffness: float = 0.0,
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
+    mass_scaling_beta: float = 1.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
 
@@ -174,6 +175,7 @@ def default_strategies(
             acceleration=acceleration,
             solver_mode=solver_mode,
             mass_lumping=mass_lumping,
+            mass_scaling_beta=mass_scaling_beta,
         ),
         contact_force=_create_contact_force_strategy(
             ndof=ndof,
@@ -319,6 +321,16 @@ class ContactFrictionInputData:
     explicit_courant_safety: float = 0.9
     explicit_courant_check_interval: int = 50
     explicit_mass_lumping: str = "row_sum"
+    # 質量スケーリング（status-379 Phase 3、候補 (h1)、Belytschko §6.4.2）.
+    # `mass_scaling_beta > 1.0` で M_lump → β² · M_lump、Δt_c → β · Δt_c に拡大。
+    # `mass_scaling_auto=True` のとき ExplicitDynamicProcess の Courant 監視で
+    # β を逆算して set_mass_scaling_beta() で上方更新（max β は cap）。
+    # 準静的近似 E_kin / E_strain < energy_budget_ratio を超えると警告出力。
+    # default β=1.0 / auto=False で既存陽解法挙動完全不変。
+    explicit_mass_scaling_beta: float = 1.0
+    explicit_mass_scaling_auto: bool = False
+    explicit_mass_scaling_max_beta: float = 100.0
+    explicit_kinetic_energy_budget_ratio: float = 0.05
 
     @property
     def is_dynamic(self) -> bool:

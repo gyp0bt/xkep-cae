@@ -43,6 +43,14 @@ class ExplicitDynamicInput:
     courant_safety: float = 0.9
     courant_check_interval: int = 50
     max_dt_shrink_factor: float = 0.25
+    # 質量スケーリング auto-tune（status-379 Phase 3 候補 (h1)）.
+    # True で Courant 違反検知時に β を逆算し
+    # `time_strategy.set_mass_scaling_beta()` で上方更新する。
+    # `mass_scaling_max_beta` で上限を cap、超過時は failure_reason="courant".
+    mass_scaling_auto: bool = False
+    mass_scaling_max_beta: float = 100.0
+    # 準静的近似ガード: E_kin / E_strain がこれを超えると警告出力（0.0 で無効）
+    kinetic_energy_budget_ratio: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -201,7 +209,12 @@ class ExplicitDynamicProcess(
         diag.res_history.append(float(np.linalg.norm(R_u_explicit)))
 
         # ── 2. Courant 監視（cfg.courant_check_interval 増分ごと） ──
+        # status-379 Phase 3: mass_scaling_auto=True のとき、Courant 違反検知時に
+        # β = √((dt_sub / (cfg.courant_safety · dt_c_raw))²) を逆算して
+        # set_mass_scaling_beta() で時間積分子の集中質量を倍化（dt_c → β·dt_c）。
+        # max_beta を超える要求は cap し、cap でも追いつかない場合のみ cutback。
         courant_violated = False
+        courant_failure_reason = "courant"
         if cfg.courant_check_interval > 0 and increment_display % cfg.courant_check_interval == 0:
             try:
                 K = input_data.assemble_tangent(u)
@@ -211,13 +224,42 @@ class ExplicitDynamicProcess(
                 dt_c = _estimate_critical_dt(K, time_strategy.M_lump_inv, input_data.fixed_dofs)
                 dt_safe = cfg.courant_safety * dt_c
                 if dt_sub > dt_safe and dt_safe > 0.0 and np.isfinite(dt_safe):
-                    courant_violated = True
-                    if cfg.show_progress:
-                        print(
-                            f"  [COURANT] Incr {increment_display} "
-                            f"dt_sub={dt_sub:.3e} > 0.9·dt_c={dt_safe:.3e} "
-                            f"→ cutback request"
-                        )
+                    if cfg.mass_scaling_auto:
+                        # β · dt_c_raw >= dt_sub / safety を満たす β を決定。
+                        # 現 β に対し dt_safe = β · dt_safe_raw_per_beta なので、
+                        # 必要な追加倍率 r = dt_sub / dt_safe を現 β に乗じる。
+                        current_beta = time_strategy.mass_scaling_beta
+                        required_extra = dt_sub / dt_safe
+                        target_beta = current_beta * required_extra
+                        capped_beta = min(target_beta, cfg.mass_scaling_max_beta)
+                        # 5% 以上の成長要求のみ実適用（数値ノイズ抑制）
+                        if capped_beta > current_beta * 1.05:
+                            time_strategy.set_mass_scaling_beta(capped_beta)
+                            if cfg.show_progress:
+                                print(
+                                    f"  [MASS_SCALE] Incr {increment_display} "
+                                    f"β: {current_beta:.3e} → {capped_beta:.3e} "
+                                    f"(target {target_beta:.3e}, cap "
+                                    f"{cfg.mass_scaling_max_beta:.3e})"
+                                )
+                        if target_beta > cfg.mass_scaling_max_beta:
+                            courant_violated = True
+                            courant_failure_reason = "courant_cap"
+                            if cfg.show_progress:
+                                print(
+                                    f"  [COURANT] Incr {increment_display} "
+                                    f"β cap reached (target={target_beta:.3e} > "
+                                    f"{cfg.mass_scaling_max_beta:.3e}) → cutback"
+                                )
+                    else:
+                        courant_violated = True
+                        if cfg.show_progress:
+                            print(
+                                f"  [COURANT] Incr {increment_display} "
+                                f"dt_sub={dt_sub:.3e} > "
+                                f"{cfg.courant_safety:.2f}·dt_c={dt_safe:.3e} "
+                                f"→ cutback request"
+                            )
 
         if courant_violated:
             return DynamicStepOutput(
@@ -229,7 +271,7 @@ class ExplicitDynamicProcess(
                 diverged=True,
                 f_ref_used=float(np.linalg.norm(f_ext)),
                 convergence_type="",
-                failure_reason="courant",
+                failure_reason=courant_failure_reason,
                 damping_energy_rate=0.0,
             )
 

@@ -332,6 +332,16 @@ class StrandBendingOscillationConfig:
     explicit_courant_safety: float = 0.9
     explicit_courant_check_interval: int = 50
     explicit_mass_lumping: str = "row_sum"
+    # 質量スケーリング（status-379 Phase 3、候補 (h1)、Belytschko §6.4.2）.
+    # `explicit_mass_scaling_beta > 1.0`: 集中質量を β² 倍化し Δt_c → β·Δt_c に拡大。
+    # `explicit_mass_scaling_auto=True`: ExplicitDynamicProcess の Courant 監視で β を逆算更新。
+    # `explicit_mass_scaling_max_beta`: auto 上限 cap、超過時は cutback。
+    # `explicit_kinetic_energy_budget_ratio`: E_kin/E_strain 警告閾値（0.0=無効）。
+    # default β=1.0 / auto=False で既存陽解法挙動完全不変。
+    explicit_mass_scaling_beta: float = 1.0
+    explicit_mass_scaling_auto: bool = False
+    explicit_mass_scaling_max_beta: float = 100.0
+    explicit_kinetic_energy_budget_ratio: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -984,6 +994,11 @@ class StrandBendingOscillationProcess(
             explicit_courant_safety=cfg.explicit_courant_safety,
             explicit_courant_check_interval=cfg.explicit_courant_check_interval,
             explicit_mass_lumping=cfg.explicit_mass_lumping,
+            # 質量スケーリング（status-379 Phase 3、候補 (h1)）
+            explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
+            explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
+            explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+            explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1319,6 +1334,14 @@ class StrandBendingOscillationProcess(
                 al_n_uzawa_max=cfg.al_n_uzawa_max,
                 # 陽的中央差分時間積分（status-378 Phase 2）
                 solver_mode=cfg.solver_mode,
+                explicit_courant_safety=cfg.explicit_courant_safety,
+                explicit_courant_check_interval=cfg.explicit_courant_check_interval,
+                explicit_mass_lumping=cfg.explicit_mass_lumping,
+                # 質量スケーリング（status-379 Phase 3、候補 (h1)）
+                explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
+                explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
+                explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+                explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1517,6 +1540,14 @@ class StrandBendingOscillationProcess(
                 al_n_uzawa_max=cfg.al_n_uzawa_max,
                 # 陽的中央差分時間積分（status-378 Phase 2）
                 solver_mode=cfg.solver_mode,
+                explicit_courant_safety=cfg.explicit_courant_safety,
+                explicit_courant_check_interval=cfg.explicit_courant_check_interval,
+                explicit_mass_lumping=cfg.explicit_mass_lumping,
+                # 質量スケーリング（status-379 Phase 3、候補 (h1)）
+                explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
+                explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
+                explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+                explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

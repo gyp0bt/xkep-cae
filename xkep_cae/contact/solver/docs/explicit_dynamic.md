@@ -34,11 +34,26 @@
   （いずれも陰解法 NR 専用）
 - Courant 監視のために K_T は組み立てるが、線形ソルバーには渡さない
 
-## 既知のスケーリング障壁
+## 既知のスケーリング障壁（status-378 実測 + status-379 解決）
 
 - 19 本撚線（実機規模）では Courant 臨界 $\Delta t_c$ が陰解法 dt より
-  $O(10^3)$ 倍小さい想定（status-377 §7.2）。実機 frac=1.0 完走は
-  本 driver 単独では困難で、**集中質量スケーリング**（Belytschko §6.4.2）
-  または陰陽混合ソルバーが必要となる可能性が高い
-- 19 本実機検証は status-378 では smoke test レベルにとどめ、別 status で
-  mass scaling / dt subcycling の追加実装と組み合わせて行う
+  $O(10^3)$ 倍小さい想定（status-377 §7.2）。**status-378 7 本実測で**
+  $\Delta t_\mathrm{sub} / \Delta t_c = 3 \times 10^5$ を観測。本 driver
+  単独では非現実的だが、**status-379 で集中質量スケーリング**
+  （Belytschko §6.4.2）の auto-tune を `ExplicitDynamicProcess.process()` の
+  Courant 監視に統合し、19 本撚線 90° 曲げで **frac=1.0 完走**
+  （E_kin/E_strain=1.15%）を達成した。
+
+## auto-tune（status-379 候補 (h1)）
+
+`ExplicitDynamicInput.mass_scaling_auto=True` のとき、Courant 監視で
+$\Delta t_\mathrm{sub} > 0.9 \cdot \Delta t_c$ を検知すると:
+
+1. 必要 $\beta$ を逆算: `target = current_beta * dt_sub / (0.9·dt_c)`
+2. cap 適用: `capped = min(target, mass_scaling_max_beta)`
+3. 5% 以上の成長要求のみ実適用（数値ノイズ抑制）:
+   `current_beta * 1.05 < capped` で `set_mass_scaling_beta(capped)`
+4. cap 到達時は `failure_reason="courant_cap"` を返し上位 stepping に
+   dt 縮小カットバックを要求
+
+詳細は `time_integration/docs/time_integration_explicit.md §質量スケーリング` 参照。
