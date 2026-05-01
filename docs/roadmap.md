@@ -14,8 +14,30 @@
 
 ## 現在地（2026-05-01）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-386 で候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と
+> 単梁実機で実証、explicit + UL 精度 gate 未達続行**:
+> status-385 §6.1 最有力候補 (z1d) として
+> `StrandBendingOscillationConfig.t_cycle_min_seconds: float = 1.0` field を追加、
+> `t_cycle = max(10·T1, cfg.t_cycle_min_seconds)` で下限を外部制御可能化
+> （default 1.0 で既存挙動完全保持）。**+6 単体テスト**（`TestTCycleMinSeconds`）全 pass。
+> **`39_z1d_t_cycle_validation.py` 11 ケース単梁中心実機検証**: (a) z1d 自体は
+> 設計通り動作（initial target β 4.7×10⁴ → 3.1×10³ の **15x 縮小**ログ確認）/
+> (b) **implicit 側 regression なし**（t_cycle_min=0.0 で frac=1.0 完走、err 4.86%、
+> baseline 3.90% との差 1pt 未満）/ (c) **explicit 側で逆効果**（selective+z1d 全
+> DIVERGED、non-selective uniform β² 完走するも max\|u\|=0.77mm vs 解析解 73.30mm で
+> **err 99%**、大 β_outside=2000 でも 1.83mm/97.5%）/ (d) **逆方向対照実験 (#11)
+> `n_inc=200, t_cycle 据え置き`** で max\|u\|=6.57mm（z1d 方向の **10x 改善**）—
+> **z1d は方向自体が逆と定量実証**。
+> **真の物理原因**: mass scaling β は波速を `c→c/β` に減速、β=3000 で波の梁長
+> 100mm 横断時間 78ms が t_cycle=67ms（z1d 適用後）を超過し変形が伝播しないまま
+> frac=1.0 到達。`t_cycle_min_seconds` field は default 1.0 で保持
+> （implicit 完全保持、explicit opt-in）。
+> **MCDD 凍結解除条件 (5) 未達続行**、(z1*) 全候補で精度 gate 達成不能と確定、
+> 次候補は **(z2) Cosserat 梁プロトタイプ最優先**（UL を捨てて explicit + 大回転を
+> 本質解決）。
+>
 > **★ status-385 で候補 (z1c) 2 段階質量スケーリング API（β_stiff + β_outside）実装 —
 > API 完成、validation で β_stiff cap が支配的と確認、(z1d) loading rate 縮小が必須と判明**:
 > status-384 §6.1 最有力候補 (z1c) として `ExplicitCentralDifferenceProcess` に

@@ -99,6 +99,55 @@ class TestStrandBendingOscillationProcessAPI:
         assert sig["solver_mode"].default == "implicit"
 
 
+class TestTCycleMinSeconds:
+    """status-386 (z1d): t_cycle 下限緩和 — `t_cycle_min_seconds` field 動作確認.
+
+    `t_cycle = max(10·T1, cfg.t_cycle_min_seconds)` のロジックが
+    `StrandBendingOscillationProcess.process()` 内で 2 箇所に存在する
+    （L≈920 / L≈1170）。本テストでは config 側の field 受理 / 範囲 / default を
+    検証し、実機 `t_cycle` 計算との整合性は実機 validation スクリプト
+    `work/beam_hysteresis/39_z1d_t_cycle_validation.py` で確認する。
+    """
+
+    def test_default_is_one_second(self) -> None:
+        """default 1.0 で既存挙動完全保持（implicit 7 本 frac=1.0 維持）."""
+        cfg = StrandBendingOscillationConfig()
+        assert cfg.t_cycle_min_seconds == 1.0
+
+    def test_field_is_overridable(self) -> None:
+        """0.0 を含む任意値で構築可能（physics-based loading rate opt-in）."""
+        cfg = StrandBendingOscillationConfig(t_cycle_min_seconds=0.0)
+        assert cfg.t_cycle_min_seconds == 0.0
+
+    def test_field_accepts_intermediate_values(self) -> None:
+        """中間値（0.1 秒等）も受理（部分緩和 opt-in）."""
+        cfg = StrandBendingOscillationConfig(t_cycle_min_seconds=0.1)
+        assert cfg.t_cycle_min_seconds == 0.1
+
+    def test_t_cycle_floor_logic_default(self) -> None:
+        """t_cycle = max(10·T1, 1.0): T1=6.7ms 想定 → t_cycle=1.0 で下限が支配."""
+        T1 = 6.7e-3  # 7 本撚線典型値
+        cfg = StrandBendingOscillationConfig()  # default = 1.0
+        t_cycle = max(10.0 * T1, cfg.t_cycle_min_seconds)
+        assert t_cycle == 1.0  # 下限が支配（既存挙動）
+
+    def test_t_cycle_floor_logic_relaxed(self) -> None:
+        """t_cycle_min_seconds=0.0 で T1 物理スケール支配."""
+        T1 = 6.7e-3  # 7 本撚線典型値
+        cfg = StrandBendingOscillationConfig(t_cycle_min_seconds=0.0)
+        t_cycle = max(10.0 * T1, cfg.t_cycle_min_seconds)
+        # 10·T1 = 67ms（従来 1s の 1/15）
+        assert math.isclose(t_cycle, 0.067, rel_tol=1e-3)
+
+    def test_t_cycle_floor_logic_partial_relax(self) -> None:
+        """t_cycle_min_seconds=0.1 で部分緩和（10·T1 vs 0.1 の max）."""
+        T1 = 6.7e-3
+        cfg = StrandBendingOscillationConfig(t_cycle_min_seconds=0.1)
+        t_cycle = max(10.0 * T1, cfg.t_cycle_min_seconds)
+        # 10·T1=0.067 < 0.1 → 0.1 が支配（部分緩和）
+        assert t_cycle == 0.1
+
+
 class TestCollectEndNodes:
     """端部節点収集のテスト."""
 
