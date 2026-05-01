@@ -376,6 +376,20 @@ class StrandBendingOscillationConfig:
     # auto-tune が cap に達する場合、β_outside=10 等 modest な値を指定して
     # beam DOF の dt 制約を緩和する。
     explicit_mass_scaling_beta_outside: float = 1.0
+    # status-386 候補 (z1d): t_cycle 下限緩和 — 物理 T1 ベース loading rate.
+    # 従来 `t_cycle = max(10·T1, 1.0)` の **下限 1 秒** を本 field で外部指定可能化。
+    # default 1.0 で既存挙動完全保持（implicit 7 本 frac=1.0 維持）。
+    #
+    # 0.0: 下限を完全に外し純粋 `t_cycle = 10·T1` を採用（最も aggressive、
+    #       loading rate を物理スケールで決定）。
+    # 例: T1≈6.7ms → t_cycle=67ms → dt_sub=3.35ms（従来 50ms の 1/15）.
+    #
+    # explicit + 質量スケーリング (status-385 z1c) では target β = dt_sub/dt_c に
+    # 比例するため、本 field を 0.0 にすると target β も同等に縮小し、
+    # `explicit_mass_scaling_beta_outside=10` + `explicit_mass_scaling_max_beta=1e3`
+    # の組合せで MCDD 凍結解除条件 (5)（精度 < 10%）達成可能と推定される
+    # （status-385 §6.1）。
+    t_cycle_min_seconds: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -902,7 +916,9 @@ class StrandBendingOscillationProcess(
         )
         T1 = 1.0 / f1 if f1 > 1e-30 else 1.0
         # 揺動周期 = 少なくとも固有周期の10倍（準静的挙動）
-        t_cycle = max(10.0 * T1, 1.0)
+        # status-386 (z1d): 下限を cfg.t_cycle_min_seconds で外部制御可能化
+        # （default 1.0 で既存挙動完全保持、0.0 で純粋 10·T1）
+        t_cycle = max(10.0 * T1, cfg.t_cycle_min_seconds)
         t_total = t_cycle * cfg.n_cycles
 
         dt_initial = t_total / (cfg.n_increments_per_cycle * cfg.n_cycles)
@@ -1153,7 +1169,9 @@ class StrandBendingOscillationProcess(
             cfg.E * sec_Iy * cfg.n_strands / (cfg.rho * sec_A * cfg.n_strands)
         )
         T1 = 1.0 / f1 if f1 > 1e-30 else 1.0
-        t_cycle = max(10.0 * T1, 1.0)
+        # status-386 (z1d): 下限を cfg.t_cycle_min_seconds で外部制御可能化
+        # （default 1.0 で既存挙動完全保持、0.0 で純粋 10·T1）
+        t_cycle = max(10.0 * T1, cfg.t_cycle_min_seconds)
 
         # status-299: 曲げ+揺動統合モード
         # n_oscillation_cycles > 0 の場合、曲げ+揺動を1回のソルバーで実行。
