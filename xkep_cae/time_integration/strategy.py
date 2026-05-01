@@ -282,6 +282,7 @@ class ExplicitCentralDifferenceProcess(
         damping_matrix: sp.csr_matrix | np.ndarray | None = None,
         mass_lumping: str = "row_sum",
         mass_scaling_beta: float = 1.0,
+        mass_scaling_beta_outside: float = 1.0,
         mass_proportional_damping_alpha: float = 0.0,
     ) -> None:
         """陽解法時間積分 Process を初期化.
@@ -295,6 +296,15 @@ class ExplicitCentralDifferenceProcess(
                 M_lump → β² · M_lump で集中質量を倍化することで Δt_c → β·Δt_c。
                 準静的近似 ε = E_kin / E_strain ≪ 1 を保つ範囲で β > 1.0 を指定。
                 既定 1.0（スケーリング無効）。Belytschko §6.4.2。
+                selective mass scaling（mask あり）時は **stiff DOF 用** の β。
+            mass_scaling_beta_outside: 2 段階質量スケーリング外側 β（status-384 候補 (z1c)）。
+                `set_mass_scaling_dof_mask()` で mask が設定されている時、mask=False の
+                DOF（典型的には梁 DOF）に適用する β_outside² 倍化係数。mask=None
+                では無視される（全 DOF が `mass_scaling_beta` で一律スケーリング）。
+                既定 1.0（mask 外 DOF は raw 質量、status-384 (z1b) と等価）。
+                7 本/19 本撚線で beam dt 1.6 μs が auto-tune 上限を支配する問題に対し、
+                modest な β_outside（例 10）で beam DOF dt も拡大することで stiff
+                β² の cap 到達を回避する（status-384 §3）。
             mass_proportional_damping_alpha: 質量比例 Rayleigh damping 係数 α
                 （status-382 候補 (p3)）。`C = α · M_lump` を等価適用し、運動方程式は
                 $a_n = M_\\mathrm{lump}^{-1}(F_\\mathrm{ext} - F_\\mathrm{int}) - α \\cdot v_{n-1/2}$
@@ -306,6 +316,12 @@ class ExplicitCentralDifferenceProcess(
                 f"mass_scaling_beta must be >= 1.0 (got {mass_scaling_beta}). "
                 "β < 1 shrinks Δt_c and provides no benefit."
             )
+        if mass_scaling_beta_outside < 1.0:
+            raise ValueError(
+                f"mass_scaling_beta_outside must be >= 1.0 "
+                f"(got {mass_scaling_beta_outside}). "
+                "β_outside < 1 shrinks Δt_c on non-stiff DOFs and provides no benefit."
+            )
         if mass_proportional_damping_alpha < 0.0:
             raise ValueError(
                 f"mass_proportional_damping_alpha must be >= 0.0 "
@@ -316,6 +332,7 @@ class ExplicitCentralDifferenceProcess(
         self._mass_lumping = mass_lumping
         self._M_lump_raw = self._lump_mass(M_consistent, mass_lumping)
         self.mass_scaling_beta = float(mass_scaling_beta)
+        self.mass_scaling_beta_outside = float(mass_scaling_beta_outside)
         # status-384 (z1b) selective mass scaling: scaling mask（True で β² 適用）.
         # default は None で全 DOF 一律スケーリング（既存挙動）。
         # `set_mass_scaling_dof_mask()` で実行時に設定可能。
@@ -340,14 +357,18 @@ class ExplicitCentralDifferenceProcess(
         self._acc_ckpt: np.ndarray | None = None
 
     def _compute_scaled_mass(self, beta: float) -> np.ndarray:
-        """β² 倍化 + selective mask を反映した M_lump を計算する.
+        """β² 倍化 + selective mask + 2 段階 β_outside を反映した M_lump を計算する.
 
-        - mask=None: 全 DOF 一律 M_lump = β² · M_lump_raw
-        - mask あり: True の DOF のみ β² 倍化、False の DOF は raw のまま
+        - mask=None: 全 DOF 一律 M_lump = β² · M_lump_raw（β_outside は無視）
+        - mask あり (status-384 (z1b))（β_outside=1.0 既定）:
+            True の DOF のみ β² 倍化、False の DOF は raw のまま
+        - mask あり + β_outside>1（status-384 (z1c) 2 段階スケーリング）:
+            True の DOF は β² 倍化、False の DOF は β_outside² 倍化
         """
         if self._mass_scaling_dof_mask is None:
             return (beta * beta) * self._M_lump_raw
-        scaling = np.ones_like(self._M_lump_raw)
+        beta_out_sq = self.mass_scaling_beta_outside * self.mass_scaling_beta_outside
+        scaling = np.full_like(self._M_lump_raw, beta_out_sq)
         scaling[self._mass_scaling_dof_mask] = beta * beta
         return scaling * self._M_lump_raw
 
@@ -373,6 +394,41 @@ class ExplicitCentralDifferenceProcess(
         # 現在の β を新しい mask で再適用（β は不変なので KE 保存 rescale 不要）
         self.M_lump = self._compute_scaled_mass(self.mass_scaling_beta)
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
+
+    def set_mass_scaling_beta_outside(
+        self, beta_outside: float, *, rescale_state: bool = True
+    ) -> None:
+        """非 stiff DOF の β_outside を実行時に更新する（status-384 候補 (z1c)）.
+
+        2 段階質量スケーリングで mask=False（典型的には梁 DOF）の β を上方更新する。
+        既存の β_outside 以下なら何もしない（単調増加のみ）。
+
+        Args:
+            beta_outside: 新しい β_outside（>= 1.0）。
+            rescale_state: True (default) で運動エネルギー保存リスケール
+                v ← v·(β_outside_old/β_outside_new), a ← a·(β_outside_old/β_outside_new)²
+                を mask=False の DOF にのみ適用する（mask=True / mask=None 時は v/a 不変）。
+                False は後方互換用。
+
+        Note:
+            mask が未設定（mask=None）の場合は β_outside は実効的に無効
+            （`_compute_scaled_mass` で参照されない）なので M_lump も rescale も変化しない。
+        """
+        if beta_outside < 1.0:
+            raise ValueError(f"mass_scaling_beta_outside must be >= 1.0 (got {beta_outside})")
+        if beta_outside <= self.mass_scaling_beta_outside:
+            return
+        beta_out_old = self.mass_scaling_beta_outside
+        self.mass_scaling_beta_outside = float(beta_outside)
+        # mask が None の場合 β_outside は使われないので M_lump 変化なし。
+        # mask が設定済みなら mask=False DOF の M が変化する。
+        self.M_lump = self._compute_scaled_mass(self.mass_scaling_beta)
+        self.M_lump_inv = self._invert_diagonal(self.M_lump)
+        if rescale_state and self._mass_scaling_dof_mask is not None:
+            ratio = beta_out_old / self.mass_scaling_beta_outside
+            outside = ~self._mass_scaling_dof_mask
+            self.vel[outside] = self.vel[outside] * ratio
+            self.acc[outside] = self.acc[outside] * (ratio * ratio)
 
     def set_mass_scaling_beta(self, beta: float, *, rescale_state: bool = True) -> None:
         """質量スケーリング係数 β を実行時に更新する（status-379 auto-tune 用）.
@@ -581,6 +637,7 @@ def _create_time_integration_strategy(
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
     mass_scaling_beta: float = 1.0,
+    mass_scaling_beta_outside: float = 1.0,
     mass_proportional_damping_alpha: float = 0.0,
 ) -> QuasiStaticProcess | GeneralizedAlphaProcess | ExplicitCentralDifferenceProcess:
     """時間積分 Strategy ファクトリ.
@@ -595,7 +652,10 @@ def _create_time_integration_strategy(
         solver_mode: "implicit"（default、Generalized-α）/ "explicit"（中央差分）
         mass_lumping: 陽解法時の集中質量化方式（"row_sum" / "diagonal" / "none"）
         mass_scaling_beta: 陽解法時の質量スケーリング係数（status-379 候補 (h1)）。
-            既定 1.0（スケーリング無効）。
+            既定 1.0（スケーリング無効）。selective mask あり時は stiff DOF 用。
+        mass_scaling_beta_outside: 2 段階質量スケーリング外側 β（status-384 候補 (z1c)）。
+            mask=False の DOF（typ. 梁 DOF）に適用する β_outside² 倍化係数。
+            mask=None では無視。既定 1.0。
         mass_proportional_damping_alpha: 陽解法時の質量比例 Rayleigh damping
             係数（status-382 候補 (p3)）。既定 0.0（無効）。
 
@@ -612,6 +672,7 @@ def _create_time_integration_strategy(
             damping_matrix=damping_matrix,
             mass_lumping=mass_lumping,
             mass_scaling_beta=mass_scaling_beta,
+            mass_scaling_beta_outside=mass_scaling_beta_outside,
             mass_proportional_damping_alpha=mass_proportional_damping_alpha,
         )
         strategy_explicit.set_initial_state(velocity=velocity, acceleration=acceleration)

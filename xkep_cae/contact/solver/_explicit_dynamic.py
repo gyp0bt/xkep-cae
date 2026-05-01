@@ -366,13 +366,18 @@ class ExplicitDynamicProcess(
                     cfg.beam_E,
                     cfg.beam_rho,
                 )
-                # 集中質量倍化（β）の効果は Gerschgorin 側に既に反映済み。
-                # element-wise 側はゼロから物理 c_a を計算するので β を反映するため
-                # β を乗じる（M → β²·M ⇒ c → c/β ⇒ Δt → β·Δt）。
-                # ※ selective mask あり時、梁 DOF は β=1 のままなので element-wise
-                #    側に β を乗じない（梁 dynamics の物理的下限は raw c_a 由来）。
-                if np.isfinite(dt_c_beam) and time_strategy._mass_scaling_dof_mask is None:
-                    dt_c_beam *= time_strategy.mass_scaling_beta
+                # 集中質量倍化の効果は Gerschgorin 側に既に反映済み。
+                # element-wise 側は raw c_a から物理的下限を計算するので、対応する
+                # β を乗じて Δt → β·Δt とする（M → β²·M ⇒ c → c/β）。
+                # - mask=None: 全 DOF が `mass_scaling_beta` でスケーリング → β を乗じる
+                # - mask あり (z1b 単独): mask=False の梁 DOF は β=1 維持 → 何も乗じない
+                # - mask あり + β_outside>1 (z1c 2 段階): mask=False の梁 DOF は
+                #   β_outside² で倍化されるため `mass_scaling_beta_outside` を乗じる
+                if np.isfinite(dt_c_beam):
+                    if time_strategy._mass_scaling_dof_mask is None:
+                        dt_c_beam *= time_strategy.mass_scaling_beta
+                    else:
+                        dt_c_beam *= time_strategy.mass_scaling_beta_outside
                 dt_c = min(dt_c_gers, dt_c_beam)
                 dt_safe = cfg.courant_safety * dt_c
                 if dt_sub > dt_safe and dt_safe > 0.0 and np.isfinite(dt_safe):
