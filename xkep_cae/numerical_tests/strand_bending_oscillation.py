@@ -358,6 +358,18 @@ class StrandBendingOscillationConfig:
     # 緩和フェーズの収束判定許容値（||R||/||f_ref|| < tol で早期終了）.
     # 0.0 で無効（max steps まで実行）。
     explicit_relax_tol: float = 0.0
+    # status-383 候補 (q1): explicit 中の UL update_reference 周期化.
+    # `solver_mode="explicit"` のとき、UL `update_reference()` を毎増分ではなく
+    # `explicit_ul_update_interval` 増分ごとに呼び出す。default 1 で既存挙動不変。
+    # >1 のとき u_incr が累積し、relax phase の `f_int(u_incr)` が非ゼロとなり
+    # 構造を平衡へ駆動できる（status-382 §3 真の根本原因への対応）。
+    # CR 梁の大回転線形化破綻を避けるため、過大な値（>50 程度）は推奨しない。
+    explicit_ul_update_interval: int = 1
+    # status-384 候補 (z1b): selective mass scaling.
+    # True で β² 倍化を高 K 局在 DOF に限定し、梁 DOF の過剰減衰を回避する。
+    # default False で全 DOF 一律（既存挙動）。
+    explicit_mass_scaling_selective: bool = False
+    explicit_mass_scaling_stiff_threshold_ratio: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -906,6 +918,7 @@ class StrandBendingOscillationProcess(
         contact_config = _ContactConfigInput(
             beam_E=cfg.E,
             beam_I=sec_Iy,
+            beam_rho=cfg.rho,
             mu=cfg.mu,
             adaptive_timestepping=True,
             dt_min_fraction=dt_initial / (t_total * 64.0),
@@ -1019,6 +1032,11 @@ class StrandBendingOscillationProcess(
             explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
             explicit_relax_steps=cfg.explicit_relax_steps,
             explicit_relax_tol=cfg.explicit_relax_tol,
+            explicit_ul_update_interval=cfg.explicit_ul_update_interval,
+            explicit_mass_scaling_selective=cfg.explicit_mass_scaling_selective,
+            explicit_mass_scaling_stiff_threshold_ratio=(
+                cfg.explicit_mass_scaling_stiff_threshold_ratio
+            ),
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1205,6 +1223,7 @@ class StrandBendingOscillationProcess(
         contact_config = _ContactConfigInput(
             beam_E=cfg.E,
             beam_I=sec_Iy,
+            beam_rho=cfg.rho,
             mu=cfg.mu,
             adaptive_timestepping=True,
             dt_min_fraction=dt_initial / (t_total * _cutback_depth),
@@ -1366,6 +1385,11 @@ class StrandBendingOscillationProcess(
                 explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
                 explicit_relax_steps=cfg.explicit_relax_steps,
                 explicit_relax_tol=cfg.explicit_relax_tol,
+                explicit_ul_update_interval=cfg.explicit_ul_update_interval,
+                explicit_mass_scaling_selective=cfg.explicit_mass_scaling_selective,
+                explicit_mass_scaling_stiff_threshold_ratio=(
+                    cfg.explicit_mass_scaling_stiff_threshold_ratio
+                ),
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1576,6 +1600,11 @@ class StrandBendingOscillationProcess(
                 explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
                 explicit_relax_steps=cfg.explicit_relax_steps,
                 explicit_relax_tol=cfg.explicit_relax_tol,
+                explicit_ul_update_interval=cfg.explicit_ul_update_interval,
+                explicit_mass_scaling_selective=cfg.explicit_mass_scaling_selective,
+                explicit_mass_scaling_stiff_threshold_ratio=(
+                    cfg.explicit_mass_scaling_stiff_threshold_ratio
+                ),
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

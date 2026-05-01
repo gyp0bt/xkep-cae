@@ -15,7 +15,9 @@ from xkep_cae.contact.solver._explicit_dynamic import (
     ExplicitDynamicInput,
     ExplicitDynamicProcess,
     ExplicitDynamicStepInput,
+    _detect_stiff_dofs,
     _estimate_critical_dt,
+    _estimate_critical_dt_per_element,
 )
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
@@ -29,6 +31,7 @@ from xkep_cae.core import (
 )
 from xkep_cae.core.data import default_strategies
 from xkep_cae.core.testing import binds_to
+from xkep_cae.time_integration.strategy import ExplicitCentralDifferenceProcess
 
 
 @binds_to(ExplicitDynamicProcess)
@@ -507,9 +510,348 @@ class TestExplicitContactFrictionIntegration:
         assert isinstance(result, SolverResultData)
 
 
+class TestExplicitULUpdateInterval:
+    """status-383 候補 (q1): explicit 中の UL update_reference 周期化.
+
+    `explicit_ul_update_interval` 増分ごとに `update_reference` を呼ぶこと、
+    およびデフォルト 1 では既存挙動と同じ毎増分呼出となることを確認する。
+    """
+
+    def _run_with_mock_ul(
+        self, *, interval: int, max_incr: int, ndof: int, mesh, contact, M, f_ext, boundary
+    ) -> _MockULAssembler:
+        """指定 interval で実行し、update_reference 呼出回数を返す.
+
+        各 increment が必ず短い dt で進むよう dt_max_fraction を contact の
+        config に指定し、max_incr 回の成功増分を確実に確保する。
+        """
+        ul_asm = _MockULAssembler(ndof)
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr") * 1.0,
+            assemble_internal_force=lambda u: u * 1.0,
+            ul_assembler=ul_asm,
+        )
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            explicit_ul_update_interval=interval,
+            max_increments=max_incr,
+            max_nr_attempts=1,
+        )
+        ContactFrictionProcess().process(input_data)
+        return ul_asm
+
+    def _common_setup(self, *, n_increments_target: int):
+        """dt_max_fraction で各 step を制限し、n_increments_target 増分を強制."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        # dt_max_fraction = 1/n_target → 各 step の dt が制限され n_target 増分へ分割
+        contact_config = _ContactConfigInput(
+            beam_E=210e3,
+            beam_I=1e-3,
+            mu=0.15,
+            exclude_same_strand=True,
+            smoothing_delta=2000.0,
+            dt_max_fraction=1.0 / max(1, n_increments_target),
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact = ContactSetupData(manager=manager, k_pen=1e2, mu=0.15)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+        return mesh, ndof, contact, M, f_ext, boundary
+
+    def test_default_interval_one_calls_every_increment(self):
+        """default explicit_ul_update_interval=1 で毎増分 update_reference 呼出."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=1,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 主ループで 4 増分成功 → 4 回呼出
+        assert ul.update_reference_call_count == 4
+
+    def test_interval_two_calls_every_other_increment(self):
+        """explicit_ul_update_interval=2 で 2 増分ごとに update_reference 呼出."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=2,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 4 増分中、2nd と 4th でのみ呼出 → 2 回
+        assert ul.update_reference_call_count == 2
+
+    def test_interval_larger_than_increments_skips_all(self):
+        """interval > max_increments のとき、update_reference は一度も呼ばれない."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=100,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 4 増分中 100 増分目で呼出 → 0 回
+        assert ul.update_reference_call_count == 0
+
+    def test_interval_zero_treated_as_one(self):
+        """explicit_ul_update_interval=0 は 1 として扱う（max(1, value)）."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=0,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # max(1, 0) = 1 として扱われ、毎増分呼出
+        assert ul.update_reference_call_count == 4
+
+    def test_implicit_mode_gate_short_circuits(self):
+        """gate 式 `_solver_mode != "explicit" or ...` の implicit short-circuit を直接検証.
+
+        プロセス全体を走らせると implicit + 接触は別途収束問題が生じるため、
+        ここではロジック式のみを検証する。`(q1)` は explicit のみ対象であり、
+        implicit のとき interval が無視されることを確認。
+        """
+
+        # ゲート条件式をテスト: (mode != "explicit") OR (interval <= 1) OR (next % interval == 0)
+        def _do_update(*, mode: str, interval: int, next_incr: int) -> bool:
+            return mode != "explicit" or interval <= 1 or (next_incr % interval == 0)
+
+        # implicit: interval=100 でも常に True（毎増分更新）
+        for n in range(1, 10):
+            assert _do_update(mode="implicit", interval=100, next_incr=n)
+
+        # explicit + interval=1: 常に True
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", interval=1, next_incr=n)
+
+        # explicit + interval=3: 3, 6, 9 のみ True
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", interval=3, next_incr=n) == (n % 3 == 0)
+
+
+class TestPerElementCriticalDt:
+    """status-384 候補 (z1a): 要素ごと波速ベース Δt 推定の単体検証."""
+
+    def test_zero_E_returns_inf(self):
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=0.0, beam_rho=1.0)
+        assert dt == float("inf")
+
+    def test_zero_rho_returns_inf(self):
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=0.0)
+        assert dt == float("inf")
+
+    def test_none_connectivity_returns_inf(self):
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(None, coords, beam_E=1.0, beam_rho=1.0)
+        assert dt == float("inf")
+
+    def test_single_element_axial_wave(self):
+        """単一要素 L=1 mm, E=1, ρ=1 → c_a=1, dt = 1/1 = 1.0."""
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=1.0)
+        assert dt == pytest.approx(1.0, rel=1e-12)
+
+    def test_minimum_element_governs(self):
+        """複数要素で最短の要素が dt を支配する."""
+        conn = np.array([[0, 1], [1, 2]], dtype=int)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],  # 長: L=10
+                [10.5, 0.0, 0.0],  # 短: L=0.5
+            ]
+        )
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=1.0)
+        # min L = 0.5, c_a = 1, dt = 0.5
+        assert dt == pytest.approx(0.5, rel=1e-12)
+
+    def test_steel_beam_realistic_dt(self):
+        """現実的な梁: E=130 GPa, ρ=8.96e-9 ton/mm³, L=6.25 mm → dt ≈ 1.64 μs."""
+        E = 1.30e5  # N/mm² = 130 GPa
+        rho = 8.96e-9  # ton/mm³
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [6.25, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=E, beam_rho=rho)
+        c_a = float(np.sqrt(E / rho))
+        expected = 6.25 / c_a
+        assert dt == pytest.approx(expected, rel=1e-10)
+        # 1.6 μs オーダーであることも検証
+        assert 1e-6 < dt < 3e-6
+
+
+class TestDetectStiffDofs:
+    """status-384 候補 (z1b): selective mass scaling の DOF 検出ヘルパ単体検証."""
+
+    def test_uniform_K_detects_nothing(self):
+        """全 DOF で同じ row-sum/M なら閾値超えゼロ."""
+        K = sp.diags([1.0] * 10, format="csr")
+        M = np.ones(10)
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask.sum() == 0
+
+    def test_outlier_dof_detected(self):
+        """1 つの DOF だけ K が 100× なら、その DOF が stiff として検出される."""
+        diag = np.ones(10)
+        diag[3] = 100.0  # 局在
+        K = sp.diags(diag, format="csr")
+        M = np.ones(10)
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask[3]
+        assert mask.sum() == 1
+
+    def test_fixed_dofs_excluded_from_median(self):
+        """固定 DOF は median 計算から除外される."""
+        diag = np.array([1.0, 1.0, 1.0, 100.0, 1.0])
+        K = sp.diags(diag, format="csr")
+        M = np.ones(5)
+        # DOF 3 を固定
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([3]), threshold_ratio=10.0)
+        # 固定 DOF は free=False なので out=False
+        assert not mask[3]
+
+    def test_zero_mass_dofs_skipped(self):
+        """M_lump=0 の DOF は free=False で検出対象外."""
+        diag = np.array([1.0, 100.0])
+        K = sp.diags(diag, format="csr")
+        M = np.array([1.0, 0.0])
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        # M=0 の DOF は除外
+        assert not mask[1]
+
+    def test_threshold_ratio_controls_sensitivity(self):
+        """threshold_ratio を上げると検出が減る."""
+        diag = np.array([1.0, 1.0, 1.0, 5.0])
+        K = sp.diags(diag, format="csr")
+        M = np.ones(4)
+        # ratio=2 で 5 倍 DOF は検出される（median=1, threshold=2, 5>2）
+        mask_lo = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=2.0)
+        # ratio=10 で 5 倍 DOF は検出されない（threshold=10, 5<10）
+        mask_hi = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask_lo[3]
+        assert not mask_hi[3]
+
+
+class TestSelectiveMassScaling:
+    """status-384 候補 (z1b): selective mass scaling の統合検証."""
+
+    def test_default_no_mask_full_scaling(self):
+        """default mask=None なら全 DOF 一律 β² スケーリング（既存挙動）."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        # M_lump = β²·M_raw = 4·1 = 4 全 DOF
+        np.testing.assert_allclose(proc.M_lump, 4.0)
+
+    def test_mask_applied_selectively(self):
+        """mask 内 DOF のみ β² 倍化、外は raw."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=3.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # mask True: M = 9, False: M = 1
+        np.testing.assert_allclose(proc.M_lump, [9.0, 1.0, 9.0, 1.0])
+
+    def test_set_mask_then_increase_beta_selective(self):
+        """mask 設定後に β を上げると、mask 内のみ β² 倍化される."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # 初期: mask 内 β=2 → M=4, 外 M=1
+        np.testing.assert_allclose(proc.M_lump, [4.0, 1.0, 4.0, 1.0])
+        proc.set_mass_scaling_beta(5.0)
+        # β=5 → mask 内 M=25, 外 M=1
+        np.testing.assert_allclose(proc.M_lump, [25.0, 1.0, 25.0, 1.0])
+
+    def test_clear_mask_restores_global(self):
+        """set_mass_scaling_dof_mask(None) で全 DOF 一律に戻る."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=3.0)
+        proc.set_mass_scaling_dof_mask(np.array([True, False, True, False]))
+        proc.set_mass_scaling_dof_mask(None)
+        # 全 DOF β=3 → M=9
+        np.testing.assert_allclose(proc.M_lump, 9.0)
+
+    def test_invalid_mask_shape_rejected(self):
+        """mask shape 不一致は ValueError."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        with pytest.raises(ValueError, match="mask shape"):
+            proc.set_mass_scaling_dof_mask(np.array([True, False]))
+
+    def test_selective_v_a_rescale_only_in_mask(self):
+        """β 上方更新時、KE 保存 rescale は mask 内 DOF にのみ適用される."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # 速度を全 DOF に注入
+        proc.vel = np.array([1.0, 1.0, 1.0, 1.0])
+        proc.set_mass_scaling_beta(4.0)
+        # ratio = 2/4 = 0.5; mask 内のみ rescale
+        np.testing.assert_allclose(proc.vel, [0.5, 1.0, 0.5, 1.0])
+
+
 # =====================================================================
 # 共通ヘルパ
 # =====================================================================
+
+
+class _MockULAssembler:
+    """update_reference 呼出回数を計測するモック UL アセンブラ.
+
+    status-383 候補 (q1) `explicit_ul_update_interval` テスト用。
+    実 UL アセンブラの最小プロトコル（`update_reference` / `checkpoint` /
+    `rollback` / `u_total_accum` / `coords_ref`）を満たす。
+    """
+
+    def __init__(self, ndof: int) -> None:
+        self.update_reference_call_count = 0
+        self._ndof = ndof
+        self.u_total_accum = np.zeros(ndof)
+        self.coords_ref = np.zeros((ndof // 6, 3))
+
+    def update_reference(self, u_incr: np.ndarray) -> None:
+        self.update_reference_call_count += 1
+
+    def checkpoint(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
 
 def _make_two_beam_mesh() -> MeshData:

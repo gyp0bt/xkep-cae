@@ -58,6 +58,20 @@ class ExplicitDynamicInput:
     mass_scaling_max_growth_per_update: float = 4.0
     # 準静的近似ガード: E_kin / E_strain がこれを超えると警告出力（0.0 で無効）
     kinetic_energy_budget_ratio: float = 0.0
+    # status-384 候補 (z1a): 要素ごと波速ベース Δt 推定の梁材料パラメータ.
+    # `beam_E > 0` かつ `beam_rho > 0` のとき、各 beam 要素について
+    # `dt_e = L_e / √(E/ρ)` を計算し、最小値を Gerschgorin 推定と比較する。
+    # default 0.0 で element-wise 推定をスキップ（後方互換、Gerschgorin のみ）。
+    beam_E: float = 0.0
+    beam_rho: float = 0.0
+    # status-384 候補 (z1b): selective mass scaling.
+    # True のとき β² 倍化を「stiff DOF」に限定（Gerschgorin row-sum / M_lump が
+    # median × `mass_scaling_stiff_threshold_ratio` を超える DOF のみ）。
+    # 梁 DOF は β=1 を維持し、接触ペナルティ等の高 K 局在 DOF のみ
+    # 質量を倍化することで β² 過剰減衰（status-381 §5）を回避する。
+    # default False で全 DOF 一律スケーリング（既存挙動）。
+    mass_scaling_selective: bool = False
+    mass_scaling_stiff_threshold_ratio: float = 10.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +96,46 @@ class ExplicitDynamicStepInput:
     dt_sub: float
     use_coating: bool
     connectivity: np.ndarray | None = None
+
+
+def _estimate_critical_dt_per_element(
+    connectivity: np.ndarray | None,
+    node_coords: np.ndarray | None,
+    beam_E: float,
+    beam_rho: float,
+) -> float:
+    """要素ごと軸方向波速 c_a = √(E/ρ) に基づく Courant 臨界時間刻みを推定する.
+
+    Abaqus/Explicit の標準アプローチ（status-384 候補 (z1a)）。
+    各 beam 要素で `dt_e = L_e / c_a` を計算し最小値を返す。Gerschgorin 上界が
+    接触ペナルティ等の高 K 局在で過小評価されるケースに対し、梁 dynamics が
+    要求する物理的下限を独立に与える。
+
+    Args:
+        connectivity: (n_elem, 2) 要素接続。None で inf を返す。
+        node_coords: (n_nodes, 3) ノード座標（参照配置）。
+        beam_E: 梁ヤング率（>0 必須、≤0 で inf を返す = 推定無効）。
+        beam_rho: 梁質量密度（>0 必須、≤0 で inf を返す = 推定無効）。
+
+    Returns:
+        最小要素 Δt_e。推定不能時は inf（caller が Gerschgorin にフォールバック）。
+    """
+    if connectivity is None or node_coords is None:
+        return float("inf")
+    if beam_E <= 0.0 or beam_rho <= 0.0:
+        return float("inf")
+    if connectivity.size == 0:
+        return float("inf")
+    c_a = float(np.sqrt(beam_E / beam_rho))
+    if c_a <= 0.0 or not np.isfinite(c_a):
+        return float("inf")
+    p1 = node_coords[connectivity[:, 0]]
+    p2 = node_coords[connectivity[:, 1]]
+    L_e = np.linalg.norm(p2 - p1, axis=1)
+    valid = L_e > 0.0
+    if not np.any(valid):
+        return float("inf")
+    return float(L_e[valid].min() / c_a)
 
 
 def _estimate_critical_dt(
@@ -121,6 +175,51 @@ def _estimate_critical_dt(
         return float("inf")
     omega_max = np.sqrt(omega_sq_max)
     return 2.0 / omega_max
+
+
+def _detect_stiff_dofs(
+    K: sp.csr_matrix | sp.spmatrix,
+    M_lump: np.ndarray,
+    fixed_dofs: np.ndarray,
+    *,
+    threshold_ratio: float = 10.0,
+) -> np.ndarray:
+    """Gerschgorin row-sum / M_lump が median × threshold_ratio を超える DOF を検出する.
+
+    status-384 候補 (z1b) selective mass scaling 用。接触ペナルティ等の高 K 局在
+    DOF を自動検出し、β² 倍化をそこに限定することで梁 DOF の過剰減衰を回避する。
+
+    Args:
+        K: 接線剛性（CSR）。
+        M_lump: 集中質量（対角配列、raw・スケーリング前）。
+        fixed_dofs: 固定 DOF（中央値計算から除外）。
+        threshold_ratio: median × threshold_ratio を境界とする。default 10.0。
+
+    Returns:
+        (ndof,) bool 配列。True の DOF を「stiff」として β² 倍化対象とする。
+        K が空 / 全 DOF 固定 / median 計算不能のとき全 False を返す。
+    """
+    ndof = M_lump.size
+    out = np.zeros(ndof, dtype=bool)
+    if K is None or K.shape[0] == 0 or ndof == 0:
+        return out
+    K_csr = K.tocsr() if not sp.isspmatrix_csr(K) else K
+    abs_K = abs(K_csr)
+    row_sum = np.asarray(abs_K.sum(axis=1)).flatten()
+    M_safe = np.where(M_lump > 0.0, M_lump, np.inf)
+    omega_sq = row_sum / M_safe
+    free = M_lump > 0.0
+    if fixed_dofs is not None and len(fixed_dofs) > 0:
+        free = free.copy()
+        free[fixed_dofs] = False
+    if not np.any(free):
+        return out
+    median_val = float(np.median(omega_sq[free]))
+    if median_val <= 0.0 or not np.isfinite(median_val):
+        return out
+    threshold = threshold_ratio * median_val
+    out = (omega_sq > threshold) & free
+    return out
 
 
 class ExplicitDynamicProcess(
@@ -234,7 +333,47 @@ class ExplicitDynamicProcess(
             except Exception:
                 K = None
             if K is not None:
-                dt_c = _estimate_critical_dt(K, time_strategy.M_lump_inv, input_data.fixed_dofs)
+                # status-384 (z1b): selective mass scaling の mask を初回検出.
+                # mask が未設定かつ selective モード ON のとき、Gerschgorin row-sum / M
+                # で stiff DOF を検出し set_mass_scaling_dof_mask() で固定する。
+                # 増分間で再検出すると mask が振動するので 1 回限定（接触集合は
+                # NR 収束前提下で「概ね安定」というユニラテラル仮定）。
+                if cfg.mass_scaling_selective and time_strategy._mass_scaling_dof_mask is None:
+                    stiff_mask = _detect_stiff_dofs(
+                        K,
+                        time_strategy.M_lump,
+                        input_data.fixed_dofs,
+                        threshold_ratio=cfg.mass_scaling_stiff_threshold_ratio,
+                    )
+                    time_strategy.set_mass_scaling_dof_mask(stiff_mask)
+                    if cfg.show_progress:
+                        n_stiff = int(np.sum(stiff_mask))
+                        print(
+                            f"  [SELECTIVE_MASS] Incr {increment_display} "
+                            f"stiff DOFs detected: {n_stiff}/{stiff_mask.size} "
+                            f"(threshold ratio {cfg.mass_scaling_stiff_threshold_ratio:.1f})"
+                        )
+
+                # status-384 (z1a): Gerschgorin 全体推定 + 要素ごと波速推定の min を採用.
+                # 要素ごと推定は梁 dynamics の物理的下限、Gerschgorin は接触ペナルティ等
+                # 局在 stiffness の上界。両者の小さい方が真の stable Δt 下限。
+                dt_c_gers = _estimate_critical_dt(
+                    K, time_strategy.M_lump_inv, input_data.fixed_dofs
+                )
+                dt_c_beam = _estimate_critical_dt_per_element(
+                    input_data.connectivity,
+                    input_data.node_coords_ref,
+                    cfg.beam_E,
+                    cfg.beam_rho,
+                )
+                # 集中質量倍化（β）の効果は Gerschgorin 側に既に反映済み。
+                # element-wise 側はゼロから物理 c_a を計算するので β を反映するため
+                # β を乗じる（M → β²·M ⇒ c → c/β ⇒ Δt → β·Δt）。
+                # ※ selective mask あり時、梁 DOF は β=1 のままなので element-wise
+                #    側に β を乗じない（梁 dynamics の物理的下限は raw c_a 由来）。
+                if np.isfinite(dt_c_beam) and time_strategy._mass_scaling_dof_mask is None:
+                    dt_c_beam *= time_strategy.mass_scaling_beta
+                dt_c = min(dt_c_gers, dt_c_beam)
                 dt_safe = cfg.courant_safety * dt_c
                 if dt_sub > dt_safe and dt_safe > 0.0 and np.isfinite(dt_safe):
                     if cfg.mass_scaling_auto:

@@ -91,6 +91,9 @@ class _ContactConfigInput:
     beam_E: float = 0.0
     beam_I: float = 0.0
     beam_A: float = 0.0
+    # status-384 候補 (z1a): 梁質量密度 [質量/長さ³]. 要素ごと波速 Δt 推定
+    # `dt_e = L_e / √(E/ρ)` のため。0.0 で element-wise 推定をスキップ（後方互換）。
+    beam_rho: float = 0.0
     k_t_ratio: float = 0.5
     mu: float = 0.3
     g_on: float = 0.0

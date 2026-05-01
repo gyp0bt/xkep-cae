@@ -316,7 +316,11 @@ class ExplicitCentralDifferenceProcess(
         self._mass_lumping = mass_lumping
         self._M_lump_raw = self._lump_mass(M_consistent, mass_lumping)
         self.mass_scaling_beta = float(mass_scaling_beta)
-        self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
+        # status-384 (z1b) selective mass scaling: scaling mask（True で β² 適用）.
+        # default は None で全 DOF 一律スケーリング（既存挙動）。
+        # `set_mass_scaling_dof_mask()` で実行時に設定可能。
+        self._mass_scaling_dof_mask: np.ndarray | None = None
+        self.M_lump = self._compute_scaled_mass(self.mass_scaling_beta)
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
         self.mass_proportional_damping_alpha = float(mass_proportional_damping_alpha)
 
@@ -335,11 +339,47 @@ class ExplicitCentralDifferenceProcess(
         self._vel_ckpt: np.ndarray | None = None
         self._acc_ckpt: np.ndarray | None = None
 
+    def _compute_scaled_mass(self, beta: float) -> np.ndarray:
+        """β² 倍化 + selective mask を反映した M_lump を計算する.
+
+        - mask=None: 全 DOF 一律 M_lump = β² · M_lump_raw
+        - mask あり: True の DOF のみ β² 倍化、False の DOF は raw のまま
+        """
+        if self._mass_scaling_dof_mask is None:
+            return (beta * beta) * self._M_lump_raw
+        scaling = np.ones_like(self._M_lump_raw)
+        scaling[self._mass_scaling_dof_mask] = beta * beta
+        return scaling * self._M_lump_raw
+
+    def set_mass_scaling_dof_mask(self, mask: np.ndarray | None) -> None:
+        """selective mass scaling の DOF マスクを設定する（status-384 候補 (z1b)）.
+
+        True の DOF のみ β² 倍化を適用、False の DOF は raw 質量を維持。
+        梁 DOF の β² 過剰減衰（status-381 §5 解の精度 50% アンダー）を回避するため、
+        高 K 局在（接触ペナルティ等）の DOF のみ自動検出して質量を倍化する。
+
+        Args:
+            mask: (ndof,) bool 配列。None で selective モード解除（全 DOF 一律）。
+                既存の mass_scaling_beta を新しい mask で再適用する（KE 保存 rescale
+                は行わない — mask 切替は β 不変のため運動エネルギー注入はない）。
+        """
+        if mask is not None:
+            mask = np.asarray(mask, dtype=bool)
+            if mask.shape != (self._M_lump_raw.size,):
+                raise ValueError(
+                    f"mask shape {mask.shape} != M_lump shape ({self._M_lump_raw.size},)"
+                )
+        self._mass_scaling_dof_mask = mask
+        # 現在の β を新しい mask で再適用（β は不変なので KE 保存 rescale 不要）
+        self.M_lump = self._compute_scaled_mass(self.mass_scaling_beta)
+        self.M_lump_inv = self._invert_diagonal(self.M_lump)
+
     def set_mass_scaling_beta(self, beta: float, *, rescale_state: bool = True) -> None:
         """質量スケーリング係数 β を実行時に更新する（status-379 auto-tune 用）.
 
         ExplicitDynamicProcess の Courant 監視で要求 β を逆算した際に呼ばれる。
         β² · M_lump_raw で集中質量を再計算し、逆数も更新する。
+        mask が設定されている場合は selective に適用される（status-384 候補 (z1b)）。
 
         Args:
             beta: 新しい β（>= 1.0）。既存値以下なら何もしない（β は単調増加のみ）。
@@ -347,6 +387,7 @@ class ExplicitCentralDifferenceProcess(
                 リスケールする（v ← v·(β_old/β_new), a ← a·(β_old/β_new)²）。
                 これにより β 上方更新時に KE = 0.5·M·v² が β² 倍 spuriously
                 injected される **status-381 h-bug-1** を防ぐ。
+                selective mask あり時は mask 内 DOF のみ rescale。
                 False は後方互換用（テスト目的等）。
         """
         if beta < 1.0:
@@ -355,12 +396,18 @@ class ExplicitCentralDifferenceProcess(
             return
         beta_old = self.mass_scaling_beta
         self.mass_scaling_beta = float(beta)
-        self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
+        self.M_lump = self._compute_scaled_mass(self.mass_scaling_beta)
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
         if rescale_state:
             ratio = beta_old / self.mass_scaling_beta
-            self.vel = self.vel * ratio
-            self.acc = self.acc * (ratio * ratio)
+            if self._mass_scaling_dof_mask is None:
+                self.vel = self.vel * ratio
+                self.acc = self.acc * (ratio * ratio)
+            else:
+                # mask 内 DOF のみ rescale（mask 外は M 不変のため v/a も不変）
+                m = self._mass_scaling_dof_mask
+                self.vel[m] = self.vel[m] * ratio
+                self.acc[m] = self.acc[m] * (ratio * ratio)
 
     @staticmethod
     def _lump_mass(M: sp.csr_matrix, lumping: str) -> np.ndarray:

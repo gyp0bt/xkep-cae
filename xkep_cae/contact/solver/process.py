@@ -221,6 +221,12 @@ class ContactFrictionProcess(
         _mass_proportional_damping_alpha = getattr(
             input_data, "explicit_mass_proportional_damping_alpha", 0.0
         )
+        # status-383 候補 (q1): explicit 中の UL update_reference 周期化.
+        # solver_mode="explicit" のとき、UL update_reference を毎増分ではなく
+        # `explicit_ul_update_interval` 増分ごとに呼び出す。default 1 で既存挙動不変。
+        _explicit_ul_update_interval = max(
+            1, int(getattr(input_data, "explicit_ul_update_interval", 1))
+        )
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -559,6 +565,16 @@ class ContactFrictionProcess(
                 ),
                 kinetic_energy_budget_ratio=getattr(
                     input_data, "explicit_kinetic_energy_budget_ratio", 0.0
+                ),
+                # status-384 (z1a): 要素ごと波速ベース Δt 推定
+                beam_E=manager.config.beam_E,
+                beam_rho=getattr(manager.config, "beam_rho", 0.0),
+                # status-384 (z1b): selective mass scaling
+                mass_scaling_selective=getattr(
+                    input_data, "explicit_mass_scaling_selective", False
+                ),
+                mass_scaling_stiff_threshold_ratio=getattr(
+                    input_data, "explicit_mass_scaling_stiff_threshold_ratio", 10.0
                 ),
             )
             if _solver_mode == "explicit"
@@ -900,7 +916,17 @@ class ContactFrictionProcess(
 
             # UL参照配置更新（status-281: 大変形ヘリカル素線対応）
             # 各収束後にupdate_reference()で参照配置を更新し、増分変位を小さく保つ。
-            if _ul and hasattr(ul_assembler, "update_reference"):
+            # status-383 候補 (q1): explicit モードでは
+            # `explicit_ul_update_interval` 増分ごとに更新（u_incr 累積で
+            # f_int を非ゼロにし、relax phase が平衡へ駆動可能にするため）。
+            # 次にカウントされる増分は `_incr_count + 1`（行 948 でカウント）。
+            _next_incr = _incr_count + 1
+            _do_ul_update = (
+                _solver_mode != "explicit"
+                or _explicit_ul_update_interval <= 1
+                or (_next_incr % _explicit_ul_update_interval == 0)
+            )
+            if _ul and hasattr(ul_assembler, "update_reference") and _do_ul_update:
                 _u_incr_ul = state.u - _ul_ref_base
                 ul_assembler.update_reference(_u_incr_ul)
                 _ul_ref_base[:] = state.u
@@ -1140,6 +1166,12 @@ class ContactFrictionProcess(
                     _explicit_cfg.mass_scaling_max_growth_per_update
                 ),
                 kinetic_energy_budget_ratio=_explicit_cfg.kinetic_energy_budget_ratio,
+                beam_E=_explicit_cfg.beam_E,
+                beam_rho=_explicit_cfg.beam_rho,
+                mass_scaling_selective=_explicit_cfg.mass_scaling_selective,
+                mass_scaling_stiff_threshold_ratio=(
+                    _explicit_cfg.mass_scaling_stiff_threshold_ratio
+                ),
             )
             _dt_relax = float(dt_sub) if dt_sub > 0.0 else 0.0
             _f_ref_relax = max(float(np.linalg.norm(f_ext)), 1.0)
