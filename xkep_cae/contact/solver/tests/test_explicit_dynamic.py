@@ -825,6 +825,133 @@ class TestSelectiveMassScaling:
         np.testing.assert_allclose(proc.vel, [0.5, 1.0, 0.5, 1.0])
 
 
+class TestTwoStageMassScaling:
+    """status-384 候補 (z1c): 2 段階質量スケーリング（β + β_outside）."""
+
+    def test_default_beta_outside_one(self):
+        """default β_outside=1.0 で z1b 単独動作と等価."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=3.0)
+        assert proc.mass_scaling_beta_outside == 1.0
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # mask True: M=9, mask False: β_outside²=1 → M=1
+        np.testing.assert_allclose(proc.M_lump, [9.0, 1.0, 9.0, 1.0])
+
+    def test_two_stage_scaling_with_beta_outside(self):
+        """β=10, β_outside=2 で mask True/False に異なる β² 適用."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=10.0, mass_scaling_beta_outside=2.0
+        )
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # mask True: 10²=100, mask False: 2²=4
+        np.testing.assert_allclose(proc.M_lump, [100.0, 4.0, 100.0, 4.0])
+
+    def test_beta_outside_ignored_when_mask_none(self):
+        """mask=None では β_outside は無視され全 DOF が β² で一律."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=3.0, mass_scaling_beta_outside=10.0
+        )
+        # mask=None なので 全 DOF M = β²·1 = 9（β_outside は無視）
+        np.testing.assert_allclose(proc.M_lump, 9.0)
+
+    def test_beta_outside_below_one_raises(self):
+        """β_outside < 1.0 は ValueError."""
+        M = sp.eye(4, format="csr")
+        with pytest.raises(ValueError, match="mass_scaling_beta_outside must be >= 1.0"):
+            ExplicitCentralDifferenceProcess(M, mass_scaling_beta_outside=0.5)
+
+    def test_set_beta_outside_increases(self):
+        """set_mass_scaling_beta_outside() で β_outside を上方更新できる."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=5.0, mass_scaling_beta_outside=2.0
+        )
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # 初期: mask True M=25, mask False M=4
+        np.testing.assert_allclose(proc.M_lump, [25.0, 4.0, 25.0, 4.0])
+        proc.set_mass_scaling_beta_outside(5.0)
+        # β_outside=5 → mask True 不変、mask False M=25
+        assert proc.mass_scaling_beta_outside == 5.0
+        np.testing.assert_allclose(proc.M_lump, [25.0, 25.0, 25.0, 25.0])
+
+    def test_set_beta_outside_monotone(self):
+        """set_mass_scaling_beta_outside() は単調増加のみ."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=2.0, mass_scaling_beta_outside=5.0
+        )
+        proc.set_mass_scaling_beta_outside(3.0)  # 5 より小さい → 何もしない
+        assert proc.mass_scaling_beta_outside == 5.0
+
+    def test_set_beta_outside_invalid_raises(self):
+        """β_outside < 1.0 で ValueError."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M)
+        with pytest.raises(ValueError, match="mass_scaling_beta_outside must be >= 1.0"):
+            proc.set_mass_scaling_beta_outside(0.5)
+
+    def test_set_beta_outside_rescales_v_outside_only(self):
+        """β_outside 上方更新で KE 保存 rescale が mask=False DOF のみ適用."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=4.0, mass_scaling_beta_outside=2.0
+        )
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        proc.vel = np.array([1.0, 1.0, 1.0, 1.0])
+        proc.set_mass_scaling_beta_outside(4.0)
+        # ratio = 2/4 = 0.5; mask=False のみ rescale
+        np.testing.assert_allclose(proc.vel, [1.0, 0.5, 1.0, 0.5])
+
+    def test_set_beta_outside_no_rescale_when_mask_none(self):
+        """mask=None で β_outside 上方更新しても v は変化しない（β_outside 自体無効）."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=4.0, mass_scaling_beta_outside=2.0
+        )
+        proc.vel = np.array([1.0, 1.0, 1.0, 1.0])
+        proc.set_mass_scaling_beta_outside(8.0)
+        # mask=None なので β_outside は M_lump に作用しない、v も不変
+        np.testing.assert_allclose(proc.vel, [1.0, 1.0, 1.0, 1.0])
+
+    def test_critical_dt_increases_with_beta_outside(self):
+        """β_outside 増加で M_lump_inv が縮小し dt_c が拡大することを確認."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(
+            M, mass_scaling_beta=2.0, mass_scaling_beta_outside=1.0
+        )
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        m_inv_outside_before = proc.M_lump_inv[1]
+        proc.set_mass_scaling_beta_outside(5.0)
+        m_inv_outside_after = proc.M_lump_inv[1]
+        # M_outside: 1 → 25 ⇒ M_inv: 1 → 1/25 (縮小)
+        assert m_inv_outside_after < m_inv_outside_before * 0.05
+        # mask 内 DOF は不変
+        assert proc.M_lump_inv[0] == pytest.approx(1.0 / 4.0)
+
+    def test_factory_passes_beta_outside(self):
+        """_create_time_integration_strategy 経由で β_outside が伝搬する."""
+        from xkep_cae.time_integration.strategy import _create_time_integration_strategy
+
+        M = sp.eye(4, format="csr")
+        s = _create_time_integration_strategy(
+            mass_matrix=M,
+            dt_physical=0.01,
+            solver_mode="explicit",
+            mass_scaling_beta=3.0,
+            mass_scaling_beta_outside=7.0,
+        )
+        assert isinstance(s, ExplicitCentralDifferenceProcess)
+        assert s.mass_scaling_beta == 3.0
+        assert s.mass_scaling_beta_outside == 7.0
+
+
 # =====================================================================
 # 共通ヘルパ
 # =====================================================================

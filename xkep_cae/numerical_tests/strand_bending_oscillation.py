@@ -370,6 +370,12 @@ class StrandBendingOscillationConfig:
     # default False で全 DOF 一律（既存挙動）。
     explicit_mass_scaling_selective: bool = False
     explicit_mass_scaling_stiff_threshold_ratio: float = 10.0
+    # status-384 候補 (z1c): 2 段階質量スケーリング外側 β.
+    # selective=True 時、mask=False（梁 DOF 等）に β_outside² 倍化を適用する。
+    # default 1.0 で z1b 単独動作と等価。7 本/19 本撚線で beam dt 制約により
+    # auto-tune が cap に達する場合、β_outside=10 等 modest な値を指定して
+    # beam DOF の dt 制約を緩和する。
+    explicit_mass_scaling_beta_outside: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -1037,6 +1043,7 @@ class StrandBendingOscillationProcess(
             explicit_mass_scaling_stiff_threshold_ratio=(
                 cfg.explicit_mass_scaling_stiff_threshold_ratio
             ),
+            explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1390,6 +1397,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_stiff_threshold_ratio=(
                     cfg.explicit_mass_scaling_stiff_threshold_ratio
                 ),
+                explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1605,6 +1613,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_stiff_threshold_ratio=(
                     cfg.explicit_mass_scaling_stiff_threshold_ratio
                 ),
+                explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

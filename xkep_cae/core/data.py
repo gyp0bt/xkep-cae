@@ -133,6 +133,7 @@ def default_strategies(
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
     mass_scaling_beta: float = 1.0,
+    mass_scaling_beta_outside: float = 1.0,
     mass_proportional_damping_alpha: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
@@ -177,6 +178,7 @@ def default_strategies(
             solver_mode=solver_mode,
             mass_lumping=mass_lumping,
             mass_scaling_beta=mass_scaling_beta,
+            mass_scaling_beta_outside=mass_scaling_beta_outside,
             mass_proportional_damping_alpha=mass_proportional_damping_alpha,
         ),
         contact_force=_create_contact_force_strategy(
@@ -332,6 +334,12 @@ class ContactFrictionInputData:
     explicit_mass_scaling_beta: float = 1.0
     explicit_mass_scaling_auto: bool = False
     explicit_mass_scaling_max_beta: float = 100.0
+    # status-384 候補 (z1c): 2 段階質量スケーリング外側 β.
+    # `explicit_mass_scaling_selective=True` のとき、mask=False（梁 DOF 等）
+    # に適用する β_outside² 倍化係数。default 1.0 で z1b 単独動作と等価。
+    # 7 本/19 本撚線で beam dt 1.6 μs が auto-tune cap を支配する場合、modest な
+    # β_outside（例 10）で beam DOF dt を拡大することで stiff β² の cap 到達を回避。
+    explicit_mass_scaling_beta_outside: float = 1.0
     # status-381 h-bug-3 緩和: auto-tune が β を一気にジャンプさせると、
     # set_mass_scaling_beta() の KE 保存リスケール後も相空間に急峻な不連続を
     # 導入する。1 update あたり β を `mass_scaling_max_growth_per_update` 倍まで

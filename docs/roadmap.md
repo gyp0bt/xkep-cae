@@ -14,8 +14,26 @@
 
 ## 現在地（2026-05-01）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-385 で候補 (z1c) 2 段階質量スケーリング API（β_stiff + β_outside）実装 —
+> API 完成、validation で β_stiff cap が支配的と確認、(z1d) loading rate 縮小が必須と判明**:
+> status-384 §6.1 最有力候補 (z1c) として `ExplicitCentralDifferenceProcess` に
+> `mass_scaling_beta_outside` 引数 + `set_mass_scaling_beta_outside()` API
+> （KE 保存 v/a リスケール、mask=False の DOF のみ）を追加。`_compute_scaled_mass()` で
+> mask=False の DOF（梁）に β_outside² を、mask=True の DOF（stiff）に β² を適用。
+> `_explicit_dynamic.py` の dt_c_beam 推定で mask 設定時は `β_outside` を乗じる。
+> **+11 単体テスト**（`TestTwoStageMassScaling`）全 pass。
+> **`38_z1c_two_stage_validation.py` 8 ケース実機検証**: API は設計通り動作（log で
+> post-cutback target β が β_outside=10 で 8.8×10⁶ → 8.8×10⁵ に **10x 縮小**）も、
+> initial target β=4.7×10⁴（β_stiff cap=10³〜10⁴ を超過）が支配的で全 explicit ケース
+> frac=0 で divergence。aggressive scaling（β_outside=10, β_stiff_max=10⁶, α=10）で
+> frac=0.425 進むも max\|u\|=1.6×10⁵ mm で精度 gate 完全違反。
+> **結論**: (z1c) infrastructure は完成、しかし MCDD 凍結解除条件 (5) 達成には
+> **(z1d) `t_cycle` 下限緩和** で loading rate を物理 T1 ベースに縮小し target β
+> 自体を下げる必要がある。次候補は **(z1d) 最優先** / (z2) Cosserat 梁プロトタイプ
+> 並行検討。
+>
 > **★ status-384 で Abaqus/Explicit 標準アプローチへの移行 Phase 1 完了**:
 > ユーザー指摘「応力波の速度と要素サイズから dt」+「Cosserat 梁の大回転
 > ネイティブ特性」を受け、status-383 までの "explicit + UL は原理的に

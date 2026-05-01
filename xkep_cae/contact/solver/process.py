@@ -217,6 +217,8 @@ class ContactFrictionProcess(
         _mass_lumping = getattr(input_data, "explicit_mass_lumping", "row_sum")
         # status-379 Phase 3: mass scaling 候補 (h1).
         _mass_scaling_beta = getattr(input_data, "explicit_mass_scaling_beta", 1.0)
+        # status-384 候補 (z1c): 2 段階質量スケーリング外側 β.
+        _mass_scaling_beta_outside = getattr(input_data, "explicit_mass_scaling_beta_outside", 1.0)
         # status-382 候補 (p3): mass-proportional Rayleigh damping.
         _mass_proportional_damping_alpha = getattr(
             input_data, "explicit_mass_proportional_damping_alpha", 0.0
@@ -248,6 +250,7 @@ class ContactFrictionProcess(
             solver_mode=_solver_mode,
             mass_lumping=_mass_lumping,
             mass_scaling_beta=_mass_scaling_beta,
+            mass_scaling_beta_outside=_mass_scaling_beta_outside,
             mass_proportional_damping_alpha=_mass_proportional_damping_alpha,
         )
         _time_strategy = strategies.time_integration
