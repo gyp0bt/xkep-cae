@@ -639,3 +639,69 @@ class TestExplicitCentralDifferenceMassScaling:
         proc.set_mass_scaling_beta(50.0)
         np.testing.assert_array_equal(proc.vel, np.zeros(3))
         np.testing.assert_array_equal(proc.acc, np.zeros(3))
+
+    # ── status-382 候補 (p3): mass-proportional Rayleigh damping ───────────
+
+    def test_mass_proportional_damping_default_zero(self):
+        """default で α=0、減衰は無効."""
+        M = sp.eye(3, format="csr")
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        assert proc.mass_proportional_damping_alpha == 0.0
+
+    def test_mass_proportional_damping_negative_raises(self):
+        """α < 0 は拒否（damping 注入は単調非負のみ）."""
+        M = sp.eye(3, format="csr")
+        with pytest.raises(ValueError, match="mass_proportional_damping_alpha must be >= 0"):
+            ExplicitCentralDifferenceProcess(mass_matrix=M, mass_proportional_damping_alpha=-1.0)
+
+    def test_mass_proportional_damping_decays_velocity(self):
+        """α > 0 で外力ゼロ時に速度が減衰する.
+
+        SDoF ξ = M·a + α·M·v = 0 → v_{n+1} = v_n · (1 - α·dt) （明示的減衰）.
+        K=0、F_ext=0、dt 微小、α=2.0 で 1 step 後に v が概略 (1-α·dt) 倍。
+        """
+        M = sp.eye(2, format="csr") * 1.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_proportional_damping_alpha=2.0)
+        proc.set_initial_state(velocity=np.array([1.0, 1.0]))
+        u = np.zeros(2)
+        dt = 0.01
+        # f_ext = f_int = 0 → a = -α·v = -2·v_old
+        u_new = proc.step(u=u, f_ext=np.zeros(2), f_int=np.zeros(2), dt=dt)
+        # v_new = v_old + dt·a = v_old·(1 - α·dt) = 1·(1 - 0.02) = 0.98
+        np.testing.assert_array_almost_equal(proc.vel, np.array([0.98, 0.98]))
+        # u_new = u + dt·v_new = 0 + 0.01·0.98 = 0.0098
+        np.testing.assert_array_almost_equal(u_new, np.array([0.0098, 0.0098]))
+
+    def test_mass_proportional_damping_independent_of_beta(self):
+        """α は M スケーリングと独立に作用する（β 倍化しても damping rate 不変）."""
+        M = sp.eye(2, format="csr") * 1.0
+        # β=1
+        proc1 = ExplicitCentralDifferenceProcess(
+            mass_matrix=M,
+            mass_scaling_beta=1.0,
+            mass_proportional_damping_alpha=3.0,
+        )
+        proc1.set_initial_state(velocity=np.array([1.0, 1.0]))
+        proc1.step(u=np.zeros(2), f_ext=np.zeros(2), f_int=np.zeros(2), dt=0.01)
+        # β=10
+        proc10 = ExplicitCentralDifferenceProcess(
+            mass_matrix=M,
+            mass_scaling_beta=10.0,
+            mass_proportional_damping_alpha=3.0,
+        )
+        proc10.set_initial_state(velocity=np.array([1.0, 1.0]))
+        proc10.step(u=np.zeros(2), f_ext=np.zeros(2), f_int=np.zeros(2), dt=0.01)
+        # 両者の v は同じ（damping rate α は β 独立）
+        np.testing.assert_array_almost_equal(proc1.vel, proc10.vel)
+
+    def test_factory_passes_damping_alpha(self):
+        """_create_time_integration_strategy で α が伝搬する."""
+        M = sp.eye(3, format="csr")
+        s = _create_time_integration_strategy(
+            mass_matrix=M,
+            dt_physical=0.01,
+            solver_mode="explicit",
+            mass_proportional_damping_alpha=5.5,
+        )
+        assert isinstance(s, ExplicitCentralDifferenceProcess)
+        assert s.mass_proportional_damping_alpha == 5.5

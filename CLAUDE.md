@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11 テスト** — 2026-05-01 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-381（mass scaling 実装 bug 修正 — 発散停止、ただし explicit 解は解析解の 50% で精度 gate 未達、凍結解除判定再撤回）**。status-380 §4.0 最優先 TODO に対し 3 仮説切り分けで **h-bug-1（v/a リスケール欠落）+ h-bug-3（β 急成長）** を確定し修正: (1) `set_mass_scaling_beta()` で KE 保存 v/a リスケール（`v *= β_old/β_new`, `a *= (β_old/β_new)²`）、(2) `mass_scaling_max_growth_per_update=4.0` cap、(3) 増分 1 warm-start。**実機**: 7 本 explicit 1.58×10⁸mm → 40.1mm、19 本 1.59×10⁸mm → 41.2mm で発散停止 + 形式 gate（frac=1.0 / E_ratio<5% / max\|u\|<1m）全 PASS。**しかしユーザー指摘「7本 implicit 70.7mm vs explicit 40.1mm は倍違う、解析解と合うか」で精査**: 90° 曲げ単梁の解析解 73.3mm（quarter circle）に対し implicit 70mm（96%）/ explicit 40mm（48%）と **explicit 系統的 50% アンダー**。動的緩和の未収束 + KE 保存リスケールの累積過減衰が原因と推定。**MCDD 凍結解除条件達成判定再撤回**、追加 gate (5)「解の精度 < 10%」未達。次 status は仮説 (p1) BC 完了後 relax-step 追加 / (p2) リスケール方式変更 / (p3) artificial damping / (p4) β 抑制で精度確保が最優先。回帰: 697 passed 5 skipped（+6: KE 保存 4 + warm-start 2）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。Phase A〜E / status-346〜381 の **32/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12 テスト** — 2026-05-01 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-382（候補 (p3) damping + (p1) relax API 実装 — UL update_reference 凍結が真の根本原因と判明、精度 gate 未達のまま）**。status-381 §7「explicit 解を implicit / 解析解と一致させる」の最優先 TODO に対し仮説 (p3) 質量比例 Rayleigh damping + (p1) BC 完了後 relax phase の 2 API を実装: `ExplicitCentralDifferenceProcess.mass_proportional_damping_alpha` 引数追加（`a -= α·v`、Courant/β 独立）、`ContactFrictionProcess` 末尾に relax phase 追加。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 3 field + 3 経路 plumb、+7 単体テスト。**`35_explicit_accuracy_validation.py` 6 ケース全 FAIL** — `exp_no_damp_relax500` が baseline 35.37 と本質的に同値の 35.41mm（解析解 73.30mm の 51% off）、`[RELAX] converged at step 1 ||R||=0` ログで relax 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に凍結 → `_ul_internal_force_wrapper(state.u)` で `u_incr = state.u − _ul_ref_base ≈ 0` → `f_int(0) = 0` → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま。次候補は (q1) explicit 中の UL update 周期化（最有力、`explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2 復活。回帰: 全 24 契約検査 OK / **704 passed 5 skipped**（status-381 比 +7）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。Phase A〜E / status-346〜382 の **33/N 完了**.
+
+前 status: status-381（mass scaling 実装 bug 修正 — 発散停止、ただし explicit 解は解析解の 50% で精度 gate 未達、凍結解除判定再撤回）。status-380 §4.0 最優先 TODO に対し 3 仮説切り分けで **h-bug-1（v/a リスケール欠落）+ h-bug-3（β 急成長）** を確定し修正: (1) `set_mass_scaling_beta()` で KE 保存 v/a リスケール（`v *= β_old/β_new`, `a *= (β_old/β_new)²`）、(2) `mass_scaling_max_growth_per_update=4.0` cap、(3) 増分 1 warm-start。**実機**: 7 本 explicit 1.58×10⁸mm → 40.1mm、19 本 1.59×10⁸mm → 41.2mm で発散停止 + 形式 gate（frac=1.0 / E_ratio<5% / max\|u\|<1m）全 PASS。**しかしユーザー指摘「7本 implicit 70.7mm vs explicit 40.1mm は倍違う、解析解と合うか」で精査**: 90° 曲げ単梁の解析解 73.3mm（quarter circle）に対し implicit 70mm（96%）/ explicit 40mm（48%）と **explicit 系統的 50% アンダー**。動的緩和の未収束 + KE 保存リスケールの累積過減衰が原因と推定。**MCDD 凍結解除条件達成判定再撤回**、追加 gate (5)「解の精度 < 10%」未達。次 status は仮説 (p1) BC 完了後 relax-step 追加 / (p2) リスケール方式変更 / (p3) artificial damping / (p4) β 抑制で精度確保が最優先。回帰: 697 passed 5 skipped（+6: KE 保存 4 + warm-start 2）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。Phase A〜E / status-346〜381 の **32/N 完了**.
 
 前 status: status-380（物理的妥当性検証 — 7本/19本ともに explicit 解は max\|u\|=1.59×10⁸mm 数値発散、status-379 凍結解除判定を撤回）。status-379 引継ぎ §6.1 最優先 TODO の物理的妥当性検証を実施。`30_implicit_vs_explicit_7strand.py`（+330 行）で 7 本撚線 90° 曲げを両 solver_mode で完走させ比較、`31_render_19strand_explicit.py`（+155 行）で status-379 採択設定を再現 + 3D 可視化。**重大発見**: 7 本 implicit max\|u\|=159mm（妥当、24 接触要素）vs explicit max\|u\|=1.58×10⁸mm（≈158km、active pair=0、撚線が空間に飛散）。19 本 explicit も同様 max\|u\|=1.59×10⁸mm（status-379 数値再現性は完全）。**根本原因**: `frac=1.0` は処方変位 BC 達成のみを意味し、`E_kin/E_strain<5%` は β² 倍化された両エネルギー比なので β に独立、両 gate は数学的構造由来で発散時にも PASS する。**status-379 MCDD 凍結解除条件達成判定は撤回**、CLAUDE.md 凍結解除条件に `max\|u_trans\| < L_strand × C` 追加。次候補: (h1') β cap 強化 / (h2) dt subcycling / (h3) selective explicit / (h4) implicit AL n>2 延伸 / (h5) bending 段階処方。実装本体無変更、回帰 691 passed 5 skipped（status-379 と同一）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 / ruff pass。Phase A〜E / status-346〜380 の **31/N 完了**。前 status: status-379（陽的中央差分 Phase 3 候補 (h1) mass scaling auto-tune で 19 本 frac=1.0 完走、ただし変位の物理的妥当性 gate 欠落により本 status-380 で撤回）。status-378 で実測した Courant 比 3×10⁵ を **集中質量スケーリング**（Belytschko §6.4.2）で吸収。`ExplicitCentralDifferenceProcess` に `mass_scaling_beta` 引数 + `set_mass_scaling_beta()` API 追加（β² · M_lump で集中質量倍化、Δt_c → β·Δt_c）。`ExplicitDynamicProcess` の Courant 監視に **β auto-tune** を統合: 違反検知時に必要 β を逆算し `set_mass_scaling_beta()` で上方更新、cap 到達時は `failure_reason="courant_cap"` で adaptive dt cutback と組合せ。`ExplicitDynamicInput` 3 field（`mass_scaling_auto` / `mass_scaling_max_beta` / `kinetic_energy_budget_ratio`）+ `ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 4 field 追加 + 3 経路 plumb-through。新規 11 単体テスト: 質量スケーリング 8（β² 集中質量 / 単調増加 / 不正値拒否 / factory plumb）+ auto-tune 3（disabled→courant / scales-within-cap / cap→courant_cap）。**19 本撚線 90° 曲げ実機**（`work/beam_hysteresis/29_mass_scaling_19strand.py auto`、max β=10³）: **frac=1.0000 完走 + 269 incr / 31 cb / 131s + E_kin/E_strain=1.15%（gate 5% の 23%）**。status-376 implicit + AL n=2 の **0.5746 を +74% 上回る**、Gate 両条件 PASS（frac=1.0 / E_kin/E_strain<5%）。**MCDD Phase E 凍結解除条件「19 本 frac=1.0 完走」達成**。Default `solver_mode="implicit"` で既存挙動完全不変、回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending = **691 passed 5 skipped**（status-378 比 +11）/ `test_helical_3d_hermite` rel_err=2.18e-07 / 7 本 frac=1.0（implicit）/ ruff pass。設計仕様 `time_integration_explicit.md` §質量スケーリング + `explicit_dynamic.md` §auto-tune 追記。前 status: status-378（陽的中央差分 Phase 2 — solver path 配線 + 7 本 smoke で Courant 比 3×10⁵ 実測）。Phase A〜E / status-346〜379 の **30/N 完了**
 
@@ -94,23 +96,26 @@
 ### 次の課題
 
 完了履歴の詳細は `docs/status/status-index.md` 参照。**status-380 で status-379 の
-MCDD Phase E 凍結解除条件達成判定を撤回**（7 本/19 本とも explicit 解は数値発散）。
-現在のアクティブライン:
+MCDD Phase E 凍結解除条件達成判定を撤回**、status-381 で発散停止 + 50% アンダー、
+**status-382 で UL `update_reference` 凍結が真の根本原因と判明**（damping/relax 両 API
+は実装済みだが UL に阻まれて精度 gate (5) 未達のまま）。現在のアクティブライン:
 
-- **次 status（最優先）— 候補 (h4) implicit + AL n>2 延伸**: status-376 AL n=2 で
-  19 本 frac=0.5746 / Gate 0.6 を 0.026 不足（既知最良）。AL n=3 は status-376 で
-  過修正発散したが、Uzawa 更新の under-relaxation（例: $\lambda_\mathrm{new} =
-  \lambda + \omega \cdot p_n$、$\omega \in (0,1)$）で安定化を試みる。**explicit よりも
-  物理的妥当性は確実**（implicit は max\|u\| が物理範囲に収まる）。
-- **副次（並行可）— 候補 (h1') β cap 強化**: `mass_scaling_max_beta=1e2`〜`1e3` の
-  狭範囲掃引で 7 本/19 本ともに max\|u\| < L_strand×10 を維持できる cap を探索。
-  発散しない領域があれば mass scaling の有効領域を明文化。
-- **副次（並行可）— 候補 (h5) bending 段階処方**: 19 本 implicit で
-  `bending_curvature` を 0.005 → 0.010 → 0.015 と段階的に増加させ、各段階で NR を
-  完全収束させてからチェックポイントから次段階を開始する。Newton 良条件再開で
-  19 本 frac=1.0 を implicit のまま達成できる可能性。
-- **副次 — 候補 (h2) dt subcycling / (h3) selective explicit**: (h1) 撤回で重要度が
-  上昇。explicit を諦めず (h1') で物理的領域を確保した上で評価。
+- **次 status（最優先）— 候補 (q1) explicit 中の UL update 周期化**: 各増分で
+  `update_reference` を呼ぶのではなく **N 増分ごと** に呼ぶ（`explicit_ul_update_interval: int = 1`
+  field 追加、default 1 で挙動不変、>1 のとき N 増分ごとに update）。これにより u_incr が
+  累積し、relax phase の `f_int(u_incr)` が意味を持ち、構造を平衡へ駆動可能になる。
+  status-382 §6.1 で実装案明記。
+- **副次（並行可）— 候補 (q2) 増分内 sub-cycling**: 各 BC 増分で multi-step explicit を
+  実行してから `update_reference`。dt_sub を小さくし dynamics が BC に追従するまで動かして
+  から reference 更新。実装は ContactFrictionProcess 主ループ内で `inner_step_count` 導入。
+- **副次（並行可）— 候補 (q3) implicit + AL n>2 復活**: status-376 で却下された (g2) AL n>2
+  を Uzawa update under-relaxation（$\lambda_\mathrm{new} = \lambda + \omega \cdot p_n$、
+  $\omega \in (0,1)$）で再試行。explicit と並行して implicit 系で 19 本 frac=1.0 を狙う。
+  **explicit よりも物理的妥当性は確実**（implicit は max\|u\| が物理範囲に収まる）。
+- **副次 — 候補 (h5) bending 段階処方**: 19 本 implicit で `bending_curvature` を
+  0.005 → 0.010 → 0.015 と段階的に増加させ、各段階で NR を完全収束させてから
+  チェックポイントから次段階を開始する。Newton 良条件再開で 19 本 frac=1.0 を
+  implicit のまま達成できる可能性。
 - **凍結解除 TODO 再開**: 被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション /
   7本撚線ピッチ依存性 / 空間ブロック分離（status-345 で凍結、再開可能）。
 - **多 pair 診断 `14b_kc_multi_pair_diagnostic.py`** — status-370 §5 保留、優先度低。
@@ -192,6 +197,7 @@ stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反
 - ~~status-379（陽解法 Phase 3 候補 (h1) mass scaling auto-tune — 19 本 frac=1.0 完走、〜status-380 で判定撤回〜）~~: 完了（`ExplicitCentralDifferenceProcess` に `mass_scaling_beta` 引数 + `set_mass_scaling_beta()` API（β² · M_lump で集中質量倍化、Δt_c → β·Δt_c）。`ExplicitDynamicProcess` の Courant 監視に β auto-tune 統合: 違反検知 → 必要 β 逆算 → `set_mass_scaling_beta()` 上方更新、cap 到達は `failure_reason="courant_cap"` で adaptive dt cutback と組合せ。`ExplicitDynamicInput` 3 field + `ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 4 field 追加 + 3 経路 plumb-through、11 単体テスト。19 本 90° 曲げ（max β=10³）で frac=1.0000 完走 / 269 incr / 31 cb / 131s / E_kin/E_strain=1.15%、Gate 両条件（frac/E_ratio）PASS と判定したが、**status-380 で max\|u\|=1.59×10⁸mm の数値発散が発覚し撤回**。Default `solver_mode="implicit"` で既存挙動完全不変、回帰 691 passed 5 skipped。30/N 完了）
 - ~~status-380（物理的妥当性検証 — 7本/19本ともに explicit 解は数値発散、status-379 凍結解除判定を撤回）~~: 完了（max\|u\|=1.59×10⁸mm 発散を検出、CLAUDE.md 凍結解除条件に `max\|u_trans\| < L_strand × C` 追加。31/N 完了）
 - ~~status-381（mass scaling 実装 bug 修正 — 発散停止、ただし explicit 解は解析解の 50% で精度 gate 未達、凍結解除判定再撤回）~~: 完了（3 仮説切り分けで **h-bug-1（v/a リスケール欠落）+ h-bug-3（β 急成長）** を確定。修正: (1) `set_mass_scaling_beta()` で KE 保存 v/a リスケール、(2) `mass_scaling_max_growth_per_update=4.0` cap、(3) 増分 1 warm-start。実機: 7 本 explicit 1.58e8→40.1mm、19 本 1.59e8→41.2mm で発散停止。**ユーザー指摘で精査**: 90° 曲げ単梁解析解 73.3mm に対し implicit 70mm（96%）/ explicit 40mm（48%）で **explicit 系統的 50% アンダー**。動的緩和未収束 + KE 保存リスケール累積過減衰が原因と推定。**MCDD 凍結解除条件達成判定再撤回**、追加 gate (5)「解の精度 < 10%」未達。回帰 697 passed 5 skipped（+6）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。32/N 完了）
+- ~~status-382（候補 (p3) damping + (p1) relax API 実装 — UL update_reference 凍結が真の根本原因と判明、精度 gate 未達のまま）~~: 完了（status-381 §7「explicit 解を implicit / 解析解と一致させる」最優先 TODO に対し仮説 (p3) 質量比例 Rayleigh damping `ExplicitCentralDifferenceProcess.mass_proportional_damping_alpha`（`a -= α·v`、Courant/β 独立）+ (p1) BC 完了後 relax phase（`ContactFrictionProcess` 末尾に追加、BC frac=1.0 保持で `explicit_relax_steps` 回 step）の 2 API を実装。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 3 field + 3 経路 plumb、+7 単体テスト。**`35_explicit_accuracy_validation.py` 6 ケース全 FAIL** — `exp_no_damp_relax500` が baseline 35.37 と本質的に同値 35.41mm、`[RELAX] converged at step 1 ||R||=0` ログで relax 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に凍結 → `_ul_internal_force_wrapper(state.u)` で u_incr ≈ 0 → f_int(0) = 0 → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま。次候補は (q1) explicit 中の UL update 周期化（最有力、`explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2 復活。回帰 704 passed 5 skipped（+7）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。33/N 完了）
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）: 詳細項目（被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション / 7本撚線ピッチ依存性 / 空間ブロック分離 / 19本 Type D stall K_mat x/z 単発対応）は status-345 までで列挙、status-373 で本ブロックから削除。
 

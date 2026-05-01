@@ -12,11 +12,31 @@
 
 ---
 
-## 現在地（2026-04-30）
+## 現在地（2026-05-01）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+28+10+11 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ status-380 で status-379 の MCDD 凍結解除判定を撤回**: 数理契約駆動開発（MCDD）Phase A〜E（status-346〜380、status-354 で 1 status 後ろ倒し）
+> **★ status-382 で UL update_reference 凍結が真の根本原因と判明**: status-381 §7
+> 引継ぎの仮説 (p3) 質量比例 Rayleigh damping + (p1) BC 完了後 relax phase の 2 API
+> を実装したが、`35_explicit_accuracy_validation.py` 6 ケース全 FAIL。
+> `exp_no_damp_relax500` が baseline 35.37 と本質的に同値の 35.41mm（解析解 73.30mm
+> の 51% off）、`[RELAX] converged at step 1 ||R||=0` ログで relax が即座に終了。
+> **真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に
+> 凍結 → `_ul_internal_force_wrapper(state.u)` で `u_incr = state.u − _ul_ref_base ≈ 0`
+> → `f_int(0) = 0` → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」
+> 未達のまま、次候補は **(q1) explicit 中の UL update 周期化**（最有力、
+> `explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2
+> 復活。
+>
+> **★ status-380〜381 履歴**: status-379 候補 (h1) mass scaling auto-tune が形式
+> gate（frac=1.0 + E_kin/E_strain<5%）を満たしたが、status-380 物理的妥当性検証で
+> **7 本/19 本ともに `max\|u_trans\|=1.59×10⁸ mm`（≈159 km）の数値発散**が発覚、
+> status-379 凍結解除判定撤回。status-381 で 3 仮説切り分けによる **h-bug-1（v/a
+> リスケール欠落）+ h-bug-3（β 急成長）** 確定 → KE 保存リスケール + 4× growth cap +
+> 増分 1 warm-start 実装で発散停止（41 mm）。しかしユーザー指摘で精査すると単梁
+> 解析解 73.3mm に対し explicit 40mm（48%）と **系統的 50% アンダー**、精度 gate (5)
+> 「< 10%」未達で再撤回。MCDD 数理契約駆動開発（MCDD）Phase A〜E（status-346〜382、
+> status-354 で 1 status 後ろ倒し）
 > （**31/N 完了** — status-379 候補 (h1) mass scaling auto-tune が形式 gate（frac=1.0 + E_kin/E_strain<5%）を満たしたが、status-380 物理的妥当性検証で **7 本/19 本ともに `max\|u_trans\|=1.59×10⁸ mm`（≈159 km）の数値発散**が発覚。3D 可視化で撚線が空間に飛散することを実証、status-379 の凍結解除判定は **撤回**。**根本原因**: `frac=1.0` は処方変位 BC 達成のみ、`E_kin/E_strain` は β² 倍化された両エネルギー比なので β に独立で発散時にも PASS、両 gate は数学的構造由来。CLAUDE.md 凍結解除条件に **物理的妥当性 gate**（`max\|u_trans\| < L_strand × C`、C=10）を追加。次候補は (h4) implicit AL n>2 with Uzawa under-relaxation（implicit は max\|u\| が物理範囲）/ (h1') β cap 強化 / (h5) bending 段階処方 / (h2) dt subcycling / (h3) selective explicit。19 本既知最良は status-376 implicit AL n=2 の frac=0.5746。それ以前の経緯: Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362〜363: 候補 (c) line search 実装+掃引（クローズ）+ status-364: C24 hollow VerifyProcess 封じ込め + status-365〜367: 候補 (e) 接触減衰（7本採択 -57% / 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本（nr_max=30 で +16.6% / クローズ）+ status-369: Case B opt-in 化 + 候補 (f) 計画 + status-370: Phase C-3' Step 3.1 結果 B 確定（NR alg 側動力学）+ status-371〜372: 候補 (g1) EMA 平滑化（7本部分達成 / 19本却下）+ status-373: TODO 整理 + status-374〜375: 候補 (g3) pair-wise relaxation Phase 1+2（19本却下）+ status-376: 候補 (g2) AL 外側ループ（19本 +53.7% gate 0.026 不足で却下）+ status-377〜378: 陽解法 Phase 1（Process 単体実装）+ Phase 2（solver path 配線、Courant 比 3×10⁵ 実測）+ status-379: 陽解法 Phase 3 候補 (h1) **mass scaling auto-tune で 19 本 frac=1.0 完走 ★凍結解除**。それ以前の経緯: Phase A-1〜A-2 + B-1〜B-2 + C-1〜C-2 + 数理台帳訂正 status-353 + Phase C-3 再定義実験 status-354 + Phase C-3' 診断 status-355 + Phase C-3' 実装 status-356 + Phase E 着手 status-357 + Phase E C20 + 仮説 C 候補 (a) 反証 status-358 + 仮説 C 候補 (a') 採択 status-359 + (a') 19本却下 + Phase E C21/C22/C23 status-360 + 7/19 挙動反転の幾何・Type 分布分析 status-361 + status-362〜363: 仮説 C 候補 (c) line search 実装+掃引（候補 (c) クローズ）+ status-364: Phase E C24 — hollow VerifyProcess 構造的封じ込め + status-365〜367: 候補 (e) 接触減衰 escape hatch（Phase 1+2+validation、7本採択方向 -57% / 19本却下）+ status-368: 候補 (d) 接触凍結モード 19 本再評価（nr_max=30 で +16.6%、未達でクローズ）+ status-369: Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定 + status-370: Phase C-3' Step 3.1 完了（active 境界 FD 診断で結果 B 確定）+ status-371〜372: 候補 (g1) active 履歴 EMA 平滑化（実装+α 掃引、7 本部分達成 / 19 本却下） + status-373: TODO 整理 + 症状緩和系 experiment 5 本削除 + solver_mode 設計追記 + status-374: 候補 (g3) pair-wise relaxation Phase 1 — `PairwiseFreezingProcess` 単体実装 + 12 単体テスト + **status-375: 候補 (g3) Phase 2 NR 配線 + 19 本実機検証で却下（threshold ∈ {2,3,5} 全 3 ケース Gate frac≥0.6 未達 / DOF block 上書きが隣接 pair 正フィードバック誘発 / 次候補 (g2) AL 再導入）**）。
 > 旧計画書 `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
 > （status-352 で記録）。以降、計画情報は本 roadmap と CLAUDE.md・

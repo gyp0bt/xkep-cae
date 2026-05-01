@@ -217,6 +217,10 @@ class ContactFrictionProcess(
         _mass_lumping = getattr(input_data, "explicit_mass_lumping", "row_sum")
         # status-379 Phase 3: mass scaling 候補 (h1).
         _mass_scaling_beta = getattr(input_data, "explicit_mass_scaling_beta", 1.0)
+        # status-382 候補 (p3): mass-proportional Rayleigh damping.
+        _mass_proportional_damping_alpha = getattr(
+            input_data, "explicit_mass_proportional_damping_alpha", 0.0
+        )
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -238,6 +242,7 @@ class ContactFrictionProcess(
             solver_mode=_solver_mode,
             mass_lumping=_mass_lumping,
             mass_scaling_beta=_mass_scaling_beta,
+            mass_proportional_damping_alpha=_mass_proportional_damping_alpha,
         )
         _time_strategy = strategies.time_integration
         _penalty_strategy = strategies.penalty
@@ -1103,6 +1108,145 @@ class ContactFrictionProcess(
                 _graph_snapshots.append(_cg_out.graph)
             except Exception:
                 pass
+
+        # ================================================================
+        # status-382 候補 (p1): BC 完了後の動的緩和フェーズ.
+        # 陽解法 + mass scaling では BC が frac=1.0 に達した時点で系が過渡応答
+        # 中であり、準静的平衡まで relax していない（status-381 §7 仮説 (p1)）。
+        # `explicit_relax_steps > 0` のとき、BC を frac=1.0 で保持したまま追加
+        # explicit ステップを実行し、damping により平衡に収束させる。
+        # `explicit_mass_proportional_damping_alpha > 0` を併用推奨。
+        # ================================================================
+        _explicit_relax_steps = getattr(input_data, "explicit_relax_steps", 0)
+        _explicit_relax_tol = getattr(input_data, "explicit_relax_tol", 0.0)
+        _entered_relax = (
+            _solver_mode == "explicit"
+            and _explicit_relax_steps > 0
+            and _explicit_proc is not None
+            and len(_load_history) > 0
+            and _load_history[-1] >= 1.0 - 1e-10
+        )
+        if _entered_relax:
+            # Courant 検査を無効化（負荷変化なしで K_max は安定、β 上方更新も停止）。
+            _relax_cfg = ExplicitDynamicInput(
+                show_progress=_explicit_cfg.show_progress,
+                ndof_per_node=_explicit_cfg.ndof_per_node,
+                courant_safety=_explicit_cfg.courant_safety,
+                courant_check_interval=0,
+                max_dt_shrink_factor=_explicit_cfg.max_dt_shrink_factor,
+                mass_scaling_auto=False,
+                mass_scaling_max_beta=_explicit_cfg.mass_scaling_max_beta,
+                mass_scaling_max_growth_per_update=(
+                    _explicit_cfg.mass_scaling_max_growth_per_update
+                ),
+                kinetic_energy_budget_ratio=_explicit_cfg.kinetic_energy_budget_ratio,
+            )
+            _dt_relax = float(dt_sub) if dt_sub > 0.0 else 0.0
+            _f_ref_relax = max(float(np.linalg.norm(f_ext)), 1.0)
+            print(
+                f"  [RELAX] start {_explicit_relax_steps} explicit steps at "
+                f"frac=1.0, dt={_dt_relax:.3e}, "
+                f"alpha_damping={_mass_proportional_damping_alpha:.3e}, "
+                f"tol={_explicit_relax_tol:.1e}"
+            )
+            _relax_log_interval = max(1, _explicit_relax_steps // 20)
+            _relax_converged_at = -1
+            for _ridx in range(1, _explicit_relax_steps + 1):
+                # BC を frac=1.0 で再保持
+                if has_prescribed:
+                    if _prescribed_func is not None:
+                        state.u[_prescribed_dofs] = _prescribed_func(1.0)
+                    else:
+                        state.u[_prescribed_dofs] = (1.0 - state.ul_frac_base) * _prescribed_values
+                # MPC 射影（slave DOF を master 値から再計算）
+                if _mpc_current is not None:
+                    _mpc = _mpc_current
+                    _u_red = state.u[_mpc.independent_dofs]
+                    _u_proj = _mpc.T @ _u_red
+                    if hasattr(_u_proj, "toarray"):
+                        _u_proj = _u_proj.toarray().ravel()
+                    state.u[:] = np.asarray(_u_proj).ravel()
+                # 接触候補検出 + 幾何更新
+                _dc_out = DeformedCoordsProcess().process(
+                    DeformedCoordsInput(
+                        node_coords_ref=state.node_coords_ref,
+                        u=state.u,
+                        ndof_per_node=6,
+                    )
+                )
+                _coords_def = _dc_out.coords
+                _dc_step = _detect_proc.process(
+                    DetectCandidatesInput(
+                        manager=manager,
+                        node_coords=_coords_def,
+                        connectivity=connectivity,
+                        radii=radii,
+                        margin=broadphase_margin,
+                        cell_size=broadphase_cell_size,
+                        core_radii=core_radii,
+                    )
+                )
+                manager = _dc_step.manager
+                _ug_step = _geom_proc.process(
+                    UpdateGeometryInput(
+                        manager=manager,
+                        node_coords=_coords_def,
+                        connectivity=connectivity,
+                    )
+                )
+                manager = _ug_step.manager
+                # 陽解法 1 step（relax 用 cfg）
+                _relax_step_input = ExplicitDynamicStepInput(
+                    config=_relax_cfg,
+                    u=state.u,
+                    f_ext=f_ext,
+                    fixed_dofs=fixed_dofs,
+                    assemble_tangent=_asm_tangent,
+                    assemble_internal_force=_asm_internal_force,
+                    manager=manager,
+                    node_coords_ref=state.node_coords_ref,
+                    strategies=strategies,
+                    k_pen=k_pen,
+                    mu=mu,
+                    u_ref=state.u_ref,
+                    load_frac=1.0,
+                    load_frac_prev=1.0,
+                    increment_display=state.increment_display + _ridx,
+                    dt_sub=_dt_relax,
+                    use_coating=use_coating,
+                    connectivity=connectivity,
+                )
+                _relax_result = _explicit_proc.process(_relax_step_input)
+                # 残差ノルムによる早期収束判定
+                _r_relax = (
+                    _relax_result.diagnostics.res_history[-1]
+                    if _relax_result.diagnostics and _relax_result.diagnostics.res_history
+                    else 0.0
+                )
+                _r_rel = _r_relax / _f_ref_relax
+                if _ridx % _relax_log_interval == 0 or _ridx == _explicit_relax_steps:
+                    _max_v = (
+                        float(np.max(np.abs(_time_strategy.vel)))
+                        if _time_strategy.vel.size
+                        else 0.0
+                    )
+                    print(
+                        f"  [RELAX] step {_ridx}/{_explicit_relax_steps}, "
+                        f"||R||/||f||={_r_rel:.3e}, max|v|={_max_v:.3e}"
+                    )
+                if _explicit_relax_tol > 0.0 and _r_rel < _explicit_relax_tol:
+                    _relax_converged_at = _ridx
+                    print(
+                        f"  [RELAX] converged at step {_ridx} "
+                        f"(||R||/||f||={_r_rel:.3e} < {_explicit_relax_tol:.1e})"
+                    )
+                    break
+            _state_set(
+                state,
+                "increment_display",
+                state.increment_display
+                + (_relax_converged_at if _relax_converged_at > 0 else _explicit_relax_steps),
+            )
 
         # ================================================================
         # 正常終了

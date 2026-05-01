@@ -282,6 +282,7 @@ class ExplicitCentralDifferenceProcess(
         damping_matrix: sp.csr_matrix | np.ndarray | None = None,
         mass_lumping: str = "row_sum",
         mass_scaling_beta: float = 1.0,
+        mass_proportional_damping_alpha: float = 0.0,
     ) -> None:
         """陽解法時間積分 Process を初期化.
 
@@ -294,11 +295,21 @@ class ExplicitCentralDifferenceProcess(
                 M_lump → β² · M_lump で集中質量を倍化することで Δt_c → β·Δt_c。
                 準静的近似 ε = E_kin / E_strain ≪ 1 を保つ範囲で β > 1.0 を指定。
                 既定 1.0（スケーリング無効）。Belytschko §6.4.2。
+            mass_proportional_damping_alpha: 質量比例 Rayleigh damping 係数 α
+                （status-382 候補 (p3)）。`C = α · M_lump` を等価適用し、運動方程式は
+                $a_n = M_\\mathrm{lump}^{-1}(F_\\mathrm{ext} - F_\\mathrm{int}) - α \\cdot v_{n-1/2}$
+                となる。M に独立に α が damping 率として作用するため Courant 安定性
+                および β スケーリングと無関係に動的緩和を加速する。既定 0.0（無効）。
         """
         if mass_scaling_beta < 1.0:
             raise ValueError(
                 f"mass_scaling_beta must be >= 1.0 (got {mass_scaling_beta}). "
                 "β < 1 shrinks Δt_c and provides no benefit."
+            )
+        if mass_proportional_damping_alpha < 0.0:
+            raise ValueError(
+                f"mass_proportional_damping_alpha must be >= 0.0 "
+                f"(got {mass_proportional_damping_alpha})"
             )
         M_consistent = sp.csr_matrix(mass_matrix) if not sp.issparse(mass_matrix) else mass_matrix
         self.M = M_consistent
@@ -307,6 +318,7 @@ class ExplicitCentralDifferenceProcess(
         self.mass_scaling_beta = float(mass_scaling_beta)
         self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
+        self.mass_proportional_damping_alpha = float(mass_proportional_damping_alpha)
 
         self.C = (
             sp.csr_matrix(damping_matrix)
@@ -436,6 +448,11 @@ class ExplicitCentralDifferenceProcess(
             residual = residual - self.C @ self.vel
 
         a_n = self.M_lump_inv * residual
+        # 質量比例 Rayleigh damping（status-382 候補 (p3)）:
+        # C = α·M を等価適用し a -= α·v_{n−1/2}。M に独立に α が damping 率として
+        # 作用するため、β スケーリングおよび Courant 安定性に影響しない。
+        if self.mass_proportional_damping_alpha > 0.0:
+            a_n = a_n - self.mass_proportional_damping_alpha * self.vel
         if fixed_dofs is not None and len(fixed_dofs) > 0:
             a_n[fixed_dofs] = 0.0
 
@@ -517,6 +534,7 @@ def _create_time_integration_strategy(
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
     mass_scaling_beta: float = 1.0,
+    mass_proportional_damping_alpha: float = 0.0,
 ) -> QuasiStaticProcess | GeneralizedAlphaProcess | ExplicitCentralDifferenceProcess:
     """時間積分 Strategy ファクトリ.
 
@@ -531,6 +549,8 @@ def _create_time_integration_strategy(
         mass_lumping: 陽解法時の集中質量化方式（"row_sum" / "diagonal" / "none"）
         mass_scaling_beta: 陽解法時の質量スケーリング係数（status-379 候補 (h1)）。
             既定 1.0（スケーリング無効）。
+        mass_proportional_damping_alpha: 陽解法時の質量比例 Rayleigh damping
+            係数（status-382 候補 (p3)）。既定 0.0（無効）。
 
     Returns:
         QuasiStaticProcess / GeneralizedAlphaProcess / ExplicitCentralDifferenceProcess
@@ -545,6 +565,7 @@ def _create_time_integration_strategy(
             damping_matrix=damping_matrix,
             mass_lumping=mass_lumping,
             mass_scaling_beta=mass_scaling_beta,
+            mass_proportional_damping_alpha=mass_proportional_damping_alpha,
         )
         strategy_explicit.set_initial_state(velocity=velocity, acceleration=acceleration)
         return strategy_explicit

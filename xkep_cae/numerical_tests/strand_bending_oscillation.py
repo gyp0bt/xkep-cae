@@ -344,6 +344,20 @@ class StrandBendingOscillationConfig:
     # status-381 h-bug-3 緩和: 1 update あたりの β 成長率 cap.
     explicit_mass_scaling_max_growth_per_update: float = 4.0
     explicit_kinetic_energy_budget_ratio: float = 0.05
+    # status-382 候補 (p3): 質量比例 Rayleigh damping 係数 α.
+    # `C = α · M` を等価適用し $a_n -= α · v_{n−1/2}$ で動的緩和を加速する。
+    # M に独立に α が damping 率として作用するため Courant 安定性および β
+    # スケーリングと無関係に減衰を与える。default 0.0（無効）。
+    explicit_mass_proportional_damping_alpha: float = 0.0
+    # status-382 候補 (p1): BC 完了後の動的緩和ステップ数.
+    # `load_frac=1.0` 到達後、BC を保持したまま `explicit_relax_steps` 回 explicit
+    # ステップを継続し、過渡応答を damping で平衡まで吸収する（p1 仮説、
+    # status-381 §7）。`explicit_mass_proportional_damping_alpha > 0` を併用
+    # 推奨（damping なしでは振動が減衰せず収束しない）。default 0（無効）。
+    explicit_relax_steps: int = 0
+    # 緩和フェーズの収束判定許容値（||R||/||f_ref|| < tol で早期終了）.
+    # 0.0 で無効（max steps まで実行）。
+    explicit_relax_tol: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -1002,6 +1016,9 @@ class StrandBendingOscillationProcess(
             explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
             explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
             explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
+            explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
+            explicit_relax_steps=cfg.explicit_relax_steps,
+            explicit_relax_tol=cfg.explicit_relax_tol,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1346,6 +1363,9 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
                 explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
                 explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
+                explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
+                explicit_relax_steps=cfg.explicit_relax_steps,
+                explicit_relax_tol=cfg.explicit_relax_tol,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1553,6 +1573,9 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
                 explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
                 explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
+                explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
+                explicit_relax_steps=cfg.explicit_relax_steps,
+                explicit_relax_tol=cfg.explicit_relax_tol,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:
