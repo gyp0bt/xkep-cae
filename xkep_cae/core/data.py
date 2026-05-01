@@ -133,6 +133,7 @@ def default_strategies(
     solver_mode: str = "implicit",
     mass_lumping: str = "row_sum",
     mass_scaling_beta: float = 1.0,
+    mass_proportional_damping_alpha: float = 0.0,
 ) -> SolverStrategies:
     """基軸構成のSolverStrategiesを生成.
 
@@ -176,6 +177,7 @@ def default_strategies(
             solver_mode=solver_mode,
             mass_lumping=mass_lumping,
             mass_scaling_beta=mass_scaling_beta,
+            mass_proportional_damping_alpha=mass_proportional_damping_alpha,
         ),
         contact_force=_create_contact_force_strategy(
             ndof=ndof,
@@ -336,6 +338,20 @@ class ContactFrictionInputData:
     # に制限し、複数 update に分けて滑らかに成長させる。default 4.0。
     explicit_mass_scaling_max_growth_per_update: float = 4.0
     explicit_kinetic_energy_budget_ratio: float = 0.05
+    # status-382 候補 (p3): 質量比例 Rayleigh damping 係数 α.
+    # `C = α · M` を等価適用し $a_n -= α · v_{n−1/2}$ で動的緩和を加速。
+    # M に独立に α が damping 率として作用するため Courant 安定性および β
+    # スケーリングと無関係。default 0.0（無効）。
+    explicit_mass_proportional_damping_alpha: float = 0.0
+    # status-382 候補 (p1): BC 完了後の動的緩和ステップ数.
+    # `load_frac=1.0` 到達後、BC を保持したまま `explicit_relax_steps` 回 explicit
+    # ステップを継続し、過渡応答を damping で平衡まで吸収。default 0（無効）。
+    # `explicit_mass_proportional_damping_alpha > 0` を推奨（damping なしでは
+    # 振動が減衰せず収束しない）。
+    explicit_relax_steps: int = 0
+    # 緩和フェーズの収束判定許容値（||R||/||f_ref|| < tol で早期終了）.
+    # 0.0 で無効（max steps まで実行）。
+    explicit_relax_tol: float = 0.0
 
     @property
     def is_dynamic(self) -> bool:

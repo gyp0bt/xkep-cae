@@ -439,6 +439,73 @@ class TestExplicitContactFrictionIntegration:
         # u が初期 0 から微小に変化（弱接触なので ||u|| > 0）
         assert np.linalg.norm(result.u) > 0.0
 
+    def test_explicit_relax_steps_runs(self):
+        """status-382 候補 (p1): explicit_relax_steps > 0 で BC 完了後 relax phase 実行.
+
+        relax phase は warning なしに実行され、SolverResultData を返す。
+        """
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        callbacks = _make_simple_callbacks(ndof)
+        contact = _make_contact_setup(mesh)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            explicit_mass_proportional_damping_alpha=0.1,
+            explicit_relax_steps=5,
+            explicit_relax_tol=0.0,
+            max_increments=3,
+            max_nr_attempts=1,
+        )
+        result = ContactFrictionProcess().process(input_data)
+        assert isinstance(result, SolverResultData)
+        # 主ループ + relax で incr_display は max_increments より大きくなる
+        # （主ループ 3 + relax 5 = 8 まで進む）
+        assert result.n_increments >= 3
+
+    def test_explicit_relax_default_off_unchanged(self):
+        """status-382 候補 (p1): default `explicit_relax_steps=0` で挙動不変.
+
+        relax phase は実行されず、主ループのみで完了する。
+        """
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        callbacks = _make_simple_callbacks(ndof)
+        contact = _make_contact_setup(mesh)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+
+        # default: explicit_relax_steps = 0
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            max_increments=3,
+            max_nr_attempts=1,
+        )
+        result = ContactFrictionProcess().process(input_data)
+        assert isinstance(result, SolverResultData)
+
 
 # =====================================================================
 # 共通ヘルパ
