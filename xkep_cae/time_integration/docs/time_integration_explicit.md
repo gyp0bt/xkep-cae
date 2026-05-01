@@ -134,13 +134,46 @@ $0.9 \cdot \Delta t_c$ を超えると検知し、必要 $\beta$ を逆算して
 ```
 required_extra = dt_sub / (0.9 * dt_c_current)
 target_beta = current_beta * required_extra
-capped_beta = min(target_beta, mass_scaling_max_beta)
+# 増分 1 (warm-start) では growth cap スキップ
+if increment == 1:
+    growth_capped = target_beta
+else:
+    growth_capped = current_beta * mass_scaling_max_growth_per_update
+capped_beta = min(target_beta, growth_capped, mass_scaling_max_beta)
 if capped_beta > current_beta * 1.05:
-    set_mass_scaling_beta(capped_beta)
+    set_mass_scaling_beta(capped_beta)  # 内部で v/a を KE 保存リスケール
 ```
 
 `target_beta > max_beta` 時は cap 適用 + `failure_reason="courant_cap"` で
 cutback 要求し、上位 `UnifiedTimeStepProcess` が dt を縮小する組合せで対応。
+
+### 状態リスケール（status-381 h-bug-1 修正、必須）
+
+`set_mass_scaling_beta(β_new)` は β 上方更新と同時に **既存の v / a を
+運動エネルギー保存則でリスケール** する:
+
+$$
+v_\mathrm{new} = v_\mathrm{old} \cdot \frac{\beta_\mathrm{old}}{\beta_\mathrm{new}}, \quad
+a_\mathrm{new} = a_\mathrm{old} \cdot \left(\frac{\beta_\mathrm{old}}{\beta_\mathrm{new}}\right)^2
+$$
+
+これにより $E_\mathrm{kin} = 0.5 \cdot M_\mathrm{lump} \cdot v^2$ は
+$\beta$ 変更前後で不変となる。リスケールしない場合、$M_\mathrm{lump} \to
+\beta_\mathrm{new}^2/\beta_\mathrm{old}^2$ 倍化されるが v は据え置きとなり、
+KE が突然 $\beta^2$ 倍 spuriously injected されて解が発散する
+（status-380 で観測 max $|u|$ = $1.6 \times 10^8$ mm の根本原因、status-381
+§4 §5 で修正済）。
+
+### 1 update あたりの成長率 cap（status-381 h-bug-3 緩和）
+
+KE 保存リスケールを行ってもなお、$\beta$ が 1 update で $10^6$ × ジャンプ
+するような変化は相空間に急峻な不連続を導入する。
+`mass_scaling_max_growth_per_update`（default 4.0）で 1 update あたりの
+$\beta$ 成長を制限し、複数 update に分けて滑らかに成長させる。
+
+ただし、**最初の増分（warm-start）では growth cap をスキップ** し、target
+$\beta$ に即座到達させる。これにより default `mass_scaling_beta=1.0` でも
+初回ステップから Courant 安定領域で実行できる。
 
 ### API
 
@@ -159,6 +192,7 @@ proc.set_mass_scaling_beta(1000.0)  # 上方更新（単調増加のみ）
 | `explicit_mass_scaling_beta` | 1.0 | 手動 β（initial）|
 | `explicit_mass_scaling_auto` | False | True で Courant 監視で auto-tune |
 | `explicit_mass_scaling_max_beta` | 100.0 | auto-tune 上限 |
+| `explicit_mass_scaling_max_growth_per_update` | 4.0 | 1 update あたりの β 成長 cap（status-381）|
 | `explicit_kinetic_energy_budget_ratio` | 0.05 | E_kin/E_strain 警告閾値 |
 
 ## Phase 1 / Phase 2 分割（status-377）
@@ -196,7 +230,9 @@ NR ソルバー path への配線は **未実施**。`solver_mode="explicit"` �
 - [status-373](../../../../docs/status/status-373.md): solver_mode 併存方針 § 4'
 - [status-377](../../../../docs/status/status-377.md): 陽解法 Phase 1（本実装）
 - [status-378](../../../../docs/status/status-378.md): 陽解法 Phase 2（solver path 配線、Courant 比 3×10⁵ 実測）
-- [status-379](../../../../docs/status/status-379.md): 陽解法 Phase 3 候補 (h1)（mass scaling、19 本 frac=1.0 完走）
+- [status-379](../../../../docs/status/status-379.md): 陽解法 Phase 3 候補 (h1)（mass scaling、19 本 frac=1.0 完走、※status-380 で物理的妥当性なしと判定）
+- [status-380](../../../../docs/status/status-380.md): 物理的妥当性検証で max\|u\|=1.59e8 mm 発散判明、status-379 凍結解除判定撤回
+- [status-381](../../../../docs/status/status-381.md): mass scaling 実装の **h-bug-1（v/a リスケール欠落）+ h-bug-3 緩和** 修正、19 本 frac=1.0 + max\|u\|=41 mm 達成（**MCDD 凍結解除条件達成**）
 
 ## 参考文献
 

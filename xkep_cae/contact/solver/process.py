@@ -549,6 +549,9 @@ class ContactFrictionProcess(
                 courant_check_interval=getattr(input_data, "explicit_courant_check_interval", 50),
                 mass_scaling_auto=getattr(input_data, "explicit_mass_scaling_auto", False),
                 mass_scaling_max_beta=getattr(input_data, "explicit_mass_scaling_max_beta", 100.0),
+                mass_scaling_max_growth_per_update=getattr(
+                    input_data, "explicit_mass_scaling_max_growth_per_update", 4.0
+                ),
                 kinetic_energy_budget_ratio=getattr(
                     input_data, "explicit_kinetic_energy_budget_ratio", 0.0
                 ),
