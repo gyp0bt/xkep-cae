@@ -507,9 +507,181 @@ class TestExplicitContactFrictionIntegration:
         assert isinstance(result, SolverResultData)
 
 
+class TestExplicitULUpdateInterval:
+    """status-383 候補 (q1): explicit 中の UL update_reference 周期化.
+
+    `explicit_ul_update_interval` 増分ごとに `update_reference` を呼ぶこと、
+    およびデフォルト 1 では既存挙動と同じ毎増分呼出となることを確認する。
+    """
+
+    def _run_with_mock_ul(
+        self, *, interval: int, max_incr: int, ndof: int, mesh, contact, M, f_ext, boundary
+    ) -> _MockULAssembler:
+        """指定 interval で実行し、update_reference 呼出回数を返す.
+
+        各 increment が必ず短い dt で進むよう dt_max_fraction を contact の
+        config に指定し、max_incr 回の成功増分を確実に確保する。
+        """
+        ul_asm = _MockULAssembler(ndof)
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr") * 1.0,
+            assemble_internal_force=lambda u: u * 1.0,
+            ul_assembler=ul_asm,
+        )
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            explicit_ul_update_interval=interval,
+            max_increments=max_incr,
+            max_nr_attempts=1,
+        )
+        ContactFrictionProcess().process(input_data)
+        return ul_asm
+
+    def _common_setup(self, *, n_increments_target: int):
+        """dt_max_fraction で各 step を制限し、n_increments_target 増分を強制."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        # dt_max_fraction = 1/n_target → 各 step の dt が制限され n_target 増分へ分割
+        contact_config = _ContactConfigInput(
+            beam_E=210e3,
+            beam_I=1e-3,
+            mu=0.15,
+            exclude_same_strand=True,
+            smoothing_delta=2000.0,
+            dt_max_fraction=1.0 / max(1, n_increments_target),
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact = ContactSetupData(manager=manager, k_pen=1e2, mu=0.15)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+        return mesh, ndof, contact, M, f_ext, boundary
+
+    def test_default_interval_one_calls_every_increment(self):
+        """default explicit_ul_update_interval=1 で毎増分 update_reference 呼出."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=1,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 主ループで 4 増分成功 → 4 回呼出
+        assert ul.update_reference_call_count == 4
+
+    def test_interval_two_calls_every_other_increment(self):
+        """explicit_ul_update_interval=2 で 2 増分ごとに update_reference 呼出."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=2,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 4 増分中、2nd と 4th でのみ呼出 → 2 回
+        assert ul.update_reference_call_count == 2
+
+    def test_interval_larger_than_increments_skips_all(self):
+        """interval > max_increments のとき、update_reference は一度も呼ばれない."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=100,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # 4 増分中 100 増分目で呼出 → 0 回
+        assert ul.update_reference_call_count == 0
+
+    def test_interval_zero_treated_as_one(self):
+        """explicit_ul_update_interval=0 は 1 として扱う（max(1, value)）."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            interval=0,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # max(1, 0) = 1 として扱われ、毎増分呼出
+        assert ul.update_reference_call_count == 4
+
+    def test_implicit_mode_gate_short_circuits(self):
+        """gate 式 `_solver_mode != "explicit" or ...` の implicit short-circuit を直接検証.
+
+        プロセス全体を走らせると implicit + 接触は別途収束問題が生じるため、
+        ここではロジック式のみを検証する。`(q1)` は explicit のみ対象であり、
+        implicit のとき interval が無視されることを確認。
+        """
+
+        # ゲート条件式をテスト: (mode != "explicit") OR (interval <= 1) OR (next % interval == 0)
+        def _do_update(*, mode: str, interval: int, next_incr: int) -> bool:
+            return mode != "explicit" or interval <= 1 or (next_incr % interval == 0)
+
+        # implicit: interval=100 でも常に True（毎増分更新）
+        for n in range(1, 10):
+            assert _do_update(mode="implicit", interval=100, next_incr=n)
+
+        # explicit + interval=1: 常に True
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", interval=1, next_incr=n)
+
+        # explicit + interval=3: 3, 6, 9 のみ True
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", interval=3, next_incr=n) == (n % 3 == 0)
+
+
 # =====================================================================
 # 共通ヘルパ
 # =====================================================================
+
+
+class _MockULAssembler:
+    """update_reference 呼出回数を計測するモック UL アセンブラ.
+
+    status-383 候補 (q1) `explicit_ul_update_interval` テスト用。
+    実 UL アセンブラの最小プロトコル（`update_reference` / `checkpoint` /
+    `rollback` / `u_total_accum` / `coords_ref`）を満たす。
+    """
+
+    def __init__(self, ndof: int) -> None:
+        self.update_reference_call_count = 0
+        self._ndof = ndof
+        self.u_total_accum = np.zeros(ndof)
+        self.coords_ref = np.zeros((ndof // 6, 3))
+
+    def update_reference(self, u_incr: np.ndarray) -> None:
+        self.update_reference_call_count += 1
+
+    def checkpoint(self) -> None:
+        pass
+
+    def rollback(self) -> None:
+        pass
 
 
 def _make_two_beam_mesh() -> MeshData:

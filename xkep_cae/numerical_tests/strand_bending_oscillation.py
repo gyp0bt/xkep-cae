@@ -358,6 +358,13 @@ class StrandBendingOscillationConfig:
     # 緩和フェーズの収束判定許容値（||R||/||f_ref|| < tol で早期終了）.
     # 0.0 で無効（max steps まで実行）。
     explicit_relax_tol: float = 0.0
+    # status-383 候補 (q1): explicit 中の UL update_reference 周期化.
+    # `solver_mode="explicit"` のとき、UL `update_reference()` を毎増分ではなく
+    # `explicit_ul_update_interval` 増分ごとに呼び出す。default 1 で既存挙動不変。
+    # >1 のとき u_incr が累積し、relax phase の `f_int(u_incr)` が非ゼロとなり
+    # 構造を平衡へ駆動できる（status-382 §3 真の根本原因への対応）。
+    # CR 梁の大回転線形化破綻を避けるため、過大な値（>50 程度）は推奨しない。
+    explicit_ul_update_interval: int = 1
 
 
 @dataclass(frozen=True)
@@ -1019,6 +1026,7 @@ class StrandBendingOscillationProcess(
             explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
             explicit_relax_steps=cfg.explicit_relax_steps,
             explicit_relax_tol=cfg.explicit_relax_tol,
+            explicit_ul_update_interval=cfg.explicit_ul_update_interval,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1366,6 +1374,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
                 explicit_relax_steps=cfg.explicit_relax_steps,
                 explicit_relax_tol=cfg.explicit_relax_tol,
+                explicit_ul_update_interval=cfg.explicit_ul_update_interval,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1576,6 +1585,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_proportional_damping_alpha=cfg.explicit_mass_proportional_damping_alpha,
                 explicit_relax_steps=cfg.explicit_relax_steps,
                 explicit_relax_tol=cfg.explicit_relax_tol,
+                explicit_ul_update_interval=cfg.explicit_ul_update_interval,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

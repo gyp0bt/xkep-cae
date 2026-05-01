@@ -14,19 +14,29 @@
 
 ## 現在地（2026-05-01）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ status-382 で UL update_reference 凍結が真の根本原因と判明**: status-381 §7
-> 引継ぎの仮説 (p3) 質量比例 Rayleigh damping + (p1) BC 完了後 relax phase の 2 API
-> を実装したが、`35_explicit_accuracy_validation.py` 6 ケース全 FAIL。
-> `exp_no_damp_relax500` が baseline 35.37 と本質的に同値の 35.41mm（解析解 73.30mm
-> の 51% off）、`[RELAX] converged at step 1 ||R||=0` ログで relax が即座に終了。
-> **真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に
-> 凍結 → `_ul_internal_force_wrapper(state.u)` で `u_incr = state.u − _ul_ref_base ≈ 0`
-> → `f_int(0) = 0` → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」
-> 未達のまま、次候補は **(q1) explicit 中の UL update 周期化**（最有力、
-> `explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2
-> 復活。
+> **★ status-383 で候補 (q1) `explicit_ul_update_interval` 4 ケース掃引で却下、
+> UL 凍結が真因と再確証**: status-382 §6.1 最有力候補として `solver_mode="explicit"`
+> のとき UL `update_reference()` を **N 増分ごと** に呼出する gate を導入。
+> `36_explicit_ul_interval_validation.py` 5 ケース掃引で全 FAIL — interval=1
+> baseline 29.57mm（status-382 と一致、default 完全保持）/ interval=5 で relax
+> phase 発散 (NaN) / interval=10 max\|u\|=6.21×10⁶ mm / interval=20 max\|u\|=5.16×10²¹ mm。
+> **根本要因**: CR 梁 UL 定式化は「u_incr 微小」前提で線形化、N 増分蓄積は
+> K_T(u_incr) を線形化レンジ外へ押し出し explicit dynamics が爆発的発散。
+> status-382 §3 解析と整合：(a) update 毎呼出 → f_int(u_incr)≈0、(b) update 間引き
+> → K_T(u_incr) 線形化崩壊、両方破綻。**explicit + UL の組合せは原理的に成立しない**
+> ことが (q1) で再確証。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま、次候補は
+> **(q2) 増分内 sub-cycling**（最有力、UL 動作を 1 BC 増分内で保ちつつ内部力評価を
+> 意味あるものに）/ (q3) implicit + AL n>2 復活 / (h5) bending 段階処方。
+>
+> **★ status-382 履歴**: status-381 §7 引継ぎの仮説 (p3) 質量比例 Rayleigh damping
+> + (p1) BC 完了後 relax phase の 2 API を実装したが、`35_explicit_accuracy_validation.py`
+> 6 ケース全 FAIL。`exp_no_damp_relax500` が baseline 35.37 と本質的に同値の 35.41mm
+> （解析解 73.30mm の 51% off）、`[RELAX] converged at step 1 ||R||=0` ログで relax
+> 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference
+> に凍結 → `_ul_internal_force_wrapper(state.u)` で `u_incr = state.u − _ul_ref_base ≈ 0`
+> → `f_int(0) = 0` → relax で平衡へ駆動できない。
 >
 > **★ status-380〜381 履歴**: status-379 候補 (h1) mass scaling auto-tune が形式
 > gate（frac=1.0 + E_kin/E_strain<5%）を満たしたが、status-380 物理的妥当性検証で
