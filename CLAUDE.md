@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5 テスト** — 2026-05-01 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-383（候補 (q1) `explicit_ul_update_interval` 実装 — 4 ケース掃引で却下、UL 凍結が真因と再確証、精度 gate 未達のまま）**。status-382 §6.1 最有力候補として `solver_mode="explicit"` のとき UL `update_reference()` を **N 増分ごと** に呼出するよう gate を導入。`ContactFrictionInputData.explicit_ul_update_interval: int = 1` field 追加（default 1 で既存挙動完全不変）、`StrandBendingOscillationConfig` に同 field + 3 経路 plumb-through、process.py 主ループ内 update_reference 呼出箇所に `(_next_incr % interval == 0)` ゲート追加。**+5 単体テスト**（`TestExplicitULUpdateInterval`、`_MockULAssembler` で update_reference 呼出回数を直接計測、interval ∈ {1, 2, 100, 0} の挙動 + implicit short-circuit）。**`36_explicit_ul_interval_validation.py` 5 ケース掃引で全 FAIL** — interval=1 baseline 29.57mm（status-382 と一致、default 完全保持）/ interval=5 で relax phase 発散 (NaN) / interval=10 max\|u\|=6.21e6 mm / interval=20 max\|u\|=5.16e21 mm。**根本要因**: CR 梁 UL 定式化は「u_incr 微小」前提で線形化、N 増分蓄積は K_T(u_incr) を線形化レンジ外へ押し出し explicit dynamics が爆発的発散。status-382 §3 解析と整合：(a) update 毎呼出 → f_int(u_incr)≈0、(b) update 間引き → K_T(u_incr) 線形化崩壊、両方破綻。**MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま**。次候補は (q2) 増分内 sub-cycling（最有力、UL 動作は通常通り保持）/ (q3) implicit + AL n>2 復活 / (h5) bending 段階処方。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **709 passed 5 skipped**（status-382 比 +5）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜383 の **34/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17 テスト** — 2026-05-01 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-384（候補 (z1a) 要素ごと波速 Δt + (z1b) selective mass scaling 実装 — Abaqus/Explicit 標準アプローチへの移行 Phase 1 完了、validation で 2 段階スケーリング要件を発見）**。ユーザーから「応力波の速度と要素サイズから dt 目安を決められる（Abaqus 様式）」+「Cosserat 梁の大回転ネイティブ特性」という根本的指摘を受け、status-383 までの "explicit + UL は原理的に成立しない" 結論を踏まえて方針転換。**(z1a)** `_estimate_critical_dt_per_element(connectivity, node_coords, beam_E, beam_rho)` 新設で `dt_e = L_e / √(E/ρ)` を要素ごとに計算し Gerschgorin 全体上界と min を取る。**(z1b)** `_detect_stiff_dofs()` で Gerschgorin row-sum / M が median × `threshold_ratio` を超える DOF を自動検出、`ExplicitCentralDifferenceProcess.set_mass_scaling_dof_mask()` で β² 倍化を限定。`_compute_scaled_mass(beta)` ヘルパで mask 反映、`set_mass_scaling_beta()` の v/a rescale を mask 対応。**+17 単体テスト**（per-element dt 6 + stiff DOF detect 5 + selective scaling 6）全 pass。**実機検証**: 単梁 90° 曲げで K がほぼ一様 → stiff DOF 検出ゼロ → 実質 β=1 → frac=0 発散（実装 bug ではなく selective が heterogeneous K を要求する性質）。7 本撚線で stiff DOF 112/714 検出 (15.7%) も、残り 84% の beam DOF が β=1 のまま dt 1.6μs 制約を支配し target β=8.8×10⁶（cap 1000 を超過）で frac<<1.0。**真の解**: 2 段階スケーリング（β_stiff=1000, β_beam=10）+ loading rate 縮小の組合せ。次候補は (z1c) per-DOF β 配列 API + (z1d) `t_cycle` 下限緩和 + (z2) Cosserat 梁プロトタイプ並行検討。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **726 passed 5 skipped**（status-383 比 +17）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜384 の **35/N 完了**.
+
+前 status: status-383（候補 (q1) `explicit_ul_update_interval` 実装 — 4 ケース掃引で却下、UL 凍結が真因と再確証、精度 gate 未達のまま）。status-382 §6.1 最有力候補として `solver_mode="explicit"` のとき UL `update_reference()` を **N 増分ごと** に呼出するよう gate を導入。`ContactFrictionInputData.explicit_ul_update_interval: int = 1` field 追加（default 1 で既存挙動完全不変）、`StrandBendingOscillationConfig` に同 field + 3 経路 plumb-through、process.py 主ループ内 update_reference 呼出箇所に `(_next_incr % interval == 0)` ゲート追加。**+5 単体テスト**（`TestExplicitULUpdateInterval`、`_MockULAssembler` で update_reference 呼出回数を直接計測、interval ∈ {1, 2, 100, 0} の挙動 + implicit short-circuit）。**`36_explicit_ul_interval_validation.py` 5 ケース掃引で全 FAIL** — interval=1 baseline 29.57mm（status-382 と一致、default 完全保持）/ interval=5 で relax phase 発散 (NaN) / interval=10 max\|u\|=6.21e6 mm / interval=20 max\|u\|=5.16e21 mm。**根本要因**: CR 梁 UL 定式化は「u_incr 微小」前提で線形化、N 増分蓄積は K_T(u_incr) を線形化レンジ外へ押し出し explicit dynamics が爆発的発散。status-382 §3 解析と整合：(a) update 毎呼出 → f_int(u_incr)≈0、(b) update 間引き → K_T(u_incr) 線形化崩壊、両方破綻。**MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま**。次候補は (q2) 増分内 sub-cycling（最有力、UL 動作は通常通り保持）/ (q3) implicit + AL n>2 復活 / (h5) bending 段階処方。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **709 passed 5 skipped**（status-382 比 +5）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜383 の **34/N 完了**.
 
 前 status: status-382（候補 (p3) damping + (p1) relax API 実装 — UL update_reference 凍結が真の根本原因と判明、精度 gate 未達のまま）。status-381 §7「explicit 解を implicit / 解析解と一致させる」の最優先 TODO に対し仮説 (p3) 質量比例 Rayleigh damping + (p1) BC 完了後 relax phase の 2 API を実装: `ExplicitCentralDifferenceProcess.mass_proportional_damping_alpha` 引数追加（`a -= α·v`、Courant/β 独立）、`ContactFrictionProcess` 末尾に relax phase 追加。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 3 field + 3 経路 plumb、+7 単体テスト。**`35_explicit_accuracy_validation.py` 6 ケース全 FAIL** — `exp_no_damp_relax500` が baseline 35.37 と本質的に同値の 35.41mm（解析解 73.30mm の 51% off）、`[RELAX] converged at step 1 ||R||=0` ログで relax 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に凍結 → `_ul_internal_force_wrapper(state.u)` で `u_incr = state.u − _ul_ref_base ≈ 0` → `f_int(0) = 0` → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま。回帰: 全 24 契約検査 OK / **704 passed 5 skipped**（status-381 比 +7）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。Phase A〜E / status-346〜382 の **33/N 完了**.
 
@@ -100,25 +102,27 @@
 完了履歴の詳細は `docs/status/status-index.md` 参照。**status-380 で status-379 の
 MCDD Phase E 凍結解除条件達成判定を撤回**、status-381 で発散停止 + 50% アンダー、
 **status-382 で UL `update_reference` 凍結が真の根本原因と判明**、**status-383 で
-候補 (q1) `explicit_ul_update_interval` 実装 + 5 ケース掃引で却下**（interval > 1 で
-explicit dynamics が爆発的発散、UL 線形化レンジを超過）。**explicit + UL の組合せは
-原理的に成立しない**ことが (q1) で再確証され、(a) 毎呼出 → f_int(u_incr)≈0、
-(b) 間引き → K_T(u_incr) 線形化崩壊、両方破綻が確定。現在のアクティブライン:
+候補 (q1) 却下、explicit + UL の組合せは原理的に成立しないと確定**。
+**status-384 で Abaqus/Explicit 標準アプローチ (z1a)+(z1b) を実装**: 要素ごと
+波速ベース Δt 推定 + selective mass scaling。infrastructure 完備、validation で
+**2 段階スケーリング**が真の解と判明。現在のアクティブライン:
 
-- **次 status（最優先）— 候補 (q2) 増分内 sub-cycling**: 各 BC 増分で multi-step
-  explicit を実行してから `update_reference` を 1 回呼出。dt_sub を Courant 安定性下に
-  留めて N サブステップで dynamics が BC に追従するまで動かし、1 inner cycle 完了で
-  update_reference を呼ぶ。**1 BC 増分内では UL 動作を保ちつつ、1 BC 増分内でも
-  内部力評価が意味を持つ**。実装は `ContactFrictionProcess` 主ループ内で
-  `inner_step_count` を導入し、explicit step を inner で multi-step 実行する。
-- **副次（並行可）— 候補 (q3) implicit + AL n>2 復活**: status-376 で却下された (g2) AL n>2
-  を Uzawa update under-relaxation（$\lambda_\mathrm{new} = \lambda + \omega \cdot p_n$、
-  $\omega \in (0,1)$）で再試行。explicit と並行して implicit 系で 19 本 frac=1.0 を狙う。
-  **explicit よりも物理的妥当性は確実**（implicit は max\|u\| が物理範囲に収まる）。
+- **次 status（最優先）— 候補 (z1c) 2 段階質量スケーリング**: stiff DOF と非 stiff DOF
+  に独立 β を与える API 拡張。`set_mass_scaling_dof_mask(mask)` を
+  `set_mass_scaling_per_dof_beta(beta_array)` に置換、または `mass_scaling_beta_outside`
+  を別パラメータ化。実装後、単梁/7 本/19 本で `β_stiff=1000, β_beam=10` 等を
+  掃引し、解析解 73.30 mm との一致 < 10% を gate に検証。
+- **副次（並行可）— 候補 (z1d) `t_cycle` 下限緩和**: 現 `t_cycle = max(10·T1, 1.0)`
+  の下限 1 秒を物理 T1 ベース（例 0.1·T1）まで縮小。loading rate 物理化で (z1c)
+  の有効性が増す。
+- **中期戦略 — 候補 (z2) Cosserat 梁プロトタイプ**: UL を捨てて explicit + 大回転を
+  本質解決。geometrically exact (Simo-Reissner) beam、SO(3) 回転 DOF、Lie 群更新。
+  実装中規模（~1000 行）、(z1c) で精度 gate 達成可なら不要、未達なら必須。
+- **副次 — 候補 (q3) implicit + AL n>2 復活**: status-376 で却下された (g2) AL n>2
+  を Uzawa update under-relaxation で再試行。explicit 路線が完全に行き詰まった
+  ときの最終 fallback。
 - **副次 — 候補 (h5) bending 段階処方**: 19 本 implicit で `bending_curvature` を
-  0.005 → 0.010 → 0.015 と段階的に増加させ、各段階で NR を完全収束させてから
-  チェックポイントから次段階を開始する。Newton 良条件再開で 19 本 frac=1.0 を
-  implicit のまま達成できる可能性。
+  0.005 → 0.010 → 0.015 と段階的に増加させ Newton 良条件再開。
 - **凍結解除 TODO 再開**: 被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション /
   7本撚線ピッチ依存性 / 空間ブロック分離（status-345 で凍結、再開可能）。
 - **多 pair 診断 `14b_kc_multi_pair_diagnostic.py`** — status-370 §5 保留、優先度低。
@@ -202,6 +206,7 @@ stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反
 - ~~status-381（mass scaling 実装 bug 修正 — 発散停止、ただし explicit 解は解析解の 50% で精度 gate 未達、凍結解除判定再撤回）~~: 完了（3 仮説切り分けで **h-bug-1（v/a リスケール欠落）+ h-bug-3（β 急成長）** を確定。修正: (1) `set_mass_scaling_beta()` で KE 保存 v/a リスケール、(2) `mass_scaling_max_growth_per_update=4.0` cap、(3) 増分 1 warm-start。実機: 7 本 explicit 1.58e8→40.1mm、19 本 1.59e8→41.2mm で発散停止。**ユーザー指摘で精査**: 90° 曲げ単梁解析解 73.3mm に対し implicit 70mm（96%）/ explicit 40mm（48%）で **explicit 系統的 50% アンダー**。動的緩和未収束 + KE 保存リスケール累積過減衰が原因と推定。**MCDD 凍結解除条件達成判定再撤回**、追加 gate (5)「解の精度 < 10%」未達。回帰 697 passed 5 skipped（+6）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。32/N 完了）
 - ~~status-382（候補 (p3) damping + (p1) relax API 実装 — UL update_reference 凍結が真の根本原因と判明、精度 gate 未達のまま）~~: 完了（status-381 §7「explicit 解を implicit / 解析解と一致させる」最優先 TODO に対し仮説 (p3) 質量比例 Rayleigh damping `ExplicitCentralDifferenceProcess.mass_proportional_damping_alpha`（`a -= α·v`、Courant/β 独立）+ (p1) BC 完了後 relax phase（`ContactFrictionProcess` 末尾に追加、BC frac=1.0 保持で `explicit_relax_steps` 回 step）の 2 API を実装。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 3 field + 3 経路 plumb、+7 単体テスト。**`35_explicit_accuracy_validation.py` 6 ケース全 FAIL** — `exp_no_damp_relax500` が baseline 35.37 と本質的に同値 35.41mm、`[RELAX] converged at step 1 ||R||=0` ログで relax 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に凍結 → `_ul_internal_force_wrapper(state.u)` で u_incr ≈ 0 → f_int(0) = 0 → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま。次候補は (q1) explicit 中の UL update 周期化（最有力、`explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2 復活。回帰 704 passed 5 skipped（+7）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。33/N 完了）
 - ~~status-383（候補 (q1) `explicit_ul_update_interval` 実装 — 4 ケース掃引で却下、UL 凍結が真因と再確証、精度 gate 未達のまま）~~: 完了（status-382 §6.1 最有力候補として `solver_mode="explicit"` のとき UL `update_reference()` を **N 増分ごと** に呼出する gate を導入。`ContactFrictionInputData.explicit_ul_update_interval: int = 1` field 追加（default 1 で既存挙動完全不変）、`StrandBendingOscillationConfig` に同 field + 3 経路 plumb-through、process.py 主ループ内 update_reference 呼出箇所に `(_next_incr % interval == 0)` ゲート追加。**+5 単体テスト**（`TestExplicitULUpdateInterval`、`_MockULAssembler` で update_reference 呼出回数を直接計測）。**`36_explicit_ul_interval_validation.py` 5 ケース掃引で全 FAIL** — interval=1 baseline 29.57mm（status-382 と一致、default 完全保持）/ interval=5 で relax phase 発散 (NaN) / interval=10 max\|u\|=6.21e6 mm / interval=20 max\|u\|=5.16e21 mm。**根本要因**: CR 梁 UL 定式化は「u_incr 微小」前提で線形化、N 増分蓄積は K_T(u_incr) を線形化レンジ外へ押し出し explicit dynamics が爆発的発散。status-382 §3 解析と整合：(a) update 毎呼出 → f_int(u_incr)≈0、(b) update 間引き → K_T(u_incr) 線形化崩壊、両方破綻。**MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま**。次候補は (q2) 増分内 sub-cycling（最有力、UL 動作は通常通り保持）/ (q3) implicit + AL n>2 復活 / (h5) bending 段階処方。回帰 709 passed 5 skipped（+5）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。34/N 完了）
+- ~~status-384（候補 (z1a) 要素ごと波速 Δt + (z1b) selective mass scaling — Abaqus/Explicit 標準アプローチへの移行 Phase 1 完了、validation で 2 段階スケーリング要件を発見）~~: 完了（ユーザーから「応力波の速度と要素サイズから dt」+「Cosserat 梁の大回転ネイティブ特性」指摘を受け、status-383 までの "explicit + UL は原理的に不整合" を踏まえて方針転換。**(z1a)** `_estimate_critical_dt_per_element(connectivity, node_coords, beam_E, beam_rho)` 新設で `dt_e = L_e / √(E/ρ)` を要素ごとに計算し Gerschgorin 全体上界と min を取る。**(z1b)** `_detect_stiff_dofs()` で Gerschgorin row-sum / M が median × `threshold_ratio` を超える DOF を自動検出、`ExplicitCentralDifferenceProcess.set_mass_scaling_dof_mask()` で β² 倍化を限定。`_compute_scaled_mass(beta)` ヘルパ + `set_mass_scaling_beta()` の v/a rescale を mask 対応。**+17 単体テスト**（per-element dt 6 + stiff detect 5 + selective scaling 6）全 pass。**実機検証**: 単梁 90° で K がほぼ一様 → stiff DOF 検出ゼロ → 実質 β=1 → frac=0 発散（実装 bug ではなく selective が heterogeneous K を要求する性質）。7 本撚線で stiff DOF 112/714 検出 (15.7%) も、残り 84% の beam DOF が β=1 のまま dt 1.6μs 制約を支配し target β=8.8×10⁶（cap 1000 を超過）で frac<<1.0。**真の解**: 2 段階スケーリング（β_stiff=1000, β_beam=10）+ loading rate 縮小の組合せ。次候補は (z1c) per-DOF β 配列 API + (z1d) `t_cycle` 下限緩和 + (z2) Cosserat 梁プロトタイプ並行検討。回帰 726 passed 5 skipped（+17）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。35/N 完了）
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）: 詳細項目（被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション / 7本撚線ピッチ依存性 / 空間ブロック分離 / 19本 Type D stall K_mat x/z 単発対応）は status-345 までで列挙、status-373 で本ブロックから削除。
 

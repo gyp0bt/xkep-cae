@@ -566,6 +566,16 @@ class ContactFrictionProcess(
                 kinetic_energy_budget_ratio=getattr(
                     input_data, "explicit_kinetic_energy_budget_ratio", 0.0
                 ),
+                # status-384 (z1a): 要素ごと波速ベース Δt 推定
+                beam_E=manager.config.beam_E,
+                beam_rho=getattr(manager.config, "beam_rho", 0.0),
+                # status-384 (z1b): selective mass scaling
+                mass_scaling_selective=getattr(
+                    input_data, "explicit_mass_scaling_selective", False
+                ),
+                mass_scaling_stiff_threshold_ratio=getattr(
+                    input_data, "explicit_mass_scaling_stiff_threshold_ratio", 10.0
+                ),
             )
             if _solver_mode == "explicit"
             else None
@@ -1156,6 +1166,12 @@ class ContactFrictionProcess(
                     _explicit_cfg.mass_scaling_max_growth_per_update
                 ),
                 kinetic_energy_budget_ratio=_explicit_cfg.kinetic_energy_budget_ratio,
+                beam_E=_explicit_cfg.beam_E,
+                beam_rho=_explicit_cfg.beam_rho,
+                mass_scaling_selective=_explicit_cfg.mass_scaling_selective,
+                mass_scaling_stiff_threshold_ratio=(
+                    _explicit_cfg.mass_scaling_stiff_threshold_ratio
+                ),
             )
             _dt_relax = float(dt_sub) if dt_sub > 0.0 else 0.0
             _f_ref_relax = max(float(np.linalg.norm(f_ext)), 1.0)

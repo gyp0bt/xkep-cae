@@ -15,7 +15,9 @@ from xkep_cae.contact.solver._explicit_dynamic import (
     ExplicitDynamicInput,
     ExplicitDynamicProcess,
     ExplicitDynamicStepInput,
+    _detect_stiff_dofs,
     _estimate_critical_dt,
+    _estimate_critical_dt_per_element,
 )
 from xkep_cae.contact.solver.process import ContactFrictionProcess
 from xkep_cae.core import (
@@ -29,6 +31,7 @@ from xkep_cae.core import (
 )
 from xkep_cae.core.data import default_strategies
 from xkep_cae.core.testing import binds_to
+from xkep_cae.time_integration.strategy import ExplicitCentralDifferenceProcess
 
 
 @binds_to(ExplicitDynamicProcess)
@@ -653,6 +656,173 @@ class TestExplicitULUpdateInterval:
         # explicit + interval=3: 3, 6, 9 のみ True
         for n in range(1, 10):
             assert _do_update(mode="explicit", interval=3, next_incr=n) == (n % 3 == 0)
+
+
+class TestPerElementCriticalDt:
+    """status-384 候補 (z1a): 要素ごと波速ベース Δt 推定の単体検証."""
+
+    def test_zero_E_returns_inf(self):
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=0.0, beam_rho=1.0)
+        assert dt == float("inf")
+
+    def test_zero_rho_returns_inf(self):
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=0.0)
+        assert dt == float("inf")
+
+    def test_none_connectivity_returns_inf(self):
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(None, coords, beam_E=1.0, beam_rho=1.0)
+        assert dt == float("inf")
+
+    def test_single_element_axial_wave(self):
+        """単一要素 L=1 mm, E=1, ρ=1 → c_a=1, dt = 1/1 = 1.0."""
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=1.0)
+        assert dt == pytest.approx(1.0, rel=1e-12)
+
+    def test_minimum_element_governs(self):
+        """複数要素で最短の要素が dt を支配する."""
+        conn = np.array([[0, 1], [1, 2]], dtype=int)
+        coords = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [10.0, 0.0, 0.0],  # 長: L=10
+                [10.5, 0.0, 0.0],  # 短: L=0.5
+            ]
+        )
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=1.0, beam_rho=1.0)
+        # min L = 0.5, c_a = 1, dt = 0.5
+        assert dt == pytest.approx(0.5, rel=1e-12)
+
+    def test_steel_beam_realistic_dt(self):
+        """現実的な梁: E=130 GPa, ρ=8.96e-9 ton/mm³, L=6.25 mm → dt ≈ 1.64 μs."""
+        E = 1.30e5  # N/mm² = 130 GPa
+        rho = 8.96e-9  # ton/mm³
+        conn = np.array([[0, 1]], dtype=int)
+        coords = np.array([[0.0, 0.0, 0.0], [6.25, 0.0, 0.0]])
+        dt = _estimate_critical_dt_per_element(conn, coords, beam_E=E, beam_rho=rho)
+        c_a = float(np.sqrt(E / rho))
+        expected = 6.25 / c_a
+        assert dt == pytest.approx(expected, rel=1e-10)
+        # 1.6 μs オーダーであることも検証
+        assert 1e-6 < dt < 3e-6
+
+
+class TestDetectStiffDofs:
+    """status-384 候補 (z1b): selective mass scaling の DOF 検出ヘルパ単体検証."""
+
+    def test_uniform_K_detects_nothing(self):
+        """全 DOF で同じ row-sum/M なら閾値超えゼロ."""
+        K = sp.diags([1.0] * 10, format="csr")
+        M = np.ones(10)
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask.sum() == 0
+
+    def test_outlier_dof_detected(self):
+        """1 つの DOF だけ K が 100× なら、その DOF が stiff として検出される."""
+        diag = np.ones(10)
+        diag[3] = 100.0  # 局在
+        K = sp.diags(diag, format="csr")
+        M = np.ones(10)
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask[3]
+        assert mask.sum() == 1
+
+    def test_fixed_dofs_excluded_from_median(self):
+        """固定 DOF は median 計算から除外される."""
+        diag = np.array([1.0, 1.0, 1.0, 100.0, 1.0])
+        K = sp.diags(diag, format="csr")
+        M = np.ones(5)
+        # DOF 3 を固定
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([3]), threshold_ratio=10.0)
+        # 固定 DOF は free=False なので out=False
+        assert not mask[3]
+
+    def test_zero_mass_dofs_skipped(self):
+        """M_lump=0 の DOF は free=False で検出対象外."""
+        diag = np.array([1.0, 100.0])
+        K = sp.diags(diag, format="csr")
+        M = np.array([1.0, 0.0])
+        mask = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        # M=0 の DOF は除外
+        assert not mask[1]
+
+    def test_threshold_ratio_controls_sensitivity(self):
+        """threshold_ratio を上げると検出が減る."""
+        diag = np.array([1.0, 1.0, 1.0, 5.0])
+        K = sp.diags(diag, format="csr")
+        M = np.ones(4)
+        # ratio=2 で 5 倍 DOF は検出される（median=1, threshold=2, 5>2）
+        mask_lo = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=2.0)
+        # ratio=10 で 5 倍 DOF は検出されない（threshold=10, 5<10）
+        mask_hi = _detect_stiff_dofs(K, M, fixed_dofs=np.array([], dtype=int), threshold_ratio=10.0)
+        assert mask_lo[3]
+        assert not mask_hi[3]
+
+
+class TestSelectiveMassScaling:
+    """status-384 候補 (z1b): selective mass scaling の統合検証."""
+
+    def test_default_no_mask_full_scaling(self):
+        """default mask=None なら全 DOF 一律 β² スケーリング（既存挙動）."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        # M_lump = β²·M_raw = 4·1 = 4 全 DOF
+        np.testing.assert_allclose(proc.M_lump, 4.0)
+
+    def test_mask_applied_selectively(self):
+        """mask 内 DOF のみ β² 倍化、外は raw."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=3.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # mask True: M = 9, False: M = 1
+        np.testing.assert_allclose(proc.M_lump, [9.0, 1.0, 9.0, 1.0])
+
+    def test_set_mask_then_increase_beta_selective(self):
+        """mask 設定後に β を上げると、mask 内のみ β² 倍化される."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # 初期: mask 内 β=2 → M=4, 外 M=1
+        np.testing.assert_allclose(proc.M_lump, [4.0, 1.0, 4.0, 1.0])
+        proc.set_mass_scaling_beta(5.0)
+        # β=5 → mask 内 M=25, 外 M=1
+        np.testing.assert_allclose(proc.M_lump, [25.0, 1.0, 25.0, 1.0])
+
+    def test_clear_mask_restores_global(self):
+        """set_mass_scaling_dof_mask(None) で全 DOF 一律に戻る."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=3.0)
+        proc.set_mass_scaling_dof_mask(np.array([True, False, True, False]))
+        proc.set_mass_scaling_dof_mask(None)
+        # 全 DOF β=3 → M=9
+        np.testing.assert_allclose(proc.M_lump, 9.0)
+
+    def test_invalid_mask_shape_rejected(self):
+        """mask shape 不一致は ValueError."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        with pytest.raises(ValueError, match="mask shape"):
+            proc.set_mass_scaling_dof_mask(np.array([True, False]))
+
+    def test_selective_v_a_rescale_only_in_mask(self):
+        """β 上方更新時、KE 保存 rescale は mask 内 DOF にのみ適用される."""
+        M = sp.eye(4, format="csr")
+        proc = ExplicitCentralDifferenceProcess(M, mass_scaling_beta=2.0)
+        mask = np.array([True, False, True, False])
+        proc.set_mass_scaling_dof_mask(mask)
+        # 速度を全 DOF に注入
+        proc.vel = np.array([1.0, 1.0, 1.0, 1.0])
+        proc.set_mass_scaling_beta(4.0)
+        # ratio = 2/4 = 0.5; mask 内のみ rescale
+        np.testing.assert_allclose(proc.vel, [0.5, 1.0, 0.5, 1.0])
 
 
 # =====================================================================

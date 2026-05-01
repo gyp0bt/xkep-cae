@@ -359,6 +359,14 @@ class ContactFrictionInputData:
     # 構造を平衡へ駆動できる（status-382 §3 真の根本原因への対応）。
     # CR 梁の大回転線形化破綻を避けるため、過大な値（>50 程度）は推奨しない。
     explicit_ul_update_interval: int = 1
+    # status-384 候補 (z1b): selective mass scaling.
+    # True で β² 倍化を「stiff DOF」（Gerschgorin row-sum / M_lump が
+    # median × `explicit_mass_scaling_stiff_threshold_ratio` を超える DOF）に限定。
+    # 梁 DOF は β=1 を維持し、接触ペナルティ等の高 K 局在 DOF のみ質量倍化する
+    # ことで β² 過剰減衰（status-381 §5 解の精度 50% アンダー）を回避する。
+    # default False で全 DOF 一律スケーリング（既存挙動）。
+    explicit_mass_scaling_selective: bool = False
+    explicit_mass_scaling_stiff_threshold_ratio: float = 10.0
 
     @property
     def is_dynamic(self) -> bool:

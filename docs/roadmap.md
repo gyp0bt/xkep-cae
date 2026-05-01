@@ -14,8 +14,21 @@
 
 ## 現在地（2026-05-01）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-384 で Abaqus/Explicit 標準アプローチへの移行 Phase 1 完了**:
+> ユーザー指摘「応力波の速度と要素サイズから dt」+「Cosserat 梁の大回転
+> ネイティブ特性」を受け、status-383 までの "explicit + UL は原理的に
+> 成立しない" 結論を踏まえて方針転換。**(z1a)** `_estimate_critical_dt_per_element`
+> で `dt_e = L_e / √(E/ρ)` を要素ごとに計算し Gerschgorin 全体上界と min を取る。
+> **(z1b)** `_detect_stiff_dofs()` で row-sum/M が median × `threshold_ratio` を
+> 超える DOF を自動検出、`set_mass_scaling_dof_mask()` で β² 倍化を限定。
+> **+17 単体テスト**全 pass。実機検証で **2 段階スケーリング要件**が判明:
+> 単梁は K 一様で selective 検出ゼロ、7 本撚線でも beam DOF (β=1) が dt 制約を
+> 支配し target β=8.8×10⁶ → cap 1000 超過。**真の解**: β_stiff=1000, β_beam=10
+> 等の per-DOF β 配列 + loading rate 縮小。次候補は **(z1c) per-DOF β 配列 API**
+> + (z1d) `t_cycle` 下限緩和 + (z2) Cosserat 梁プロトタイプ並行検討。
+>
 > **★ status-383 で候補 (q1) `explicit_ul_update_interval` 4 ケース掃引で却下、
 > UL 凍結が真因と再確証**: status-382 §6.1 最有力候補として `solver_mode="explicit"`
 > のとき UL `update_reference()` を **N 増分ごと** に呼出する gate を導入。
