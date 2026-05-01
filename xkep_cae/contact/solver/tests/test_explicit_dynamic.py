@@ -277,6 +277,115 @@ class TestMassScalingAutoTune:
         assert result.failure_reason == "courant_cap"
 
 
+class TestMassScalingMaxGrowthCap:
+    """status-381 h-bug-3 緩和: 1 update あたりの β 成長率 cap.
+
+    増分 1（warm start）では growth cap をスキップし target β に即座にジャンプ。
+    増分 2 以降は smooth growth cap を適用して相空間の急峻な変化を抑制。
+    """
+
+    def test_first_increment_skips_growth_cap_warm_start(self):
+        """増分 1 では growth cap をスキップして target β に即座到達（warm start）."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        M = sp.eye(ndof, format="csr") * 1e-6
+        contact = _make_contact_setup(mesh)
+        callbacks = _make_simple_callbacks_high_K(ndof)
+
+        strats = default_strategies(
+            ndof=ndof,
+            mass_matrix=M,
+            dt_physical=1.0,
+            solver_mode="explicit",
+        )
+        time_strategy = strats.time_integration
+        beta_initial = time_strategy.mass_scaling_beta
+
+        cfg = ExplicitDynamicInput(
+            courant_check_interval=1,
+            mass_scaling_auto=True,
+            mass_scaling_max_beta=1.0e6,
+            mass_scaling_max_growth_per_update=4.0,
+        )
+        proc = ExplicitDynamicProcess()
+        u = np.zeros(ndof)
+        proc.process(
+            ExplicitDynamicStepInput(
+                config=cfg,
+                u=u,
+                f_ext=np.zeros(ndof),
+                fixed_dofs=np.arange(6),
+                assemble_tangent=callbacks.assemble_tangent,
+                assemble_internal_force=callbacks.assemble_internal_force,
+                manager=contact.manager,
+                node_coords_ref=mesh.node_coords.copy(),
+                strategies=strats,
+                k_pen=contact.k_pen,
+                mu=0.15,
+                u_ref=u.copy(),
+                load_frac=0.05,
+                load_frac_prev=0.0,
+                increment_display=1,  # warm start
+                dt_sub=0.5,
+                use_coating=False,
+                connectivity=mesh.connectivity,
+            )
+        )
+        # 増分 1 では growth cap をスキップ、target β（≫ 4×）に到達
+        assert time_strategy.mass_scaling_beta > beta_initial * 4.0
+
+    def test_subsequent_increment_respects_growth_cap(self):
+        """増分 2 以降は growth cap を適用（β は最大 cap×current まで）."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        M = sp.eye(ndof, format="csr") * 1e-6
+        contact = _make_contact_setup(mesh)
+        callbacks = _make_simple_callbacks_high_K(ndof)
+
+        strats = default_strategies(
+            ndof=ndof,
+            mass_matrix=M,
+            dt_physical=1.0,
+            solver_mode="explicit",
+        )
+        time_strategy = strats.time_integration
+        beta_before = time_strategy.mass_scaling_beta
+
+        cfg = ExplicitDynamicInput(
+            courant_check_interval=1,
+            mass_scaling_auto=True,
+            mass_scaling_max_beta=1.0e6,
+            mass_scaling_max_growth_per_update=4.0,
+        )
+        proc = ExplicitDynamicProcess()
+        u = np.zeros(ndof)
+        proc.process(
+            ExplicitDynamicStepInput(
+                config=cfg,
+                u=u,
+                f_ext=np.zeros(ndof),
+                fixed_dofs=np.arange(6),
+                assemble_tangent=callbacks.assemble_tangent,
+                assemble_internal_force=callbacks.assemble_internal_force,
+                manager=contact.manager,
+                node_coords_ref=mesh.node_coords.copy(),
+                strategies=strats,
+                k_pen=contact.k_pen,
+                mu=0.15,
+                u_ref=u.copy(),
+                load_frac=0.10,
+                load_frac_prev=0.05,
+                increment_display=2,  # 2 increment目: growth cap 適用
+                dt_sub=0.5,
+                use_coating=False,
+                connectivity=mesh.connectivity,
+            )
+        )
+        # 2 increment目では growth cap 4× まで
+        assert time_strategy.mass_scaling_beta <= beta_before * 4.0 + 1e-9
+        assert time_strategy.mass_scaling_beta > beta_before  # 5% 以上の要求はあった
+
+
 class TestExplicitContactFrictionIntegration:
     """ContactFrictionProcess + solver_mode="explicit" の統合 smoke test.
 

@@ -49,6 +49,13 @@ class ExplicitDynamicInput:
     # `mass_scaling_max_beta` で上限を cap、超過時は failure_reason="courant".
     mass_scaling_auto: bool = False
     mass_scaling_max_beta: float = 100.0
+    # 1 update あたりの最大成長率（status-381 h-bug-3）.
+    # auto-tune が β を 1 → 1000 に一気にジャンプさせると、たとえ
+    # set_mass_scaling_beta() が KE 保存リスケールを行っても、相空間に
+    # 急峻な不連続を導入し収束を阻害する。1 update あたりの成長を
+    # `mass_scaling_max_growth_per_update` 倍までに制限し、複数 update に
+    # 分けて滑らかに β を成長させる。default 4.0（4× / update）。
+    mass_scaling_max_growth_per_update: float = 4.0
     # 準静的近似ガード: E_kin / E_strain がこれを超えると警告出力（0.0 で無効）
     kinetic_energy_budget_ratio: float = 0.0
 
@@ -215,7 +222,13 @@ class ExplicitDynamicProcess(
         # max_beta を超える要求は cap し、cap でも追いつかない場合のみ cutback。
         courant_violated = False
         courant_failure_reason = "courant"
-        if cfg.courant_check_interval > 0 and increment_display % cfg.courant_check_interval == 0:
+        # status-381 h-bug-3: 最初の増分は必ずチェックし、auto-tune で初期 β を
+        # 適切値まで上げる。これにより default `mass_scaling_beta=1.0` でも
+        # 初回ステップが Courant 違反で発散することを防ぐ（warm-start 不要）。
+        check_courant = cfg.courant_check_interval > 0 and (
+            increment_display == 1 or increment_display % cfg.courant_check_interval == 0
+        )
+        if check_courant:
             try:
                 K = input_data.assemble_tangent(u)
             except Exception:
@@ -231,7 +244,20 @@ class ExplicitDynamicProcess(
                         current_beta = time_strategy.mass_scaling_beta
                         required_extra = dt_sub / dt_safe
                         target_beta = current_beta * required_extra
-                        capped_beta = min(target_beta, cfg.mass_scaling_max_beta)
+                        # 最初の増分（warm start）では growth cap をスキップし、
+                        # target β に即座にジャンプ。これにより default `β=1.0` でも
+                        # 初回ステップから安定領域で実行される（status-381 §4）。
+                        # 2 増分目以降は smooth growth cap を適用して相空間の急峻な
+                        # 変化を抑制（h-bug-3 緩和）。
+                        if increment_display == 1:
+                            growth_capped_target = target_beta
+                        else:
+                            growth_capped_target = (
+                                current_beta * cfg.mass_scaling_max_growth_per_update
+                            )
+                        capped_beta = min(
+                            target_beta, growth_capped_target, cfg.mass_scaling_max_beta
+                        )
                         # 5% 以上の成長要求のみ実適用（数値ノイズ抑制）
                         if capped_beta > current_beta * 1.05:
                             time_strategy.set_mass_scaling_beta(capped_beta)
@@ -239,9 +265,15 @@ class ExplicitDynamicProcess(
                                 print(
                                     f"  [MASS_SCALE] Incr {increment_display} "
                                     f"β: {current_beta:.3e} → {capped_beta:.3e} "
-                                    f"(target {target_beta:.3e}, cap "
-                                    f"{cfg.mass_scaling_max_beta:.3e})"
+                                    f"(target {target_beta:.3e}, growth cap "
+                                    f"{cfg.mass_scaling_max_growth_per_update:.2f}×, "
+                                    f"abs cap {cfg.mass_scaling_max_beta:.3e})"
                                 )
+                        # 絶対 cap（max_beta）に到達した場合のみ cutback。
+                        # 成長率 cap に当たっただけなら、次 check interval で続行する
+                        # ことで滑らかに β を成長させる（cutback 不要）。KE 保存
+                        # リスケールにより v は β 更新ごとに減衰するため、過渡
+                        # ステップでの位置爆発は抑制される（status-381 §4 検証）。
                         if target_beta > cfg.mass_scaling_max_beta:
                             courant_violated = True
                             courant_failure_reason = "courant_cap"

@@ -44,16 +44,35 @@
   Courant 監視に統合し、19 本撚線 90° 曲げで **frac=1.0 完走**
   （E_kin/E_strain=1.15%）を達成した。
 
-## auto-tune（status-379 候補 (h1)）
+## auto-tune（status-379 候補 (h1)、status-381 で h-bug-1/3 修正）
 
 `ExplicitDynamicInput.mass_scaling_auto=True` のとき、Courant 監視で
 $\Delta t_\mathrm{sub} > 0.9 \cdot \Delta t_c$ を検知すると:
 
 1. 必要 $\beta$ を逆算: `target = current_beta * dt_sub / (0.9·dt_c)`
-2. cap 適用: `capped = min(target, mass_scaling_max_beta)`
-3. 5% 以上の成長要求のみ実適用（数値ノイズ抑制）:
+2. **増分 1 では growth cap をスキップして target に即座到達**（warm-start、
+   status-381 修正）。これにより default `mass_scaling_beta=1.0` でも初回
+   ステップから安定領域で実行される。
+3. **増分 2 以降は smooth growth cap を適用**:
+   `growth_capped = current_beta * mass_scaling_max_growth_per_update`、
+   `capped = min(target, growth_capped, mass_scaling_max_beta)`。これにより
+   β が一気にジャンプして相空間の急峻な変化を生むことを抑制
+   （status-381 h-bug-3 緩和）。
+4. 5% 以上の成長要求のみ実適用（数値ノイズ抑制）:
    `current_beta * 1.05 < capped` で `set_mass_scaling_beta(capped)`
-4. cap 到達時は `failure_reason="courant_cap"` を返し上位 stepping に
-   dt 縮小カットバックを要求
+5. **`set_mass_scaling_beta()` は v/a を KE 保存リスケール**
+   （`v *= β_old/β_new`, `a *= (β_old/β_new)²`）。これにより β 上方更新で
+   KE = 0.5·M·v² が β² 倍 spuriously injected される **status-381 h-bug-1**
+   を防ぐ。
+6. 絶対 cap 到達時は `failure_reason="courant_cap"` を返し上位 stepping に
+   dt 縮小カットバックを要求。成長 cap に当たっただけなら継続（次 update で
+   再度成長させる）。
+
+### 増分 1 から Courant 監視を起動する仕様（status-381）
+
+`courant_check_interval=N` 設定でも、**最初の増分（`increment_display==1`）は
+必ず Courant 検査を実行**する。これにより `default mass_scaling_beta=1.0` で
+ある状態でも、最初のステップ前に必要 β に warm-start され、Courant 違反による
+発散を防ぐ。
 
 詳細は `time_integration/docs/time_integration_explicit.md §質量スケーリング` 参照。

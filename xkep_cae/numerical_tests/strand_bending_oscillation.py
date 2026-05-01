@@ -341,6 +341,8 @@ class StrandBendingOscillationConfig:
     explicit_mass_scaling_beta: float = 1.0
     explicit_mass_scaling_auto: bool = False
     explicit_mass_scaling_max_beta: float = 100.0
+    # status-381 h-bug-3 緩和: 1 update あたりの β 成長率 cap.
+    explicit_mass_scaling_max_growth_per_update: float = 4.0
     explicit_kinetic_energy_budget_ratio: float = 0.05
 
 
@@ -998,6 +1000,7 @@ class StrandBendingOscillationProcess(
             explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
             explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
             explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+            explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
             explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
         )
         solver = ContactFrictionProcess()
@@ -1341,6 +1344,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
                 explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
                 explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+                explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
                 explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
@@ -1547,6 +1551,7 @@ class StrandBendingOscillationProcess(
                 explicit_mass_scaling_beta=cfg.explicit_mass_scaling_beta,
                 explicit_mass_scaling_auto=cfg.explicit_mass_scaling_auto,
                 explicit_mass_scaling_max_beta=cfg.explicit_mass_scaling_max_beta,
+                explicit_mass_scaling_max_growth_per_update=cfg.explicit_mass_scaling_max_growth_per_update,
                 explicit_kinetic_energy_budget_ratio=cfg.explicit_kinetic_energy_budget_ratio,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)

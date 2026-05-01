@@ -323,7 +323,7 @@ class ExplicitCentralDifferenceProcess(
         self._vel_ckpt: np.ndarray | None = None
         self._acc_ckpt: np.ndarray | None = None
 
-    def set_mass_scaling_beta(self, beta: float) -> None:
+    def set_mass_scaling_beta(self, beta: float, *, rescale_state: bool = True) -> None:
         """質量スケーリング係数 β を実行時に更新する（status-379 auto-tune 用）.
 
         ExplicitDynamicProcess の Courant 監視で要求 β を逆算した際に呼ばれる。
@@ -331,14 +331,24 @@ class ExplicitCentralDifferenceProcess(
 
         Args:
             beta: 新しい β（>= 1.0）。既存値以下なら何もしない（β は単調増加のみ）。
+            rescale_state: True (default) で v/a を **運動エネルギー保存** で
+                リスケールする（v ← v·(β_old/β_new), a ← a·(β_old/β_new)²）。
+                これにより β 上方更新時に KE = 0.5·M·v² が β² 倍 spuriously
+                injected される **status-381 h-bug-1** を防ぐ。
+                False は後方互換用（テスト目的等）。
         """
         if beta < 1.0:
             raise ValueError(f"mass_scaling_beta must be >= 1.0 (got {beta})")
         if beta <= self.mass_scaling_beta:
             return
+        beta_old = self.mass_scaling_beta
         self.mass_scaling_beta = float(beta)
         self.M_lump = (self.mass_scaling_beta**2) * self._M_lump_raw
         self.M_lump_inv = self._invert_diagonal(self.M_lump)
+        if rescale_state:
+            ratio = beta_old / self.mass_scaling_beta
+            self.vel = self.vel * ratio
+            self.acc = self.acc * (ratio * ratio)
 
     @staticmethod
     def _lump_mass(M: sp.csr_matrix, lumping: str) -> np.ndarray:

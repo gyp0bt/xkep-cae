@@ -330,6 +330,11 @@ class ContactFrictionInputData:
     explicit_mass_scaling_beta: float = 1.0
     explicit_mass_scaling_auto: bool = False
     explicit_mass_scaling_max_beta: float = 100.0
+    # status-381 h-bug-3 緩和: auto-tune が β を一気にジャンプさせると、
+    # set_mass_scaling_beta() の KE 保存リスケール後も相空間に急峻な不連続を
+    # 導入する。1 update あたり β を `mass_scaling_max_growth_per_update` 倍まで
+    # に制限し、複数 update に分けて滑らかに成長させる。default 4.0。
+    explicit_mass_scaling_max_growth_per_update: float = 4.0
     explicit_kinetic_energy_budget_ratio: float = 0.05
 
     @property

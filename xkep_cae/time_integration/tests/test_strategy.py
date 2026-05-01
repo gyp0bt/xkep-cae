@@ -594,3 +594,48 @@ class TestExplicitCentralDifferenceMassScaling:
         assert isinstance(s, ExplicitCentralDifferenceProcess)
         assert s.mass_scaling_beta == 7.0
         np.testing.assert_array_almost_equal(s.M_lump, np.ones(4) * 49.0)
+
+    def test_set_mass_scaling_beta_preserves_kinetic_energy(self):
+        """status-381 h-bug-1 修正: β 上方更新で KE = 0.5·M·v² が保存される.
+
+        β_old → β_new で M_lump が β_new²/β_old² 倍化する一方、v は
+        (β_old/β_new) でスケールダウンされ、KE は不変。
+        """
+        M = sp.eye(3, format="csr") * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=2.0)
+        # 初期 KE: M_lump=8.0, v=[1,1,1] → KE = 0.5·8·3 = 12
+        proc.set_initial_state(velocity=np.ones(3))
+        ke_before = 0.5 * float(np.sum(proc.M_lump * proc.vel * proc.vel))
+        assert ke_before == pytest.approx(12.0)
+
+        proc.set_mass_scaling_beta(10.0)
+        ke_after = 0.5 * float(np.sum(proc.M_lump * proc.vel * proc.vel))
+        # M_lump=200.0, v=[0.2,0.2,0.2] → KE = 0.5·200·3·0.04 = 12
+        assert ke_after == pytest.approx(ke_before, rel=1e-10)
+        np.testing.assert_array_almost_equal(proc.vel, np.ones(3) * 0.2)
+
+    def test_set_mass_scaling_beta_rescales_acceleration(self):
+        """status-381 h-bug-1 修正: a も (β_old/β_new)² で rescale される."""
+        M = sp.eye(2, format="csr")
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M, mass_scaling_beta=3.0)
+        proc.set_initial_state(acceleration=np.array([6.0, 9.0]))
+        # β: 3 → 12 → ratio = 0.25, a *= 0.0625
+        proc.set_mass_scaling_beta(12.0)
+        np.testing.assert_array_almost_equal(proc.acc, np.array([6.0, 9.0]) * (3.0 / 12.0) ** 2)
+
+    def test_set_mass_scaling_beta_no_rescale_opt_out(self):
+        """rescale_state=False で v/a は変更されない（後方互換）."""
+        M = sp.eye(2, format="csr")
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc.set_initial_state(velocity=np.array([1.0, 2.0]), acceleration=np.array([3.0, 4.0]))
+        proc.set_mass_scaling_beta(5.0, rescale_state=False)
+        np.testing.assert_array_equal(proc.vel, np.array([1.0, 2.0]))
+        np.testing.assert_array_equal(proc.acc, np.array([3.0, 4.0]))
+
+    def test_set_mass_scaling_beta_zero_velocity_unchanged(self):
+        """v=0 / a=0 で β 更新しても状態は依然 0（rescale が安全）."""
+        M = sp.eye(3, format="csr") * 2.0
+        proc = ExplicitCentralDifferenceProcess(mass_matrix=M)
+        proc.set_mass_scaling_beta(50.0)
+        np.testing.assert_array_equal(proc.vel, np.zeros(3))
+        np.testing.assert_array_equal(proc.acc, np.zeros(3))
