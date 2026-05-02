@@ -1,37 +1,34 @@
-"""work/beam_hysteresis/40_explicit_n_inc_sweep.py — `n_increments` 大化掃引.
+"""work/beam_hysteresis/40_explicit_n_inc_sweep.py — `n_increments` 大化掃引（status-388 訂正版）.
 
 [← README](README.md) | [← project README](../../README.md)
 
-status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索。
+**status-388 訂正**: 当初 status-387 用に作成した本スクリプトは、解析解として
+**90° 曲げ (u=73.30mm)** を使っていたが、実 BC は `bending_curvature=0.015` ×
+`L=100mm` = 1.5 rad ≈ **86°** で、正しい解析解は |u|=70.44mm。さらに `max|u|`
+単一指標一致は STA2 該当（偶然の交差を許容）のため、CLAUDE.md「妥当性テスト
+の透明性ルール」に従い **独立 3 指標同時 10% 一致** に更新。
 
-status-386 #11 で `t_cycle=1.0s` 据え置き + `n_inc=200`（dt_sub=5e-3）+
-`selective=False`（uniform β² 一律スケール）で max|u|=6.57mm（z1d 方向の **10x
-改善**、解析解 73.30mm の 9% / err 91%）が得られた。本 status-387 では n_inc
-をさらに段階的に拡大し、精度 gate (5)（err < 10%）に向かうのか、
-あるいは UL 凍結の本質欠陥でプラトー化するのかを定量化する。
+status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索の再検証。
+explicit + UL が precision gate を達成可能かを **kinematics + geometric** で
+独立 3 指標として判定する。
 
-**理論予測**:
+**実 BC の解析解 3 指標** (κ=0.015 1/mm, L=100mm, θ=κ·L=1.5 rad ≈ 86°):
 
-- target β = dt_sub / (0.9·dt_c_orig)、dt_c_orig ≈ 1.6e-6 s（単梁 L=100mm 推定）
-- 弾性波伝播時間 = β · L / c、c = √(E/ρ) ≈ 3.81e6 mm/s
-- 横断回数 n = t_cycle / wave_traverse_time = t_cycle · c / (β · L)
+1. `|u_x_anal| = |R·sin(θ) − L| = 33.50 mm`（縮み方向、R = L/θ = 66.67 mm）
+2. `|u_z_anal| = R·(1 − cos(θ)) = 61.96 mm`（曲げ方向）
+3. `L_arc_anal = L = 100.00 mm`（不伸長性 — 変形後 chord 和、独立性最強）
 
-| n_inc | dt_sub [s] | target β | wave_traverse [s] | 横断回数 |
-|------:|-----------:|---------:|------------------:|---------:|
-|   200 |   5.00e-3  |     3500 |          92e-3   |     11   |
-|   500 |   2.00e-3  |     1400 |          37e-3   |     27   |
-|  1000 |   1.00e-3  |      700 |          18e-3   |     54   |
-|  2000 |   5.00e-4  |      350 |          9.2e-3  |    109   |
-|  4000 |   2.50e-4  |      175 |          4.6e-3  |    217   |
-|  8000 |   1.25e-4  |       88 |          2.3e-3  |    435   |
-| 16000 |   6.25e-5  |       44 |          1.1e-3  |    870   |
+`|u| = sqrt(u_x² + u_z²) = 70.44 mm` は (1)(2) から導出されるため独立指標
+としてカウントしない。SE = `0.5 u^T f_int` は MPC 拘束 DOF 消去で信頼できず
+（implicit でも 2.69 N·mm で解析解 71.79 N·mm と桁違い）、本スクリプトでは
+診断列のみで gate に組み込まない。
 
-横断回数が十分大きい（>100）と過渡応答が定常解析解に収束するはず。
+**Gate（3 指標 AND）**: 全 (|u_x|, |u_z|, L_arc) で `err < 10%` のみ
+「精度達成」。1 指標 PASS / 2 指標 FAIL は「達成と装わない」（数値の捏造禁止）。
 
-**Gate** (MCDD 凍結解除条件):
-1. frac = 1.0
-2. max|u_trans| < L_strand × 10 = 1000 mm
-3. **|max|u_explicit| − u_analytical| / u_analytical < 0.10**（単梁解析解 73.30mm）
+**符号規約**: 実装座標系で u_x, u_z の符号は処方回転向きに依存（通常 implicit
+で u_x≈+62, u_z≈-33 — analytical の (-33.50, +61.96) と x/z 役割が入れ替わる）。
+本スクリプトは絶対値比較で吸収する。
 
 実行:
     uv run --extra dev python work/beam_hysteresis/40_explicit_n_inc_sweep.py \\
@@ -99,12 +96,37 @@ def _run_one(label: str, cfg_factory, **overrides) -> dict:
         u = sr.u
         n_total_nodes = u.shape[0] // 6
         u_trans = u.reshape(n_total_nodes, 6)[:, :3]
-        max_u_trans = float(np.max(np.linalg.norm(u_trans, axis=1)))
+        u_norms = np.linalg.norm(u_trans, axis=1)
+        # status-388: 3 指標同時一致テスト用に tip 節点の (u_x, u_z) を抽出
+        # tip = max |u| ノード（曲げ先端、参照点ノード除外のため strand 節点のみ対象）
+        n_strand = result.n_strand_nodes
+        u_norms_strand = u_norms[:n_strand]
+        tip_idx = int(np.argmax(u_norms_strand))
+        tip_u_x = float(u_trans[tip_idx, 0])
+        tip_u_z = float(u_trans[tip_idx, 2])
+        max_u_trans = float(u_norms_strand[tip_idx])
+        # status-388: 不伸長性チェック L_arc — strand 節点 chord 和を解析解 L=100 と比較
+        node_coords_init = result.mesh.node_coords[:n_strand]  # (n_strand, 3)
+        deformed = node_coords_init + u_trans[:n_strand]
+        # 線形チェーン仮定（n_strands=1, 単梁の連続接続）。chord 和。
+        diffs = np.diff(deformed, axis=0)
+        L_arc = float(np.sum(np.linalg.norm(diffs, axis=1)))
+        # 参考値: SE は MPC 拘束 DOF 消去で `0.5 u^T f_int` が解析解と桁違いになる
+        # ため診断目的のみ（gate に組み込まない）
+        se_final = float("nan")
+        if sr.energy_history is not None:
+            entries = getattr(sr.energy_history, "entries", None)
+            if entries:
+                se_final = float(entries[-1].strain_energy)
         diverged = False
     except Exception as exc:
         elapsed = time.perf_counter() - t0
         frac = float("nan")
         max_u_trans = float("nan")
+        tip_u_x = float("nan")
+        tip_u_z = float("nan")
+        L_arc = float("nan")
+        se_final = float("nan")
         sr = None
         diverged = True
         print(f"  [DIVERGED] {type(exc).__name__}: {exc}")
@@ -113,7 +135,8 @@ def _run_one(label: str, cfg_factory, **overrides) -> dict:
         print(
             f"  frac={frac:.4f}, conv={sr.converged}, "
             f"incr={sr.n_increments}, cb={sr.n_cutbacks}, t={elapsed:.2f}s, "
-            f"max|u|={max_u_trans:.3e} mm"
+            f"|u|={max_u_trans:.3f}, u_x={tip_u_x:+.3f}, u_z={tip_u_z:+.3f}, "
+            f"L_arc={L_arc:.3f}, SE(diag)={se_final:.3e}"
         )
     return dict(
         label=label,
@@ -123,50 +146,129 @@ def _run_one(label: str, cfg_factory, **overrides) -> dict:
         n_cutbacks=int(sr.n_cutbacks) if sr is not None else 0,
         elapsed=elapsed,
         max_u_trans=max_u_trans,
+        tip_u_x=tip_u_x,
+        tip_u_z=tip_u_z,
+        L_arc=L_arc,
+        se_final=se_final,
         diverged=diverged,
     )
 
 
-def _analytical_max_u(L_strand: float) -> float:
-    """90° カンチレバー曲げの解析解 max|u_trans|（quarter circle）."""
-    R = 2.0 * L_strand / np.pi
-    return float(np.sqrt((L_strand - R) ** 2 + R**2))
+def _analytical_circular_arc(L_strand: float, kappa: float, E: float, r_wire: float) -> dict:
+    """status-388: 実 BC `bending_curvature=κ` での円弧解析解 3 指標.
+
+    BC: 先端に θ = κ·L の処方回転を与え、梁が一様曲率の円弧を描く前提
+    （quasi-static）. 解析解は kinematics + 歪エネルギーの 3 独立指標:
+
+        u_x_anal = R · sin(θ) − L         （x 軸方向、負値：縮み）
+        u_z_anal = R · (1 − cos(θ))       （z 軸方向、正値：曲げ方向）
+        SE_anal  = (1/2) · EI · κ² · L    （uniform κ pure bending）
+
+    `|u|` は u_x, u_z から導出されるため独立指標としてカウントしない。
+    """
+    theta = kappa * L_strand
+    R = L_strand / theta if theta > 1e-12 else float("inf")
+    u_x = R * np.sin(theta) - L_strand
+    u_z = R * (1.0 - np.cos(theta))
+    u_norm = float(np.sqrt(u_x**2 + u_z**2))
+    # 円形断面 r=r_wire の二次モーメント
+    I_y = np.pi * r_wire**4 / 4.0
+    EI = E * I_y
+    SE = 0.5 * EI * kappa**2 * L_strand
+    return dict(
+        theta=float(theta),
+        R=float(R),
+        u_x=float(u_x),
+        u_z=float(u_z),
+        u_norm=u_norm,
+        SE=float(SE),
+        EI=float(EI),
+    )
 
 
-def _summarize(runs: list[dict], u_analytical: float, L_strand: float) -> None:
+def _summarize(runs: list[dict], anal: dict, L_strand: float, gate: float = 0.10) -> None:
+    """status-388 透明性ルール: 3 指標 AND gate で判定.
+
+    3 指標は **kinematic 2 + geometric 1**:
+
+    1. tip |u_x|: x 成分絶対値（実装座標系で符号は処方回転向き依存）
+    2. tip |u_z|: z 成分絶対値
+    3. L_arc: 変形後 strand 節点 chord 和 ≈ 解析解 L_strand（不伸長性 gate）
+
+    SE は `0.5 u^T f_int` が MPC 拘束 DOF 消去のため信頼できず（implicit でも
+    解析解 71.79 と桁違い）、診断列のみで gate に組み込まない。
+
+    `|u_x|` / `|u_z|` 比較は処方回転向きに対する符号依存を吸収するため絶対値で行う
+    （analytical は ±33.50 / ±61.96 のいずれかで実装ごとに異なりうる）。
+    """
     print()
-    print("=" * 96)
-    print(f"{'label':54s} | frac  |   max|u|     | err_anal | t [s] | gate")
-    print("─" * 96)
+    print("=" * 138)
+    print(
+        f"{'label':50s} | frac  | |u_x|/|u_z| 多重集合 [mm] (max err) | "
+        f"L_arc [mm] (err) | SE(diag) | t [s] | gate"
+    )
+    # 解析解 multiset: {|u_x|, |u_z|} = {33.50, 61.96} を sort
+    anal_set = sorted([abs(anal["u_x"]), abs(anal["u_z"])])
+    anal_label = f"analytical (κ·L={anal['theta']:.4f} rad)"
+    print(
+        f"{anal_label:50s} | "
+        f"  --  | {anal_set[0]:7.3f}, {anal_set[1]:7.3f}            | "
+        f"{L_strand:7.3f}          | {anal['SE']:.3e} |  ---  |   --"
+    )
+    print("─" * 138)
     for r in runs:
         if r["diverged"] or not np.isfinite(r["max_u_trans"]):
             print(
-                f"  {r['label']:52s} | {'-':>5s} | {'DIVERGED':>11s} | "
-                f"   ---  | {r['elapsed']:5.1f} | FAIL"
+                f"  {r['label']:48s} | {'-':>5s} | {'DIVERGED':>32s} | "
+                f"{'':>16s} | {'':>8s} | {r['elapsed']:5.1f} | FAIL"
             )
             continue
-        err_anal = abs(r["max_u_trans"] - u_analytical) / u_analytical
-        gate_disp = r["max_u_trans"] < L_strand * 10.0
-        gate_acc = err_anal < 0.10
-        gate = "PASS" if (r["frac"] >= 0.999 and gate_disp and gate_acc) else "FAIL"
+        # 多重集合一致: {|u_x|, |u_z|} を sort して analytical sort と pair-wise 比較
+        run_set = sorted([abs(r["tip_u_x"]), abs(r["tip_u_z"])])
+        err_low = abs(run_set[0] - anal_set[0]) / max(anal_set[0], 1e-30)
+        err_high = abs(run_set[1] - anal_set[1]) / max(anal_set[1], 1e-30)
+        err_max_kin = max(err_low, err_high)
+        err_L = abs(r["L_arc"] - L_strand) / L_strand
+        gate_kin = err_max_kin < gate
+        gate_L = err_L < gate
+        gate_all = r["frac"] >= 0.999 and gate_kin and gate_L
+        flag = "PASS" if gate_all else "FAIL"
+        sk = "✓" if gate_kin else "✗"
+        sL = "✓" if gate_L else "✗"
         print(
-            f"  {r['label']:52s} | {r['frac']:5.3f} | {r['max_u_trans']:.3e} | "
-            f"{err_anal * 100:6.2f}% | {r['elapsed']:5.1f} | {gate}"
+            f"  {r['label']:48s} | {r['frac']:5.3f} | "
+            f"{run_set[0]:7.3f}, {run_set[1]:7.3f} ({err_max_kin * 100:5.1f}%{sk}) | "
+            f"{r['L_arc']:7.3f} ({err_L * 100:5.1f}%{sL}) | "
+            f"{r['se_final']:.2e} | {r['elapsed']:5.1f} | {flag}"
         )
 
 
 def main() -> int:
     print("=" * 72)
-    print("status-387 副次 — `n_increments` 大化掃引（t_cycle=1.0s 据え置き）")
+    print("status-388 — 訂正版: 実 BC κ=0.015 の解析解 3 指標同時一致テスト")
     print("=" * 72)
 
     L_strand = 100.0
-    u_analytical = _analytical_max_u(L_strand)
-    print(f"\n単梁 90° 曲げ解析解: L={L_strand}mm → max|u| = {u_analytical:.3f} mm")
-    print("(MCDD 条件 (5) gate: |max|u_explicit| − u_anal| / u_anal < 0.10)")
+    kappa = 0.015
+    E = 130.0e3
+    r_wire = 0.5
+    anal = _analytical_circular_arc(L_strand, kappa, E, r_wire)
+    print(
+        f"\n実 BC: κ={kappa} 1/mm, L={L_strand}mm → θ=κ·L={anal['theta']:.4f} rad "
+        f"(≈ {np.degrees(anal['theta']):.2f}°)"
+    )
+    print("解析解 3 指標 (status-388 透明性ルール — 絶対値比較で符号規約吸収):")
+    print(f"  |u_x|_anal = {abs(anal['u_x']):.4f} mm  (= |R·sin(θ) − L|、kinematic)")
+    print(f"  |u_z|_anal = {abs(anal['u_z']):.4f} mm  (= R·(1 − cos(θ))、kinematic)")
+    print(f"  L_arc_anal = {L_strand:.4f} mm    (= L、不伸長性 chord 和)")
+    print(f"  SE_diag    = {anal['SE']:.4e} N·mm (= (1/2)·EI·κ²·L、EI={anal['EI']:.4e})")
+    print("             — 診断列のみ、MPC 拘束消去で信頼できないため gate 外")
+    print(f"  R_anal   = {anal['R']:.4f} mm   (|u| = {anal['u_norm']:.4f} 導出値)")
+    print("\n（status-387 が誤って使った 90° 解析解: |u|=73.303mm — 実 BC は 86°）")
+    print("\n3 指標 AND gate (10%): 全 (|u_x|, |u_z|, L_arc) PASS でのみ「精度達成」")
 
     print("\n" + "=" * 72)
-    print("単梁 90° 曲げ — explicit uniform β² (selective=False) n_inc 掃引")
+    print("単梁 86° 曲げ — explicit uniform β² (selective=False) n_inc 掃引")
     print("=" * 72)
 
     runs: list[dict] = []
@@ -243,13 +345,14 @@ def main() -> int:
             )
         )
 
-    _summarize(runs, u_analytical, L_strand)
+    _summarize(runs, anal, L_strand)
 
     print()
-    print("Gate (MCDD 凍結解除条件):")
-    print("  - (1) frac=1.0 完走")
-    print(f"  - (2) max|u| < L_strand × 10 = {L_strand * 10.0:.0f} mm")
-    print(f"  - (5) 解析解誤差 < 10% （単梁 90° 解析解 max|u| = {u_analytical:.3f} mm）")
+    print("Gate (status-388 透明性ルール — 全 3 指標 AND):")
+    print("  - (a) frac=1.0 完走")
+    print(f"  - (b) ||u_x| − |u_x|_anal| / |u_x|_anal < 10%, |u_x|_anal={abs(anal['u_x']):.3f} mm")
+    print(f"  - (c) ||u_z| − |u_z|_anal| / |u_z|_anal < 10%, |u_z|_anal={abs(anal['u_z']):.3f} mm")
+    print(f"  - (d) |L_arc − L|/L < 10%, L={L_strand:.3f} mm（不伸長性）")
     print()
     print("評価ポイント:")
     print("  - max|u| が n_inc 増加で単調改善 → gate 達成可能性あり")

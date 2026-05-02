@@ -1,6 +1,20 @@
 [← status-index](status-index.md) | [← roadmap](../roadmap.md) | [← README](../../README.md)
 
-# status-387: 単梁 90° 曲げ — `n_increments` 大化掃引で sweet spot 発見、explicit + UL の精度 gate (5) を **n_inc=8000 で達成**（err 0.58%）
+> **⚠️ 訂正通知（status-388 で撤回）**:
+>
+> 本 status の「**精度 gate (5) 達成（err 0.58%）**」判定は **STA2 該当の誤報告**
+> として **status-388 で撤回**された。原因は (1) **解析解の取り違え**
+> （実 BC は θ=κ·L=1.5 rad ≈ 86° で u_anal=70.44mm。本 status は 90°
+> u_anal=73.30mm を使った）と (2) **単一指標 (max\|u\|) 一致のみで判定**したことの
+> 二重ミス。3 指標（u_x / u_z / SE）同時一致テストでは n_inc=8000 explicit は
+> SE が解析解 71.79 N·mm の 31x（2216 N·mm）と桁違いに過大で **完全 FAIL**、
+> max\|u\| ≈ 解析解は **偶然の交差**にすぎないことが status-388 で実証された。
+>
+> CLAUDE.md「**妥当性テストの透明性ルール**」（**独立解析解 3 個以上の同時一致**を
+> 必須化）を status-388 で追加。本 status は誤判定の記録として残置。詳細は
+> [status-388](status-388.md) を参照。
+
+# status-387: 単梁 90° 曲げ — `n_increments` 大化掃引で sweet spot 発見、explicit + UL の精度 gate (5) を **n_inc=8000 で達成**（err 0.58%） ← **status-388 で撤回**
 
 **日付**: 2026-05-02
 **テスト数**: 459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 passed
