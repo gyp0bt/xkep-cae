@@ -16,6 +16,25 @@
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-389 引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定（透明性
+> ルール下での foundation re-validation）**:
+> status-388 で透明性ルール（独立解析解 3 個以上同時一致）が status-387 の
+> 「sweet spot 達成」誤判定を 11 分で反証したことを踏まえ、ユーザー指示
+> 「梁要素一つの再検証から開始」に従い系統的 Phase 計画を策定。
+> **Phase α 1 要素静的検証**（軸引張 / 純粋曲げ small κ / 純粋曲げ large κ /
+> 純せん断、解析解 4-5 指標を先行確定）→ **Phase β 1 要素動的検証**（自由振動 +
+> explicit + slow ramp で foundation 健全性確定、β-2 失敗で (z2) Cosserat 移行
+> 根拠 absolute 確定）→ **Phase γ multi-element**（n=2/4/8/16 convergence 検証、
+> `16 要素/ピッチ` 規範再確認）→ **Phase δ 接触あり 2 本撚線**（最小規模 3 指標
+> 一致確認）。**既存テスト 3 指標 gate 化 TODO**: `test_assembler_process.py` /
+> `test_strand_beam_physics.py` / `test_beam_oscillation.py` /
+> `TestHelical90DegBendPhysics` / `work/beam_hysteresis/30〜40_*.py` を順次拡張。
+> 新規スクリプト位置 `work/beam_element_validation/41〜46_*.py` 提案、
+> `40_explicit_n_inc_sweep.py` の `_summarize()` を参考に 3 指標表形式を共通化。
+> 実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed
+> 5 skipped。**次セッション開始者へのメッセージ**: 実装前に解析解 3 個を紙の上で
+> 確定してから着手する規範を確立。
+>
 > **★ status-388 で status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3
 > 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc
 > で大破綻**:

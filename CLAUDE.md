@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-02 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-388（status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc で大破綻）**。ユーザーから **STA2 厳罰** + **透明性策定** + **3 個以上の解析解同時一致** の要求を受け、status-387 の二重ミス（(1) 解析解 90°(73.30mm) を使うが実 BC は 86°(70.44mm)、(2) 単一指標 max\|u\| のみで判定）を撤回し訂正。CLAUDE.md 「妥当性テストの透明性ルール」追記、独立 3 指標必須化（kinematics 2 + energetics-or-geometric 1）。**訂正版実機検証 14 ケース**: implicit baseline は 3 指標 PASS（kinematic err 0.1% / L_arc err 0.0%）、**全 13 explicit ケース FAIL** — n_inc=8000（旧 sweet spot）は kinematic 12.6% + **L_arc 233.75mm (134% 過大、梁が 2.3x に非物理ストレッチ)**、n_inc=16000 は L_arc 200% 過大（300mm、3x）。「sweet spot」は梁が伸びる + 曲率薄まる + 座標偶然交差の非物理解。**MCDD 凍結解除条件 (5) 未達続行**、status-387 撤回確定。次候補は **(z2) Cosserat 梁プロトタイプ最優先**（explicit + UL は本質破綻と確定、唯一の本質解決路）。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed 5 skipped（status-386/387 と同数）/ 全 24 契約検査 OK / ruff pass。Phase A〜E / status-346〜388 の **39/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-02 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-389（引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定）**。status-388 で透明性ルールが status-387 誤判定を 11 分で反証したことを踏まえ、ユーザー指示「梁要素一つの再検証から開始」に従い Phase α (1 要素静的) → β (1 要素動的) → γ (multi-element) → δ (接触あり 2 本撚線) の系統的計画を策定。Phase α-1〜4 の解析解 4-5 指標（u_x / u_z / θ / SE / L_arc）を先行確定。**Phase β-2 で 1 要素 explicit + UL が 3 指標 FAIL → (z2) Cosserat 移行根拠 absolute 確定**、PASS → CR foundation 健全 + (z2) は explicit + 大回転 robust 化に絞れる。既存テスト 3 指標 gate 化 TODO 化、新規スクリプト位置 `work/beam_element_validation/41〜46_*.py` 提案。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed 5 skipped（status-388 と同数）。**次セッション**: 実装前に解析解 3 個を紙の上で確定してから着手する規範を確立、Phase α-1（純軸引張）から具体的に着手。Phase A〜E / status-346〜389 の **40/N 完了**.
+
+前 status: status-388（status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc で大破綻）。ユーザーから **STA2 厳罰** + **透明性策定** + **3 個以上の解析解同時一致** の要求を受け、status-387 の二重ミス（(1) 解析解 90°(73.30mm) を使うが実 BC は 86°(70.44mm)、(2) 単一指標 max\|u\| のみで判定）を撤回し訂正。CLAUDE.md 「妥当性テストの透明性ルール」追記、独立 3 指標必須化（kinematics 2 + energetics-or-geometric 1）。**訂正版実機検証 14 ケース**: implicit baseline は 3 指標 PASS（kinematic err 0.1% / L_arc err 0.0%）、**全 13 explicit ケース FAIL** — n_inc=8000（旧 sweet spot）は kinematic 12.6% + **L_arc 233.75mm (134% 過大、梁が 2.3x に非物理ストレッチ)**、n_inc=16000 は L_arc 200% 過大（300mm、3x）。「sweet spot」は梁が伸びる + 曲率薄まる + 座標偶然交差の非物理解。**MCDD 凍結解除条件 (5) 未達続行**、status-387 撤回確定。Phase A〜E / status-346〜388 の **39/N 完了**.
 
 前 status: status-387 ⚠️ **status-388 で撤回**（単梁 90° 曲げ — `n_increments` 大化掃引で sweet spot 発見、explicit + UL の精度 gate (5) を `n_inc=8000` で達成、err 0.58% — **解析解 90° と実 BC 86° の取り違え + 単一指標一致のみで判定の二重 STA2 該当ミス、status-388 で 3 指標 AND gate により全 explicit ケース FAIL を実証して撤回**）。詳細は status-388 参照。status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索を実施。`work/beam_hysteresis/40_explicit_n_inc_sweep.py` 新設（+233 行、13 ケース）で `n_inc ∈ {200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 16000}` を uniform β² (selective=False) / `max_beta=10⁴` / `t_cycle_min=1.0` 据え置きで掃引。**主要発見: n_inc=8000 で max\|u\|=72.88mm（解析解 73.30mm の 99.4%、err 0.58%）**を観測、**MCDD 凍結解除条件 (5)「精度 < 10%」を単梁で達成**（status-381 以降 explicit + UL 路線で初の gate 通過）。収束は **単峰非単調**: n_inc=200→8000 で max\|u\| が 6.57→72.88mm へ単調増加、n_inc≥10000 で **overshoot**（n_inc=16000 で 106.10mm、err=44.76%、β=58 で残存質量不足）。**Damping + relax 併用は逆効果**（α=5.0 で 72.88→19.22mm に圧縮、UL 凍結のため `[RELAX] converged at step 1 ||R||=0` で動かす力源なし — status-382 §3 知見と整合）。**sweet spot β=116 の物理解釈**: t_cycle=1.0s 内で波が梁を 329 回横断（過渡応答完全減衰）+ 残存質量で動的振動有効減衰 + UL 凍結問題化なし（Δu/incr=0.011° で CR 梁 UL 線形化レンジ内）。**status-386 結論部分修正**: 「(z1*) 全候補で精度 gate 達成不能」は「(z1d) 方向では達成不能、(z1d) 反対方向 + n_inc 大 + damping=0 + sweet spot で**単梁では**達成可能、19 本適用は未検証」へ。**MCDD 凍結解除条件達成判定は時期尚早**（条件 (2) 19 本 frac=1.0 未検証、19 本領域で sweet spot 機能するかは別途）。次候補は **(z2) Cosserat 梁プロトタイプ最優先**（sweet spot 依存を脱却するため UL 凍結を本質解決）/ 副次 (5.3) 7 本 + n_inc=8000 1 ケース実測 / (5.4) 19 本 n_inc 掃引（条件 (5.3) 確認後）。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **743 passed 5 skipped**（status-386 と同数）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜387 の **38/N 完了**.
 
@@ -127,21 +129,30 @@ n_inc=8000 で精度 gate (5) を単梁で達成（err=0.58%）と判定 → ⚠
 FAIL**（n_inc=8000 の旧「sweet spot」は L_arc=234mm で梁が 2.3x に非物理
 ストレッチ、座標値の偶然交差で max\|u\| が解析解 73 と一致したのみ）。CLAUDE.md
 「**妥当性テストの透明性ルール**」追記、独立 3 指標必須化。**MCDD 凍結解除条件
-(5) 未達続行**、explicit + UL は本質破綻確定。現在のアクティブライン:
+(5) 未達続行**、explicit + UL は本質破綻確定。**status-389 で「梁要素 1 つから
+系統的再検証」Phase 計画策定**（Phase α 1 要素静的 → β 1 要素動的 → γ multi-element
+→ δ 接触あり 2 本撚線、各 Phase で 3 指標 AND gate 必須）。現在のアクティブライン:
 
-- **次 status（最優先）— 候補 (z2) Cosserat 梁プロトタイプ**: UL を捨てて
+- **次 status（最優先）— Phase α 着手**: status-389 §2 Phase α 計画に従い、
+  CR Timoshenko 3D 梁要素 1 つの 4 ケース（α-1 軸引張 / α-2 純粋曲げ small κ /
+  α-3 純粋曲げ large κ / α-4 純せん断 small）を **implicit static** で実機検証。
+  解析解 4-5 指標（u_x / u_z / θ / SE / L_arc）は status-389 §2 で先行確定済。
+  新規スクリプト `work/beam_element_validation/41_alpha1_axial_tension.py` 等
+  4 本を作成、`40_explicit_n_inc_sweep.py` の `_summarize()` を参考に 3 指標
+  multiset + L_arc + 診断 SE 表形式を共通化。foundation 健全性確定が目的。
+- **次々 status — Phase β 1 要素動的**: α 完了後、`β-1 自由振動` + `β-2 explicit
+  + slow ramp で α-3 と 10% 一致` を検証。**β-2 で 1 要素 explicit が 3 指標 FAIL
+  → (z2) Cosserat 移行根拠 absolute 確定**。
+- **その後（β 結果次第）— 候補 (z2) Cosserat 梁プロトタイプ**: UL を捨てて
   explicit + 大回転を本質解決。geometrically exact (Simo-Reissner) beam、
-  SO(3) 回転 DOF、Lie 群更新。status-382/383/385/386/388 で確定した「explicit + UL
-  の本質破綻」（UL 凍結 + mass scaling 波速減速 + status-388 で実証された
-  L_arc 大破綻 = 梁が 2.3x に伸びる非物理ストレッチ）を robust 化する**唯一の
-  本質解決路**。実装中規模（~1000 行）、Phase 設計から着手（要素・歪み・接線・
-  回転更新の4分割が見込まれる）。Cosserat 梁は SO(3) 回転 DOF + reference 更新
-  不要 + 軸方向拘束 exact 維持で L_arc 自動保存。status-387 sweet spot は status-388
-  で偽 (=梁 2.3x 伸び座標偶然交差) と確定、(z2) を躊躇なく着手すべき。
-- **副次 — 既存 validation スクリプトの 3 指標化**（status-388 で TODO 化）:
-  status-388 で策定した透明性ルールに合わせ、`work/beam_hysteresis/30〜39_*.py`
-  の各 validation スクリプトを順次 3 指標 AND gate に更新。failed ケースは
-  過去判定が信頼できないので再判定する。Cosserat 梁実装と並行可能。
+  SO(3) 回転 DOF + reference 更新不要 + 軸方向拘束 exact 維持で L_arc 自動保存。
+  実装中規模（~1000 行）、Phase 設計から着手（要素・歪み・接線・回転更新の 4 分割）。
+- **副次 — 既存 validation の 3 指標 gate 化**（status-388/389 で TODO 化）:
+  `xkep_cae/elements/tests/test_assembler_process.py` /
+  `xkep_cae/elements/fiber/tests/test_strand_beam_physics.py` /
+  `xkep_cae/numerical_tests/tests/test_beam_oscillation.py` /
+  `TestHelical90DegBendPhysics` / `work/beam_hysteresis/30〜40_*.py` を順次拡張。
+  failed ケースは過去判定が信頼できないので再判定する。Phase γ/δ と並行可能。
 - **副次（撤回済）— ~~7 本 + n_inc=8000 1 ケース実測~~ / ~~19 本 n_inc 掃引~~ /
   ~~単梁 sweet spot 精密探索~~**: status-387 sweet spot は status-388 で偽
   (=梁 2.3x 伸びの非物理解) と確定したため、これら副次タスクはすべて却下。
