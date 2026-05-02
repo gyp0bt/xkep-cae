@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-02 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-389（引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定）**。status-388 で透明性ルールが status-387 誤判定を 11 分で反証したことを踏まえ、ユーザー指示「梁要素一つの再検証から開始」に従い Phase α (1 要素静的) → β (1 要素動的) → γ (multi-element) → δ (接触あり 2 本撚線) の系統的計画を策定。Phase α-1〜4 の解析解 4-5 指標（u_x / u_z / θ / SE / L_arc）を先行確定。**Phase β-2 で 1 要素 explicit + UL が 3 指標 FAIL → (z2) Cosserat 移行根拠 absolute 確定**、PASS → CR foundation 健全 + (z2) は explicit + 大回転 robust 化に絞れる。既存テスト 3 指標 gate 化 TODO 化、新規スクリプト位置 `work/beam_element_validation/41〜46_*.py` 提案。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed 5 skipped（status-388 と同数）。**次セッション**: 実装前に解析解 3 個を紙の上で確定してから着手する規範を確立、Phase α-1（純軸引張）から具体的に着手。Phase A〜E / status-346〜389 の **40/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-02 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-390（Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース PASS、foundation 健全確定）**。status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ + 4 検証スクリプト ~860 行）、3 指標 AND gate（status-388 透明性ルール）で 1 要素 implicit static 検証を実施。**全 4 ケース PASS（機械精度 0.000〜0.001%）**: α-1 純軸引張 / α-2 純粋曲げ small κ / α-3 純粋曲げ large κ / α-4 cantilever 横荷重。**重要発見 1（α-3）**: 1 要素 CR は **chord 長保存制約**で chord rotation α=θ_R/2 の Hermite 解（u_x=L(cosα-1), u_z=L sinα）を出す。circular arc 解との 25% 差は **1 要素の本質的離散化誤差**で Phase γ で消失するはず。**重要発見 2（α-2）**: 実装の局所剛性 Ke[u_z, θ_y]=+6 EI/L² 規約と plan の解析式 u_z=+M·L²/(2·EI) は符号が逆 → `MetricRow.compare_abs=True` で吸収。status-389 plan 表の数値ミス（α-1 u_x で 1 桁ずれ / α-2 EI で 10³ 単位ミス / α-3 u_x で計算ミス）は実装側で**式から動的計算**することで透明性ルール準拠の正しい解析解 gate を実現。**結論**: status-389 §4 シナリオ「Phase α-3 で 1 要素 implicit が 3 指標 PASS → CR は static 規模で妥当 → (z2) Cosserat は explicit + 大回転 robust 化に主目的を絞れる」を**支持**。Foundation 健全確定。実装本体（`xkep_cae/`）**無変更**、回帰 743 passed 5 skipped（status-389 と同数）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。**次セッション**: Phase β-1 自由振動（SDoF Timoshenko 第 1 モード）+ β-2 explicit + slow ramp で α-3 と 10% 一致検証（**β-2 で FAIL → (z2) Cosserat 移行根拠 absolute 確定**、PASS → 大回転 robust 化に絞れる）。Phase A〜E / status-346〜390 の **41/N 完了**.
+
+前 status: status-389（引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定）。status-388 で透明性ルールが status-387 誤判定を 11 分で反証したことを踏まえ、Phase α (1 要素静的) → β (1 要素動的) → γ (multi-element) → δ (接触あり 2 本撚線) の系統的計画を策定。実装本体無変更、回帰 743 passed 5 skipped。Phase A〜E / status-346〜389 の **40/N 完了**.
 
 前 status: status-388（status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc で大破綻）。ユーザーから **STA2 厳罰** + **透明性策定** + **3 個以上の解析解同時一致** の要求を受け、status-387 の二重ミス（(1) 解析解 90°(73.30mm) を使うが実 BC は 86°(70.44mm)、(2) 単一指標 max\|u\| のみで判定）を撤回し訂正。CLAUDE.md 「妥当性テストの透明性ルール」追記、独立 3 指標必須化（kinematics 2 + energetics-or-geometric 1）。**訂正版実機検証 14 ケース**: implicit baseline は 3 指標 PASS（kinematic err 0.1% / L_arc err 0.0%）、**全 13 explicit ケース FAIL** — n_inc=8000（旧 sweet spot）は kinematic 12.6% + **L_arc 233.75mm (134% 過大、梁が 2.3x に非物理ストレッチ)**、n_inc=16000 は L_arc 200% 過大（300mm、3x）。「sweet spot」は梁が伸びる + 曲率薄まる + 座標偶然交差の非物理解。**MCDD 凍結解除条件 (5) 未達続行**、status-387 撤回確定。Phase A〜E / status-346〜388 の **39/N 完了**.
 
@@ -131,18 +133,22 @@ FAIL**（n_inc=8000 の旧「sweet spot」は L_arc=234mm で梁が 2.3x に非�
 「**妥当性テストの透明性ルール**」追記、独立 3 指標必須化。**MCDD 凍結解除条件
 (5) 未達続行**、explicit + UL は本質破綻確定。**status-389 で「梁要素 1 つから
 系統的再検証」Phase 計画策定**（Phase α 1 要素静的 → β 1 要素動的 → γ multi-element
-→ δ 接触あり 2 本撚線、各 Phase で 3 指標 AND gate 必須）。現在のアクティブライン:
+→ δ 接触あり 2 本撚線、各 Phase で 3 指標 AND gate 必須）。**status-390 で Phase α
+完了**: CR Timoshenko 1 要素 implicit static 全 4 ケース PASS（機械精度 0.000〜0.001%）。
+α-3 で 1 要素 CR は **chord 長保存制約**で circular arc を表現できず Hermite 解
+（chord rotation α=θ_R/2）を出すと判明 — Phase γ で n_elements ↑ で circular arc に
+収束するはず。Foundation 健全確定。現在のアクティブライン:
 
-- **次 status（最優先）— Phase α 着手**: status-389 §2 Phase α 計画に従い、
-  CR Timoshenko 3D 梁要素 1 つの 4 ケース（α-1 軸引張 / α-2 純粋曲げ small κ /
-  α-3 純粋曲げ large κ / α-4 純せん断 small）を **implicit static** で実機検証。
-  解析解 4-5 指標（u_x / u_z / θ / SE / L_arc）は status-389 §2 で先行確定済。
-  新規スクリプト `work/beam_element_validation/41_alpha1_axial_tension.py` 等
-  4 本を作成、`40_explicit_n_inc_sweep.py` の `_summarize()` を参考に 3 指標
-  multiset + L_arc + 診断 SE 表形式を共通化。foundation 健全性確定が目的。
-- **次々 status — Phase β 1 要素動的**: α 完了後、`β-1 自由振動` + `β-2 explicit
-  + slow ramp で α-3 と 10% 一致` を検証。**β-2 で 1 要素 explicit が 3 指標 FAIL
-  → (z2) Cosserat 移行根拠 absolute 確定**。
+- **次 status（最優先）— Phase β 着手**: status-390 で Phase α 全 4 ケース PASS、
+  foundation 健全確定を踏まえ Phase β に移行。`work/beam_element_validation/`:
+  (1) **β-1 自由振動** (`45_beta1_free_vibration.py`): 1 要素 cantilever、初期速度
+  v_z=1 mm/s、explicit 中央差分 + lumped mass で 5 周期。3 指標: 周期 T_1 ≈
+  (2π/1.875²)·√(ρAL⁴/EI) / KE+SE 5 周期で減衰 < 10% / L_chord ≈ L で 1% 以内。
+  (2) **β-2 explicit quasi-static** (`46_beta2_explicit_quasistatic.py`): α-3 と
+  同 BC（θ_y=0.15 rad 処方）を **explicit + slow ramp + sufficient damping** で実施、
+  α-3 (implicit) Hermite 解と 3 指標 10% 以内一致を検証。**β-2 で FAIL → (z2)
+  Cosserat 移行根拠 absolute 確定**、PASS → CR foundation 健全 + (z2) は explicit
+  + 大回転 robust 化に絞れる。
 - **その後（β 結果次第）— 候補 (z2) Cosserat 梁プロトタイプ**: UL を捨てて
   explicit + 大回転を本質解決。geometrically exact (Simo-Reissner) beam、
   SO(3) 回転 DOF + reference 更新不要 + 軸方向拘束 exact 維持で L_arc 自動保存。

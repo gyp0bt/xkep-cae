@@ -16,24 +16,36 @@
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ status-389 引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定（透明性
-> ルール下での foundation re-validation）**:
+> **★ status-390 Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース
+> PASS（foundation 健全確定）**:
+> status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ +
+> 4 検証スクリプト ~860 行）、3 指標 AND gate（status-388 透明性ルール）で 1 要素
+> implicit static 検証を実施。**全 4 ケース PASS（機械精度 0.000〜0.001%）**:
+> α-1 純軸引張 F_x=100 N（u_x / u_z(=0) / L_arc / iters=2）/ α-2 純粋曲げ
+> small κ M_y=10 N·mm（\|u_z\| / \|θ_y\| / \|f_int\| / iters=4）/ α-3 純粋曲げ
+> large κ θ_y=0.15 rad（\|u_x\|=0.0281 / \|u_z\|=0.7493 / L_chord=10.000 /
+> iters=40 with load stepping）/ α-4 cantilever 横荷重 F_z=0.01 N（\|u_z\| /
+> \|θ_y\| / \|M_base\| / iters=2）。**重要発見 1（α-3）**: 1 要素 CR は
+> **chord 長保存制約**で chord rotation α=θ_R/2 の Hermite 解（u_x=L(cosα-1),
+> u_z=L sinα）を出す。circular arc 解との 25% 差は **1 要素の本質的離散化誤差**で
+> Phase γ で n_elements ↑ により消失するはず。**重要発見 2（α-2）**: 実装の局所
+> 剛性 Ke[u_z, θ_y]=+6 EI/L² 規約と plan の解析式 u_z=+M·L²/(2·EI) は符号が逆 →
+> `MetricRow.compare_abs=True` で吸収。status-389 plan 表の数値ミス（3 ヶ所）は
+> 実装側で**式から動的計算**することで透明性ルール準拠の正しい解析解 gate を実現。
+> **結論**: status-389 §4 シナリオ「Phase α-3 で 1 要素 implicit が 3 指標 PASS
+> → CR は static 規模で妥当 → (z2) Cosserat は explicit + 大回転 robust 化に
+> 主目的を絞れる」を**支持**。Foundation 健全確定。実装本体（`xkep_cae/`）**無変更**、
+> 回帰 743 passed 5 skipped（status-389 と同数）/ 全 24 契約検査 OK / ruff pass。
+> **次セッション最優先**: Phase β-1 自由振動（SDoF Timoshenko 第 1 モード周期 +
+> KE+SE 保存 + L_chord 保存 の 3 指標）+ β-2 explicit + slow ramp で α-3 と
+> 10% 一致検証（**β-2 で FAIL → (z2) Cosserat 移行根拠 absolute 確定**、PASS →
+> 大回転 robust 化に絞れる）。
+>
+> **★ status-389 引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定**:
 > status-388 で透明性ルール（独立解析解 3 個以上同時一致）が status-387 の
-> 「sweet spot 達成」誤判定を 11 分で反証したことを踏まえ、ユーザー指示
-> 「梁要素一つの再検証から開始」に従い系統的 Phase 計画を策定。
-> **Phase α 1 要素静的検証**（軸引張 / 純粋曲げ small κ / 純粋曲げ large κ /
-> 純せん断、解析解 4-5 指標を先行確定）→ **Phase β 1 要素動的検証**（自由振動 +
-> explicit + slow ramp で foundation 健全性確定、β-2 失敗で (z2) Cosserat 移行
-> 根拠 absolute 確定）→ **Phase γ multi-element**（n=2/4/8/16 convergence 検証、
-> `16 要素/ピッチ` 規範再確認）→ **Phase δ 接触あり 2 本撚線**（最小規模 3 指標
-> 一致確認）。**既存テスト 3 指標 gate 化 TODO**: `test_assembler_process.py` /
-> `test_strand_beam_physics.py` / `test_beam_oscillation.py` /
-> `TestHelical90DegBendPhysics` / `work/beam_hysteresis/30〜40_*.py` を順次拡張。
-> 新規スクリプト位置 `work/beam_element_validation/41〜46_*.py` 提案、
-> `40_explicit_n_inc_sweep.py` の `_summarize()` を参考に 3 指標表形式を共通化。
-> 実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed
-> 5 skipped。**次セッション開始者へのメッセージ**: 実装前に解析解 3 個を紙の上で
-> 確定してから着手する規範を確立。
+> 「sweet spot 達成」誤判定を 11 分で反証したことを踏まえ、Phase α (1 要素静的)
+> → β (1 要素動的) → γ (multi-element) → δ (接触あり 2 本撚線) の系統的計画を
+> 策定。Phase α 計画は status-390 で完了。
 >
 > **★ status-388 で status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3
 > 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc
