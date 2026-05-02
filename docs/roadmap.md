@@ -12,10 +12,29 @@
 
 ---
 
-## 現在地（2026-05-01）
+## 現在地（2026-05-02）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+38 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-387 で (z2) Cosserat 梁 Phase 0 着手 — 設計仕様 + SO(3) Lie 群
+> ユーティリティ公開モジュール + 38 単体テスト**:
+> `solver_mode="explicit"` + UL の組合せが status-382/383/385/386 の 4 status
+> 連続検証で原理的に不整合（UL `update_reference` 凍結 + mass scaling 波速減速）と
+> 確定したことを受け、UL を捨てた **幾何学的厳密 (Simo–Reissner) Cosserat 梁**
+> プロトタイプへ移行。Phase 0 として (a) 設計仕様 `xkep_cae/elements/docs/cosserat_beam.md`
+> 新設（DOF / 運動学 / ひずみ測度 / 構成則 / 質量行列 / 内力 / explicit 更新 /
+> Phase 0〜5 計画）、(b) 公開モジュール `xkep_cae/mathematics/so3.py` 新設
+> （`skew`/`vee`/`exp_so3`/`log_so3`/`dexp_so3`/`dexp_inv_so3`/`compose` + バッチ版、
+> φ→0 テイラー展開 4 次 + φ→π 四元数経由 log で機械精度 atol=1e-12）、
+> (c) `xkep_cae/mathematics/tests/test_so3.py` で **38 単体テスト**（skew/vee 8 +
+> exp/log 9 + dexp 互逆 6 + compose 3 + バッチ整合 7 + CR 梁 private parity 5）。
+> `_beam_cr.py` の private SO(3) 関数群は意図的に変更せず、
+> `test_helical_3d_hermite` rel_err=2.18×10⁻⁷ 維持。次 status は Phase 1 =
+> `CosseratBeamElementProcess` 1 要素弾性内力 + 解析接線。**MCDD 凍結解除条件 (5)**
+> `|u_explicit−u_anal|/|u_anal| < 0.10` 達成へ向けた最終本命路線着手。
+> 回帰 781 passed 5 skipped（+38）/ 全 24 契約検査 OK / 7 本 implicit frac=1.0 /
+> ruff pass。Phase A〜E / status-346〜387 の **38/N 完了**。
+>
 > **★ status-386 で候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と
 > 単梁実機で実証、explicit + UL 精度 gate 未達続行**:
 > status-385 §6.1 最有力候補 (z1d) として

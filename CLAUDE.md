@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-01 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-386（候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と単梁実機で実証、explicit + UL 精度 gate 未達続行）**。status-385 §6.1 最有力候補 (z1d) として `StrandBendingOscillationConfig.t_cycle_min_seconds: float = 1.0` field を追加、`t_cycle = max(10·T1, cfg.t_cycle_min_seconds)` で下限を外部制御可能化（default 1.0 で既存挙動完全保持）。**+6 単体テスト**（`TestTCycleMinSeconds`）全 pass。**`39_z1d_t_cycle_validation.py` 11 ケース単梁中心実機検証**: (a) z1d 自体は設計通り動作（initial target β 4.7e+04 → 3.1e+03 の **15x 縮小** ログ確認）/ (b) **implicit 側 regression なし**（t_cycle_min=0.0 で frac=1.0 完走、err 4.86%、baseline 3.90% との差 1pt 未満）/ (c) **explicit 側で逆効果**（selective+z1d 全 DIVERGED、non-selective uniform β² 完走するも max\|u\|=0.77mm vs 解析解 73.30mm で **err 99%**、大 β_outside=2000 でも 1.83mm/97.5%）/ (d) **逆方向対照実験 (#11) `n_inc=200, t_cycle 据え置き`** で max\|u\|=6.57mm（z1d 方向の **10x 改善**）— **z1d は方向自体が逆と定量実証**。**真の物理原因**: mass scaling β は波速を `c→c/β` に減速、β=3000 で波の梁長 100mm 横断時間 78ms が t_cycle=67ms（z1d 適用後）を超過し変形が伝播しないまま frac=1.0 到達。`t_cycle_min_seconds` field は default 1.0 で保持（implicit 完全保持、explicit opt-in）。**MCDD 凍結解除条件 (5) 未達続行**、(z1*) 全候補で精度 gate 達成不能と確定、次候補は **(z2) Cosserat 梁プロトタイプ最優先**。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **743 passed 5 skipped**（status-385 比 +6）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜386 の **37/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+38 テスト** — 2026-05-02 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-387（(z2) Cosserat 梁 Phase 0 — 設計仕様 + SO(3) Lie 群ユーティリティ公開モジュール + 38 単体テスト）**。`solver_mode="explicit"` + UL の組合せが status-382/383/385/386 で原理的に不整合（UL `update_reference` 凍結 + mass scaling 波速減速）と確定したことを受け、UL を捨てた **幾何学的厳密 (Simo–Reissner) Cosserat 梁** プロトタイプへ移行。Phase 0 として (a) 設計仕様 `xkep_cae/elements/docs/cosserat_beam.md` 新設、(b) 公開モジュール `xkep_cae/mathematics/so3.py` 新設（`skew`/`vee`/`exp_so3`/`log_so3`/`dexp_so3`/`dexp_inv_so3`/`compose` + バッチ版、φ→0 テイラー展開 4 次 + φ→π 四元数経由 log で機械精度 atol=1e-12）、(c) `xkep_cae/mathematics/tests/test_so3.py` で **38 単体テスト**（skew/vee 8 + exp/log 9 + dexp 互逆 6 + compose 3 + バッチ整合 7 + CR 梁 private parity 5）。`_beam_cr.py` の private SO(3) 関数群は意図的に変更せず、`test_helical_3d_hermite` rel_err=2.18×10⁻⁷ 維持。次 status は Phase 1 = `CosseratBeamElementProcess` 1 要素弾性内力 + 解析接線。**MCDD 凍結解除条件 (5)** 達成へ向けた最終本命路線着手。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **781 passed 5 skipped**（status-386 比 +38）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜387 の **38/N 完了**.
+
+前 status: status-386（候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と単梁実機で実証、explicit + UL 精度 gate 未達続行）。status-385 §6.1 最有力候補 (z1d) として `StrandBendingOscillationConfig.t_cycle_min_seconds: float = 1.0` field を追加、`t_cycle = max(10·T1, cfg.t_cycle_min_seconds)` で下限を外部制御可能化（default 1.0 で既存挙動完全保持）。**+6 単体テスト**（`TestTCycleMinSeconds`）全 pass。**`39_z1d_t_cycle_validation.py` 11 ケース単梁中心実機検証**: (a) z1d 自体は設計通り動作（initial target β 4.7e+04 → 3.1e+03 の **15x 縮小** ログ確認）/ (b) **implicit 側 regression なし**（t_cycle_min=0.0 で frac=1.0 完走、err 4.86%、baseline 3.90% との差 1pt 未満）/ (c) **explicit 側で逆効果**（selective+z1d 全 DIVERGED、non-selective uniform β² 完走するも max\|u\|=0.77mm vs 解析解 73.30mm で **err 99%**、大 β_outside=2000 でも 1.83mm/97.5%）/ (d) **逆方向対照実験 (#11) `n_inc=200, t_cycle 据え置き`** で max\|u\|=6.57mm（z1d 方向の **10x 改善**）— **z1d は方向自体が逆と定量実証**。**真の物理原因**: mass scaling β は波速を `c→c/β` に減速、β=3000 で波の梁長 100mm 横断時間 78ms が t_cycle=67ms（z1d 適用後）を超過し変形が伝播しないまま frac=1.0 到達。`t_cycle_min_seconds` field は default 1.0 で保持（implicit 完全保持、explicit opt-in）。**MCDD 凍結解除条件 (5) 未達続行**、(z1*) 全候補で精度 gate 達成不能と確定、次候補は **(z2) Cosserat 梁プロトタイプ最優先**。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **743 passed 5 skipped**（status-385 比 +6）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜386 の **37/N 完了**.
 
 前 status: status-385（候補 (z1c) 2 段階質量スケーリング API（β_stiff + β_outside）実装 — API 完成、validation で β_stiff cap が支配的と確認、(z1d) loading rate 縮小が必須と判明）。status-384 §6.1 最有力候補 (z1c) として `ExplicitCentralDifferenceProcess` に `mass_scaling_beta_outside` 引数 + `set_mass_scaling_beta_outside()` API（KE 保存 v/a リスケール対応）を追加。`_compute_scaled_mass()` で mask=False の DOF（梁）に β_outside² を、mask=True の DOF（stiff）に β² を適用。`_explicit_dynamic.py` の dt_c_beam 推定で mask 設定時は `β_outside` を乗じる。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 1 field + 3 経路 plumb-through。**+11 単体テスト**（`TestTwoStageMassScaling`）全 pass。**`38_z1c_two_stage_validation.py` 8 ケース実機検証**: API は設計通り動作（log で post-cutback target β が β_outside=10 で 8.8e6 → 8.8e5 に **10x 縮小**）も、initial target β=4.7e4（β_stiff cap=1e3〜1e4 を超過）が支配的で全 explicit ケース frac=0 で divergence。aggressive scaling（β_outside=10, β_stiff_max=1e6, α=10）で frac=0.425 進むも max\|u\|=1.6e5mm で精度 gate 完全違反。**結論**: (z1c) infrastructure は完成、しかし MCDD 凍結解除条件 (5) 達成には **(z1d) `t_cycle` 下限緩和** で loading rate を物理 T1 ベースに縮小し target β 自体を下げる必要がある。次候補は (z1d) 最優先 / (z2) Cosserat 梁プロトタイプ並行検討。回帰: 全 24 契約検査 OK / contact + math + time_integration + strand_bending_osc = **737 passed 5 skipped**（status-384 比 +11）/ `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。Phase A〜E / status-346〜385 の **36/N 完了**.
 
@@ -114,14 +116,21 @@ API を実装**: `mass_scaling_beta_outside` を独立 field 化、KE 保存リ�
 mask 依存。validation で API は設計通り動作（target β 10x 縮小確認）も、initial
 target β=4.7e4 が β_stiff cap を超過し全 explicit ケース frac=0、**(z1d) loading
 rate 縮小が必須**と判明。**status-386 で (z1d) 実装し却下、(z1*) 全候補で精度
-gate 達成不能と確定**。現在のアクティブライン:
+gate 達成不能と確定**。**status-387 で (z2) Cosserat 梁 Phase 0 着手**: 設計仕様 +
+SO(3) Lie 群ユーティリティ公開モジュール `xkep_cae/mathematics/so3.py` 新設
+（`exp_so3` / `log_so3` / `dexp_so3` / `dexp_inv_so3` + バッチ版、φ→0 テイラー
+展開 4 次 + φ→π 四元数経由 log）+ 38 単体テスト（`_beam_cr.py` private 関数との
+parity test 5 件で status-356 機械精度資産を防御）。現在のアクティブライン:
 
-- **次 status（最優先）— 候補 (z2) Cosserat 梁プロトタイプ**: UL を捨てて
-  explicit + 大回転を本質解決。geometrically exact (Simo-Reissner) beam、
-  SO(3) 回転 DOF、Lie 群更新。status-382/383/385/386 で確定した「explicit + UL
-  の本質欠陥」（UL `update_reference` 凍結 + mass scaling 波速減速のダブル拘束）
-  を打破する唯一の路線。実装中規模（~1000 行）、Phase 設計から着手（要素・歪み・
-  接線・回転更新の4分割が見込まれる）。
+- **次 status（最優先）— Cosserat 梁 Phase 1**: `CosseratBeamElementProcess`
+  1 要素弾性内力 + 解析接線剛性。`xkep_cae/elements/cosserat/` サブパッケージ
+  新設、Gauss 1 点積分、12×12 接線、FD 検証 atol < 1e-6。設計仕様
+  `xkep_cae/elements/docs/cosserat_beam.md` §1.1〜§1.4 に対応する記述追記。
+  規模目安 ~600 行。
+- **副次 — 「t_cycle 据え置き + n_increments 大」探索**: status-386 §5.4 で
+  (#11) `n_inc=200` が z1d 方向の **10x 改善**（max\|u\|=6.57mm vs 0.77mm）。
+  さらに `n_inc=2000` 等で精度向上の可能性は残るが、UL 凍結の本質問題は不変
+  なので gate 達成は楽観できない。Cosserat Phase 1〜3 着手中の短期実験に有用。
 - **副次 — 「t_cycle 据え置き + n_increments 大」探索**: status-386 §5.4 で
   (#11) `n_inc=200` が z1d 方向の **10x 改善**（max\|u\|=6.57mm vs 0.77mm）。
   さらに `n_inc=2000` 等で精度向上の可能性は残るが、UL 凍結の本質問題は不変
