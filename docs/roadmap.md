@@ -12,10 +12,75 @@
 
 ---
 
-## 現在地（2026-05-01）
+## 現在地（2026-05-02）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-389 引き継ぎ — 梁要素 1 つから系統的再検証 Phase 計画策定（透明性
+> ルール下での foundation re-validation）**:
+> status-388 で透明性ルール（独立解析解 3 個以上同時一致）が status-387 の
+> 「sweet spot 達成」誤判定を 11 分で反証したことを踏まえ、ユーザー指示
+> 「梁要素一つの再検証から開始」に従い系統的 Phase 計画を策定。
+> **Phase α 1 要素静的検証**（軸引張 / 純粋曲げ small κ / 純粋曲げ large κ /
+> 純せん断、解析解 4-5 指標を先行確定）→ **Phase β 1 要素動的検証**（自由振動 +
+> explicit + slow ramp で foundation 健全性確定、β-2 失敗で (z2) Cosserat 移行
+> 根拠 absolute 確定）→ **Phase γ multi-element**（n=2/4/8/16 convergence 検証、
+> `16 要素/ピッチ` 規範再確認）→ **Phase δ 接触あり 2 本撚線**（最小規模 3 指標
+> 一致確認）。**既存テスト 3 指標 gate 化 TODO**: `test_assembler_process.py` /
+> `test_strand_beam_physics.py` / `test_beam_oscillation.py` /
+> `TestHelical90DegBendPhysics` / `work/beam_hysteresis/30〜40_*.py` を順次拡張。
+> 新規スクリプト位置 `work/beam_element_validation/41〜46_*.py` 提案、
+> `40_explicit_n_inc_sweep.py` の `_summarize()` を参考に 3 指標表形式を共通化。
+> 実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、回帰 743 passed
+> 5 skipped。**次セッション開始者へのメッセージ**: 実装前に解析解 3 個を紙の上で
+> 確定してから着手する規範を確立。
+>
+> **★ status-388 で status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3
+> 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc
+> で大破綻**:
+> ユーザーから **STA2 厳罰** + **透明性策定** + **3 個以上の解析解同時一致** の
+> 要求を受け、status-387 の二重ミス（(1) 解析解 90° (73.30mm) を使うが実 BC は
+> 86° (70.44mm)、(2) 単一指標 max\|u\| のみで判定）を撤回し訂正。CLAUDE.md
+> 「STA2 防止ルール」に「**妥当性テストの透明性ルール（status-388 追加・厳罰）**」
+> 追記: 独立 3 指標必須化（kinematics 2 + energetics-or-geometric 1）、`\|u\|`
+> ノルムは導出値で独立指標カウント不可、SE 信頼できない場合は L_arc 等で代替可。
+> **訂正版実機検証 14 ケース**: implicit baseline は 3 指標すべて PASS（kinematic
+> err 0.1% / L_arc err 0.0%）、**全 13 explicit ケース FAIL**。**n_inc=8000（旧
+> sweet spot）は kinematic 12.6%（10% gate 越え）+ L_arc 233.75mm（134% 過大、
+> 梁が 2.3x に非物理ストレッチ）**、n_inc=16000 は L_arc 200% 過大（3x スケール
+> 300mm）。**「sweet spot」の真相**: 梁が 2.3x に伸びる + 曲率が 1/3 に薄まる +
+> 座標が偶然 (37.7, 62.4) で \|u\|≈73 → 90° 解析解 73.30 と偶然交差。3 指標 AND
+> gate で確実に検出される非物理解。**MCDD 凍結解除条件 (5) 未達続行**、status-387
+> 撤回確定。次候補は **(z2) Cosserat 梁プロトタイプ最優先**（explicit + UL は本質
+> 的破綻と確定、SO(3) 回転 DOF + reference 更新不要 + 軸方向拘束 exact 維持で唯一
+> の本質解決路）。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、
+> 回帰 743 passed 5 skipped（status-386/387 と同数）/ 全 24 契約検査 OK / ruff pass。
+>
+> **★【⚠️ status-388 で撤回】status-387 で単梁 90° 曲げの `n_increments` 大化掃引で
+> sweet spot 発見 — explicit + UL の精度 gate (5) を `n_inc=8000` で達成（err 0.58%）**:
+> status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索を実施。
+> `work/beam_hysteresis/40_explicit_n_inc_sweep.py` 新設（+233 行、13 ケース）で
+> `n_inc ∈ {200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 16000}` を
+> uniform β² (selective=False) / `max_beta=10⁴` / `t_cycle_min=1.0` 据え置きで掃引。
+> **主要発見: n_inc=8000 で max\|u\|=72.88mm（解析解 73.30mm の 99.4%、err 0.58%）**を観測、
+> **MCDD 凍結解除条件 (5)「精度 < 10%」を単梁で達成**（status-381 以降の explicit + UL
+> 路線で初の gate 通過）。収束は **単峰非単調**: n_inc=200→8000 で max\|u\| が
+> 6.57→72.88mm へ単調増加、n_inc≥10000 で **overshoot**（n_inc=16000 で 106.10mm、
+> err=44.76%、β=58 で残存質量不足）。**Damping + relax 併用は逆効果**（α=5.0 で
+> n_inc=8000 max\|u\| 72.88→19.22mm に圧縮、UL 凍結のため `[RELAX] converged at step 1
+> ||R||=0` で動かす力源なし — status-382 §3 知見と整合）。**sweet spot β=116 の物理
+> 解釈**: t_cycle=1.0s 内で波が梁を 329 回横断（過渡応答完全減衰）+ 残存質量で
+> 動的振動有効減衰 + UL 凍結問題化なし（Δu/incr=0.011° で CR 梁 UL 線形化レンジ内）。
+> **status-386 結論部分修正**: 「(z1*) 全候補で精度 gate 達成不能」は
+> 「(z1d) 方向では達成不能、(z1d) 反対方向 + n_inc 大 + damping=0 + sweet spot で
+> **単梁では**達成可能、19 本適用は未検証」へ。**MCDD 凍結解除条件達成判定は時期尚早**
+> （条件 (2) 19 本 frac=1.0 未検証、19 本領域で sweet spot 機能するかは別途）。
+> 次候補は **(z2) Cosserat 梁プロトタイプ最優先**（sweet spot 依存を脱却するため
+> UL 凍結を本質解決）/ 副次 (5.3) 7 本 + n_inc=8000 1 ケース実測 / (5.4) 19 本
+> n_inc 掃引（条件 (5.3) 確認後）。実装本体（`xkep_cae/`、単体テスト、契約検査）は
+> **無変更**、回帰 743 passed 5 skipped（status-386 と同数）/ 全 24 契約検査 OK /
+> `test_helical_3d_hermite` rel_err=2.18×10⁻⁷ 維持 / 7 本 implicit frac=1.0 / ruff pass。
+>
 > **★ status-386 で候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と
 > 単梁実機で実証、explicit + UL 精度 gate 未達続行**:
 > status-385 §6.1 最有力候補 (z1d) として
