@@ -12,10 +12,35 @@
 
 ---
 
-## 現在地（2026-05-01）
+## 現在地（2026-05-02）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-387 で単梁 90° 曲げの `n_increments` 大化掃引で sweet spot 発見 —
+> explicit + UL の精度 gate (5) を `n_inc=8000` で達成（err 0.58%）**:
+> status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索を実施。
+> `work/beam_hysteresis/40_explicit_n_inc_sweep.py` 新設（+233 行、13 ケース）で
+> `n_inc ∈ {200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 16000}` を
+> uniform β² (selective=False) / `max_beta=10⁴` / `t_cycle_min=1.0` 据え置きで掃引。
+> **主要発見: n_inc=8000 で max\|u\|=72.88mm（解析解 73.30mm の 99.4%、err 0.58%）**を観測、
+> **MCDD 凍結解除条件 (5)「精度 < 10%」を単梁で達成**（status-381 以降の explicit + UL
+> 路線で初の gate 通過）。収束は **単峰非単調**: n_inc=200→8000 で max\|u\| が
+> 6.57→72.88mm へ単調増加、n_inc≥10000 で **overshoot**（n_inc=16000 で 106.10mm、
+> err=44.76%、β=58 で残存質量不足）。**Damping + relax 併用は逆効果**（α=5.0 で
+> n_inc=8000 max\|u\| 72.88→19.22mm に圧縮、UL 凍結のため `[RELAX] converged at step 1
+> ||R||=0` で動かす力源なし — status-382 §3 知見と整合）。**sweet spot β=116 の物理
+> 解釈**: t_cycle=1.0s 内で波が梁を 329 回横断（過渡応答完全減衰）+ 残存質量で
+> 動的振動有効減衰 + UL 凍結問題化なし（Δu/incr=0.011° で CR 梁 UL 線形化レンジ内）。
+> **status-386 結論部分修正**: 「(z1*) 全候補で精度 gate 達成不能」は
+> 「(z1d) 方向では達成不能、(z1d) 反対方向 + n_inc 大 + damping=0 + sweet spot で
+> **単梁では**達成可能、19 本適用は未検証」へ。**MCDD 凍結解除条件達成判定は時期尚早**
+> （条件 (2) 19 本 frac=1.0 未検証、19 本領域で sweet spot 機能するかは別途）。
+> 次候補は **(z2) Cosserat 梁プロトタイプ最優先**（sweet spot 依存を脱却するため
+> UL 凍結を本質解決）/ 副次 (5.3) 7 本 + n_inc=8000 1 ケース実測 / (5.4) 19 本
+> n_inc 掃引（条件 (5.3) 確認後）。実装本体（`xkep_cae/`、単体テスト、契約検査）は
+> **無変更**、回帰 743 passed 5 skipped（status-386 と同数）/ 全 24 契約検査 OK /
+> `test_helical_3d_hermite` rel_err=2.18×10⁻⁷ 維持 / 7 本 implicit frac=1.0 / ruff pass。
+>
 > **★ status-386 で候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と
 > 単梁実機で実証、explicit + UL 精度 gate 未達続行**:
 > status-385 §6.1 最有力候補 (z1d) として
