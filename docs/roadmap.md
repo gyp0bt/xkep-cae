@@ -16,8 +16,29 @@
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
-> **★ status-387 で単梁 90° 曲げの `n_increments` 大化掃引で sweet spot 発見 —
-> explicit + UL の精度 gate (5) を `n_inc=8000` で達成（err 0.58%）**:
+> **★ status-388 で status-387 訂正・撤回 + 妥当性テスト透明性ルール策定（独立解析解 3
+> 個以上同時一致を必須化）+ 単梁 explicit + UL は L_arc 不伸長性 gate で全 n_inc
+> で大破綻**:
+> ユーザーから **STA2 厳罰** + **透明性策定** + **3 個以上の解析解同時一致** の
+> 要求を受け、status-387 の二重ミス（(1) 解析解 90° (73.30mm) を使うが実 BC は
+> 86° (70.44mm)、(2) 単一指標 max\|u\| のみで判定）を撤回し訂正。CLAUDE.md
+> 「STA2 防止ルール」に「**妥当性テストの透明性ルール（status-388 追加・厳罰）**」
+> 追記: 独立 3 指標必須化（kinematics 2 + energetics-or-geometric 1）、`\|u\|`
+> ノルムは導出値で独立指標カウント不可、SE 信頼できない場合は L_arc 等で代替可。
+> **訂正版実機検証 14 ケース**: implicit baseline は 3 指標すべて PASS（kinematic
+> err 0.1% / L_arc err 0.0%）、**全 13 explicit ケース FAIL**。**n_inc=8000（旧
+> sweet spot）は kinematic 12.6%（10% gate 越え）+ L_arc 233.75mm（134% 過大、
+> 梁が 2.3x に非物理ストレッチ）**、n_inc=16000 は L_arc 200% 過大（3x スケール
+> 300mm）。**「sweet spot」の真相**: 梁が 2.3x に伸びる + 曲率が 1/3 に薄まる +
+> 座標が偶然 (37.7, 62.4) で \|u\|≈73 → 90° 解析解 73.30 と偶然交差。3 指標 AND
+> gate で確実に検出される非物理解。**MCDD 凍結解除条件 (5) 未達続行**、status-387
+> 撤回確定。次候補は **(z2) Cosserat 梁プロトタイプ最優先**（explicit + UL は本質
+> 的破綻と確定、SO(3) 回転 DOF + reference 更新不要 + 軸方向拘束 exact 維持で唯一
+> の本質解決路）。実装本体（`xkep_cae/`、単体テスト、契約検査）は **無変更**、
+> 回帰 743 passed 5 skipped（status-386/387 と同数）/ 全 24 契約検査 OK / ruff pass。
+>
+> **★【⚠️ status-388 で撤回】status-387 で単梁 90° 曲げの `n_increments` 大化掃引で
+> sweet spot 発見 — explicit + UL の精度 gate (5) を `n_inc=8000` で達成（err 0.58%）**:
 > status-386 §5.4 副次「t_cycle 据え置き + n_increments 大」探索を実施。
 > `work/beam_hysteresis/40_explicit_n_inc_sweep.py` 新設（+233 行、13 ケース）で
 > `n_inc ∈ {200, 500, 1000, 2000, 4000, 6000, 8000, 10000, 12000, 16000}` を
