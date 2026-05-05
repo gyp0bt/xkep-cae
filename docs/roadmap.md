@@ -12,10 +12,36 @@
 
 ---
 
-## 現在地（2026-05-02）
+## 現在地（2026-05-05）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
 
+> **★ status-391 Phase β 完了 — 1 要素 cantilever explicit central diff +
+> lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS（CR foundation
+> explicit 健全確定）**:
+> status-390 Phase α 完了を踏まえ Phase β に移行、`work/beam_element_validation/`
+> に共通ヘルパ `_beta_common.py`（`solve_explicit_central_diff` leap-frog Verlet +
+> `compute_natural_frequencies_fe` + `compute_strain_energy_cr`、Rayleigh 質量比例
+> 減衰対応、~370 行）+ 検証スクリプト 2 本（45_β1 / 46_β2、~480 行）を新設。
+> **β-1 自由振動**（v_z(tip)=1 mm/s、5 周期、α=0、lumped、dt/dt_crit=0.150）:
+> T_period(FE 第 1 モード) **0.056%** / |u_z_max|(v_0/ω_1) **4.85%** /
+> E_drift **0.016%** で 3 指標全 PASS、L_chord drift 7e-13 mm（実質ゼロ）。
+> **β-2 explicit quasi-static**（α-3 と同 BC θ_y=0.15 rad、slow ramp 5T_1 +
+> hold 5T_1、ζ=2 過減衰、dt/dt_crit=0.500）: |u_x_tip|=0.02811 / |u_z_tip|=0.7493 /
+> L_chord=10.000 すべて **機械精度 0.000%** で α-3 implicit Hermite 解と完全一致、
+> settle 残差 ||f_int_a||=2.13e-14 N、KE/SE=3.78e-27（quasi-static gate 完璧）。
+> **重要含意**: status-381〜387 explicit + UL の精度問題は **CR 要素自体ではなく
+> 上位層**（assembler / UL formulation / mass scaling 戦略）に局在することを定量
+> 実証 — 1 要素直接駆動（assembler 経由なし、UL update_reference 不要）では explicit
+> + 大回転で機械精度一致が成立する。**(z2) Cosserat 路線は absolute necessity ではない**
+> — 主目的は explicit + 大回転 robust 化（assembler / UL update_reference 由来の
+> 問題解消）に絞れる。実装本体（`xkep_cae/`）**無変更**、回帰 743 passed 5 skipped
+> （status-390 と同数）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07
+> 維持 / ruff pass。**次セッション最優先**: Phase γ multi-element 検証
+> （n_elements ∈ {2, 4, 8, 16} で α-3 を再実施 → circular arc 解への収束を確認、
+> 「16 要素/ピッチ厳守」規範の妥当性再確認）/ 副次 Phase δ 接触あり 2 本撚線 /
+> 副次 既存テストの 3 指標 gate 化 / 副次 assembler / UL 1 要素再現実験。
+>
 > **★ status-390 Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース
 > PASS（foundation 健全確定）**:
 > status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ +
