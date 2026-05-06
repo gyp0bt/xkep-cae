@@ -33,17 +33,32 @@ plan の解析式は `u_z_tip = +M·L²/(2·EI)` と書いており、両者で 
 status-388 透明性ルール「絶対値多重集合一致」を踏襲し、kinematic 量は
 `compare_abs=True` で吸収する（gate 判定に影響なし）。
 
-## Phase β — 1 要素動的検証（α 完了後）
+## Phase β — 1 要素動的検証（status-391 で完了、両ケース PASS）
 
-α 完了後、explicit 動的を 1 要素で検証する予定:
+α 完了後の explicit dynamics を 1 要素で検証。**全 2 ケース PASS**（status-391）:
 
-| スクリプト | 内容 |
-|---|---|
-| `45_beta1_free_vibration.py` (TODO) | 1 要素 自由振動、SDoF Timoshenko 第 1 モード |
-| `46_beta2_explicit_quasistatic.py` (TODO) | 1 要素 prescribed θ_y を explicit + slow ramp |
+| スクリプト | ケース | gate 3 指標 | 結果 |
+|---|---|---|---|
+| `45_beta1_free_vibration.py` | 自由振動 v_z(tip)=1 mm/s | T_FE / \|u_z_max\| / E_drift | **PASS** (T 0.06% / u 4.85% / E 0.02%) |
+| `46_beta2_explicit_quasistatic.py` | prescribed θ_y=0.15 rad slow ramp | \|u_x\| / \|u_z\| / L_chord (Hermite 解) | **PASS** (機械精度 0.000%) |
 
-**Phase β-2 で 1 要素 explicit が 3 指標 FAIL → (z2) Cosserat 移行根拠 absolute 確定**、
-PASS なら CR foundation 健全 + (z2) は explicit + 大回転 robust 化に絞れる。
+### β-2 PASS の重要含意
+
+**1 要素 explicit + slow ramp + 質量比例減衰** は α-3 implicit Hermite 解と
+**機械精度（0.000%）で完全一致**。これは:
+
+- **CR foundation は explicit dynamics 領域でも健全**
+- status-381〜387 explicit + UL の精度問題は **CR 要素自体ではなく上位層**（assembler /
+  UL formulation / mass scaling 戦略）に局在
+- **(z2) Cosserat 路線は absolute necessity ではない** — 主目的は explicit + 大回転
+  robust 化（assembler / UL 由来の問題解消）に絞れる
+
+### 共通ヘルパ
+
+- `_beta_common.py`: `solve_explicit_central_diff` (leap-frog Verlet) /
+  `compute_natural_frequencies_fe` (K_aa φ = ω² M_aa φ) /
+  `compute_strain_energy_cr` (corotational SE) / `measure_period_zero_crossings`.
+- 1 要素 12 DOF を `timo_beam3d_cr_internal_force` 直接呼出で駆動、assembler 経由なし.
 
 ## Phase γ — multi-element 検証（β 完了後）
 
