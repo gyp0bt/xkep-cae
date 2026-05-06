@@ -83,7 +83,9 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-05 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-391（Phase β 完了 — 1 要素 cantilever explicit central diff + lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS、CR foundation explicit 健全確定）**。status-390 Phase α 完了を踏まえ Phase β に移行、`work/beam_element_validation/` に共通ヘルパ `_beta_common.py`（`solve_explicit_central_diff` leap-frog Verlet + `compute_natural_frequencies_fe` + `compute_strain_energy_cr`、Rayleigh 質量比例減衰対応、~370 行）+ 検証スクリプト 2 本（45_β1 / 46_β2）を新設。**β-1 自由振動**（v_z(tip)=1 mm/s、5 周期、α=0、lumped）: T_period(FE 第 1 モード) **0.056%** / |u_z_max|(v_0/ω_1) **4.85%** / E_drift **0.016%** で 3 指標全 PASS、L_chord drift 7e-13 mm（実質ゼロ）。連続体 Bernoulli ω_1 との 48% 差は 1 要素 lumped FE 離散化の本質（Phase γ で解消）。**β-2 explicit quasi-static**（α-3 と同 BC θ_y=0.15 rad、slow ramp 5T_1 + hold 5T_1、ζ=2 過減衰）: |u_x_tip| / |u_z_tip| / L_chord すべて **機械精度 0.000%** で α-3 implicit Hermite 解と完全一致、settle 残差 ||f_int_a||=2.13e-14 N。**重要含意**: status-381〜387 explicit + UL の精度問題は **CR 要素自体ではなく上位層**（assembler / UL formulation / mass scaling 戦略）に局在 — 1 要素直接駆動では explicit + 大回転で機械精度一致が成立。**(z2) Cosserat 路線は absolute necessity ではない**、主目的は explicit + 大回転 robust 化（assembler / UL update_reference 由来の問題解消）に絞れる。status-389 §4 シナリオを **支持確定**。実装本体（`xkep_cae/`）**無変更**、回帰 743 passed 5 skipped（status-390 と同数）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。**次セッション**: Phase γ multi-element 検証（n_elements ∈ {2, 4, 8, 16} で α-3 を再実施、circular arc 解への収束 + 「16 要素/ピッチ厳守」規範の妥当性確認）/ 副次 Phase δ 接触あり 2 本撚線 / 副次 既存テスト 3 指標 gate 化 / 副次 assembler / UL 1 要素再現実験。Phase A〜E / status-346〜391 の **42/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** — 2026-05-06 | 契約違反 **0件** | 条例違反 **0件** | **MCDD status-392（Phase γ 完了 — multi-element CR Timoshenko 梁の circular arc 収束を O(1/n²) で実証、4/5 PASS、log-log slope=-2.000）**。status-391 §6.1 Phase γ 計画に従い、CR Timoshenko 3D 梁要素を **直線チェーン**で n_elements ∈ {1, 2, 4, 8, 16} に並べた系を α-3 と同じ BC（左端 fix、右端 θ_y=0.15 rad 処方）で **implicit static** に解き、circular arc 解への収束を 3 指標 AND gate（status-388 透明性ルール）で確認。`work/beam_element_validation/_gamma_common.py`（`ChainedBeamSection` + `assemble_internal_force/tangent` + `solve_static_nr_chain`、~280 行）+ `47_gamma_multi_element_convergence.py`（~270 行）新設。**4/5 ケース PASS**: n=1 のみ FAIL（u_x で 24.95% — α-3 で実証済み chord 長保存制約による既知の離散化誤差）、n=2,4,8,16 で 3 指標すべて PASS。**err(\|u_x\|): 24.95%(n=1) → 6.23%(n=2) → 1.56%(n=4) → 0.39%(n=8) → 0.10%(n=16)** で **log-log slope=-2.000**（理論値 O(1/n²) と完全一致）。**CR closed form 一致**（chord rotation φ_e=θ(e-1/2)/n の sum-to-product 解、`x_n = L sin(θ/2)cos(θ/2)/(n sin(θ/(2n)))`）は全 5 ケースで \|u_x\|/\|u_z\|/L_chord すべて **機械精度（10⁻¹³%〜10⁻¹²%）** — 実装が CR 多要素解析理論と完全整合。polyline 長 = Σ L_elem も全ケース機械精度で 10.000 mm を保存（各要素 chord 長保存）。**結論**: CR foundation の multi-element アセンブル健全性確定、「16 要素/ピッチ厳守」規範は典型 curvature レンジで十分なマージン（θ=0.15 rad ≈ 8.6° 単一曲げで n=2 から 10% gate を通過）。Phase α (1 要素 implicit static) → β (1 要素 explicit dynamic) → γ (multi-element implicit static) で **CR foundation の static / dynamic / multi-element 全領域での健全性が定量実証**。実装本体（`xkep_cae/`）**無変更**、回帰 743 passed 5 skipped（status-391 と同数）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（10 files already formatted）。**次セッション最優先候補**: assembler / UL update_reference の 1 要素再現実験（status-381〜387 精度問題の根因特定、`49_beta2_with_assembler_ul.py`）/ 副次 Phase δ 接触あり 2 本撚線 / 副次 Phase γ-2 大 curvature 拡張（θ=π/2）/ 副次 既存テスト 3 指標 gate 化。Phase A〜E / status-346〜392 の **43/N 完了**.
+
+前 status: status-391（Phase β 完了 — 1 要素 cantilever explicit central diff + lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS、CR foundation explicit 健全確定）。`work/beam_element_validation/_beta_common.py` + 45/46 スクリプト（~720 行）新設、β-1 自由振動 T 0.06%/|u_z| 4.85%/E_drift 0.02% で PASS、β-2 explicit quasi-static は α-3 implicit Hermite 解と機械精度 0.000% で完全一致。implicit + UL 精度問題は CR 要素ではなく上位層（assembler / UL formulation / mass scaling）に局在することを定量実証。実装本体無変更、回帰 743 passed 5 skipped。Phase A〜E / status-346〜391 の **42/N 完了**.
 
 前 status: status-390（Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース PASS、foundation 健全確定）。status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ + 4 検証スクリプト ~860 行）、3 指標 AND gate（status-388 透明性ルール）で 1 要素 implicit static 検証。**全 4 ケース PASS（機械精度 0.000〜0.001%）**。実装本体無変更、回帰 743 passed 5 skipped。Phase A〜E / status-346〜390 の **41/N 完了**.
 
@@ -139,23 +141,27 @@ FAIL**（n_inc=8000 の旧「sweet spot」は L_arc=234mm で梁が 2.3x に非�
 完了**: CR Timoshenko 1 要素 implicit static 全 4 ケース PASS（機械精度 0.000〜0.001%）。
 α-3 で 1 要素 CR は **chord 長保存制約**で circular arc を表現できず Hermite 解
 （chord rotation α=θ_R/2）を出すと判明 — Phase γ で n_elements ↑ で circular arc に
-収束するはず。Foundation 健全確定。現在のアクティブライン:
+収束するはず。**status-391 で Phase β 完了**: 1 要素 explicit central diff + lumped mass
+で β-1 自由振動 (T 0.06%/|u_z| 4.85%/E 0.02%) + β-2 explicit quasi-static (機械精度
+0.000% × 3) 両 PASS。CR foundation explicit 健全確定。**status-392 で Phase γ 完了**:
+n_elements ∈ {1, 2, 4, 8, 16} で α-3 を再実施し circular arc 解への O(1/n²) 収束を
+実証（log-log slope=-2.000、4/5 PASS、CR closed form 一致機械精度）。Foundation 健全
+確定（static / dynamic / multi-element 全領域）。現在のアクティブライン:
 
-- **次 status（最優先）— Phase γ multi-element 検証着手**: status-391 で Phase β
-  両 PASS（β-1 0.06%/4.85%/0.02%、β-2 機械精度 0.000% × 3）+ CR foundation explicit
-  健全確定を踏まえ Phase γ に移行。`work/beam_element_validation/47_gamma_multi_element_convergence.py`:
-  n_elements ∈ {1, 2, 4, 8, 16} で α-3 (純粋曲げ θ_y=0.15 rad) を再実施し、
-  **circular arc 解** (uniform κ、curve length 保存、u_x=R sin θ − L、
-  u_z=R(1−cos θ)、L_chord=2R sin(θ/2)) への収束を検証。期待: n=1 で 25% 差
-  → n=16 で ~0.1% に縮小。「16 要素/ピッチ厳守」規範の妥当性再確認。
-  3 指標 AND gate × 5 ケース = 15 個の判定を表形式で出力。
-- **副次 — assembler / UL 1 要素再現実験**: status-381〜387 の精度問題を 1 要素規模
-  で assembler 経由 + UL update_reference 有効化で **再現** する
-  (`49_beta2_with_assembler_ul.py`)。β-2 直接駆動（機械精度 0.000%）との差分が
-  status-381〜387 改修の特定対象を明確にする。
+- **次 status（最優先候補）— assembler / UL 1 要素再現実験**: status-381〜387 の
+  精度問題を 1 要素規模で assembler 経由 + UL update_reference 有効化で **再現** する
+  (`49_beta2_with_assembler_ul.py`)。Phase β-2 直接駆動（機械精度 0.000%）+ Phase γ
+  closed form 機械精度の foundation 健全実証を踏まえ、status-381〜387 改修の特定対象
+  （assembler / UL formulation / mass scaling）を 1 要素規模で再現することで、
+  改修対象を局在化する decisive 実験。
 - **副次 — Phase δ 接触あり 2 本撚線**: 最小規模の接触系（2 本撚線、平行配置、軽荷重）
   で 3 指標一致を確認。`status-335` の 2 本撚線 M-κ 観測スクリプトが基盤、
-  `48_delta_2strand_contact.py` を作成予定。Phase γ multi-element が PASS した後に着手。
+  `48_delta_2strand_contact.py` を作成予定。Phase γ multi-element + 接触なし foundation
+  確定を踏まえ、接触あり foundation 検証への移行は logical な次ステップ。
+- **副次 — Phase γ-2 大 curvature 拡張**: status-392 Phase γ-1 は θ=0.15 rad の
+  small-medium curvature。full pitch（撚線 1 turn = 2π rad）レンジで「16 要素/ピッチ
+  厳守」規範を再確認するため、θ=π/2（90°）等で `47_*.py` を再実施
+  （`50_gamma2_large_curvature.py` 等）。
 - **副次（中期 plan B）— 候補 (z2) Cosserat 梁プロトタイプ**: status-391 で
   absolute necessity ではなくなったが、assembler / UL 改修が頓挫したときの
   fallback として scope 維持。geometrically exact (Simo-Reissner) beam、
@@ -264,6 +270,7 @@ stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反
 - ~~status-387〜389（status-387 sweet spot 偽陽性訂正経由 → 透明性ルール策定 → 系統的再検証 Phase 計画策定）~~: 完了（詳細は status-index.md / 各 status ファイル参照、CLAUDE.md 「現在の状態」§前 status エントリ参照。38〜40/N 完了）
 - ~~status-390（Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース PASS、foundation 健全確定）~~: 完了（status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ + 4 検証スクリプト ~860 行）、3 指標 AND gate（status-388 透明性ルール）で 1 要素 implicit static 検証、**全 4 ケース PASS（機械精度 0.000〜0.001%）**: α-1 純軸引張 / α-2 純粋曲げ small κ / α-3 純粋曲げ large κ / α-4 cantilever 横荷重。**重要発見（α-3）**: 1 要素 CR は chord 長保存制約で chord rotation α=θ_R/2 の Hermite 解（u_x=L(cosα-1), u_z=L sinα）を出す → circular arc 解との 25% 差は 1 要素本質的離散化誤差で Phase γ で解消。実装本体無変更、回帰 743 passed 5 skipped。41/N 完了）
 - ~~status-391（Phase β 完了 — 1 要素 cantilever explicit central diff + lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS、CR foundation explicit 健全確定）~~: 完了（status-390 Phase α 完了を踏まえ Phase β に移行、`work/beam_element_validation/` に共通ヘルパ `_beta_common.py`（`solve_explicit_central_diff` leap-frog Verlet + `compute_natural_frequencies_fe` + `compute_strain_energy_cr`、Rayleigh 質量比例減衰対応、~370 行）+ 検証スクリプト 2 本（45_β1 / 46_β2）を新設。**β-1 自由振動**（v_z(tip)=1 mm/s、5 周期、α=0、lumped）: T_period(FE 第 1 モード) **0.056%** / |u_z_max|(v_0/ω_1) **4.85%** / E_drift **0.016%** で 3 指標全 PASS、L_chord drift 7e-13 mm。連続体 Bernoulli ω_1 との 48% 差は 1 要素 lumped FE 離散化の本質（Phase γ で解消）。**β-2 explicit quasi-static**（α-3 と同 BC θ_y=0.15 rad、slow ramp 5T_1 + hold 5T_1、ζ=2 過減衰）: |u_x_tip| / |u_z_tip| / L_chord すべて **機械精度 0.000%** で α-3 implicit Hermite 解と完全一致、settle 残差 ||f_int_a||=2.13e-14 N。**重要含意**: status-381〜387 explicit + UL の精度問題は **CR 要素自体ではなく上位層**（assembler / UL formulation / mass scaling 戦略）に局在 — 1 要素直接駆動では explicit + 大回転で機械精度一致が成立。**(z2) Cosserat 路線は absolute necessity ではない**、主目的は explicit + 大回転 robust 化に絞れる。実装本体無変更、回帰 743 passed 5 skipped / 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。42/N 完了）
+- ~~status-392（Phase γ 完了 — multi-element CR Timoshenko 梁の circular arc 収束を O(1/n²) で実証、4/5 PASS、log-log slope=-2.000）~~: 完了（status-391 §6.1 Phase γ 計画に従い、CR Timoshenko 3D 梁要素を **直線チェーン**で n_elements ∈ {1, 2, 4, 8, 16} に並べた系を α-3 と同じ BC（左端 fix、右端 θ_y=0.15 rad 処方）で **implicit static** に解き、circular arc 解への収束を 3 指標 AND gate で確認。`work/beam_element_validation/_gamma_common.py`（`ChainedBeamSection` + `assemble_internal_force/tangent` + `solve_static_nr_chain`、~280 行）+ `47_gamma_multi_element_convergence.py`（~270 行）新設。**4/5 ケース PASS**: n=1 のみ FAIL（u_x で 24.95% — α-3 既知 chord 長保存制約）、n=2,4,8,16 で 3 指標すべて PASS。**err(\|u_x\|): 24.95%(n=1) → 6.23%(n=2) → 1.56%(n=4) → 0.39%(n=8) → 0.10%(n=16)** で **log-log slope=-2.000**（理論値 O(1/n²) と完全一致）。**CR closed form 一致**（chord rotation φ_e=θ(e-1/2)/n の sum-to-product 解）は全 5 ケースで \|u_x\|/\|u_z\|/L_chord すべて **機械精度（10⁻¹³%〜10⁻¹²%）**。polyline 長 = Σ L_elem も全ケース機械精度で 10.000 mm を保存（各要素 chord 長保存）。**結論**: CR foundation の multi-element アセンブル健全性確定、「16 要素/ピッチ厳守」規範は典型 curvature レンジで十分なマージン。Phase α (1 要素 implicit static) → β (1 要素 explicit dynamic) → γ (multi-element implicit static) で **CR foundation の static / dynamic / multi-element 全領域での健全性が定量実証**。実装本体無変更、回帰 743 passed 5 skipped / 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（10 files already formatted）。43/N 完了）
 
 **凍結中の TODO**（MCDD 完了まで再開禁止）: 詳細項目（被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション / 7本撚線ピッチ依存性 / 空間ブロック分離 / 19本 Type D stall K_mat x/z 単発対応）は status-345 までで列挙、status-373 で本ブロックから削除。
 
