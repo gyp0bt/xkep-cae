@@ -60,12 +60,39 @@ status-388 透明性ルール「絶対値多重集合一致」を踏襲し、kin
   `compute_strain_energy_cr` (corotational SE) / `measure_period_zero_crossings`.
 - 1 要素 12 DOF を `timo_beam3d_cr_internal_force` 直接呼出で駆動、assembler 経由なし.
 
-## Phase γ — multi-element 検証（β 完了後）
+## Phase γ — multi-element 検証（status-392 で完了、4/5 ケース PASS + O(1/n²) 収束実証）
 
-n_elements ∈ {2, 4, 8, 16} で α-3 を再実施し circular arc への収束を確認。
-「16 要素/ピッチ厳守」の妥当性を再確認する。
+n_elements ∈ {1, 2, 4, 8, 16} で α-3 を再実施し circular arc への収束を確認。
+**4/5 ケース PASS**（n=1 のみ FAIL は α-3 で実証済み chord 長保存制約による既知の
+25% 離散化誤差で期待通り）。
 
-## Phase δ — 接触あり 2 本撚線（γ 完了後）
+| スクリプト | ケース | gate 3 指標 | 結果 |
+|---|---|---|---|
+| `47_gamma_multi_element_convergence.py` | n_elements ∈ {1,2,4,8,16}、θ_y=0.15 rad | \|u_x\| / \|u_z\| / L_chord (arc 解) | **4/5 PASS** |
+
+| n_elements | err(\|u_x\|) [%] | err(\|u_z\|) [%] | err(L_chord) [%] | gate (10%) |
+| ---: | ---: | ---: | ---: | :---: |
+|  1 | 24.95 | 0.094 | 0.094 | **FAIL** (u_x のみ) |
+|  2 |  6.23 | 0.023 | 0.023 | PASS |
+|  4 |  1.56 | 0.006 | 0.006 | PASS |
+|  8 |  0.39 | 0.001 | 0.001 | PASS |
+| 16 |  0.10 | 0.000 | 0.000 | PASS |
+
+- **log-log slope of err(u_x) vs n (n≥2): -2.000**（理論値 O(1/n²) と完全一致）
+- **CR closed form 一致**: 全 5 ケースで \|u_x\| / \|u_z\| / L_chord すべて
+  **機械精度（10⁻¹³%〜10⁻¹²%）** — 実装は CR 多要素 chord rotation 解析理論と完全整合
+- **「16 要素/ピッチ厳守」規範のマージン確認**: θ=0.15 rad ≈ 8.6° 単一曲げで
+  n=2 から 10% gate を通過、n=16 で 0.1% に縮小
+
+### 共通ヘルパ
+
+- `_gamma_common.py`: `ChainedBeamSection` (n_elements 拡張 BeamSection) /
+  `assemble_internal_force` / `assemble_tangent` (要素ループ直接アセンブル) /
+  `solve_static_nr_chain` (multi-element NR static、load stepping + prescribed disp 対応) /
+  `compute_chord_total` / `compute_polyline_length`.
+- assembler 経由を避け、`timo_beam3d_cr_*` を直接呼び出してアセンブル.
+
+## Phase δ — 接触あり 2 本撚線（γ 完了後、次セッション副次）
 
 最小規模の接触系（2 本撚線、平行配置、軽荷重）で 3 指標一致を確認。
 
@@ -76,10 +103,19 @@ n_elements ∈ {2, 4, 8, 16} で α-3 を再実施し circular arc への収束�
 uv run --extra dev python work/beam_element_validation/41_alpha1_axial_tension.py \
     2>&1 | tee /tmp/alpha1_$(date +%s).log
 
-# 全 4 ケース連続実行
+# Phase α 全 4 ケース
 for i in 41 42 43 44; do
     uv run --extra dev python work/beam_element_validation/${i}_*.py 2>&1
 done | tee /tmp/alpha_all_$(date +%s).log
+
+# Phase β 全 2 ケース
+for i in 45 46; do
+    uv run --extra dev python work/beam_element_validation/${i}_*.py 2>&1
+done | tee /tmp/beta_all_$(date +%s).log
+
+# Phase γ multi-element
+uv run --extra dev python work/beam_element_validation/47_gamma_multi_element_convergence.py \
+    2>&1 | tee /tmp/gamma_$(date +%s).log
 ```
 
 ## 共通ヘルパ
