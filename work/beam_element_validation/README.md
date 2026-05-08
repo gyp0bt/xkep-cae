@@ -92,6 +92,42 @@ n_elements ∈ {1, 2, 4, 8, 16} で α-3 を再実施し circular arc への収�
   `compute_chord_total` / `compute_polyline_length`.
 - assembler 経由を避け、`timo_beam3d_cr_*` を直接呼び出してアセンブル.
 
+## Phase γ-3 — 多要素 explicit + TL（status-395 で完了、4/5 PASS + slope=-2.000、γ-1 implicit と数値一致）
+
+implicit 凍結方針下での explicit 一本路線 foundation 確認として、γ-1 を **explicit + TL モード**
+に拡張。β-2 (1 要素 explicit) を multi-element に拡げて circular arc 解への収束を 3 指標 AND
+gate で確認した。**γ-1 (implicit) と数値レベルで一致**（< 0.01% 差）し、explicit + TL の
+foundation 健全性確定。
+
+| スクリプト | ケース | gate 3 指標 | 結果 |
+|---|---|---|---|
+| `51_gamma3_multi_element_explicit.py` | n_elements ∈ {1,2,4,8,16}、θ_y=0.15 rad、explicit + TL + slow ramp + ζ=2 過減衰 | `|u_x|` / `|u_z|` / `L_chord` (arc 解) | **4/5 PASS** |
+
+| n_elements | err(`|u_x|`) [%] | err(`|u_z|`) [%] | err(L_chord) [%] | gate (10%) |
+| ---: | ---: | ---: | ---: | :---: |
+|  1 | 24.9508 | 0.0938 | 0.0938 | **FAIL** (期待通り、chord 長保存制約) |
+|  2 |  6.2346 | 0.0234 | 0.0234 | PASS |
+|  4 |  1.5585 | 0.0059 | 0.0059 | PASS |
+|  8 |  0.3896 | 0.0015 | 0.0015 | PASS |
+| 16 |  0.0974 | 0.0004 | 0.0004 | PASS |
+
+- **log-log slope of err(`|u_x|`) vs n (n≥2): -2.000**（理論値 O(1/n²) と完全一致、γ-1 と同値）
+- **CR closed form 一致**: 全 5 ケースで機械精度 0.000%（実装が CR 多要素解析理論と完全整合）
+- **polyline 長保存**: 全ケース機械精度で 10.000 mm（各要素 chord 長保存）
+- **settle 残差**: 5e-11〜9e-10 N、KE/SE_proxy 1e-27〜1e-25（quasi-static gate 完璧）
+
+### 含意
+
+- 多要素 explicit + TL モードで CR foundation 健全性確定（β-2 → Mode C → γ-3 の段階的検証）
+- 接触なし foundation は完全実証、残るは接触統合のみ
+- **次セッション最優先**: 候補 (z3) explicit モード TL 固定 API 化 + 19 本撚線適用
+
+### 共通ヘルパ
+
+- `_gamma_common.py::ChainedBeamSection` + `assemble_internal_force` を再利用
+- `51_*.py` 内に explicit chain solver を inline 実装（`assemble_lumped_mass_diag` /
+  `compute_natural_frequencies_chain` / `solve_explicit_chain` ~120 行）
+
 ## Phase δ — 接触あり 2 本撚線（γ 完了後、次セッション副次）
 
 最小規模の接触系（2 本撚線、平行配置、軽荷重）で 3 指標一致を確認。
