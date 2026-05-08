@@ -96,6 +96,32 @@ n_elements ∈ {1, 2, 4, 8, 16} で α-3 を再実施し circular arc への収�
 
 最小規模の接触系（2 本撚線、平行配置、軽荷重）で 3 指標一致を確認。
 
+## assembler / UL 1 要素再現実験（status-394 で完了、改修対象を explicit + UL のみに局在化）
+
+status-393 §6.1 で次セッション最優先候補として明示された assembler / UL
+update_reference の 1 要素規模再現実験。**4 モード中 D のみ FAIL** で改修対象を
+局在化。
+
+| スクリプト | ケース | 4 モード比較 | 結果 |
+|---|---|---|---|
+| `49_beta2_with_assembler_ul.py` | α-3 / β-2 と同 BC（θ_y=0.15 rad）を 4 通りの実装パスで | A: implicit+assembler+TL / B: implicit+assembler+UL / C: explicit+assembler+TL / D: explicit+assembler+UL（毎 step） | **A/B/C PASS（機械精度 0.000%）/ D FAIL（u_x 99.85% / u_z 96.14% アンダー）** |
+
+### Mode D 失敗の物理的解釈（status-394 §3）
+
+毎 step UL 更新 → `u_incr` がほぼゼロにリセット → `f_int(u_incr) ≈ 0` で elastic
+restoring force が発達しない → reference が処方値に追従するだけで deformation が
+elastic energy に変換されない。これは status-382 §3 で推定された UL update_reference
+凍結の正しい診断であることを 1 要素規模で定量実証する。
+
+### 含意
+
+- **改修対象は explicit + UL update_reference per step の組合せのみ**に局在
+- **(z2) Cosserat 路線は不要**（β-2 直接駆動 + Mode A/B/C で foundation 健全実証 +
+  Mode D のみ FAIL）
+- **次セッション最優先**: 候補 (z3) explicit モード TL 固定 API 化
+  （`explicit_ul_update_interval=0` で update_reference を一切呼ばない解釈）+
+  19 本撚線適用
+
 ## 実行方法
 
 ```bash
