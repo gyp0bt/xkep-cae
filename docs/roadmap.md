@@ -12,10 +12,53 @@
 
 ---
 
-## 現在地（2026-05-05）
+## 現在地（2026-05-06）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-393 達成確認マトリクス導入 — STA2 連鎖撤回の構造的予防（documentation
+> status）**:
+> ユーザー指示を受け `docs/status/verification_matrix.md` を**永続ドキュメント**
+> として新設（8 セクション初版）。status-379 / 381 / 387 の連鎖撤回事例を踏まえ、
+> 達成 ✅ / 部分 🟡 / 未達 ❌ / 未検証 ⬜ / 凍結 ⏸ / 撤回 🔁 の独立な状態凡例で
+> 「実証されていない」と「未検証」を明確分離、status-379 系の偽陽性を記号レベルで
+> 構造的予防。§5 STA2 撤回履歴は削除禁止（透明性ルール）で「失敗の再演を防ぐ
+> 予防接種」として機能。CLAUDE.md「作業完了時の必須手順」§5「マトリクス該当行を
+> 更新」+「セッション開始時の必須確認」§3「マトリクス読込」追加で運用化。
+> 現時点サマリ: 凍結解除条件 ✅ 1 / 🟡 1 / ❌ 3 / Phase α 4 件 ✅ / Phase β 2 件 ✅ /
+> Phase γ-1 6 件 ✅ + 1 件 ❌（n=1 既知）+ 2 件 ⬜ / Phase δ ⬜ / 上位層改修対象
+> 9 項目（⬜ 2 + ⏸ 1 + 🔁 6）/ 既存 validation gate 化 5 項目全 ⬜。実装本体（`xkep_cae/`）
+> 無変更、回帰 743 passed 5 skipped。次セッション最優先候補（変更なし）: assembler /
+> UL update_reference の 1 要素再現実験。
+>
+> **★ status-392 Phase γ 完了 — multi-element CR Timoshenko 梁の circular arc
+> 収束を O(1/n²) で実証（4/5 PASS、log-log slope=-2.000）**:
+> status-391 §6.1 Phase γ 計画に従い、CR Timoshenko 3D 梁要素を **直線チェーン**で
+> n_elements ∈ {1, 2, 4, 8, 16} に並べた系を α-3 と同じ BC（左端 fix、右端
+> θ_y=0.15 rad 処方）で **implicit static** に解き、circular arc 解への収束を
+> 3 指標 AND gate（status-388 透明性ルール）で確認。`work/beam_element_validation/`
+> に `_gamma_common.py`（`ChainedBeamSection` + `assemble_internal_force/tangent` +
+> `solve_static_nr_chain`、~280 行）+ `47_gamma_multi_element_convergence.py`
+> （~270 行）新設。**4/5 ケース PASS**: n=1 のみ FAIL（u_x で 24.95% — α-3 で
+> 実証済み chord 長保存制約による既知の離散化誤差）、n=2,4,8,16 で 3 指標すべて
+> PASS。**err(\|u_x\|): 24.95%(n=1) → 6.23%(n=2) → 1.56%(n=4) → 0.39%(n=8)
+> → 0.10%(n=16)** で **log-log slope=-2.000**（理論値 O(1/n²) と完全一致）。
+> **CR closed form 一致**（chord rotation φ_e=θ(e-1/2)/n の sum-to-product 解、
+> `x_n = L sin(θ/2)cos(θ/2)/(n sin(θ/(2n)))`）は全 5 ケースで \|u_x\| / \|u_z\| /
+> L_chord すべて **機械精度（10⁻¹³%〜10⁻¹²%）** — 実装が CR 多要素解析理論と
+> 完全整合。polyline 長 = Σ L_elem も全ケース機械精度で 10.000 mm を保存。
+> **結論**: CR foundation の multi-element アセンブル健全性確定、「16 要素/ピッチ
+> 厳守」規範は典型 curvature レンジで十分なマージン（θ=0.15 rad ≈ 8.6° 単一曲げで
+> n=2 から 10% gate を通過）。Phase α (1 要素 implicit static) → β (1 要素 explicit
+> dynamic) → γ (multi-element implicit static) で **CR foundation の static /
+> dynamic / multi-element 全領域での健全性が定量実証**。実装本体（`xkep_cae/`）
+> **無変更**、回帰 743 passed 5 skipped（status-391 と同数）/ 全 24 契約検査 OK /
+> `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（10 files already
+> formatted）。**次セッション最優先候補**: assembler / UL update_reference の
+> 1 要素再現実験（status-381〜387 精度問題の根因特定、`49_beta2_with_assembler_ul.py`）/
+> 副次 Phase δ 接触あり 2 本撚線 / 副次 Phase γ-2 大 curvature 拡張（θ=π/2）/
+> 副次 既存テスト 3 指標 gate 化。
+>
 > **★ status-391 Phase β 完了 — 1 要素 cantilever explicit central diff +
 > lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS（CR foundation
 > explicit 健全確定）**:
