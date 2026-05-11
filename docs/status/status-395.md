@@ -134,21 +134,80 @@ implicit + 大回転 plan B も scope 外（前セッション質疑応答の通
 
 ## 6. 次セッションへの引き継ぎ
 
-### 6.1 最優先候補
+### 6.1 段階的検証ロードマップ（ユーザー合意 5 段階）
 
-- **候補 (z3) explicit モード TL 固定 API 化 + 19 本撚線適用**:
-  `ContactFrictionInputData` に `explicit_ul_disable_update: bool = False` 追加（または
-  `explicit_ul_update_interval=0` を「呼ばない」解釈に拡張）→ 19 本撚線 90° 曲げで
-  frac=1.0 完走 + 解の精度 gate (5) 達成を試行。Mode C / γ-3 で foundation 機械精度
-  実証済みなので、19 本でも有望。
+implicit 完全凍結（解除想定なし）方針下、接触統合に向けた段階的検証 5 段階:
 
-### 6.2 副次候補
+| status | scope | 検証対象 | 落ちる可能性 |
+|:-:|---|---|---|
+| **396 (次)** | (z3) explicit-TL 固定 API 化のみ（実機検証 scope 外） | API + 単体テスト + Default OFF 回帰 | 低（plumb のみ） |
+| 397 | ε-1 = 3 strand helical + 接触なし + `disable=True` 適用 | ヘリカル初期 κ + 多 strand global assembler | **中-高**（直線 chain γ-3 から飛ぶ最初の難所） |
+| 398 | ε-2 = 3 strand + 接触あり | 初の接触統合検証 | 中（K_c x/z カップリングは strand 数に依存しない可能性） |
+| 399 | ε-3 = 7 strand + 接触あり | implicit baseline (status-301 frac=1.0) との対比 | 中-高 |
+| 400 | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | 高（Type D stall 領域、最終 gate） |
 
-- **Phase δ 接触あり 2 本撚線** (`48_delta_2strand_contact.py`): (z3) 適用前の sanity check として有用。
-  最小規模の接触統合で 3 指標一致を確認。
-- **Phase γ-2 大 curvature 拡張**（θ=π/2、`50_gamma2_large_curvature.py`）: 1 ピッチ規模で
+### 6.2 次 status (status-396) — explicit-TL 固定 API 化のみ
+
+**設計確定**（本セッションでユーザー合意）: `explicit_ul_disable_update: bool = False`
+**独立 field**。`explicit_ul_update_interval=0` 解釈拡張ではなく、意図明示で透明性高い。
+
+**実装スコープ**:
+
+- `ContactFrictionInputData.explicit_ul_disable_update: bool = False` 追加
+  （default で既存挙動完全保持、status-383 で導入された `explicit_ul_update_interval`
+   と独立、両者は AND で gate 評価）
+- `StrandBendingOscillationConfig` 同 field + 3 経路 plumb-through
+  （曲げ / 揺動 / free_end、status-383 配線を踏襲）
+- `process.py` 主ループ update_reference 呼出箇所:
+  `if not cfg.explicit_ul_disable_update and (_next_incr % interval == 0): ul.update_reference(...)`
+- 単体テスト: `TestExplicitULDisableUpdate`（`_MockULAssembler` で `disable=True` 時に
+  update_reference 呼出 0 回を直接計測、status-383 `TestExplicitULUpdateInterval` と
+  並列配置で `xkep_cae/contact/solver/tests/test_process.py` 拡張）
+- Default OFF 回帰: 743 passed 5 skipped 維持 + 全 24 契約検査 OK + 7 本 implicit
+  frac=1.0 維持 + `test_helical_3d_hermite` rel_err=2.18e-07 維持
+
+**scope 外**（status-397 ε-1 で実施）:
+
+- 19 本 / 多 strand 実機検証
+- ヘリカル初期 κ + 多 strand global assembler の foundation 検証
+- 3 指標 AND gate 適用の実機ケース
+
+本 status は API 化完結で documentation + 単体テスト + Default OFF 回帰のみ。
+
+### 6.3 その次 (status-397) — ε-1 = 3 strand helical + 接触なし
+
+`disable=True` を実機適用、`work/beam_hysteresis/` 系（既存 mesh / assembler / NR 経路）
+で 3 本撚線曲げ揺動（接触なし、軽荷重 or 90° 曲げ）を実施。
+
+**新たに出る要素**（γ-3 直線 chain で未検証、ε-1 で初検証）:
+
+1. **初期 curvature 上の CR**: 直線 reference vs 曲線 reference で `R_0`（局所軸）の
+   構築 + initial gap 等が変わる。`16 要素/ピッチ` 規範の妥当性は γ-3 small θ では未検証
+2. **多 strand 並列 (no contact)**: 単独 strand と複数 strand の global assembler 振る舞い。
+   `StrandBendingOscillationProcess` 経由で本物の mesh / connectivity を使うので、
+   status-394 Mode C の 1 要素を超える
+3. **端部 BC**: MPC + free_end_mode 等の組合せが explicit + TL モードで成立するか
+   （implicit では status-280 で確立済）
+
+**判定設計**:
+
+- **ε-1 PASS** → ヘリカル foundation 健全、ε-2 (接触あり) へ進める
+- **ε-1 FAIL** → ヘリカル初期 κ / 多 strand global / BC 経路で原因局在化、必要に応じて
+  Phase δ (2 strand) に retreat して minimum 構成で原因切り分け
+
+### 6.4 副次（並行可能）
+
+- **Phase γ-2 大 curvature 拡張**（θ=π/2、`50_gamma2_large_curvature.py`）:
+  γ-1/γ-3 は θ=0.15 rad の small-medium。full pitch (2π rad) レンジで
   「16 要素/ピッチ厳守」規範を再確認。
 - **既存 validation の 3 指標 gate 化**（マトリクス §4 の 5 項目）
+
+### 6.5 撤回済 / scope 外
+
+- **(z2) Cosserat 路線**: implicit 凍結方針下で plan B も scope 外、status-394/395 で
+  absolute necessity 消失。優先度低 (scope 外)。
+- **凍結中 TODO**: 被膜圧縮 / リスタート / ファイバー梁キャリブレーション /
+  7本ピッチ依存性 / 空間ブロック分離（MCDD 凍結解除後に再開）。
 
 ## 7. MCDD 脱法 pattern 自己点検
 
