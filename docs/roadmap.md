@@ -12,10 +12,51 @@
 
 ---
 
-## 現在地（2026-05-06）
+## 現在地（2026-05-08）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-395 Phase γ-3 完了 — 多要素 explicit + TL で circular arc 収束を
+> O(1/n²) 再現実証（4/5 PASS、log-log slope=-2.000、γ-1 implicit と数値一致）**:
+> ユーザー指示「implicit 完全凍結」を受け explicit 一本路線の foundation 確認
+> として Phase γ-3 を実施。`work/beam_element_validation/51_gamma3_multi_element_explicit.py`
+> 新設（~370 行）で n_elements ∈ {1,2,4,8,16} を α-3 / β-2 / γ-1 と同 BC +
+> slow ramp 5T_1 + hold 5T_1 + ζ=2 過減衰で駆動。explicit chain solver を inline
+> 実装（lumped mass + leap-frog Verlet）、UL `update_reference` を呼ばない TL モード
+> 固定。**実測**: n=1 のみ FAIL（24.95% chord 長保存制約、期待通り）、n=2,4,8,16
+> で 3 指標すべて PASS、**log-log slope=-2.000**（O(1/n²)）、**γ-1 implicit と
+> 全 n で差 < 0.01% の数値一致**。CR closed form / polyline 長保存も機械精度 0.000%。
+> Phase α (1 要素 implicit) → Phase β (1 要素 explicit) → Phase γ-1 (多要素 implicit)
+> → Phase γ-3 (多要素 explicit + TL) で **CR foundation の static / dynamic /
+> multi-element / explicit 全領域での健全性が定量実証**、status-394「explicit + UL
+> per step のみ FAIL」を裏付け。(z2) Cosserat 路線は不要、implicit 凍結方針下で
+> plan B も scope 外。**次セッション最優先**: 候補 (z3) explicit モード TL 固定
+> API 化 + 19 本撚線適用 / 副次 Phase δ 接触あり 2 本撚線 sanity check。
+> `verification_matrix.md` §2.3 γ-3 ✅ 化。実装本体無変更、回帰 743 passed 5 skipped。
+> Phase A〜E / status-346〜395 の **46/N 完了**.
+>
+> **★ status-394 assembler / UL update_reference 1 要素再現実験 — 改修対象を
+> explicit + UL のみ に局在化（4 モード比較で A/B/C PASS、D FAIL 99.85%）**:
+> status-393 §6.1 で次セッション最優先候補として明示された assembler / UL
+> update_reference の 1 要素規模再現実験を実施。Phase β-2 直接駆動（status-391
+> 機械精度 0.000%）+ Phase γ closed form 機械精度（status-392）の foundation 健全
+> 実証を踏まえ、status-381〜387 の精度問題（解析解の 50%〜99% アンダー）を
+> 1 要素規模で **再現**。`work/beam_element_validation/49_beta2_with_assembler_ul.py`
+> 新設（~330 行）で 4 モード比較: A=implicit+TL / B=implicit+UL / C=explicit+TL /
+> D=explicit+UL（毎 step）。**実測**: A/B/C すべて 3 指標機械精度 PASS（0.000%、
+> Hermite 解 u_x=-0.02811 mm / u_z=0.7493 mm / L_chord=10.000 一致）、**Mode D のみ
+> FAIL（u_x 99.85% / u_z 96.14% アンダー、L_chord は 10.000 保存）**。改修対象は
+> **explicit + UL update_reference per step の組合せのみ** に局在し、(z2) Cosserat
+> 路線は **不要** が 1 要素規模で定量実証。物理的解釈: 毎 step UL 更新 →
+> `u_incr` がほぼゼロにリセット → `f_int(u_incr) ≈ 0` で elastic restoring force
+> 不発（status-382 §3 解析と完全整合）。**次セッション最優先**: 候補 (z3) explicit
+> モード TL 固定 API 化（`explicit_ul_update_interval=0` で update_reference を一切
+> 呼ばない解釈）+ 19 本撚線適用 / 副次 (z4) sub-cycling / Phase δ 接触あり 2 本撚線。
+> verification_matrix §3「上位層改修対象」更新。実装本体（`xkep_cae/`、`tests/`、
+> `contracts/`）**無変更**、回帰 743 passed 5 skipped（status-393 と同数）/
+> 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。
+> Phase A〜E / status-346〜394 の **45/N 完了**.
+>
 > **★ status-393 達成確認マトリクス導入 — STA2 連鎖撤回の構造的予防（documentation
 > status）**:
 > ユーザー指示を受け `docs/status/verification_matrix.md` を**永続ドキュメント**

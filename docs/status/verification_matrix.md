@@ -75,7 +75,7 @@ n_elements ↑ により消失。
 | γ-1 全体 | log-log slope of err(u_x) vs n (n≥2) | slope ≈ −2.0 | ✅ | 392 | **slope = −2.000**（理論値 O(1/n²) と完全一致） |
 | γ-1 全体 | CR closed form 一致（実装健全性） | 機械精度 10⁻¹³%〜10⁻¹²% | ✅ | 392 | 全 5 ケース |
 | γ-2 | 大 curvature θ=π/2 多要素 | 同 3 指標 | ⬜ | — | 「16 要素/ピッチ厳守」を full pitch レンジで再確認用 |
-| γ-3 | 多要素 explicit + slow ramp | 同 3 指標（β-2 同様） | ⬜ | — | 多要素 explicit 健全性 |
+| γ-3 | 多要素 explicit + slow ramp | 同 3 指標（β-2 同様 / arc 解） | ✅ | 395 | n=2,4,8,16 全 PASS、slope=-2.000、γ-1 implicit と数値一致 |
 
 → **Phase γ-1 で「16 要素/ピッチ厳守」規範のマージン確認**: θ=8.6° 単一曲げで n=2 から
    PASS、n=16 で 0.1%。典型 curvature レンジで規範は十分マージンあり。
@@ -94,8 +94,9 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 
 | 改修対象 | 問題内容 | 1 要素規模再現実験 | 状態 | 根拠 status |
 |---|---|---|:-:|:-:|
-| `assembler` 経由 | β-2 直接駆動と差分が出るか | `49_beta2_with_assembler_ul.py`（assembler 経由） | ⬜ | — |
-| UL `update_reference` | 各増分で reference 凍結 → f_int(u_incr)≈0 | 同上（UL あり/なし切替） | ⬜ | 382 で根本原因と推定 |
+| `assembler` 経由 (implicit/explicit + TL) | β-2 直接駆動と差分が出るか | `49_beta2_with_assembler_ul.py` Mode A/C | ✅ | 394 (Hermite 解 機械精度 0.000% 一致) |
+| UL `update_reference` (implicit) | 増分ごと reference 更新 → 静的では問題なし | `49_*.py` Mode B | ✅ | 394 (機械精度 0.000% PASS) |
+| UL `update_reference` (explicit per step) | 毎 step 更新 → f_int(u_incr)≈0 で elastic response 不発 | `49_*.py` Mode D | ❌ | 394（u_x 99.85% / u_z 96.14% アンダー、status-381〜387 1 要素規模再現確定） |
 | `explicit_ul_update_interval` | N 増分ごと UL 更新 → 全 interval で発散 / 過減衰 | `36_explicit_ul_interval_validation.py` | 🔁 | 383（候補却下） |
 | Mass scaling 戦略 | β² rescale + KE 保存累積過減衰 | `35_explicit_accuracy_validation.py` | 🔁 | 381 / 382（候補却下） |
 | (z1a) 要素ごと波速 Δt | infrastructure 完成も β_stiff cap が支配的 | `37_z1ab_accuracy_validation.py` | 🔁 | 384（部分採択、root cause 未解決） |
@@ -104,7 +105,8 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | (z1d) `t_cycle_min_seconds` | 方向自体が逆と単梁で実証 | `39_z1d_t_cycle_validation.py` | 🔁 | 386（候補却下） |
 | (z2) Cosserat 梁 | absolute necessity ではなくなった（β-2 PASS） | — | ⏸ | 391（中期 plan B） |
 
-→ 残る最有力路線: **assembler / UL の 1 要素再現実験**で改修対象を明確化。
+→ status-394 で **assembler / UL の 1 要素再現実験完了**: 改修対象は **explicit + UL update_reference per step の組合せのみ**に局在することが定量実証された。
+   次セッション最優先: 候補 (z3) explicit モード TL 固定 API 化（`explicit_ul_update_interval=0` で update_reference を一切呼ばない解釈）+ 19 本撚線適用。
 
 ## 4. 既存 validation の 3 指標 gate 化（status-389 §3 TODO）
 
@@ -164,8 +166,11 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 - 凍結解除 (4) FD rel_err < 1e-2: status-356
 - Phase α 全 4 ケース: status-390
 - Phase β 全 2 ケース: status-391
-- Phase γ-1 (n=2,4,8,16): status-392
+- Phase γ-1 (n=2,4,8,16) implicit: status-392
 - Phase γ-1 O(1/n²) 収束: status-392
+- Phase γ-3 (n=2,4,8,16) explicit + TL: status-395
+- Phase γ-3 O(1/n²) 収束 (slope=-2.000): status-395
+- assembler 経由 (implicit/explicit + TL): status-394
 
 未達 ❌（実機 FAIL を実証）:
 - 凍結解除 (2) 19 本 frac=1.0
@@ -175,10 +180,15 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 
 未検証 ⬜（次セッション以降の対象）:
 - Phase γ-2 大 curvature
-- Phase γ-3 多要素 explicit
 - Phase δ 接触あり 2 本撚線
-- assembler / UL 1 要素再現実験
 - 既存 validation 3 指標 gate 化
+- 候補 (z3) explicit モード TL 固定 API 化 + 19 本撚線適用（次セッション最優先、status-395 で foundation 多要素 explicit + TL 健全確定）
+
+達成 ✅ — 上位層改修対象（status-394 追加）:
+- assembler 経由 implicit/explicit + TL（Mode A/C）: 機械精度 0.000% PASS
+
+部分達成 🟡:
+- UL `update_reference` implicit（Mode B）は ✅、explicit per step（Mode D）は ❌
 
 撤回 🔁:
 - (z1a)〜(z1d) mass scaling 系列（候補却下）
