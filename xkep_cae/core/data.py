@@ -367,6 +367,16 @@ class ContactFrictionInputData:
     # 構造を平衡へ駆動できる（status-382 §3 真の根本原因への対応）。
     # CR 梁の大回転線形化破綻を避けるため、過大な値（>50 程度）は推奨しない。
     explicit_ul_update_interval: int = 1
+    # status-396 候補 (z3): explicit-TL 固定モード (UL update_reference 完全停止).
+    # `True` のとき、`solver_mode="explicit"` でも UL `update_reference()` を
+    # 一切呼ばず、reference 配置を初期配置に固定したまま陽解法で解く（TL モード）.
+    # status-395 Phase γ-3 で多要素 explicit + TL の foundation 健全性が機械精度級で
+    # 確定したため、explicit_ul_update_interval=N の中間動作（毎 N 増分更新）を
+    # 経由せず TL 固定で運用するための独立フィールド.
+    # `explicit_ul_update_interval` とは AND ゲート評価され、本フィールドが True
+    # の場合は interval 値に関わらず update_reference 呼出はゼロ.
+    # default False で既存挙動完全不変.
+    explicit_ul_disable_update: bool = False
     # status-384 候補 (z1b): selective mass scaling.
     # True で β² 倍化を「stiff DOF」（Gerschgorin row-sum / M_lump が
     # median × `explicit_mass_scaling_stiff_threshold_ratio` を超える DOF）に限定。

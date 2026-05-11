@@ -229,6 +229,10 @@ class ContactFrictionProcess(
         _explicit_ul_update_interval = max(
             1, int(getattr(input_data, "explicit_ul_update_interval", 1))
         )
+        # status-396 候補 (z3): explicit-TL 固定モード.
+        # True で UL update_reference を一切呼ばず初期 reference 配置のまま陽解法を解く.
+        # interval ゲートとは AND 評価され、本フラグが True の間 update 呼出はゼロ.
+        _explicit_ul_disable_update = bool(getattr(input_data, "explicit_ul_disable_update", False))
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -922,12 +926,16 @@ class ContactFrictionProcess(
             # status-383 候補 (q1): explicit モードでは
             # `explicit_ul_update_interval` 増分ごとに更新（u_incr 累積で
             # f_int を非ゼロにし、relax phase が平衡へ駆動可能にするため）。
+            # status-396 候補 (z3): explicit-TL 固定モード — explicit かつ
+            # `explicit_ul_disable_update=True` のとき update_reference を一切呼ばない.
             # 次にカウントされる増分は `_incr_count + 1`（行 948 でカウント）。
             _next_incr = _incr_count + 1
-            _do_ul_update = (
-                _solver_mode != "explicit"
-                or _explicit_ul_update_interval <= 1
-                or (_next_incr % _explicit_ul_update_interval == 0)
+            _do_ul_update = _solver_mode != "explicit" or (
+                not _explicit_ul_disable_update
+                and (
+                    _explicit_ul_update_interval <= 1
+                    or (_next_incr % _explicit_ul_update_interval == 0)
+                )
             )
             if _ul and hasattr(ul_assembler, "update_reference") and _do_ul_update:
                 _u_incr_ul = state.u - _ul_ref_base

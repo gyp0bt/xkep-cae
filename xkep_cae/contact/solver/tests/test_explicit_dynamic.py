@@ -658,6 +658,154 @@ class TestExplicitULUpdateInterval:
             assert _do_update(mode="explicit", interval=3, next_incr=n) == (n % 3 == 0)
 
 
+class TestExplicitULDisableUpdate:
+    """status-396 候補 (z3): explicit-TL 固定モード.
+
+    `explicit_ul_disable_update=True` で `solver_mode="explicit"` の下、UL
+    `update_reference()` を一切呼ばないこと、および `False`（default）では
+    既存の interval ゲート挙動と同じになることを確認する。
+    """
+
+    def _run_with_mock_ul(
+        self,
+        *,
+        disable: bool,
+        interval: int,
+        max_incr: int,
+        ndof: int,
+        mesh,
+        contact,
+        M,
+        f_ext,
+        boundary,
+    ) -> _MockULAssembler:
+        ul_asm = _MockULAssembler(ndof)
+        callbacks = AssembleCallbacks(
+            assemble_tangent=lambda u: sp.eye(ndof, format="csr") * 1.0,
+            assemble_internal_force=lambda u: u * 1.0,
+            ul_assembler=ul_asm,
+        )
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            explicit_ul_update_interval=interval,
+            explicit_ul_disable_update=disable,
+            max_increments=max_incr,
+            max_nr_attempts=1,
+        )
+        ContactFrictionProcess().process(input_data)
+        return ul_asm
+
+    def _common_setup(self, *, n_increments_target: int):
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        contact_config = _ContactConfigInput(
+            beam_E=210e3,
+            beam_I=1e-3,
+            mu=0.15,
+            exclude_same_strand=True,
+            smoothing_delta=2000.0,
+            dt_max_fraction=1.0 / max(1, n_increments_target),
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact = ContactSetupData(manager=manager, k_pen=1e2, mu=0.15)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+        return mesh, ndof, contact, M, f_ext, boundary
+
+    def test_disable_true_skips_all_update_reference(self):
+        """explicit_ul_disable_update=True で update_reference 呼出は 0 回."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            disable=True,
+            interval=1,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        assert ul.update_reference_call_count == 0
+
+    def test_disable_true_overrides_interval(self):
+        """disable=True は interval 値に関わらず update_reference 呼出を抑止する."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            disable=True,
+            interval=2,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # interval=2 なら通常 2 回呼ばれるが disable=True で 0 回
+        assert ul.update_reference_call_count == 0
+
+    def test_disable_false_default_preserves_interval_behavior(self):
+        """default disable=False で interval=1 の既存挙動（毎増分呼出）保持."""
+        mesh, ndof, contact, M, f_ext, boundary = self._common_setup(n_increments_target=4)
+        ul = self._run_with_mock_ul(
+            disable=False,
+            interval=1,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            f_ext=f_ext,
+            boundary=boundary,
+        )
+        # disable=False かつ interval=1 → status-383 既存挙動と同じ毎増分呼出
+        assert ul.update_reference_call_count == 4
+
+    def test_gate_logic_disable_short_circuits(self):
+        """ゲート式 `_do_ul_update` ロジックの直接検証.
+
+        `_solver_mode != "explicit"` の implicit short-circuit に加え、
+        `explicit_ul_disable_update=True` で interval 値に関わらず False 化、
+        `False` のときは interval ゲート挙動と一致することを確認する。
+        """
+
+        def _do_update(*, mode: str, disable: bool, interval: int, next_incr: int) -> bool:
+            return mode != "explicit" or (
+                not disable and (interval <= 1 or (next_incr % interval == 0))
+            )
+
+        # implicit: disable / interval に関わらず常に True（implicit は UL を毎増分更新）
+        for n in range(1, 10):
+            assert _do_update(mode="implicit", disable=True, interval=100, next_incr=n)
+            assert _do_update(mode="implicit", disable=False, interval=100, next_incr=n)
+
+        # explicit + disable=True: interval 値に関わらず常に False
+        for n in range(1, 10):
+            for interval in (1, 2, 5, 100):
+                assert not _do_update(mode="explicit", disable=True, interval=interval, next_incr=n)
+
+        # explicit + disable=False + interval=1: 常に True（既存挙動）
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", disable=False, interval=1, next_incr=n)
+
+        # explicit + disable=False + interval=3: 3, 6, 9 のみ True（既存挙動）
+        for n in range(1, 10):
+            assert _do_update(mode="explicit", disable=False, interval=3, next_incr=n) == (
+                n % 3 == 0
+            )
+
+
 class TestPerElementCriticalDt:
     """status-384 候補 (z1a): 要素ごと波速ベース Δt 推定の単体検証."""
 
