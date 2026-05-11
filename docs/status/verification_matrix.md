@@ -104,9 +104,13 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | (z1c) 2 段階質量スケーリング | β_outside 独立 field、initial target β=4.7e4 が cap 超過 | `38_z1c_two_stage_validation.py` | 🔁 | 385（候補却下） |
 | (z1d) `t_cycle_min_seconds` | 方向自体が逆と単梁で実証 | `39_z1d_t_cycle_validation.py` | 🔁 | 386（候補却下） |
 | (z2) Cosserat 梁 | absolute necessity ではなくなった（β-2 PASS） | — | ⏸ | 391（中期 plan B） |
+| (z3) explicit-TL 固定 API（`explicit_ul_disable_update`） | UL update_reference 完全停止の独立フィールド化 | `TestExplicitULDisableUpdate` 4 ケース（disable=True 0 回 / interval override / default 既存挙動 / ゲート式直接検証） | ✅ | 396（API 化完結。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 独立フィールド方式、AND ゲート評価で `explicit_ul_update_interval` と共存。19 本 / 多 strand 実機検証は status-397 ε-1 で別 scope） |
 
 → status-394 で **assembler / UL の 1 要素再現実験完了**: 改修対象は **explicit + UL update_reference per step の組合せのみ**に局在することが定量実証された。
-   次セッション最優先: 候補 (z3) explicit モード TL 固定 API 化（`explicit_ul_update_interval=0` で update_reference を一切呼ばない解釈）+ 19 本撚線適用。
+   status-395 で **多要素 explicit + TL の foundation 健全性が機械精度級で確定**、status-396 で
+   **(z3) explicit-TL 固定 API 化完結**（公開 API レベル運用可能化）。
+   次セッション最優先: status-397 ε-1（3 strand helical + 接触なし + `disable=True` 実機適用）で
+   ヘリカル初期 κ + 多 strand global assembler の foundation 検証。
 
 ## 4. 既存 validation の 3 指標 gate 化（status-389 §3 TODO）
 
@@ -171,6 +175,7 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 - Phase γ-3 (n=2,4,8,16) explicit + TL: status-395
 - Phase γ-3 O(1/n²) 収束 (slope=-2.000): status-395
 - assembler 経由 (implicit/explicit + TL): status-394
+- (z3) explicit-TL 固定 API（`explicit_ul_disable_update` 独立フィールド + 単体テスト + Default OFF 回帰）: status-396
 
 未達 ❌（実機 FAIL を実証）:
 - 凍結解除 (2) 19 本 frac=1.0
@@ -182,7 +187,7 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 - Phase γ-2 大 curvature
 - Phase δ 接触あり 2 本撚線
 - 既存 validation 3 指標 gate 化
-- 候補 (z3) explicit モード TL 固定 API 化 + 19 本撚線適用（次セッション最優先、status-395 で foundation 多要素 explicit + TL 健全確定）
+- (z3) explicit-TL 固定 API の **実機検証**（status-397 ε-1 = 3 strand helical + 接触なし + `disable=True`、API 化部分は status-396 で ✅ 達成済）
 
 達成 ✅ — 上位層改修対象（status-394 追加）:
 - assembler 経由 implicit/explicit + TL（Mode A/C）: 機械精度 0.000% PASS

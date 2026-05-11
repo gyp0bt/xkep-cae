@@ -14,8 +14,28 @@
 
 ## 現在地（2026-05-08）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-396 explicit-TL 固定 API 化 — `explicit_ul_disable_update` 独立フィールド
+> 追加（候補 (z3) Phase 1、API 化完結 / 実機検証 scope 外）**:
+> status-395 §6.2 で確定した最優先項目 (z3) を実施。`solver_mode="explicit"` でも UL
+> `update_reference()` を一切呼ばない TL 固定モードを **独立フィールド**
+> `explicit_ul_disable_update: bool = False` で API 化。`ContactFrictionInputData` +
+> `StrandBendingOscillationConfig` 各 1 field 追加（既存 `explicit_ul_update_interval`
+> と独立、AND ゲート評価）+ 3 経路（曲げ / 揺動 / free_end）plumb-through。
+> `process.py` ゲート式を `_solver_mode != "explicit" OR (not disable AND interval gate)`
+> に更新（implicit 経路完全無変更）。`TestExplicitULDisableUpdate` 4 ケース追加
+> （disable=True 0 回 / interval override / default 既存挙動保持 / ゲート式直接検証、
+> `_MockULAssembler` で呼出回数直接計測）。**Default OFF 完全保持**: ゲート式は
+> `disable=False` で status-383 と数式的等価、既存 743 passed 5 skipped 無変更。
+> Phase α/β/γ で foundation 健全性確定 → 本 status で公開 API レベル運用可能化。
+> 19 本 / 多 strand 実機検証は status-397 (ε-1: 3 strand helical + 接触なし +
+> `disable=True`) で別 scope。回帰 **747 passed 5 skipped**（status-395 の 743 +
+> 新規 4）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 /
+> ruff check + format pass（203 files）。`verification_matrix.md` §3 上位層改修対象
+> に explicit-TL 固定 API 行追加 + §8 達成済リスト追記。Phase A〜E / status-346〜396
+> の **47/N 完了**.
+>
 > **★ status-395 Phase γ-3 完了 — 多要素 explicit + TL で circular arc 収束を
 > O(1/n²) 再現実証（4/5 PASS、log-log slope=-2.000、γ-1 implicit と数値一致）**:
 > ユーザー指示「implicit 完全凍結」を受け explicit 一本路線の foundation 確認
