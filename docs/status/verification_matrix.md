@@ -115,15 +115,16 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | (z1d) `t_cycle_min_seconds` | 方向自体が逆と単梁で実証 | `39_z1d_t_cycle_validation.py` | 🔁 | 386（候補却下） |
 | (z2) Cosserat 梁 | absolute necessity ではなくなった（β-2 PASS） | — | ⏸ | 391（中期 plan B） |
 | (z3) explicit-TL 固定 API（`explicit_ul_disable_update`） | UL update_reference 完全停止の独立フィールド化 | `TestExplicitULDisableUpdate` 4 ケース（disable=True 0 回 / interval override / default 既存挙動 / ゲート式直接検証） | ✅ | 396（API 化完結。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 独立フィールド方式、AND ゲート評価で `explicit_ul_update_interval` と共存。19 本 / 多 strand 実機検証は status-397 ε-1 で別 scope） |
-| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py`（3 strand + n_strands=1 sub-experiment） | **❌** | 397（status-394 Mode C 専用 driver + status-395 γ-3 inline chain solver は機械精度 PASS。改修対象は process 主ループの prescribed BC TL 増分処理 / explicit reaction force 累積 / assembler ref 固定経路のいずれか。status-398 で 3 仮説切り分け） |
+| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py` + `42_status398_hypothesis_diagnostic.py`（5 ケース sweep + n_inc=20000 asymptote） | **🟡** | 397+398（status-398 で hypothesis 1 確定: stepwise prescribed BC × mass scaling auto-tune の interaction が支配的、n_inc=20000 で rel_err 5.45% に asymptote 収束。fix 実装は status-399 = `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ） |
 
 → status-394 で **assembler / UL の 1 要素再現実験完了**: 改修対象は **explicit + UL update_reference per step の組合せのみ**に局在することが定量実証された。
    status-395 で **多要素 explicit + TL の foundation 健全性が機械精度級で確定**、status-396 で
    **(z3) explicit-TL 固定 API 化完結**（公開 API レベル運用可能化）。
    **status-397 で ε-1 主実験 + sub-experiment（n_strands=1）双方 FAIL**、改修対象は
-   `_process_free_end` driver 層自体に局在化（ヘリカル初期 κ / 多 strand assembler は即時除外）。
-   次セッション最優先: **status-398** で `_process_free_end` × explicit-TL の 3 仮説切り分け
-   （prescribed BC TL 増分処理 / explicit reaction force 累積 / assembler ref 固定経路）。
+   `_process_free_end` driver 層自体に局在化。**status-398 で 3 仮説切り分け診断完了**、
+   **hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）が支配的**と確定
+   （n_inc=20000 で rel_err 5.45% asymptote 収束）。次セッション最優先: **status-399**
+   `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装で ε-1 rel_err < 10% 達成。
 
 ## 4. 既存 validation の 3 指標 gate 化（status-389 §3 TODO）
 
@@ -197,7 +198,7 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 - Phase γ-1 (n=1)（既知の離散化誤差、α-3 と整合）
 - Phase ε-1 主（3 strand helical + 接触なし + explicit-TL）: status-397（u_x 96.36% under-deformation）
 - Phase ε-1 sub（n_strands=1 直線 + 接触なし + explicit-TL）: status-397（u_x 96.29% — `_process_free_end` driver 層に局在化）
-- `_process_free_end` driver × explicit-TL: status-397（status-398 で 3 仮説切り分け）
+- `_process_free_end` driver × explicit-TL fix 実装: status-399（status-398 で hypothesis 1 確定、design 完成済み）
 
 未検証 ⬜（次セッション以降の対象）:
 - Phase γ-2 大 curvature
