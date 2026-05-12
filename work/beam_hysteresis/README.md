@@ -45,6 +45,9 @@
 | `06_jig_friction.py` | 三点曲げローラー摩擦の影響 | `06_jig_friction.png`, `06_jig_friction_span_compare.png` |
 | `beam_bending_hysteresis.py` | 30 層ベースライン比較 | `hysteresis_comparison.png` |
 | `run_strand_hysteresis.py` | 7本撚線陽接触ベンチマーク | `07_cyclic_hysteresis.png`, `08_strand_hysteresis.png` |
+| `41_epsilon1_3strand_helical_no_contact.py` | status-397 ε-1: 3 strand helical + 接触なし + explicit-TL | — |
+| `42_status398_hypothesis_diagnostic.py` | status-398 3 仮説切り分け診断（5 ケース sweep + n_inc=20000 asymptote） | — |
+| `43_status399_epsilon1_n_sub_cycles.py` | status-399 ε-1 再検証: `explicit_n_sub_cycles_per_increment` 効果実機計測 | — |
 
 ---
 
