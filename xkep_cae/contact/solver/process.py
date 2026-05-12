@@ -233,6 +233,15 @@ class ContactFrictionProcess(
         # True で UL update_reference を一切呼ばず初期 reference 配置のまま陽解法を解く.
         # interval ゲートとは AND 評価され、本フラグが True の間 update 呼出はゼロ.
         _explicit_ul_disable_update = bool(getattr(input_data, "explicit_ul_disable_update", False))
+        # status-399: explicit 1 増分あたり sub-cycle 数（status-398 §5.2 fix design）.
+        # solver_mode="explicit" のとき 1 QUERY を N 個の explicit sub-step に分割し、
+        # 各 sub-step で dt_inner = dt_sub / N、prescribed BC を線形補間して適用する。
+        # mass scaling auto-tune は dt_inner と dt_critical_raw を比較するため、
+        # N が大きいほど β_inner が縮小して T_1_scaled も縮小し quasi-static 化する.
+        # default 1 で既存挙動完全保持（1 増分 = 1 sub-cycle）.
+        _explicit_n_sub_cycles = max(
+            1, int(getattr(input_data, "explicit_n_sub_cycles_per_increment", 1))
+        )
         strategies = _default_strategies(
             ndof=ndof,
             mass_matrix=input_data.mass_matrix,
@@ -705,27 +714,61 @@ class ContactFrictionProcess(
 
             # --- 1 増分 step 実行（NR or 陽解法） ---
             if _solver_mode == "explicit":
-                explicit_step_input = ExplicitDynamicStepInput(
-                    config=_explicit_cfg,
-                    u=state.u,
-                    f_ext=f_ext,
-                    fixed_dofs=fixed_dofs,
-                    assemble_tangent=_asm_tangent,
-                    assemble_internal_force=_asm_internal_force,
-                    manager=manager,
-                    node_coords_ref=state.node_coords_ref,
-                    strategies=strategies,
-                    k_pen=k_pen,
-                    mu=mu,
-                    u_ref=state.u_ref,
-                    load_frac=load_frac,
-                    load_frac_prev=state.load_frac_prev,
-                    increment_display=state.increment_display,
-                    dt_sub=dt_sub,
-                    use_coating=use_coating,
-                    connectivity=connectivity,
-                )
-                step_result = _explicit_proc.process(explicit_step_input)
+                # status-399 (status-398 §5.2): 1 増分を N 個の sub-cycle に分割.
+                # N=1（default）なら従来挙動と完全同一。N>1 では各 sub-cycle で
+                # frac_k = load_frac_prev + (k/N)·(load_frac − load_frac_prev) で
+                # prescribed BC を線形補間し、dt_inner = dt_sub / N で陽解法 step を
+                # 呼び出す。f_ext も同係数で線形補間し、wave propagation 時間と
+                # loading rate の整合を保つ.
+                _N_sub = _explicit_n_sub_cycles
+                _dt_inner = dt_sub / _N_sub
+                _frac_prev_local = state.load_frac_prev
+                step_result = None
+                for _k_sub in range(1, _N_sub + 1):
+                    _frac_k = _frac_prev_local + (_k_sub / _N_sub) * (load_frac - _frac_prev_local)
+                    if _N_sub > 1 and has_prescribed:
+                        # 線形補間 prescribed BC（1 増分目の最後の sub-cycle で
+                        # load_frac に到達するため、既存 L648-655 と整合）
+                        if _prescribed_func is not None:
+                            state.u[_prescribed_dofs] = _prescribed_func(_frac_k)
+                        else:
+                            state.u[_prescribed_dofs] = (
+                                _frac_k - state.ul_frac_base
+                            ) * _prescribed_values
+                        # MPC 射影（slave DOF 再計算）
+                        if _mpc_current is not None:
+                            _mpc = _mpc_current
+                            _u_red = state.u[_mpc.independent_dofs]
+                            _u_proj = _mpc.T @ _u_red
+                            if hasattr(_u_proj, "toarray"):
+                                _u_proj = _u_proj.toarray().ravel()
+                            state.u[:] = np.asarray(_u_proj).ravel()
+                    # f_ext も線形補間（nodal load が時間依存の場合）
+                    _f_ext_k = f_ext_base + _frac_k * f_ext_total if _N_sub > 1 else f_ext
+                    explicit_step_input = ExplicitDynamicStepInput(
+                        config=_explicit_cfg,
+                        u=state.u,
+                        f_ext=_f_ext_k,
+                        fixed_dofs=fixed_dofs,
+                        assemble_tangent=_asm_tangent,
+                        assemble_internal_force=_asm_internal_force,
+                        manager=manager,
+                        node_coords_ref=state.node_coords_ref,
+                        strategies=strategies,
+                        k_pen=k_pen,
+                        mu=mu,
+                        u_ref=state.u_ref,
+                        load_frac=_frac_k,
+                        load_frac_prev=_frac_prev_local,
+                        increment_display=state.increment_display,
+                        dt_sub=_dt_inner,
+                        use_coating=use_coating,
+                        connectivity=connectivity,
+                    )
+                    step_result = _explicit_proc.process(explicit_step_input)
+                    if not step_result.converged:
+                        break
+                    _frac_prev_local = _frac_k
             else:
                 step_input = NewtonDynamicStepInput(
                     config=nr_config_dyn,
