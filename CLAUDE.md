@@ -86,11 +86,15 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** — 2026-05-11 | 契約違反 **0件** | 条例違反 **0件** | **status-396（explicit-TL 固定 API 化 — `explicit_ul_disable_update` 独立フィールド追加、候補 (z3) Phase 1、API 化完結 / 実機検証 scope 外）**。status-395 §6.2 で確定した最優先項目 (z3) を実施。`solver_mode="explicit"` でも UL `update_reference()` を一切呼ばない TL 固定モードを **独立フィールド** `explicit_ul_disable_update: bool = False` で API 化。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 追加（既存 `explicit_ul_update_interval` と独立、AND ゲート評価）+ 3 経路（曲げ / 揺動 / free_end）plumb-through。`process.py` ゲート式を `_solver_mode != "explicit" OR (not disable AND interval gate)` に更新（implicit 経路完全無変更）。`TestExplicitULDisableUpdate` 4 ケース追加（disable=True 0 回 / interval override / default 既存挙動保持 / ゲート式 Python 関数で実装一致を全網羅検証、`_MockULAssembler` で呼出回数直接計測）。**Default OFF 完全保持**: ゲート式は `disable=False` で status-383 と数式的等価、既存 743 passed 5 skipped 無変更。Phase α/β/γ で foundation 健全性確定 → 本 status で公開 API レベル運用可能化。19 本 / 多 strand 実機検証は status-397 (ε-1: 3 strand helical + 接触なし + `disable=True`) で別 scope。回帰 **747 passed 5 skipped**（status-395 の 743 + 新規 4）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff check + format pass（203 files）。`verification_matrix.md` §3 上位層改修対象に explicit-TL 固定 API 行追加 + §8 達成済リスト追記。**次セッション最優先（status-397）**: ε-1 = 3 strand helical + 接触なし + explicit-TL + `disable=True` 適用、ヘリカル初期 κ + 多 strand global assembler の foundation 検証。Phase A〜E / status-346〜396 の **47/N 完了**.
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** — 2026-05-11 | 契約違反 **0件** | 条例違反 **0件** | **status-398（`_process_free_end` × explicit-TL 3 仮説切り分け診断完了 — 仮説 1 確定、n_inc 掃引で asymptotic 5.45% rel_err 到達、fix 実装は status-399 へ持ち越し）**。status-397 ε-1 確定（`_process_free_end` × explicit-TL の under-deformation を 1 strand 規模で再現）を受け、CLAUDE.md 3 仮説切り分け要求に対応。`work/beam_hysteresis/42_status398_hypothesis_diagnostic.py` 新設（~250 行）で n_inc / β_max / t_cycle 軸を独立に振る 5 ケース resilient diagnostic + n_inc=20000 asymptote 確認。**実測**: explicit-TL baseline (n_inc=20, β_auto=4.6×10⁴) u_x=0.186mm rel_err 96.3% → A1 (n_inc=200, β=4.6×10³) 0.748mm 85% → A2 (n_inc=2000, β=464) 2.252mm 55% → **n_inc=20000 (β=46) 5.268mm rel_err 5.45%** で implicit 4.996mm に asymptotic 収束（+5.45% overshoot）。B/C/D（β_max=100 / t_cycle=100s / n_inc=2000+β=10）は cutback 無限再帰 / 数値発散で消極的追認。**根本機構**: stepwise prescribed BC + mass scaling auto-tune の interaction で β_auto=O(10⁴) が T_1_scaled=β·T_1_raw を肥大化させ t_total<<T_1_scaled で elastic wave 伝播不能。仮説 2（reaction force 累積）/ 仮説 3（assembler ref 経路）は仮説 1 単一機構で全観測値説明可能なため保留判定。**fix 設計（status-399）**: `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1` field + `process.py` explicit 経路に sub-cycle 内部ループ（線形補間 prescribed BC + `dt_inner = dt_sub / N`）を pseudo-code レベルで明記。Default OFF (N=1) で既存挙動完全保持、N>>1 で mass scaling auto-tune が β=O(10-100) に target → quasi-static 化。`StrandBendingOscillationConfig` plumb-through + 単体テスト `TestExplicitNSubCyclesPerIncrement` + ε-1 再検証で rel_err < 10% を目標。回帰 **747 passed 5 skipped 維持**（status-397 と同数、実装本体無変更）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（203 files）。`verification_matrix.md` §3 driver 行を ❌→🟡（hypothesis 1 確定、status-399 fix 待ち）。**次セッション最優先（status-399）**: `explicit_n_sub_cycles_per_increment` field 追加 + process.py sub-cycle 実装 + ε-1 再検証で rel_err < 10%（architectural change、Phase 1 API/test → Phase 2 実機検証の 2 status 構成も可）。Phase A〜E / status-346〜398 の **49/N 完了**.
 
-前 status: status-395（Phase γ-3 完了 — 多要素 explicit + TL で circular arc 収束を O(1/n²) で再現実証、4/5 PASS、log-log slope=-2.000、γ-1 implicit と数値一致）。`work/beam_element_validation/51_gamma3_multi_element_explicit.py` 新設で n_elements ∈ {1,2,4,8,16} を α-3 / β-2 / γ-1 と同 BC で駆動、explicit chain solver inline 実装、UL `update_reference` を呼ばない TL モード固定。実測: n=1 のみ FAIL（24.95% chord 長保存制約、期待通り）、n=2,4,8,16 で 3 指標すべて PASS、slope=-2.000、γ-1 implicit と全 n で差 < 0.01% の数値一致。Phase α/β/γ-1/γ-3 で CR foundation 静的/動的/多要素/explicit 全領域の健全性が定量実証。46/N 完了.
+前 status: status-397（ε-1 失敗 — `_process_free_end` × explicit-TL の精度問題を 1 strand 規模で再現、改修対象を BC/process driver 層に局在化）。`work/beam_hysteresis/41_epsilon1_3strand_helical_no_contact.py` 新設、3 strand helical + sub-experiment n_strands=1 双方で u_x ~96% under-deformation を実機実証、ヘリカル初期 κ / 多 strand global assembler を即時除外、`_process_free_end` driver 層自体を改修対象に局在化。48/N 完了.
 
-前 status 履歴（status-394 / 393 / 392 / 391 / 390 / 389 / 388 / 387 ⚠️撤回 / 386 / 385 / 384 / 383 / 382 / 381 / 380 / 379 ⚠️撤回）は `docs/status/status-index.md` 参照。要約: Phase α/β/γ-1 で CR foundation 静的・動的・多要素 implicit を機械精度実証、status-379〜388 の explicit + UL 系列（mass scaling / 2 段階 β / t_cycle / n_inc sweep）は status-388 で 3 指標 AND gate により全 13 ケース FAIL 確定で原理的破綻と確定、(z2) Cosserat への absolute necessity は status-391 で消失、status-394 で改修対象が explicit + UL per step のみと局在化、status-395 で多要素 explicit + TL の foundation 健全性を確定、status-396 で explicit-TL 固定 API（`explicit_ul_disable_update`）の API 化完結。
+前々 status: status-396（explicit-TL 固定 API 化 — `explicit_ul_disable_update` 独立フィールド追加、候補 (z3) Phase 1、API 化完結 / 実機検証 scope 外）。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 追加 + 3 経路（曲げ / 揺動 / free_end）plumb-through、`process.py` ゲート式更新（implicit 経路完全無変更）、`TestExplicitULDisableUpdate` 4 ケース追加。47/N 完了.
+
+前々 status: status-395（Phase γ-3 完了 — 多要素 explicit + TL で circular arc 収束を O(1/n²) で再現実証、4/5 PASS、log-log slope=-2.000、γ-1 implicit と数値一致）。`work/beam_element_validation/51_gamma3_multi_element_explicit.py` 新設で n_elements ∈ {1,2,4,8,16} を α-3 / β-2 / γ-1 と同 BC で駆動、explicit chain solver inline 実装、UL `update_reference` を呼ばない TL モード固定。実測: n=1 のみ FAIL（24.95% chord 長保存制約、期待通り）、n=2,4,8,16 で 3 指標すべて PASS、slope=-2.000、γ-1 implicit と全 n で差 < 0.01% の数値一致。Phase α/β/γ-1/γ-3 で CR foundation 静的/動的/多要素/explicit 全領域の健全性が定量実証。46/N 完了.
+
+前 status 履歴（status-394 / 393 / 392 / 391 / 390 / 389 / 388 / 387 ⚠️撤回 / 386 / 385 / 384 / 383 / 382 / 381 / 380 / 379 ⚠️撤回）は `docs/status/status-index.md` 参照。要約: Phase α/β/γ-1 で CR foundation 静的・動的・多要素 implicit を機械精度実証、status-379〜388 の explicit + UL 系列（mass scaling / 2 段階 β / t_cycle / n_inc sweep）は status-388 で 3 指標 AND gate により全 13 ケース FAIL 確定で原理的破綻と確定、(z2) Cosserat への absolute necessity は status-391 で消失、status-394 で改修対象が explicit + UL per step のみと局在化、status-395 で多要素 explicit + TL の foundation 健全性を確定、status-396 で explicit-TL 固定 API（`explicit_ul_disable_update`）の API 化完結、status-397 で ε-1（3 strand helical + 接触なし + explicit-TL）が FAIL し改修対象を `_process_free_end` driver 層に局在化、status-398 で 3 仮説切り分け完了し hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）を確定（n_inc=20000 で rel_err 5.45% asymptote 収束）。
 
 ### ターゲット
 
@@ -106,29 +110,38 @@ implicit と数値一致）。接触なし foundation は完全実証、残る�
 化** + 接触統合の段階的検証。**(z2) Cosserat 路線は不要**（implicit 凍結方針下で
 plan B も scope 外）。
 
-#### 段階的検証ロードマップ（5 段階、各 1 status 想定）
+#### 段階的検証ロードマップ（6 段階、各 1 status 想定、status-397/398 で 2 status 詳細化）
 
 | status | scope | 主成果物 | gate |
 |---|---|---|---|
-| ~~396~~ | ~~(z3) explicit-TL 固定 API 化のみ~~ | ✅ status-396 完了 — `explicit_ul_disable_update: bool = False` 独立 field、3 経路 plumb、`TestExplicitULDisableUpdate` 4 ケース、Default OFF 回帰 747 passed | 達成: 747 passed 5 skipped / 全 24 契約検査 OK / `test_helical_3d_hermite` 2.18e-07 維持 |
-| **397 (次)** | ε-1 = **3 strand helical + 接触なし** + explicit-TL（`disable=True` 適用） | ヘリカル初期 κ + 多 strand global assembler の foundation 検証、`work/beam_hysteresis/` 系で 1 スクリプト | 3 指標 AND gate（kinematics 2 + L_arc / E / κ 1）。失敗時はヘリカル初期 κ / 多 strand assemble / BC 経路で原因局在化 |
-| **398** | ε-2 = **3 strand + 接触あり** | δ の最小拡張（2 strand → 3 strand）、初の接触統合検証 | 3 指標 AND gate + frac=1.0 完走 |
-| **399** | ε-3 = **7 strand + 接触あり** | implicit baseline (status-301 frac=1.0) との対比 | 3 指標 AND gate + frac=1.0 + 物理的妥当性 max\|u\| < L × 10 |
-| **400** | ε-4 = **19 strand + 接触あり**（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | frac=1.0 + max\|u\| 妥当 + 解の精度 < 10% |
+| ~~396~~ | ~~(z3) explicit-TL 固定 API 化のみ~~ | ✅ status-396 完了 | 達成 |
+| ~~397~~ | ~~ε-1 = 3 strand helical + 接触なし + explicit-TL~~ | **🔁 status-397 ε-1 FAIL** — driver 層に局在化 | ε-1 FAIL → driver 局在化 |
+| ~~398~~ | ~~3 仮説切り分け診断~~ | **✅ status-398 完了** — hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）確定、n_inc=20000 で rel_err 5.45% asymptote 収束 | 仮説確定、fix design 完成 |
+| **399 (次)** | `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装 | `ContactFrictionInputData` 1 field + `process.py` explicit 経路 sub-cycle ループ + 線形補間 prescribed BC + 単体テスト + ε-1 再検証 | ε-1 で u_x rel_err < 10% 達成 |
+| **400** | ε-2 = 3 strand + 接触あり | 初の接触統合検証 | 3 指標 AND gate + frac=1.0 完走 |
+| **401** | ε-3 = 7 strand + 接触あり | implicit baseline (status-301 frac=1.0) 対比 | 3 指標 AND gate + frac=1.0 + max\|u\| < L × 10 |
+| **402** | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | frac=1.0 + max\|u\| 妥当 + 解の精度 < 10% |
 
-#### 次 status (status-397) — ε-1 = 3 strand helical + 接触なし + explicit-TL
+#### 次 status (status-399) — `explicit_n_sub_cycles_per_increment` 実装
 
-status-396 で `explicit_ul_disable_update: bool = False` 独立 field の API 化が
-完結したため、`disable=True` を **`work/beam_hysteresis/` 系で実機適用**。
+status-398 で確定した hypothesis 1 のメカニズム（stepwise prescribed BC + mass
+scaling auto-tune の interaction）に対する architectural fix。
 
-**新たに出る要素**（γ-3 直線 chain で未検証）:
+**実装スコープ**（status-398 §5.2 pseudo-code 参照）:
 
-1. 初期 curvature 上の CR（直線 reference vs 曲線 reference の `R_0` 構築）
-2. 多 strand 並列 (no contact) の global assembler 振る舞い
-3. 端部 BC（MPC + free_end_mode）が explicit + TL モードで成立するか
+1. `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1`
+   field 追加（default 1 で既存挙動完全保持）
+2. `process.py` の `solver_mode=="explicit"` 経路に sub-cycle 内部ループ:
+   - `dt_inner = dt_sub / N`
+   - 各 sub-cycle で `frac_k = load_frac_prev + (k/N) · (load_frac - load_frac_prev)`
+     を線形補間して `state.u[prescribed_dofs]` に適用
+   - `explicit_step_input` の `dt_sub=dt_inner` で N 回 step
+3. `StrandBendingOscillationConfig` 同 field + 3 経路 plumb-through
+4. 単体テスト `TestExplicitNSubCyclesPerIncrement`
+5. ε-1 再検証: `explicit_n_sub_cycles_per_increment=1000` で u_x rel_err < 10% を目標
 
-**判定**: ε-1 PASS → ε-2（接触あり 3 strand、status-398）へ進行 / FAIL → Phase δ
-（接触あり 2 strand、`48_delta_2strand_contact.py`）に retreat して局在化。
+**判定**: ε-1 rel_err < 10% → status-400 (ε-2 接触あり 3 strand) へ進行 / 達成不能なら
+hypothesis 2 / 3 を本格検証 (status-398 §4 保留分の活性化)。
 
 #### 副次（並行可能 / 後回し）
 

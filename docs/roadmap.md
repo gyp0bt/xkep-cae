@@ -12,10 +12,53 @@
 
 ---
 
-## 現在地（2026-05-08）
+## 現在地（2026-05-12）
 
 **459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-398 `_process_free_end` × explicit-TL 3 仮説切り分け診断 — 仮説 1
+> 確定（stepwise prescribed BC × mass scaling auto-tune の interaction）、
+> n_inc 掃引で asymptotic 5.45% rel_err 到達、fix 実装は status-399 へ持ち越し**:
+> status-397 ε-1 確定（`_process_free_end` × explicit-TL の under-deformation を
+> 1 strand 規模で再現）を受け、CLAUDE.md 3 仮説切り分けを実施。
+> `work/beam_hysteresis/42_status398_hypothesis_diagnostic.py` 新設（~250 行）で
+> n_inc / β_max / t_cycle 軸を独立に振る 5 ケース resilient diagnostic + n_inc=20000
+> asymptote 確認。**実測**: u_x baseline 0.186 mm → A1 0.748 → A2 2.252 → **n_inc=20000 で
+> 5.268 mm (rel_err 5.45%)** で implicit 4.996 mm に asymptotic 収束。
+> **根本機構**: stepwise prescribed BC + mass scaling auto-tune の interaction で
+> β_auto=O(10⁴) が T_1_scaled=β·T_1_raw を肥大化、t_total<<T_1_scaled で wave 伝播
+> 不能。仮説 2/3 は単一機構（仮説 1）で全観測値説明可能なため保留判定。
+> **fix 設計（status-399）**: `explicit_n_sub_cycles_per_increment` field +
+> `process.py` sub-cycle 内部ループ + 線形補間 prescribed BC（pseudo-code レベル
+> 明記）。Default OFF で既存挙動完全保持、N>>1 で mass scaling auto-tune が
+> β=O(10-100) に target → quasi-static 化。回帰 **747 passed 5 skipped 維持**
+> （実装本体無変更）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07
+> 維持 / ruff pass。`verification_matrix.md` §3 driver 行を ❌→🟡。Phase A〜E /
+> status-346〜398 の **49/N 完了**.
+>
+> **★ status-397 ε-1 失敗 — `_process_free_end` × explicit-TL の精度問題を
+> 1 strand 規模で再現、改修対象を BC/process driver 層に局在化**:
+> status-396 で API 化された `explicit_ul_disable_update=True` を **3 strand
+> helical + 接触なし** の実機系で初検証する ε-1 を実施。
+> `work/beam_hysteresis/41_epsilon1_3strand_helical_no_contact.py` 新設（~330 行）。
+> **ε-1 主実験 FAIL**: implicit baseline は解析 cantilever 解と機械精度級一致
+> （`u_x=4.996mm` vs 解析 4.996mm）、explicit-TL は `u_x=0.182mm` で
+> **96.36% under-deformation**（u_z 96.54%）、frac=1.0 + E_kin/E_str=4e-10 で
+> 動的緩和完了済みの定常解。**sub-experiment n_strands=1（直線、ヘリカルでない
+> 単一 strand）でも FAIL 再現**（u_x 96.29% / u_z 96.40%）。CLAUDE.md 3 候補
+> のうち (a) ヘリカル初期 κ / (b) 多 strand global assembler を即時除外、**(c)
+> `_process_free_end` 駆動経路 + explicit-TL の組合せ自体が主因**と局在化
+> （status-394 Mode C 専用ドライバ + status-395 γ-3 inline chain solver は
+> 機械精度 PASS していたため、改修対象は process 主ループそのもの）。仮説 3 つ:
+> (1) prescribed BC TL 増分処理 / (2) explicit reaction force 累積 /
+> (3) `_ExtendedULAssemblerWrapper` 等の TL モード対応 — status-398 で切り分け。
+> ロードマップ 5→6 段階拡張（397 FAIL → 398 仮説検証 → 399 修正後 ε-1 再検証
+> + ε-2 → 400 ε-3 → 401 ε-4）。回帰 **747 passed 5 skipped 維持**（実装本体無変更）
+> / 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff
+> check + format pass（204 files）。`verification_matrix.md` §2 Phase ε section
+> 新設 + §3 上位層改修対象に `_process_free_end` driver 行追加。Phase A〜E /
+> status-346〜397 の **48/N 完了**.
+>
 > **★ status-396 explicit-TL 固定 API 化 — `explicit_ul_disable_update` 独立フィールド
 > 追加（候補 (z3) Phase 1、API 化完結 / 実機検証 scope 外）**:
 > status-395 §6.2 で確定した最優先項目 (z3) を実施。`solver_mode="explicit"` でも UL
