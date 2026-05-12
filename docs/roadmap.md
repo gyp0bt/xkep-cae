@@ -14,8 +14,27 @@
 
 ## 現在地（2026-05-12）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-399 `explicit_n_sub_cycles_per_increment` 実装 — ε-1 で N=1000 で
+> rel_err 6.07% 達成（MCDD 凍結解除条件 (5) 単 strand 規模で PASS）**:
+> status-398 で確定した hypothesis 1（stepwise prescribed BC × mass scaling
+> auto-tune の interaction）に対する architectural fix を実装。
+> `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1` field +
+> `StrandBendingOscillationConfig` 3 経路 plumb-through + `process.py` の
+> explicit 経路に sub-cycle 内部ループ実装（線形補間 prescribed BC + f_ext +
+> MPC 射影、`_dt_inner = dt_sub / N`）。Default OFF (N=1) で既存挙動完全保持。
+> **ε-1 再検証**: implicit u_x=4.996mm vs explicit-TL N=1 0.186 (96.29%) → N=10
+> 0.759 (84.82%) → N=100 2.323 (53.50%) → **N=1000 5.299 mm (rel_err 6.07%)** で
+> **MCDD 凍結解除条件 (5)（精度 < 10%）を単 strand 規模で PASS**。**status-398
+> n_inc=20000 (β≈46 / u_x≈5.27 mm) と独立軸数値整合** で hypothesis 1 を確証。
+> 単体テスト 8 件追加（monkeypatch で `ExplicitDynamicProcess.process` 呼出
+> 回数直接計装）。回帰 **755 passed 5 skipped** / 全 24 契約検査 OK /
+> `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。
+> `verification_matrix.md` §2 ε-1 ✅（単 strand）+ §3 driver 行 🟡→✅
+> （fix 実装、3 strand / 接触 / 多 strand は ⬜ 未検証）。Phase A〜E /
+> status-346〜399 の **50/N 完了**.
+>
 > **★ status-398 `_process_free_end` × explicit-TL 3 仮説切り分け診断 — 仮説 1
 > 確定（stepwise prescribed BC × mass scaling auto-tune の interaction）、
 > n_inc 掃引で asymptotic 5.45% rel_err 到達、fix 実装は status-399 へ持ち越し**:

@@ -90,11 +90,11 @@ n_elements ↑ により消失。
 
 | ケース | 系 | gate 3 指標 | 状態 | 根拠 status | 注意 |
 |:-:|---|---|:-:|:-:|---|
-| ε-1 主 | 3 strand helical + 接触なし + explicit-TL（`disable=True`） | u_x_tip / u_z_tip / E_strain vs implicit | **❌** | 397 | u_x 96.36% / u_z 96.54% under-deformation。implicit baseline は解析 cantilever 解と機械精度級一致 |
-| ε-1 sub | n_strands=1 直線 + 接触なし + explicit-TL | u_x_tip / u_z_tip vs implicit | **❌** | 397 | u_x 96.29% / u_z 96.40% — ヘリカル初期 κ / 多 strand assembler を即時除外、`_process_free_end` driver 層に局在化 |
-| ε-2 | 3 strand + 接触あり + explicit-TL | 未確定 | ⬜ | — | status-398 driver 修正後 status-399 で着手予定 |
-| ε-3 | 7 strand + 接触あり + explicit-TL | implicit baseline 対比 | ⬜ | — | status-400 |
-| ε-4 | 19 strand + 接触あり + explicit-TL | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | ⬜ | — | status-401（本命） |
+| ε-1 主 | 3 strand helical + 接触なし + explicit-TL（`disable=True`） | u_x_tip / u_z_tip / E_strain vs implicit | **⬜** | 399 | status-397 で N=1 FAIL（u_x 96.36%）。status-399 fix（N_sub=1000）後の 3 strand 規模再検証は未実施（次セッション ε-2 と統合可） |
+| **ε-1 sub** | **n_strands=1 直線 + 接触なし + explicit-TL + N_sub=1000** | **u_x_tip vs implicit + status-398 n_inc=20000 との独立軸数値整合** | **✅** | **399** | **N=1000 で u_x=5.299 mm (rel_err 6.07%、< 10% gate)、status-398 n_inc=20000 (β≈46 / u_x≈5.27 mm) と独立軸で一致、hypothesis 1 根本機構を確証** |
+| ε-2 | 3 strand + 接触あり + explicit-TL + N_sub | 3 指標 AND gate + frac=1.0 完走 | ⬜ | — | status-400 で着手予定（初の接触統合検証） |
+| ε-3 | 7 strand + 接触あり + explicit-TL + N_sub | implicit baseline 対比 + 3 指標 AND | ⬜ | — | status-401 |
+| ε-4 | 19 strand + 接触あり + explicit-TL + N_sub | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | ⬜ | — | status-402（本命） |
 
 ## 3. status-381〜387 上位層改修対象（Phase β/γ で局在化済）
 
@@ -115,7 +115,8 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | (z1d) `t_cycle_min_seconds` | 方向自体が逆と単梁で実証 | `39_z1d_t_cycle_validation.py` | 🔁 | 386（候補却下） |
 | (z2) Cosserat 梁 | absolute necessity ではなくなった（β-2 PASS） | — | ⏸ | 391（中期 plan B） |
 | (z3) explicit-TL 固定 API（`explicit_ul_disable_update`） | UL update_reference 完全停止の独立フィールド化 | `TestExplicitULDisableUpdate` 4 ケース（disable=True 0 回 / interval override / default 既存挙動 / ゲート式直接検証） | ✅ | 396（API 化完結。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 独立フィールド方式、AND ゲート評価で `explicit_ul_update_interval` と共存。19 本 / 多 strand 実機検証は status-397 ε-1 で別 scope） |
-| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py` + `42_status398_hypothesis_diagnostic.py`（5 ケース sweep + n_inc=20000 asymptote） | **🟡** | 397+398（status-398 で hypothesis 1 確定: stepwise prescribed BC × mass scaling auto-tune の interaction が支配的、n_inc=20000 で rel_err 5.45% に asymptote 収束。fix 実装は status-399 = `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ） |
+| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py` + `42_status398_hypothesis_diagnostic.py` + `43_status399_epsilon1_n_sub_cycles.py`（5 ケース sweep + n_inc=20000 asymptote + N_sub 掃引） | **✅** | 397+398+399（status-399 fix 実装、ε-1 sub n_strands=1 で N=1000 → rel_err 6.07% 単 strand 規模 PASS。3 strand 規模 / 接触あり / 多 strand は未検証で別行 ⬜） |
+| `explicit_n_sub_cycles_per_increment` | hypothesis 1 fix: 1 QUERY を N sub-step に分割、線形補間 prescribed BC、`dt_inner = dt_sub / N` で mass scaling auto-tune の β_inner を 1/N 倍縮小 | `TestExplicitNSubCyclesPerIncrement` 8 件（monkeypatch で `ExplicitDynamicProcess.process` 呼出回数直接計装） + `43_status399_epsilon1_n_sub_cycles.py`（4 ケース N ∈ {1, 10, 100, 1000} 掃引） | **✅** | 399（ε-1 単 strand 規模で MCDD 凍結解除条件 (5)（精度 < 10%）を PASS。status-398 n_inc=20000 と β_auto≈46 / u_x≈5.3 mm で独立軸数値整合、effective sub-cycle 数 20000 が共通因子で hypothesis 1 根本機構を確証） |
 
 → status-394 で **assembler / UL の 1 要素再現実験完了**: 改修対象は **explicit + UL update_reference per step の組合せのみ**に局在することが定量実証された。
    status-395 で **多要素 explicit + TL の foundation 健全性が機械精度級で確定**、status-396 で
@@ -123,8 +124,10 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
    **status-397 で ε-1 主実験 + sub-experiment（n_strands=1）双方 FAIL**、改修対象は
    `_process_free_end` driver 層自体に局在化。**status-398 で 3 仮説切り分け診断完了**、
    **hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）が支配的**と確定
-   （n_inc=20000 で rel_err 5.45% asymptote 収束）。次セッション最優先: **status-399**
-   `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装で ε-1 rel_err < 10% 達成。
+   （n_inc=20000 で rel_err 5.45% asymptote 収束）。**status-399 で fix 実装**:
+   `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装、ε-1 単 strand で
+   N=1000 → rel_err 6.07% PASS（MCDD 凍結解除条件 (5) を単 strand 規模で達成）。
+   **次セッション最優先**: ε-2 = 3 strand 接触あり + N_sub=1000 検証で初の接触統合検証。
 
 ## 4. 既存 validation の 3 指標 gate 化（status-389 §3 TODO）
 
@@ -194,19 +197,21 @@ CLAUDE.md「作業完了時の必須手順」（§2交代制運用）に統合�
 未達 ❌（実機 FAIL を実証）:
 - 凍結解除 (2) 19 本 frac=1.0
 - 凍結解除 (3) max \|u_trans\| 妥当域
-- 凍結解除 (5) 解の精度
+- 凍結解除 (5) 解の精度（多 strand / 19 本規模）— 単 strand 規模は status-399 で PASS
 - Phase γ-1 (n=1)（既知の離散化誤差、α-3 と整合）
-- Phase ε-1 主（3 strand helical + 接触なし + explicit-TL）: status-397（u_x 96.36% under-deformation）
-- Phase ε-1 sub（n_strands=1 直線 + 接触なし + explicit-TL）: status-397（u_x 96.29% — `_process_free_end` driver 層に局在化）
-- `_process_free_end` driver × explicit-TL fix 実装: status-399（status-398 で hypothesis 1 確定、design 完成済み）
+
+達成 ✅ — Phase ε（status-399 で単 strand 規模 PASS）:
+- Phase ε-1 sub（n_strands=1 直線 + 接触なし + explicit-TL + N_sub=1000）: status-399（u_x rel_err 6.07% < 10% gate、MCDD 凍結解除条件 (5) 単 strand 規模 PASS）
+- `_process_free_end` driver × explicit-TL fix 実装（`explicit_n_sub_cycles_per_increment`）: status-399（hypothesis 1 architectural fix 完了、ε-1 単 strand で PASS）
 
 未検証 ⬜（次セッション以降の対象）:
 - Phase γ-2 大 curvature
 - Phase δ 接触あり 2 本撚線
 - 既存 validation 3 指標 gate 化
-- Phase ε-2 (3 strand + 接触あり、status-398 driver 修正後 status-399 で着手予定)
-- Phase ε-3 (7 strand + 接触あり、status-400 想定)
-- Phase ε-4 (19 strand + 接触あり、status-401 想定、本命)
+- Phase ε-1 主（3 strand helical + 接触なし、status-399 fix 後の再検証は status-400 ε-2 と統合可）
+- Phase ε-2 (3 strand + 接触あり + N_sub、status-400 想定、初の接触統合検証)
+- Phase ε-3 (7 strand + 接触あり + N_sub、status-401 想定)
+- Phase ε-4 (19 strand + 接触あり + N_sub、status-402 想定、本命)
 
 達成 ✅ — 上位層改修対象（status-394 追加）:
 - assembler 経由 implicit/explicit + TL（Mode A/C）: 機械精度 0.000% PASS
