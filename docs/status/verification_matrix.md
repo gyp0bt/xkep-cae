@@ -91,7 +91,7 @@ n_elements ↑ により消失。
 | ケース | 系 | gate 3 指標 | 状態 | 根拠 status | 注意 |
 |:-:|---|---|:-:|:-:|---|
 | ε-1 主 | 3 strand helical + 接触なし + explicit-TL（`disable=True`） | u_x_tip / u_z_tip / E_strain vs implicit | **⬜** | 399 | status-397 で N=1 FAIL（u_x 96.36%）。status-399 fix（N_sub=1000）後の 3 strand 規模再検証は未実施（次セッション ε-2 と統合可） |
-| **ε-1 sub** | **n_strands=1 直線 + 接触なし + explicit-TL + N_sub=1000** | **u_x_tip vs implicit + status-398 n_inc=20000 との独立軸数値整合** | **✅** | **399** | **N=1000 で u_x=5.299 mm (rel_err 6.07%、< 10% gate)、status-398 n_inc=20000 (β≈46 / u_x≈5.27 mm) と独立軸で一致、hypothesis 1 根本機構を確証** |
+| **ε-1 sub** | **n_strands=1 直線 + 接触なし + explicit-TL + N_sub=2000** | **u_x_tip vs implicit（asymptote 到達確認、N=500/1000/2000/5000 sweep）** | **✅** | **399 (§A)** | **N=2000 で u_x=4.9962 mm (rel_err 0.01%、機械精度級)、N=5000 で 5.0001 mm (0.09%) と asymptote 確定。N=1000 rel_err 6.07% は overshoot 領域での偶然通過と§A で訂正** |
 | ε-2 | 3 strand + 接触あり + explicit-TL + N_sub | 3 指標 AND gate + frac=1.0 完走 | ⬜ | — | status-400 で着手予定（初の接触統合検証） |
 | ε-3 | 7 strand + 接触あり + explicit-TL + N_sub | implicit baseline 対比 + 3 指標 AND | ⬜ | — | status-401 |
 | ε-4 | 19 strand + 接触あり + explicit-TL + N_sub | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | ⬜ | — | status-402（本命） |
@@ -115,19 +115,20 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | (z1d) `t_cycle_min_seconds` | 方向自体が逆と単梁で実証 | `39_z1d_t_cycle_validation.py` | 🔁 | 386（候補却下） |
 | (z2) Cosserat 梁 | absolute necessity ではなくなった（β-2 PASS） | — | ⏸ | 391（中期 plan B） |
 | (z3) explicit-TL 固定 API（`explicit_ul_disable_update`） | UL update_reference 完全停止の独立フィールド化 | `TestExplicitULDisableUpdate` 4 ケース（disable=True 0 回 / interval override / default 既存挙動 / ゲート式直接検証） | ✅ | 396（API 化完結。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 独立フィールド方式、AND ゲート評価で `explicit_ul_update_interval` と共存。19 本 / 多 strand 実機検証は status-397 ε-1 で別 scope） |
-| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py` + `42_status398_hypothesis_diagnostic.py` + `43_status399_epsilon1_n_sub_cycles.py`（5 ケース sweep + n_inc=20000 asymptote + N_sub 掃引） | **✅** | 397+398+399（status-399 fix 実装、ε-1 sub n_strands=1 で N=1000 → rel_err 6.07% 単 strand 規模 PASS。3 strand 規模 / 接触あり / 多 strand は未検証で別行 ⬜） |
-| `explicit_n_sub_cycles_per_increment` | hypothesis 1 fix: 1 QUERY を N sub-step に分割、線形補間 prescribed BC、`dt_inner = dt_sub / N` で mass scaling auto-tune の β_inner を 1/N 倍縮小 | `TestExplicitNSubCyclesPerIncrement` 8 件（monkeypatch で `ExplicitDynamicProcess.process` 呼出回数直接計装） + `43_status399_epsilon1_n_sub_cycles.py`（4 ケース N ∈ {1, 10, 100, 1000} 掃引） | **✅** | 399（ε-1 単 strand 規模で MCDD 凍結解除条件 (5)（精度 < 10%）を PASS。status-398 n_inc=20000 と β_auto≈46 / u_x≈5.3 mm で独立軸数値整合、effective sub-cycle 数 20000 が共通因子で hypothesis 1 根本機構を確証） |
+| `_process_free_end` driver × explicit-TL | process 主ループ + explicit-TL で under-deformation（u_x ~96% アンダー）。implicit / inline driver で問題なく、process driver 経路自体が主因 | `41_epsilon1_3strand_helical_no_contact.py` + `42_status398_hypothesis_diagnostic.py` + `43_status399_epsilon1_n_sub_cycles.py` + `44_status399_convergence_verification.py`（5 ケース sweep + N_sub asymptote 確認） | **✅** | 397+398+399（status-399 fix 実装、ε-1 sub n_strands=1 で **N=2000 → rel_err 0.01%** 単 strand 規模 PASS。N=1000 (6.07%) は overshoot 領域での偶然通過、N=2000+ で機械精度級一致を §A で再検証. 3 strand 規模 / 接触あり / 多 strand は未検証で別行 ⬜） |
+| `explicit_n_sub_cycles_per_increment` | hypothesis 1 fix: 1 QUERY を N sub-step に分割、線形補間 prescribed BC、`dt_inner = dt_sub / N` で mass scaling auto-tune の β_inner を 1/N 倍縮小 | `TestExplicitNSubCyclesPerIncrement` 8 件（monkeypatch で `ExplicitDynamicProcess.process` 呼出回数直接計装） + `43_*.py`（N ∈ {1,10,100,1000} 掃引） + `44_*.py`（N ∈ {500,1000,2000,5000} asymptote 確認） | **✅** | 399（ε-1 単 strand 規模で MCDD 凍結解除条件 (5)（精度 < 10%）を PASS。**N=2000 で rel_err 0.01%** 機械精度級一致、N=5000 で 0.09%。N=500/1000 は overshoot 通過、N=2000+ で真の asymptote 到達と §A.2-A.3 で確認） |
 
 → status-394 で **assembler / UL の 1 要素再現実験完了**: 改修対象は **explicit + UL update_reference per step の組合せのみ**に局在することが定量実証された。
    status-395 で **多要素 explicit + TL の foundation 健全性が機械精度級で確定**、status-396 で
    **(z3) explicit-TL 固定 API 化完結**（公開 API レベル運用可能化）。
    **status-397 で ε-1 主実験 + sub-experiment（n_strands=1）双方 FAIL**、改修対象は
    `_process_free_end` driver 層自体に局在化。**status-398 で 3 仮説切り分け診断完了**、
-   **hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）が支配的**と確定
-   （n_inc=20000 で rel_err 5.45% asymptote 収束）。**status-399 で fix 実装**:
-   `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装、ε-1 単 strand で
-   N=1000 → rel_err 6.07% PASS（MCDD 凍結解除条件 (5) を単 strand 規模で達成）。
-   **次セッション最優先**: ε-2 = 3 strand 接触あり + N_sub=1000 検証で初の接触統合検証。
+   **hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）が支配的**と確定。
+   **status-399 で fix 実装**: `explicit_n_sub_cycles_per_increment` field + sub-cycle
+   内部ループ実装、ε-1 単 strand で **N=2000 → rel_err 0.01% 機械精度級 PASS**
+   （N=1000 は overshoot 領域での偶然通過、§A 追補で訂正済）。MCDD 凍結解除条件 (5) を
+   単 strand 規模で達成。
+   **次セッション最優先**: ε-2 = 3 strand 接触あり + **N_sub=2000** 検証で初の接触統合検証。
 
 ## 4. 既存 validation の 3 指標 gate 化（status-389 §3 TODO）
 
@@ -153,9 +154,11 @@ Phase β-2 + Phase γ で「CR 要素自体は健全」が定量実証された�
 | 379 | 19 本 explicit frac=1.0 完走で凍結解除条件達成 | 380 | `max\|u\|=1.59×10⁸ mm` 数値発散発覚。frac=1.0 / E_kin/E_strain<5% は数学的構造由来で発散時にも PASS する盲点 → CLAUDE.md に gate (3) `max\|u_trans\|<L_strand×C` を追加 |
 | 381 | mass scaling bug 修正で発散停止、形式 gate 全 PASS | 381 自身 | ユーザー指摘で精査、解析解 73.3 mm に対し explicit 40 mm（50% アンダー）→ CLAUDE.md に gate (5) 解の精度を追加 |
 | 387 | n_inc=8000 sweet spot で精度 gate (5) 達成（err 0.58%） | 388 | 3 指標 AND gate で再検証、L_arc=234 mm（梁が 2.3x ストレッチの非物理解）。「sweet spot」は座標値偶然交差。**透明性ルール**（独立解析解 3 個以上同時一致）を CLAUDE.md に追記して再発防止 |
+| 399（main） | N=1000 sub-cycle で rel_err 6.07% < 10% gate PASS（ε-1 単 strand） | 399（§A 追補） | ユーザー指摘「N 増やしたら数値変わってるだけで収束したわけではない問題では？」を受け追加検証 N ∈ {500, 1000, 2000, 5000}。N=500/1000 は u_x ≈ 5.3 mm で **implicit 4.996 mm を一様に overshoot**、N=2000 で 4.9962 mm (0.01%)、N=5000 で 5.0001 mm (0.09%) と真の asymptote 到達。**N=1000 は overshoot 領域での偶然 PASS**で「真の収束」ではない。撤回後の主張: **N=2000 を ε-1 推奨**、status-398 n_inc=20000 (β=46) も同じ overshoot 領域。**教訓**: convergence claim には sweep の **後ろから攻める**（N=2000、N=5000 等）を必須にすべき |
 
-**この 3 件の連鎖撤回が本マトリクス作成の動機**。matrix を運用ルール化することで
-類似の連鎖撤回を構造的に予防する。
+**この 4 件の連鎖撤回が本マトリクス作成・運用の動機**。matrix を運用ルール化することで
+類似の連鎖撤回を構造的に予防する。特に 399 は **ユーザーの単純な「変じゃないか」の
+指摘が独立な観察軸として最強の defense**であることを示す事例.
 
 ## 6. 凍結中 TODO（MCDD 完了まで再開禁止）
 
