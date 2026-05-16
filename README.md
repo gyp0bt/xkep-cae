@@ -18,13 +18,15 @@
 
 ## 現在の状態
 
-**755 passed 5 skipped** — 2026-05-12 | 契約違反 **0件** | 条例違反 **0件**
+**766 passed 5 skipped** — 2026-05-16 | 契約違反 **0件** | 条例違反 **0件**
 
-**最新 status**: [status-399](docs/status/status-399.md) — `explicit_n_sub_cycles_per_increment` 実装。ε-1 で N=2000 で rel_err 0.01% asymptote 到達、MCDD 凍結解除条件 (5) を単 strand 規模で PASS。事後 STA2 検証で N=1000 overshoot を訂正、N=2000 推奨。Default OFF (N=1) で既存挙動完全保持。
+**最新 status**: [status-400](docs/status/status-400.md) — `VtkExportProcess` 実装。ParaView 用 VTK XML 出力 PostProcess、依存追加なし（生 XML）、汎用 1D 梁モデル対応。`.pvd` 時系列 + `.vtu` を出力し ParaView で曲げ揺動を視覚確認可能。`MeshData` + `SolverResultData` から `displacement` / `rotation` (PointData) + `axial_strain` (CellData) を書き出す。
 
-**Phase ε 進行中**: ε-1 = 1 strand 接触なし ✅ → ε-2 = 3 strand 接触あり（次セッション） → ε-3 = 7 strand → ε-4 = 19 strand（本命、MCDD 凍結解除条件 (2)(3)(5) 同時達成試行）。
+**前 status**: [status-399](docs/status/status-399.md) — `explicit_n_sub_cycles_per_increment` 実装、ε-1 で N=2000 で rel_err 0.01% asymptote 到達、MCDD 凍結解除条件 (5) を単 strand 規模で PASS。
 
-**完了履歴**: Phase A/B/C/E + NR escape hatch 全候補 (a)〜(g) 検証 + explicit 時間積分 Phase 1〜3 + Phase α/β/γ foundation 再検証 + ε-1 sub-cycling 実装。詳細は [status-index](docs/status/status-index.md) および [verification_matrix](docs/status/verification_matrix.md) 参照。
+**Phase ε 進行中**: ε-1 = 1 strand 接触なし ✅ → ε-2 = 3 strand 接触あり（status-401 予定） → ε-3 = 7 strand → ε-4 = 19 strand（本命、MCDD 凍結解除条件 (2)(3)(5) 同時達成試行）。
+
+**完了履歴**: Phase A/B/C/E + NR escape hatch 全候補 (a)〜(g) 検証 + explicit 時間積分 Phase 1〜3 + Phase α/β/γ foundation 再検証 + ε-1 sub-cycling 実装 + ParaView 連携。詳細は [status-index](docs/status/status-index.md) および [verification_matrix](docs/status/verification_matrix.md) 参照。
 
 | 分野 | 概要 |
 |------|------|

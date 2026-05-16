@@ -86,9 +86,11 @@
 
 ## 現在の状態
 
-**755 passed 5 skipped** — 2026-05-12 | 契約違反 **0件** | 条例違反 **0件**
+**766 passed 5 skipped** — 2026-05-16 | 契約違反 **0件** | 条例違反 **0件**
 
-**最新**: [status-399](docs/status/status-index.md) — `explicit_n_sub_cycles_per_increment` 実装。ε-1 で N=2000 で rel_err 0.01% asymptote 到達、**MCDD 凍結解除条件 (5) を単 strand 規模で PASS**。事後 STA2 検証で N=1000 の overshoot を訂正、N=2000 推奨。Default OFF (N=1) で既存挙動完全保持、`test_helical_3d_hermite` rel_err=2.18e-07 維持。
+**最新**: [status-400](docs/status/status-index.md) — `VtkExportProcess` 実装。ParaView 用 VTK XML 出力 PostProcess（依存追加なし、生 XML 直接書き）、汎用 1D 梁モデル対応、+11 単体テスト。`.pvd` 時系列 + `.vtu` で電線曲げ揺動の視覚確認が可能に。
+
+**前 status**: [status-399](docs/status/status-index.md) — `explicit_n_sub_cycles_per_increment` 実装、ε-1 で N=2000 で rel_err 0.01% asymptote、MCDD 凍結解除条件 (5) を単 strand 規模で PASS。
 
 **前後関係の詳細は `docs/status/status-index.md` および各 status ファイル参照**（status-275〜376 は `docs/status/archive/` へ移動、本セッションで実施）。
 
@@ -107,9 +109,10 @@
 | status | scope | gate |
 |---|---|---|
 | ~~399~~ | ε-1 = 1 strand + 接触なし + explicit-TL + sub-cycling | ✅ N=2000 で rel_err 0.01% PASS |
-| **400 (次)** | ε-2 = 3 strand + 接触あり + N_sub=2000 | 3 指標 AND + frac=1.0 + 初の接触統合検証 |
-| 401 | ε-3 = 7 strand + 接触あり | 3 指標 AND + frac=1.0 + max\|u\| < L×10 + implicit baseline 対比 |
-| 402 | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 |
+| ~~400~~ | `VtkExportProcess` 実装（副次・基盤、ParaView 視覚確認） | ✅ +11 テスト、依存追加なし |
+| **401 (次)** | ε-2 = 3 strand + 接触あり + N_sub=2000 | 3 指標 AND + frac=1.0 + 初の接触統合検証 |
+| 402 | ε-3 = 7 strand + 接触あり | 3 指標 AND + frac=1.0 + max\|u\| < L×10 + implicit baseline 対比 |
+| 403 | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 |
 
 #### MCDD 凍結解除条件（status-381 で精度 gate (5) 追加）
 

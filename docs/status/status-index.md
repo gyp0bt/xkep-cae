@@ -31,6 +31,7 @@
 | [397](status-397.md) | 2026-05-10 | ε-1 失敗 — `_process_free_end` × explicit-TL を 1 strand で再現、改修対象を driver 層に局在化 |
 | [398](status-398.md) | 2026-05-11 | 3 仮説切り分け診断 — hypothesis 1（stepwise BC × mass scaling auto-tune interaction）確定 |
 | [399](status-399.md) | 2026-05-12 | `explicit_n_sub_cycles_per_increment` 実装 — ε-1 N=2000 で rel_err 0.01% asymptote PASS |
+| [400](status-400.md) | 2026-05-16 | `VtkExportProcess` 実装 — ParaView 用 VTK XML 出力 PostProcess（依存追加なし、汎用 1D 梁モデル対応、+11 テスト）|
 
 ## アーカイブ（275〜376 — 接触完走・MCDD Phase A〜E・NR escape hatch 全候補検証）
 

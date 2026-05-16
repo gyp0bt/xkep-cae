@@ -32,7 +32,7 @@ build/
 .pytest_cache/
 .venv
 examples/output/
-output/
+/output/
 scripts/results/
 docs/generated/
 .claude/
