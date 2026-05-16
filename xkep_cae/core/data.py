@@ -385,6 +385,17 @@ class ContactFrictionInputData:
     # default False で全 DOF 一律スケーリング（既存挙動）。
     explicit_mass_scaling_selective: bool = False
     explicit_mass_scaling_stiff_threshold_ratio: float = 10.0
+    # status-399: explicit 1 増分あたり sub-cycle 数（status-398 §5.2 fix design）.
+    # `solver_mode="explicit"` のとき、1 QUERY (= 1 増分) を N 回の explicit
+    # サブステップに分割し、各サブステップで `dt_inner = dt_sub / N`、
+    # prescribed BC は `frac_k = load_frac_prev + (k/N)·(load_frac − load_frac_prev)`
+    # で線形補間して適用する。`ExplicitDynamicProcess` の mass scaling auto-tune
+    # は dt_inner と dt_critical_raw を比較するため、N が大きいほど β_inner が
+    # 自然に縮小し T_1_scaled = β · T_1_raw が縮小して quasi-static 化する.
+    # status-398 hypothesis 1（stepwise prescribed BC × mass scaling auto-tune
+    # の interaction が under-deformation の根本機構）に対する architectural fix.
+    # default 1 で既存挙動完全保持（1 増分 = 1 サブステップ）.
+    explicit_n_sub_cycles_per_increment: int = 1
 
     @property
     def is_dynamic(self) -> bool:

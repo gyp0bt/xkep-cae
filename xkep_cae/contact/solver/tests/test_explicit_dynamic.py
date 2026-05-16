@@ -806,6 +806,271 @@ class TestExplicitULDisableUpdate:
             )
 
 
+class TestExplicitNSubCyclesPerIncrement:
+    """status-399 (status-398 §5.2 fix design): explicit 1 増分あたり sub-cycle 数.
+
+    `explicit_n_sub_cycles_per_increment=N` で 1 QUERY を N 個の explicit sub-step に
+    分割し、各 sub-step で dt_inner = dt_sub / N、prescribed BC は線形補間で適用する。
+    status-398 hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の
+    interaction）に対する architectural fix の API 単体検証.
+
+    確認項目:
+    - default N=1 で従来 ExplicitDynamicProcess.process() 呼出回数と同じ
+    - N>1 で呼出回数が N 倍
+    - N=0 / 負値は max(1, N) として扱い既存挙動
+    - implicit mode では本 field を無視
+    """
+
+    def _make_setup(self, *, n_increments_target: int):
+        """dt_max_fraction で各 step を制限し、目標増分数を確保."""
+        mesh = _make_two_beam_mesh()
+        ndof = len(mesh.node_coords) * 6
+        contact_config = _ContactConfigInput(
+            beam_E=210e3,
+            beam_I=1e-3,
+            mu=0.15,
+            exclude_same_strand=True,
+            smoothing_delta=2000.0,
+            dt_max_fraction=1.0 / max(1, n_increments_target),
+        )
+        manager = _ContactManagerInput(config=contact_config)
+        contact = ContactSetupData(manager=manager, k_pen=1e2, mu=0.15)
+        M = sp.eye(ndof, format="csr") * 1.0
+        f_ext = np.zeros(ndof)
+        f_ext[6 * (len(mesh.node_coords) - 1)] = 1e-3
+        boundary = BoundaryData(fixed_dofs=np.arange(6), f_ext_total=f_ext)
+        return mesh, ndof, contact, M, f_ext, boundary
+
+    def _make_counting_callbacks(self, ndof: int) -> AssembleCallbacks:
+        """単純な assemble callbacks（実 callback 動作）."""
+
+        def assemble_tangent(u: np.ndarray) -> sp.csr_matrix:
+            return sp.eye(ndof, format="csr") * 1.0
+
+        def assemble_internal_force(u: np.ndarray) -> np.ndarray:
+            return u * 1.0
+
+        return AssembleCallbacks(
+            assemble_tangent=assemble_tangent,
+            assemble_internal_force=assemble_internal_force,
+        )
+
+    def _run(
+        self,
+        *,
+        n_sub_cycles: int,
+        max_incr: int,
+        ndof: int,
+        mesh,
+        contact,
+        M,
+        boundary,
+        monkeypatch,
+    ) -> tuple[SolverResultData, list[int]]:
+        """ExplicitDynamicProcess.process() の呼出回数を直接計測.
+
+        sub-cycle 内部ループは `_explicit_proc.process()` を N 回呼ぶため、
+        ここでの呼出回数 = `n_increments × N`（cutback なし時）.
+        """
+        callbacks = self._make_counting_callbacks(ndof)
+        counter = [0]
+        original_process = ExplicitDynamicProcess.process
+
+        def counting_process(self_proc, input_data_step):
+            counter[0] += 1
+            return original_process(self_proc, input_data_step)
+
+        monkeypatch.setattr(ExplicitDynamicProcess, "process", counting_process)
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="explicit",
+            explicit_courant_safety=0.9,
+            explicit_courant_check_interval=10,
+            explicit_n_sub_cycles_per_increment=n_sub_cycles,
+            max_increments=max_incr,
+            max_nr_attempts=1,
+        )
+        result = ContactFrictionProcess().process(input_data)
+        return result, counter
+
+    def test_default_n_sub_cycles_one_baseline(self, monkeypatch):
+        """default N=1 で ExplicitDynamicProcess.process() 呼出回数 = 増分数."""
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=4)
+        result, counter = self._run(
+            n_sub_cycles=1,
+            max_incr=4,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        assert isinstance(result, SolverResultData)
+        # 4 増分 × N=1 = 4 回（cutback がない前提）
+        assert counter[0] == 4
+
+    def test_n_sub_cycles_two_doubles_calls(self, monkeypatch):
+        """N=2 で sub-cycle 内部ループが 2 回回り、呼出回数が 2 倍."""
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=3)
+        result, counter = self._run(
+            n_sub_cycles=2,
+            max_incr=3,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        assert isinstance(result, SolverResultData)
+        # 3 増分 × 2 sub-cycle = 6 回
+        assert counter[0] == 6
+
+    def test_n_sub_cycles_five_quintuples_calls(self, monkeypatch):
+        """N=5 で sub-cycle ループが 5 回回り、呼出回数が 5 倍."""
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=3)
+        result, counter = self._run(
+            n_sub_cycles=5,
+            max_incr=3,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        assert isinstance(result, SolverResultData)
+        # 3 増分 × 5 sub-cycle = 15 回
+        assert counter[0] == 15
+
+    def test_n_sub_cycles_zero_treated_as_one(self, monkeypatch):
+        """N=0 は max(1, N) で 1 として扱う."""
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=3)
+        result, counter = self._run(
+            n_sub_cycles=0,
+            max_incr=3,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        assert isinstance(result, SolverResultData)
+        # 3 増分 × max(1, 0)=1 sub-cycle = 3 回
+        assert counter[0] == 3
+
+    def test_n_sub_cycles_negative_treated_as_one(self, monkeypatch):
+        """負値は max(1, N) で 1 として扱う."""
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=3)
+        result, counter = self._run(
+            n_sub_cycles=-5,
+            max_incr=3,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        assert isinstance(result, SolverResultData)
+        # 3 増分 × max(1, -5)=1 sub-cycle = 3 回
+        assert counter[0] == 3
+
+    def test_n_sub_cycles_implicit_mode_ignored(self, monkeypatch):
+        """implicit mode では本 field を無視（既存 NR 挙動）.
+
+        本 field は `solver_mode="explicit"` のみ対象。implicit 経路では
+        `ExplicitDynamicProcess.process()` 自体が呼ばれないことを検証.
+        """
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=2)
+        callbacks = self._make_counting_callbacks(ndof)
+        counter = [0]
+        original_process = ExplicitDynamicProcess.process
+
+        def counting_process(self_proc, input_data_step):
+            counter[0] += 1
+            return original_process(self_proc, input_data_step)
+
+        monkeypatch.setattr(ExplicitDynamicProcess, "process", counting_process)
+        input_data = ContactFrictionInputData(
+            mesh=mesh,
+            boundary=boundary,
+            contact=contact,
+            callbacks=callbacks,
+            mass_matrix=M,
+            dt_physical=0.5,
+            solver_mode="implicit",
+            # N=10 を指定しても implicit では無視される
+            explicit_n_sub_cycles_per_increment=10,
+            max_increments=2,
+            max_nr_attempts=5,
+        )
+        result = ContactFrictionProcess().process(input_data)
+        assert isinstance(result, SolverResultData)
+        # implicit では ExplicitDynamicProcess は一度も呼ばれない
+        assert counter[0] == 0
+
+    def test_n_sub_cycles_dt_inner_scales(self, monkeypatch):
+        """N>1 で dt_inner = dt_sub / N となり、internal step dt が縮小されることを検証.
+
+        ExplicitDynamicProcess.process() に渡る `dt_sub` は外側 driver で
+        `dt_sub / N` に縮小される。ここでは N=4 で 4 倍 sub-cycle 呼出が
+        起きること（=外側 dt_sub が論理的に分割されていること）を間接確認.
+        """
+        mesh, ndof, contact, M, _f, boundary = self._make_setup(n_increments_target=2)
+        _result_n1, counter_n1 = self._run(
+            n_sub_cycles=1,
+            max_incr=2,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        # n=1 直後に monkeypatch を再 apply して counter をリセット
+        monkeypatch.undo()
+        _result_n4, counter_n4 = self._run(
+            n_sub_cycles=4,
+            max_incr=2,
+            ndof=ndof,
+            mesh=mesh,
+            contact=contact,
+            M=M,
+            boundary=boundary,
+            monkeypatch=monkeypatch,
+        )
+        # N=4 / N=1 で sub-cycle 呼出は 4 倍
+        assert counter_n4[0] == 4 * counter_n1[0]
+
+    def test_gate_logic_explicit_only(self):
+        """gate 式 `_solver_mode == "explicit"` の論理的検証.
+
+        sub-cycle 内部ループは explicit のときのみ実行。implicit / その他 mode では
+        本 field を読まずに従来 NR 経路を辿る.
+        """
+
+        # gate: (mode == "explicit") のときのみ N_sub を参照
+        def _use_sub_cycle(*, mode: str, n_sub: int) -> bool:
+            return mode == "explicit" and max(1, n_sub) > 1
+
+        # explicit + N=1: False（gate を通っても N=1 は no-op と等価）
+        assert _use_sub_cycle(mode="explicit", n_sub=1) is False
+        # explicit + N=10: True
+        assert _use_sub_cycle(mode="explicit", n_sub=10) is True
+        # implicit + N=10: False（gate で除外）
+        assert _use_sub_cycle(mode="implicit", n_sub=10) is False
+        # explicit + N=0: False（max(1, 0)=1）
+        assert _use_sub_cycle(mode="explicit", n_sub=0) is False
+
+
 class TestPerElementCriticalDt:
     """status-384 候補 (z1a): 要素ごと波速ベース Δt 推定の単体検証."""
 

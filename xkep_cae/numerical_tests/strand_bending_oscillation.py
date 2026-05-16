@@ -400,6 +400,13 @@ class StrandBendingOscillationConfig:
     # の組合せで MCDD 凍結解除条件 (5)（精度 < 10%）達成可能と推定される
     # （status-385 §6.1）。
     t_cycle_min_seconds: float = 1.0
+    # status-399: explicit 1 増分あたり sub-cycle 数（status-398 §5.2 fix design）.
+    # `solver_mode="explicit"` のとき、`ContactFrictionInputData` 同名 field 経由で
+    # `process.py` の explicit 経路に sub-cycle 内部ループを起動する.
+    # status-398 hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の
+    # interaction）に対する architectural fix。ε-1 では 1000 程度を目標とする.
+    # default 1 で既存挙動完全保持.
+    explicit_n_sub_cycles_per_increment: int = 1
 
 
 @dataclass(frozen=True)
@@ -1071,6 +1078,7 @@ class StrandBendingOscillationProcess(
                 cfg.explicit_mass_scaling_stiff_threshold_ratio
             ),
             explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
+            explicit_n_sub_cycles_per_increment=cfg.explicit_n_sub_cycles_per_increment,
         )
         solver = ContactFrictionProcess()
         solver_result = solver.process(solver_input)
@@ -1428,6 +1436,7 @@ class StrandBendingOscillationProcess(
                     cfg.explicit_mass_scaling_stiff_threshold_ratio
                 ),
                 explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
+                explicit_n_sub_cycles_per_increment=cfg.explicit_n_sub_cycles_per_increment,
             )
             solver_result_bend = ContactFrictionProcess().process(solver_input)
             _u_bend = solver_result_bend.u
@@ -1645,6 +1654,7 @@ class StrandBendingOscillationProcess(
                     cfg.explicit_mass_scaling_stiff_threshold_ratio
                 ),
                 explicit_mass_scaling_beta_outside=cfg.explicit_mass_scaling_beta_outside,
+                explicit_n_sub_cycles_per_increment=cfg.explicit_n_sub_cycles_per_increment,
             )
             solver_result = ContactFrictionProcess().process(solver_input_osc)
         else:

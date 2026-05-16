@@ -14,8 +14,31 @@
 
 ## 現在地（2026-05-12）
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+4 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
+**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+12 テスト** | 契約違反**0件** | [最新status](status/status-index.md) | [達成確認マトリクス](status/verification_matrix.md) | [数理台帳](math/README.md)
 
+> **★ status-399 `explicit_n_sub_cycles_per_increment` 実装 — ε-1 で N=2000 で
+> rel_err 0.01% asymptote 到達（MCDD 凍結解除条件 (5) 単 strand 規模で PASS、
+> N=1000 overshoot を事後 STA2 検証で訂正）**:
+> status-398 で確定した hypothesis 1（stepwise prescribed BC × mass scaling
+> auto-tune の interaction）に対する architectural fix を実装。
+> `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1` field +
+> `StrandBendingOscillationConfig` 3 経路 plumb-through + `process.py` の
+> explicit 経路に sub-cycle 内部ループ実装（線形補間 prescribed BC + f_ext +
+> MPC 射影、`_dt_inner = dt_sub / N`）。Default OFF (N=1) で既存挙動完全保持。
+> **ε-1 再検証 + 事後 STA2 検証**: implicit u_x=+4.9957mm vs N=1 0.186 (96%) →
+> N=10 0.759 (85%) → N=100 2.323 (54%) → N=500 5.329 (6.7%) → N=1000 5.299
+> (6.1%) → **N=2000 +4.9962 (0.01%★)** → N=5000 +5.0001 (0.09%) で **N=2000+
+> で asymptote 機械精度級到達**。**N=1000 は dynamic transient overshoot 領域
+> での偶然 PASS**、ユーザー指摘「N増やしたら数値変わってるだけで収束したわけ
+> ではない問題では？」を受け追加検証で真の asymptote を N=2000+ と確定、
+> status-399 main を §A 追補で訂正。status-398 n_inc=20000 (β=46) も同じ
+> overshoot 領域、真の収束は β≈23 (N=2000) 以降。単体テスト 8 件追加。
+> 回帰 **755 passed 5 skipped** / 全 24 契約検査 OK /
+> `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。
+> `verification_matrix.md` §2 ε-1 ✅（N=2000 機械精度級）+ §3 driver 行 🟡→✅ +
+> §5 STA2 撤回履歴に status-399 N=1000 撤回追記。Phase A〜E /
+> status-346〜399 の **50/N 完了**.
+>
 > **★ status-398 `_process_free_end` × explicit-TL 3 仮説切り分け診断 — 仮説 1
 > 確定（stepwise prescribed BC × mass scaling auto-tune の interaction）、
 > n_inc 掃引で asymptotic 5.45% rel_err 到達、fix 実装は status-399 へ持ち越し**:
