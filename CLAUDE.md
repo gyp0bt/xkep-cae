@@ -86,17 +86,11 @@
 
 ## 現在の状態
 
-**459+13+22+5+8+12+12+25+26+10+15+10+9+8+12+33+33+21+8+25+6+12+12+7+10+12+11+34+10+11+12+5+17+11+6+12 テスト** — 2026-05-12 | 契約違反 **0件** | 条例違反 **0件** | **status-399（`explicit_n_sub_cycles_per_increment` 実装 — ε-1 で N=2000 で rel_err 0.01% asymptote 到達、MCDD 凍結解除条件 (5) 単 strand 規模で PASS。事後 STA2 検証で N=1000 の overshoot を訂正、N=2000 を推奨）**。status-398 で確定した hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）に対する architectural fix を実装。`ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1` field 追加 + `StrandBendingOscillationConfig` 3 経路 plumb-through + `process.py` の explicit 経路に sub-cycle 内部ループ実装（線形補間 prescribed BC + f_ext + MPC 射影、`_dt_inner = dt_sub / N`）。**Default OFF (N=1) で既存挙動完全保持**。**ε-1 再検証（事後追加 STA2 検証含む）**: implicit u_x=+4.9957mm vs explicit-TL N=1 0.186 (96.29%) → N=10 0.759 (84.82%) → N=100 2.323 (53.50%) → N=500 5.329 (6.68%) → N=1000 5.299 (6.07%) → **N=2000 +4.9962 (0.01%★)** → N=5000 +5.0001 (0.09%) で **N=2000+ で asymptote 機械精度級到達**。**N=1000 は dynamic transient overshoot 領域での偶然 PASS、ユーザー指摘「N増やしたら数値変わってるだけで収束したわけではない問題では？」を受け追加検証**で N ∈ {500,1000,2000,5000} を測定、真の asymptote が N=2000+ にあることを確認、status-399 main を §A 追補で訂正。**status-398 n_inc=20000 (β=46) も N=1000 と同じ overshoot 領域**、真の収束は β≈23 (N=2000) 以降。単体テスト 8 件追加（monkeypatch で `ExplicitDynamicProcess.process` 呼出回数直接計装）。回帰 **755 passed 5 skipped**（status-398 の 747 + 新規 8）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（204 files）。`verification_matrix.md` §2 ε-1 単 strand 🟡→✅（N=2000 機械精度級）+ §3 driver 行 🟡→✅ + §5 STA2 撤回履歴に status-399 N=1000 撤回追記。**次セッション最優先（status-400）**: ε-2 = 3 strand 接触あり + explicit-TL + **N_sub=2000** 検証で初の接触統合検証（3 指標 AND gate + frac=1.0 完走、N_sub=1000 では overshoot 偶然 PASS のリスクで 2000 推奨）。Phase A〜E / status-346〜399 の **50/N 完了**.
+**755 passed 5 skipped** — 2026-05-12 | 契約違反 **0件** | 条例違反 **0件**
 
-前 status: status-398（`_process_free_end` × explicit-TL 3 仮説切り分け診断完了 — 仮説 1 確定、n_inc 掃引で asymptotic 5.45% rel_err 到達、fix 実装は status-399 へ持ち越し）。status-397 ε-1 確定（`_process_free_end` × explicit-TL の under-deformation を 1 strand 規模で再現）を受け、CLAUDE.md 3 仮説切り分け要求に対応。`work/beam_hysteresis/42_status398_hypothesis_diagnostic.py` 新設（~250 行）で n_inc / β_max / t_cycle 軸を独立に振る 5 ケース resilient diagnostic + n_inc=20000 asymptote 確認。**実測**: explicit-TL baseline (n_inc=20, β_auto=4.6×10⁴) u_x=0.186mm rel_err 96.3% → A1 (n_inc=200, β=4.6×10³) 0.748mm 85% → A2 (n_inc=2000, β=464) 2.252mm 55% → **n_inc=20000 (β=46) 5.268mm rel_err 5.45%** で implicit 4.996mm に asymptotic 収束（+5.45% overshoot）。B/C/D（β_max=100 / t_cycle=100s / n_inc=2000+β=10）は cutback 無限再帰 / 数値発散で消極的追認。**根本機構**: stepwise prescribed BC + mass scaling auto-tune の interaction で β_auto=O(10⁴) が T_1_scaled=β·T_1_raw を肥大化させ t_total<<T_1_scaled で elastic wave 伝播不能。仮説 2（reaction force 累積）/ 仮説 3（assembler ref 経路）は仮説 1 単一機構で全観測値説明可能なため保留判定。**fix 設計（status-399）**: `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1` field + `process.py` explicit 経路に sub-cycle 内部ループ（線形補間 prescribed BC + `dt_inner = dt_sub / N`）を pseudo-code レベルで明記。Default OFF (N=1) で既存挙動完全保持、N>>1 で mass scaling auto-tune が β=O(10-100) に target → quasi-static 化。`StrandBendingOscillationConfig` plumb-through + 単体テスト `TestExplicitNSubCyclesPerIncrement` + ε-1 再検証で rel_err < 10% を目標。回帰 **747 passed 5 skipped 維持**（status-397 と同数、実装本体無変更）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（203 files）。`verification_matrix.md` §3 driver 行を ❌→🟡（hypothesis 1 確定、status-399 fix 待ち）。**次セッション最優先（status-399）**: `explicit_n_sub_cycles_per_increment` field 追加 + process.py sub-cycle 実装 + ε-1 再検証で rel_err < 10%（architectural change、Phase 1 API/test → Phase 2 実機検証の 2 status 構成も可）。Phase A〜E / status-346〜398 の **49/N 完了**.
+**最新**: [status-399](docs/status/status-index.md) — `explicit_n_sub_cycles_per_increment` 実装。ε-1 で N=2000 で rel_err 0.01% asymptote 到達、**MCDD 凍結解除条件 (5) を単 strand 規模で PASS**。事後 STA2 検証で N=1000 の overshoot を訂正、N=2000 推奨。Default OFF (N=1) で既存挙動完全保持、`test_helical_3d_hermite` rel_err=2.18e-07 維持。
 
-前 status: status-397（ε-1 失敗 — `_process_free_end` × explicit-TL の精度問題を 1 strand 規模で再現、改修対象を BC/process driver 層に局在化）。`work/beam_hysteresis/41_epsilon1_3strand_helical_no_contact.py` 新設、3 strand helical + sub-experiment n_strands=1 双方で u_x ~96% under-deformation を実機実証、ヘリカル初期 κ / 多 strand global assembler を即時除外、`_process_free_end` driver 層自体を改修対象に局在化。48/N 完了.
-
-前々 status: status-396（explicit-TL 固定 API 化 — `explicit_ul_disable_update` 独立フィールド追加、候補 (z3) Phase 1、API 化完結 / 実機検証 scope 外）。`ContactFrictionInputData` + `StrandBendingOscillationConfig` 各 1 field 追加 + 3 経路（曲げ / 揺動 / free_end）plumb-through、`process.py` ゲート式更新（implicit 経路完全無変更）、`TestExplicitULDisableUpdate` 4 ケース追加。47/N 完了.
-
-前々 status: status-395（Phase γ-3 完了 — 多要素 explicit + TL で circular arc 収束を O(1/n²) で再現実証、4/5 PASS、log-log slope=-2.000、γ-1 implicit と数値一致）。`work/beam_element_validation/51_gamma3_multi_element_explicit.py` 新設で n_elements ∈ {1,2,4,8,16} を α-3 / β-2 / γ-1 と同 BC で駆動、explicit chain solver inline 実装、UL `update_reference` を呼ばない TL モード固定。実測: n=1 のみ FAIL（24.95% chord 長保存制約、期待通り）、n=2,4,8,16 で 3 指標すべて PASS、slope=-2.000、γ-1 implicit と全 n で差 < 0.01% の数値一致。Phase α/β/γ-1/γ-3 で CR foundation 静的/動的/多要素/explicit 全領域の健全性が定量実証。46/N 完了.
-
-前 status 履歴（status-394 / 393 / 392 / 391 / 390 / 389 / 388 / 387 ⚠️撤回 / 386 / 385 / 384 / 383 / 382 / 381 / 380 / 379 ⚠️撤回）は `docs/status/status-index.md` 参照。要約: Phase α/β/γ-1 で CR foundation 静的・動的・多要素 implicit を機械精度実証、status-379〜388 の explicit + UL 系列（mass scaling / 2 段階 β / t_cycle / n_inc sweep）は status-388 で 3 指標 AND gate により全 13 ケース FAIL 確定で原理的破綻と確定、(z2) Cosserat への absolute necessity は status-391 で消失、status-394 で改修対象が explicit + UL per step のみと局在化、status-395 で多要素 explicit + TL の foundation 健全性を確定、status-396 で explicit-TL 固定 API（`explicit_ul_disable_update`）の API 化完結、status-397 で ε-1（3 strand helical + 接触なし + explicit-TL）が FAIL し改修対象を `_process_free_end` driver 層に局在化、status-398 で 3 仮説切り分け完了し hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）を確定（n_inc=20000 で rel_err 5.45% asymptote 収束）。
+**前後関係の詳細は `docs/status/status-index.md` および各 status ファイル参照**（status-275〜376 は `docs/status/archive/` へ移動、本セッションで実施）。
 
 ### ターゲット
 
@@ -104,88 +98,50 @@
 
 ### 次の課題
 
-完了履歴の詳細は `docs/status/status-index.md` 参照。**実行方針**: ユーザー指示で
-**implicit は完全凍結（解除想定なし）**、explicit 一本路線に絞る（status-395 確定）。
-status-394 で改修対象を **explicit + UL update_reference per step のみ** に局在化、
-status-395 で **多要素 explicit + TL の foundation 健全性確定**（slope=-2.000、γ-1
-implicit と数値一致）。接触なし foundation は完全実証、残るは **explicit-TL 固定 API
-化** + 接触統合の段階的検証。**(z2) Cosserat 路線は不要**（implicit 凍結方針下で
-plan B も scope 外）。
+**実行方針**: implicit は完全凍結（解除想定なし）、explicit 一本路線。
+詳細な完了履歴は `docs/status/status-index.md` および
+`docs/status/verification_matrix.md` 参照。
 
-#### 段階的検証ロードマップ（6 段階、各 1 status 想定、status-397/398 で 2 status 詳細化）
+#### Phase ε ロードマップ（段階的検証）
 
-| status | scope | 主成果物 | gate |
-|---|---|---|---|
-| ~~396~~ | ~~(z3) explicit-TL 固定 API 化のみ~~ | ✅ status-396 完了 | 達成 |
-| ~~397~~ | ~~ε-1 = 3 strand helical + 接触なし + explicit-TL~~ | **🔁 status-397 ε-1 FAIL** — driver 層に局在化 | ε-1 FAIL → driver 局在化 |
-| ~~398~~ | ~~3 仮説切り分け診断~~ | **✅ status-398 完了** — hypothesis 1（stepwise prescribed BC × mass scaling auto-tune の interaction）確定、n_inc=20000 で rel_err 5.45% asymptote 収束 | 仮説確定、fix design 完成 |
-| **399 (次)** | `explicit_n_sub_cycles_per_increment` field + sub-cycle 内部ループ実装 | `ContactFrictionInputData` 1 field + `process.py` explicit 経路 sub-cycle ループ + 線形補間 prescribed BC + 単体テスト + ε-1 再検証 | ε-1 で u_x rel_err < 10% 達成 |
-| **400** | ε-2 = 3 strand + 接触あり | 初の接触統合検証 | 3 指標 AND gate + frac=1.0 完走 |
-| **401** | ε-3 = 7 strand + 接触あり | implicit baseline (status-301 frac=1.0) 対比 | 3 指標 AND gate + frac=1.0 + max\|u\| < L × 10 |
-| **402** | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 | frac=1.0 + max\|u\| 妥当 + 解の精度 < 10% |
+| status | scope | gate |
+|---|---|---|
+| ~~399~~ | ε-1 = 1 strand + 接触なし + explicit-TL + sub-cycling | ✅ N=2000 で rel_err 0.01% PASS |
+| **400 (次)** | ε-2 = 3 strand + 接触あり + N_sub=2000 | 3 指標 AND + frac=1.0 + 初の接触統合検証 |
+| 401 | ε-3 = 7 strand + 接触あり | 3 指標 AND + frac=1.0 + max\|u\| < L×10 + implicit baseline 対比 |
+| 402 | ε-4 = 19 strand + 接触あり（本命） | MCDD 凍結解除条件 (2)(3)(5) 同時達成試行 |
 
-#### 次 status (status-399) — `explicit_n_sub_cycles_per_increment` 実装
+#### MCDD 凍結解除条件（status-381 で精度 gate (5) 追加）
 
-status-398 で確定した hypothesis 1 のメカニズム（stepwise prescribed BC + mass
-scaling auto-tune の interaction）に対する architectural fix。
+1. Phase E 完了（C18〜C24 + O1〜O3、status-369 までに大半完了）
+2. 19 本 frac=1.0 完走 — ε-4 で試行
+3. **max\|u_trans\| < L_strand × 10**（撚線 100mm に対し最大変位 1m 以内）—
+   status-380「frac=1.0 + E_kin/E_strain<5% は両方とも数学的構造由来で発散時にも PASS する」盲点対策
+4. `KcNormalDirectionStiffness` FD rel_err < 1e-2 — ✅ status-356 達成
+5. **解の精度 < 10%**（`|u_explicit − u_implicit| / |u_implicit|` または vs analytical）—
+   status-381「形式 gate (1)〜(4) は under-relaxation 解でも PASS する」盲点対策。
+   ε-1 単 strand は status-399 で N=2000 PASS、本命は ε-4
 
-**実装スコープ**（status-398 §5.2 pseudo-code 参照）:
+**status-379 撤回**: 条件 3 欠落で誤判定。**status-381 撤回**: 条件 5 欠落で誤判定。
+**status-387 撤回**: 単一指標一致による偽 PASS（透明性ルール参照）。
 
-1. `ContactFrictionInputData.explicit_n_sub_cycles_per_increment: int = 1`
-   field 追加（default 1 で既存挙動完全保持）
-2. `process.py` の `solver_mode=="explicit"` 経路に sub-cycle 内部ループ:
-   - `dt_inner = dt_sub / N`
-   - 各 sub-cycle で `frac_k = load_frac_prev + (k/N) · (load_frac - load_frac_prev)`
-     を線形補間して `state.u[prescribed_dofs]` に適用
-   - `explicit_step_input` の `dt_sub=dt_inner` で N 回 step
-3. `StrandBendingOscillationConfig` 同 field + 3 経路 plumb-through
-4. 単体テスト `TestExplicitNSubCyclesPerIncrement`
-5. ε-1 再検証: `explicit_n_sub_cycles_per_increment=1000` で u_x rel_err < 10% を目標
+#### 副次タスク（並行可能 / 後回し）
 
-**判定**: ε-1 rel_err < 10% → status-400 (ε-2 接触あり 3 strand) へ進行 / 達成不能なら
-hypothesis 2 / 3 を本格検証 (status-398 §4 保留分の活性化)。
+- **Phase γ-2 大 curvature 拡張**（θ=π/2）— γ-1/γ-3 は θ=0.15 rad small-medium。
+  full pitch (2π rad) で「16 要素/ピッチ厳守」を再確認
+- **既存 validation の 3 指標 gate 化**（status-388/389 TODO）—
+  `test_assembler_process.py` / `test_strand_beam_physics.py` /
+  `test_beam_oscillation.py` / `TestHelical90DegBendPhysics` を順次拡張
+- **Phase δ 接触あり 2 本撚線** — ε-2 の前段、優先度は ε-1/ε-2 結果次第
 
-#### 副次（並行可能 / 後回し）
+#### scope 外（再開しないこと）
 
-- **Phase γ-2 大 curvature 拡張**（θ=π/2、`50_gamma2_large_curvature.py`）:
-  γ-1/γ-3 は θ=0.15 rad small-medium curvature。full pitch (2π rad) レンジで
-  「16 要素/ピッチ厳守」規範を再確認。実装は γ-1/γ-3 改造で 1 セッション。
-- **既存 validation の 3 指標 gate 化**（status-388/389 で TODO 化）:
-  `xkep_cae/elements/tests/test_assembler_process.py` /
-  `xkep_cae/elements/fiber/tests/test_strand_beam_physics.py` /
-  `xkep_cae/numerical_tests/tests/test_beam_oscillation.py` /
-  `TestHelical90DegBendPhysics` を順次拡張。失敗ケースは過去判定信頼不可で再判定。
-  Phase ε と並行可能。
-- **Phase δ 接触あり 2 本撚線** (`48_delta_2strand_contact.py`):
-  ε-2 (3 strand contact) の前段として 2 strand 接触の sanity check。優先度はε-1 結果
-  次第（ε-1 PASS なら 3 strand 直接の ε-2 へ、ε-1 FAIL なら δ に retreat して局在化）。
-
-#### 撤回済 / scope 外（再開しないこと）
-
-- ~~候補 (z2) Cosserat 梁プロトタイプ~~: implicit 凍結方針下で plan B も scope 外。
-- ~~候補 (q3) implicit + AL n>2 復活~~: implicit 凍結で scope 外。
-- ~~候補 (h5) bending 段階処方（19 本 implicit）~~: implicit 凍結で scope 外。
-- ~~7 本 / 19 本 n_inc=8000 sweet spot 探索~~: status-388 で偽（梁 2.3x ストレッチの
-  非物理解）と確定。
+- ~~候補 (z2) Cosserat 梁プロトタイプ~~ — status-391 で absolute necessity 消失
+- ~~候補 (q3) implicit + AL n>2 復活 / (h5) bending 段階処方~~ — implicit 凍結で scope 外
+- ~~n_inc=8000 sweet spot 探索~~ — status-388 で偽（非物理解）と確定
 - **凍結中 TODO 再開**: 被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション /
-  7本撚線ピッチ依存性 / 空間ブロック分離（status-345 で凍結、MCDD 凍結解除条件
-  達成後に再開）。
-- **多 pair 診断 `14b_kc_multi_pair_diagnostic.py`** — status-370 §5 保留、優先度低。
-
-#### MCDD 凍結解除条件（implicit 凍結方針下で再解釈）
-
-CLAUDE.md「現在の状態」§凍結解除条件 (1)〜(5) は不変だが、達成手段は **explicit 専路線**:
-
-| # | 条件 | 達成 plan |
-|:-:|---|---|
-| 1 | Phase E 完了 | C18〜C24 + O1〜O3、status-369 までに大半完了 |
-| 2 | 19 本 frac=1.0 完走 | **ε-4 (status-400)** で `disable=True` + explicit-TL で試行 |
-| 3 | max\|u_trans\| < L_strand × C | ε-4 で同時確認（status-380 教訓） |
-| 4 | FD rel_err < 1e-2 | ✅ status-356 (mat-only K_hermite_adj + K_closest) |
-| 5 | 解の精度 < 10%（vs implicit or analytical） | ε-4 で同時確認、ε-1〜3 は接触なし / 小規模で参考値 |
-
-詳細は `docs/roadmap.md`、`docs/status/status-index.md`、
-`docs/status/verification_matrix.md` を参照。
+  7 本撚線ピッチ依存性 / 空間ブロック分離 / 19 本 Type D stall K_mat x/z 単発対応 —
+  status-345 で凍結、MCDD 凍結解除条件達成後に再開
 
 ## フォーカスガード（AI セッション向け）
 
@@ -193,118 +149,40 @@ CLAUDE.md「現在の状態」§凍結解除条件 (1)〜(5) は不変だが、�
 
 ## やるべきこと
 
-### ★最優先: MCDD（数理契約駆動開発）Phase A〜E（status-346〜359、status-354 で 1 status 後ろ倒し）
+### MCDD（数理契約駆動開発）の現状
 
-**計画（LOST）**: `/root/.claude/plans/deep-wiggling-seal.md` は **永久ロスト**
-（2026-04-19 時点、ファイルは復旧不可）。以降、計画書参照箇所は本 CLAUDE.md・
-`docs/roadmap.md`・`docs/status/status-{N}.md` に同等情報を転記して運用する。
-脱法実装禁止パターン 10 項は下記「MCDD 脱法実装禁止パターン」を参照。
-**設計仕様**: `xkep_cae/mathematics/docs/mathematics.md`
+**計画書**: `/root/.claude/plans/deep-wiggling-seal.md` は**永久ロスト**（status-352 で
+記録、復旧不可）。代替として本 CLAUDE.md の規範セクション + 最新 status + 数理台帳
+`xkep_cae/mathematics/docs/mathematics.md` で運用。
 
-status-346 で **MCDD Phase A-1 完了**（`MathematicalContract` 型 5 種新設、
-33 テスト追加）。status-347 で **MCDD Phase A-2 完了**（`ProcessContractRegistry`
-+ `@verified_by` デコレータ + dummy VerifyProcess AST 検査拒否、33 テスト追加）。
-status-348 で **Phase B-1 完了**（`docs/math/03_huber_contact_penalty.md` 19
-アンカー）。status-349 で **Phase B-2 完了**（残り 5 章 + `equation_index.py`
-+ C15 拡張、29 テスト追加）。status-350 で **Phase C-1 完了**
-（`KcNormal` / `KcGeo` Process 抽出 + `tangent_components()` orchestrator 化、
-`TermExpansionContract` 3 Process 紐付け、14 テスト追加）。status-351 で
-**Phase C-2 完了**（`KcHermiteNonlocalStiffnessProcess` + `KcClosestPointStiffnessProcess`
-新設、`TermExpansionContract` 5 項化、11 テスト追加で 14→25）。status-352 で
-**計画書ロスト記録 + Phase C-3 前提疑義提示**（中断スナップショット）。
-status-353 で **数理台帳訂正完了**（`K_mat,ndir` ≡ `K_geo` の同一性確立、
-当初 Phase C-3 計画を撤回、5 項で完結化、`docs/math/03_huber_contact_penalty.md`
-§3/§3.1/§4/§5/§8 訂正、`strategy.py` モジュールコメント / 関連 docstring 訂正、
-7本撚線回帰 frac=1.0000 完走、421 passed 5 skipped）。status-354 で
-**Phase C-3 再定義実験**（仮説 A `K_hermite_adj` フル項拡張 = `-w_geo * I_nn`
-隣接ノード項追加）を直接実験し、gate テスト `test_helical_3d_hermite` の
-rel_err が **1.795% → 38.49%** に 21 倍悪化して **反証**、mat-only（status-295）
-継続。数理台帳 §7/§3.1/§4/§8 に仲裁追記、`strategy.py` docstring に実測
-結果記録（実装変更なし）。Phase C-3 を **Phase C-3' 再々定義**
-（hypothesis B/C/D）へ再配分。status-355 で **Phase C-3' 診断完了**
-（active×adj ブロック局在化）、status-356 で **Phase C-3' 実装完了**
-（仮説 A + B 同時導入で FD 機械精度）。status-357 で **Phase E 着手 +
-19 本撚線実機規模検証**（Phase C-3' は active 集合固定下限定、19 本 Type D
-stall は active 振動支配領域で未解決、仮説 C に昇格。C5 違反解消 + C18/C19
-契約検査追加）:
+**完了済み**（詳細は status-index）:
 
-- ~~status-347（Phase A-2）~~: 完了
-- ~~status-348-349（Phase B）~~: 完了（6 章 / 55 アンカー + `equation_index.py` + C15 拡張）
-- ~~status-350（Phase C-1）~~: 完了（`KcNormal` / `KcGeo` + `ContactForceStStiffnessProcess` の 3 Process 抽出）
-- ~~status-351（Phase C-2）~~: 完了（`KcHermiteNonlocal` / `KcClosestPoint` 分離、5 項 TermExpansionContract）
-- ~~status-352（中断スナップショット）~~: 完了（計画書ロスト記録 + Phase C-3 前提疑義提示）
-- ~~status-353（数理台帳訂正）~~: 完了（`K_mat,ndir` ≡ `K_geo` 確立、当初 Phase C-3 撤回、5 項完結化、§3/§4/§5/§8 訂正、7本撚線回帰 frac=1.0 完走）
-- ~~status-354（Phase C-3 再定義実験）~~: 完了（仮説 A = `K_hermite_adj` + `-w_geo * I_nn` を単独で実験、rel_err 1.795%→38.49% 21倍悪化、当時は revert・mat-only 継続、数理台帳 §7 仲裁追記、Phase C-3' 再々定義）
-- ~~status-355（Phase C-3' 診断）~~: 完了（`work/beam_hysteresis/14_kc_closest_adj_diagnostic.py` 新設、rel_err 1.795% の 100% が active×adj ブロックに局在、仮説 B の定量目標 `||diff[ax]|| 98.52 → <1e-3` と実装パス ~45 行を確立）
-- ~~status-356（Phase C-3' 実装）~~: 完了（**仮説 A + 仮説 B 同時導入**で 2 経路 (i)(ii) の $P_\perp$ 成分を相殺、`test_helical_3d_hermite` rel_err **1.795% → 2.18e-07**、`||diff[ax]|| 98.52 → 4.75e-05` 達成。status-354 の「mat-only 最良」解釈は (ii) 未実装時のワークアラウンドと訂正、数理台帳 §7 を 2 経路解析 / 相殺定理 / 診断裏付けに再構成。`_batch_dm_ext_coeffs` ヘルパ抽出で MCDD 脱法 3 回避）
-- ~~status-357（Phase E 着手 + 19 本 FD 再計測）~~: 完了（**frac=0.3739 退化 / mat_only rel_err +15% 悪化**。Phase C-3' の FD 機械精度達成は active 集合固定下限定、19 本 Type D stall の active 振動支配領域は未解決と判定。副次: C5 違反を `_batch_dm_ext_coeffs` module 関数化で解消。**Phase E 着手**: C18（`@verified_by` 紐付け検査）+ C19（`TermExpansionContract.providers` 実在検査）を `validate_process_contracts.py` に追加、5 term-provider Process に `@verified_by("K_c_term_expansion", ContactKcComponentFDDiagnosticProcess)` 付与）
-- ~~status-358（Phase E C20 + 仮説 C 候補 (a) 7本撚線 90° 実測）~~: 完了（**仮説 C 候補 (a) 却下** — `smoothing_delta=500`（default 2000 の 1/4、δ_h 4x 拡大）を 7本撚線 90° 曲げで実測、frac=0.9241 で未完走、cutback -14%/elapsed -17% の見かけ改善は解析の早期打切りで対策効果ではない。ユーザー指示「10% 以上改善 + frac=1.0 完走」未達で revert、コード変更なし、`15_hypothesis_c_7strand.py` は失敗実験の記録として残置。**Phase E C20 追加**: `TermExpansionContract` 双方向紐付け検査（providers ↔ contracts 同名契約宣言）を `validate_process_contracts.py` に追加、C18/C19 の片側更新による脱法すり抜けを防御、5 既存 providers で回帰なし）
-- ~~status-359（仮説 C 候補 (a') 中間値再試行）~~: 完了（**仮説 C 候補 (a') 採択方向（実験記録）** — `smoothing_delta=1000`（default 2000 の 1/2、δ_h 2x 拡大）を 7本撚線 90° 曲げで実測、**frac=1.0000 完走 + n_increments=475（-9.4%）+ n_cutbacks=53（-7.0%、10% 未満）+ elapsed=259.92s（-42.5%、1.74x 高速化）**。ユーザー指示「frac=1.0 完走 + 10% 以上改善」に対し elapsed -42.5% で大幅クリア。判定: 採択方向。ただし `StrandBendingOscillationConfig.smoothing_delta` の default 変更（2000→1000）は本 status では実施せず（7 本撚線のみの検証で 19 本 Type D stall 本体への有効性未検証）、`15_hypothesis_c_7strand.py` を成功実験記録として残置、実装本体無変更。余談: 梁の塑性／粘性導入と収束の関係について Q&A あり、ファイバー梁 `Fiber1DState.eps_p` 等の状態保持と凍結中 TODO 整理を status-359 §引継ぎに記録）
-- ~~status-360（仮説 C (a') 19 本撚線検証 + Phase E C21/C22/C23）~~: 完了（**仮説 C 候補 (a') 却下** — `smoothing_delta=1000` を 19 本撚線（Type D stall 本体）で実測、`frac=0.3723`（baseline 0.4839 比 -23.1% 退化）。NR 内訳 D+E:72% で最終 10 反復支配、δ_h 2x 拡大は Type D stall 領域で逆効果。`StrandBendingOscillationConfig.smoothing_delta` の default 変更は**実施せず**、`16_hypothesis_c_aprime_19strand.py` を失敗実験記録として残置。次候補は **(c) line search 強化**（`_newton_dynamic.py` に backtracking hook 追加）。**Phase E C21/C22/C23 追加**: C21 `TermExpansionContract.term_names` 重複静的検出（`__post_init__` に runtime ガード + 静的検査）、C22 `contracts` ClassVar 同名契約重複検出（`register_contracts` の静的版）、C23 `@verified_by` 検証 Process が `SolverProcess` / `VerifyProcess` いずれかの継承必須（`bind_verifier` に runtime ガード + 静的検査）。`test_duplicate_term_names_rejected` + `test_bind_invalid_category_rejected` 2 テスト追加で mathematics/tests 97 passed、全 23 契約検査 OK）
-- ~~status-361（仮説 C 候補 (c) line search 強化）~~: status-362 で `ContactBacktrackingLineSearchProcess` 実装完了（7本 frac=1.0 回帰なし、19本 frac 0.4839→0.5153 +6.5% 改善）
-- ~~status-362（仮説 C (c) 実装 + 実機検証 + 3D 可視化基盤）~~: 完了（`_newton_steps.py` +112 行、4 層 9 field plumb-through、default OFF、6 テスト。7本 frac=1.0000 / +9.9% elapsed で回帰なし、19本 frac=0.5153（+6.5%）で stall 点前進も MCDD 凍結解除条件 frac=1.0 未達。`Strand3DContourProcess` 新設で 6 フィールド 3D レンダリング、BenchmarkRunner `post_processes` 自動起動統合）
-- ~~status-363（仮説 C (c) パラメータ感度掃引）~~: 完了（**4 ケース全却下、BT 既定が局所最適、候補 (c) クローズ** — `22_bt_parameter_sweep_19strand.py` 新設で 3 軸 4 ケース（A: rate_threshold=0.70 / B: active_flip_ratio=0.15 / C: mixed_only=False / D: A+B+C）を 19 本 90° 曲げ実測、全ケース frac<1.0（A=0.5153 BT default 同値 / B=0.4701 -8.8% / C=0.4817 -6.5% / D=0.5156 +0.06%）。BT 既定設定が実測最良点、default 変更なし。最終 NR Type 分布 `D+E:68%, E:26%` で line search は active 振動を根本抑制できないと確定。次候補は (e) 接触減衰 escape hatch 最有力）
-- ~~status-364（Phase E C24 + 候補 (e) 方針策定）~~: 完了（`HollowVerifyProcessError` + AST 2 シグナル必須化で hollow VerifyProcess を構造的封じ込め、全 24 契約検査に拡張、mathematics tests 109 passed）
-- ~~status-365（候補 (e) Phase 1: Process 単体実装 + 12 テスト）~~: 完了（`xkep_cae/contact/damping/` 新設、`ContactNormalDampingProcess` + 設計仕様 + `StrandBendingOscillationConfig` 2 field 追加、solver 未配線）
-- ~~status-366（候補 (e) Phase 2: NR ソルバー配線 + Monitor + 7 テスト）~~: 完了（`ContactFrictionProcess.damping_slot` 追加、NR 反復で `R_u += f_damp` / `K_T += K_damp`、`ContactFrictionInputData`/`StrandBendingOscillationConfig` plumb-through、`SolverResultData.damping_energy_history` 公開、`ContactDampingEnergyMonitorProcess` PostProcess 新設、default OFF で既存動作不変、contact 446 passed 5 skipped）
-- ~~status-367（候補 (e) validation — 符号訂正 + 7 本採択方向 + 19 本却下）~~: 完了（(1) 符号規約バグ訂正: `R_u += f_damp` → `R_u -= f_damp`（物理ドラッグ力と NR 残差規約の C·v 正寄与との不整合）、docstring に符号規約節追加、unit test 本体無変更。(2) 7 本 c_n=1000 で **frac=1.0 完走 + elapsed -56.8%（246→106s）** 劇的改善、採択方向。(3) 19 本 c_n=100/1000 で frac=0.43/0.47 と baseline 0.48 より悪化で却下、Type D stall の主因は K_c x/z カップリング不整合で局所減衰では解消できない。`contact_damping_coefficient=0.0` default 維持、7 本系 opt-in 高速化として運用、実装本体無変更）
-- ~~status-368（候補 (d) 接触凍結モード 19 本再評価）~~: 完了（`chattering_freeze_*` 3 パラメータ × 6 ケース感度掃引で **Case B `nr_max=30`（default 15 の 2x）のみ有意改善 frac=0.5642（+50.9%、status-339 baseline 0.4839 比 +16.6%）**、他 5 ケース効果軽微〜悪化。disabled は `D+E:98%` 200 反復ハマり（**freeze mode が D+E ロック回避の支柱**と確定）。MCDD 凍結解除条件（frac=1.0）未達で**候補 (d) クローズ**、default 変更なし（7 本向け最適化維持、19 本 opt-in escape hatch として運用）。`25_freeze_param_sweep_19strand.py` 新設）
-- ~~status-369（Case B 19 本 opt-in ガイドライン化 + 候補 (f) Phase C-3' 実験計画 策定、documentation status）~~: 完了（実装本体変更なしの documentation status、2 成果: (1) TODO 2 副次: `chattering_freeze_nr_max=30` を 19 本以上向けの opt-in escape hatch として `StrandBendingOscillationConfig` docstring + `docs/roadmap.md` 「撚線規模別 opt-in チューニング」表に明記（7 本既定/19 本推奨/実測効果/根拠 status 4 項目表）。(2) TODO 1 reconnaissance: `xkep_cae/mathematics/docs/phase_c3prime_19strand_plan.md` 新設（+107 行）で候補 (f) を Step 3.1 active 境界 FD 診断 / Step 3.2 新項 `KcActiveFlipStiffness` 追加設計に分割 scoping、MCDD 脱法パターン回避チェックリスト + gate 基準明記。`docs/design/README.md` に索引登録）
-- ~~status-370（Phase C-3' Step 3.1 完了 — active 境界 FD 診断で結果 B 確定）~~: 完了（`work/beam_hysteresis/14_kc_active_boundary_diagnostic.py` 新設 +280 行、3 Block 構成で 20 測定点、**全点 rel_err=2.18e-07〜2.20e-07 機械精度維持**（degradation 1.01x +0.00 桁）、eps=1e-4 の 2.19e-04 は FD truncation。**結果 B 確定**で新項 `KcActiveFlipStiffness` 追加は不要、19 本 Type D stall は NR alg 側動力学。plan doc §3.2 を候補 (g) 3 サブライン再配分: (g1) active 履歴平滑化 最優先 / (g3) pair-wise relaxation / (g2) AL 再導入）
-- ~~status-371（候補 (g1) active 履歴平滑化 実装）~~: 完了（`HuberContactForceProcess` に `active_ema_alpha: float = 0.0` field 追加 + `_p_n_prev_array` 保有 + `reset_ema_state()` メソッド + `evaluate()` ブレンドロジック。`NewtonDynamicProcess` インクリメント境界で reset 呼出。4 層 1 field plumb-through + 3 経路、`TestActiveEmaSmoothing` 10 テスト + `26_active_ema_alpha_sweep.py` 診断スクリプト 150 行。default α=0.0 で既存 446 contact テスト全 pass、`test_helical_3d_hermite` rel_err=2.18e-07 維持。実機 α 掃引は status-372 へ分離（Phase 1+2 構成）。22/N 完了）
-- ~~status-372（候補 (g1) α 掃引 実機検証）~~: 完了（α ∈ {0.0, 0.1, 0.3, 0.5} を 7 本 / 19 本撚線 90° 曲げで実測。**7 本**: α=0.30/0.50 で frac=1.0 維持 + cb -61〜-75%（57→14/22）、α=0.50 で elapsed -11%、α=0.10 のみ早期 stall（弱平滑化逆効果、status-262 smoothing_delta 非単調性類似）。**19 本**: gate「frac ≥ 0.6」全ケース未達で **却下方向**、α=0.50 frac=0.5133（baseline 0.3739 比 +37.3%）部分改善も elapsed +131% でコスト過大。default 変更なし、`active_ema_alpha=0.5` を 7 本系 cutback 削減 opt-in 表に追加。実装本体無変更、456 contact + 109 mathematics 全 pass。23/N 完了）
-- ~~status-373（TODO 整理 + 症状緩和系 experiment 5 本削除 + solver_mode 設計追記、documentation status）~~: 完了（実装本体無変更、`work/beam_hysteresis/{15,16,22,25,26}_*.py` を `git rm`、`次の課題`/`凍結中 TODO` を status-index 参照に圧縮、`phase_c3prime_19strand_plan.md` §4 に `solver_mode` 併存方針追記、`docs/roadmap.md` opt-in 表に `solver_mode` 行追加。実装計画書を `docs/plans/status-373-plan.md` にレポジトリ内常設化）
-- ~~status-374（候補 (g3) pair-wise relaxation Phase 1 — `PairwiseFreezingProcess` 単体実装）~~: 完了（`xkep_cae/contact/freeze/` サブパッケージ新設、`strategy.py` 261 行で `PairwiseFreezingProcess` + Input/Output + private ヘルパ純関数 2 本（C16 滅菌のため `_update_pair_active_flips` / `_is_type_d_dominant` を `__init__.py` 非 export）。判定: `skip_global := skip_when_type_d_dominant ∧ _is_type_d_dominant(chattering_type)`、`freeze[k] := (flip_counts[k] ≥ threshold) ∧ is_active_now[k] ∧ ¬skip_global`。`docs/pairwise_freezing.md` 159 行 + 12 単体テスト（`@binds_to` 付与は API クラスに 1 回のみ、Logic/Helpers は独立クラス）。NR 配線は Phase 2 / status-375 へ分離（status-365 ContactNormalDamping と同 Phase 1/2 分割）。実装本体（`_newton_dynamic.py` / `StrandBendingOscillationConfig` / `ContactFrictionProcess`）は無変更。gate: 全 24 検査 OK / contact 468 passed 5 skipped (+12) / mathematics 109 passed / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。25/N 完了）
-- ~~status-375（候補 (g3) Phase 2 NR 配線 + 19 本実機検証で却下）~~: 完了（`PairwiseFreezingProcess` を NR ループに配線、`_newton_dynamic.py` +88 行で is_active_now 構築 → flip_counts 更新 → DOF block 上書き、`process.py` `freeze_slot` 追加、`core/data.py` + `StrandBendingOscillationConfig` 各 3 field（default OFF）、3 経路 plumb-through。Default OFF 回帰: 7 本撚線 frac=1.0 + contact 468 passed 5 skipped。**19 本撚線**: `flip_threshold ∈ {2,3,5}` 全 3 ケース Gate `frac ≥ 0.6` 未達で **候補 (g3) 却下**（t=2 -47.2% / t=3 -6.9% / t=5 -47.5%）。pair-wise freeze 発動で NR Type `A+B+D.div:71%` 集中 + DOF block 上書きの隣接 pair 正フィードバックが原因。19 本 Type D stall は K_c x/z カップリング不整合が主因で active 集合振動の per-pair 凍結では解消できないと確定。`pairwise_freeze_*` 3 field は default OFF のまま 19 本以上向け opt-in escape hatch として保持。26/N 完了）
-- ~~status-376（候補 (g2) AL 外側ループ限定再導入 + 19 本実機検証で却下）~~: 完了（`HuberContactForceProcess.set_al_lambda_offset/get_last_p_n_eff` API 追加で `p_n_eff = max(0, p_n_huber + λ)` を evaluate() 内包、K_geo 自動整合（modified Newton 不要、§9.2）、NewtonDynamicProcess の NR while を AL 外側 for ループで包み Uzawa 更新 `λ_new = max(0, p_n_eff_converged)`。法線のみ AL（摩擦は status-147 回避）。実装: strategy.py +43 / _newton_dynamic.py +37（既存ループ字下げ）/ 4 経路 2 field plumb / 11 単体テスト / 数理台帳 §9 追記 +96 行。Default OFF 回帰: 588 passed 5 skipped / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7本 frac=1.0 / ruff + 24 契約検査 OK。**19 本検証**: n=2 で **frac=0.5746（+53.7%、(g) 全候補で最良）** だが Gate 0.6 を 0.026 不足で FAIL、n=3 で過修正発散（frac=0.1973、-47.2%）。**判定: 候補 (g2) 却下、候補 (g) 3 サブライン全終了**（(g1)+37.3% / (g3)-6.9% / (g2)+53.7%）。NR alg 側 escape hatch 限界到達、19 本 Type D stall は K_c x/z カップリング不整合（status-344）が主因。次候補は explicit 時間積分。`al_outer_enabled=False` default 維持、`al_outer_enabled=True, al_n_uzawa_max=2` を opt-in escape hatch として運用。27/N 完了）
-- ~~status-377（陽的中央差分時間積分 Phase 1 — Process 単体実装 + `solver_mode` config + 設計仕様）~~: 完了（`xkep_cae/time_integration/strategy.py` に `ExplicitCentralDifferenceProcess` 新設 +216 行で集中質量ロンピング `row_sum`/`diagonal`/`none` + 中央差分 `step()` API + Courant 臨界 dt + Verlet 予測子 + チェックポイント / Protocol 適合 4 メソッド。`_create_time_integration_strategy()` に `solver_mode="explicit"` 分岐、`StrandBendingOscillationConfig.solver_mode: Literal["implicit","explicit"]` (default `"implicit"`)、`solver_mode="explicit"` 実行時は `NotImplementedError` で Phase 2 待機を明示。設計仕様 `xkep_cae/time_integration/docs/time_integration_explicit.md` 新設 +126 行。**Phase 1 制約**: Process 単体実装 + 28 単体テスト + 設計仕様のみ、solver path 配線は Phase 2 で実施。Default OFF 回帰: contracts 全 24 OK / contact 468 + math 109 + time_integration 61 + strand_bending_oscillation 21 = **649 passed 5 skipped** / `test_helical_3d_hermite` rel_err=2.18e-07 / 7本 frac=1.0 / ruff pass。新規 28 ユニット内訳: SDoF 自由振動 1 周期戻り < 5%、5 周期エネルギー有界 < 10%、Courant 越え発散 100x、ロンピング数値、固定 DOF、減衰 C·v、対角質量 K_eff、`solver_mode` config 3 件。28/N 完了）
-- ~~status-378（陽解法 Phase 2 solver path 配線 + 7 本 smoke test）~~: 完了（`_explicit_dynamic.py` 新設 +251 行で `ExplicitDynamicProcess` + `_estimate_critical_dt`（sparse Gerschgorin 上界）。`ContactFrictionProcess` を `solver_mode` で分岐、explicit モードでは `predict()` / `correct()` / `_u_pred` MPC 射影をスキップ。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 4 field 追加（3 経路 plumb）、`NotImplementedError` ガード削除。設計仕様 `contact/solver/docs/explicit_dynamic.md` 新設、新規 10 ユニット。**7 本 90° smoke**: `dt_sub=0.333` vs `dt_c=1.055e-06` で Courant 比 3×10⁵、3 回 cutback でも frac=0.0052。Wiring 正常動作、19 本 frac=1.0 完走には mass scaling / dt subcycling が必須と確定。Default `solver_mode="implicit"` で既存挙動完全不変、680 passed 5 skipped / 7 本 frac=1.0（implicit）/ ruff pass。29/N 完了）
-- ~~status-379（陽解法 Phase 3 候補 (h1) mass scaling auto-tune — 19 本 frac=1.0 完走、〜status-380 で判定撤回〜）~~: 完了（`ExplicitCentralDifferenceProcess` に `mass_scaling_beta` 引数 + `set_mass_scaling_beta()` API（β² · M_lump で集中質量倍化、Δt_c → β·Δt_c）。`ExplicitDynamicProcess` の Courant 監視に β auto-tune 統合: 違反検知 → 必要 β 逆算 → `set_mass_scaling_beta()` 上方更新、cap 到達は `failure_reason="courant_cap"` で adaptive dt cutback と組合せ。`ExplicitDynamicInput` 3 field + `ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 4 field 追加 + 3 経路 plumb-through、11 単体テスト。19 本 90° 曲げ（max β=10³）で frac=1.0000 完走 / 269 incr / 31 cb / 131s / E_kin/E_strain=1.15%、Gate 両条件（frac/E_ratio）PASS と判定したが、**status-380 で max\|u\|=1.59×10⁸mm の数値発散が発覚し撤回**。Default `solver_mode="implicit"` で既存挙動完全不変、回帰 691 passed 5 skipped。30/N 完了）
-- ~~status-380（物理的妥当性検証 — 7本/19本ともに explicit 解は数値発散、status-379 凍結解除判定を撤回）~~: 完了（max\|u\|=1.59×10⁸mm 発散を検出、CLAUDE.md 凍結解除条件に `max\|u_trans\| < L_strand × C` 追加。31/N 完了）
-- ~~status-381（mass scaling 実装 bug 修正 — 発散停止、ただし explicit 解は解析解の 50% で精度 gate 未達、凍結解除判定再撤回）~~: 完了（3 仮説切り分けで **h-bug-1（v/a リスケール欠落）+ h-bug-3（β 急成長）** を確定。修正: (1) `set_mass_scaling_beta()` で KE 保存 v/a リスケール、(2) `mass_scaling_max_growth_per_update=4.0` cap、(3) 増分 1 warm-start。実機: 7 本 explicit 1.58e8→40.1mm、19 本 1.59e8→41.2mm で発散停止。**ユーザー指摘で精査**: 90° 曲げ単梁解析解 73.3mm に対し implicit 70mm（96%）/ explicit 40mm（48%）で **explicit 系統的 50% アンダー**。動的緩和未収束 + KE 保存リスケール累積過減衰が原因と推定。**MCDD 凍結解除条件達成判定再撤回**、追加 gate (5)「解の精度 < 10%」未達。回帰 697 passed 5 skipped（+6）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。32/N 完了）
-- ~~status-382（候補 (p3) damping + (p1) relax API 実装 — UL update_reference 凍結が真の根本原因と判明、精度 gate 未達のまま）~~: 完了（status-381 §7「explicit 解を implicit / 解析解と一致させる」最優先 TODO に対し仮説 (p3) 質量比例 Rayleigh damping `ExplicitCentralDifferenceProcess.mass_proportional_damping_alpha`（`a -= α·v`、Courant/β 独立）+ (p1) BC 完了後 relax phase（`ContactFrictionProcess` 末尾に追加、BC frac=1.0 保持で `explicit_relax_steps` 回 step）の 2 API を実装。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 3 field + 3 経路 plumb、+7 単体テスト。**`35_explicit_accuracy_validation.py` 6 ケース全 FAIL** — `exp_no_damp_relax500` が baseline 35.37 と本質的に同値 35.41mm、`[RELAX] converged at step 1 ||R||=0` ログで relax 即終了。**真の根本原因**: UL `update_reference` が各増分の dynamic lag を reference に凍結 → `_ul_internal_force_wrapper(state.u)` で u_incr ≈ 0 → f_int(0) = 0 → relax で平衡へ駆動できない。MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま。次候補は (q1) explicit 中の UL update 周期化（最有力、`explicit_ul_update_interval`）/ (q2) 増分内 sub-cycling / (q3) implicit + AL n>2 復活。回帰 704 passed 5 skipped（+7）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持。33/N 完了）
-- ~~status-383（候補 (q1) `explicit_ul_update_interval` 実装 — 4 ケース掃引で却下、UL 凍結が真因と再確証、精度 gate 未達のまま）~~: 完了（status-382 §6.1 最有力候補として `solver_mode="explicit"` のとき UL `update_reference()` を **N 増分ごと** に呼出する gate を導入。`ContactFrictionInputData.explicit_ul_update_interval: int = 1` field 追加（default 1 で既存挙動完全不変）、`StrandBendingOscillationConfig` に同 field + 3 経路 plumb-through、process.py 主ループ内 update_reference 呼出箇所に `(_next_incr % interval == 0)` ゲート追加。**+5 単体テスト**（`TestExplicitULUpdateInterval`、`_MockULAssembler` で update_reference 呼出回数を直接計測）。**`36_explicit_ul_interval_validation.py` 5 ケース掃引で全 FAIL** — interval=1 baseline 29.57mm（status-382 と一致、default 完全保持）/ interval=5 で relax phase 発散 (NaN) / interval=10 max\|u\|=6.21e6 mm / interval=20 max\|u\|=5.16e21 mm。**根本要因**: CR 梁 UL 定式化は「u_incr 微小」前提で線形化、N 増分蓄積は K_T(u_incr) を線形化レンジ外へ押し出し explicit dynamics が爆発的発散。status-382 §3 解析と整合：(a) update 毎呼出 → f_int(u_incr)≈0、(b) update 間引き → K_T(u_incr) 線形化崩壊、両方破綻。**MCDD 凍結解除条件 (5)「精度 < 10%」未達のまま**。次候補は (q2) 増分内 sub-cycling（最有力、UL 動作は通常通り保持）/ (q3) implicit + AL n>2 復活 / (h5) bending 段階処方。回帰 709 passed 5 skipped（+5）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / 7 本 implicit frac=1.0 / ruff pass。34/N 完了）
-- ~~status-384（候補 (z1a) 要素ごと波速 Δt + (z1b) selective mass scaling — Abaqus/Explicit 標準アプローチへの移行 Phase 1 完了、validation で 2 段階スケーリング要件を発見）~~: 完了（ユーザーから「応力波の速度と要素サイズから dt」+「Cosserat 梁の大回転ネイティブ特性」指摘を受け、status-383 までの "explicit + UL は原理的に不整合" を踏まえて方針転換。**(z1a)** `_estimate_critical_dt_per_element(connectivity, node_coords, beam_E, beam_rho)` 新設で `dt_e = L_e / √(E/ρ)` を要素ごとに計算し Gerschgorin 全体上界と min を取る。**(z1b)** `_detect_stiff_dofs()` で Gerschgorin row-sum / M が median × `threshold_ratio` を超える DOF を自動検出、`ExplicitCentralDifferenceProcess.set_mass_scaling_dof_mask()` で β² 倍化を限定。`_compute_scaled_mass(beta)` ヘルパ + `set_mass_scaling_beta()` の v/a rescale を mask 対応。**+17 単体テスト**（per-element dt 6 + stiff detect 5 + selective scaling 6）全 pass。**実機検証**: 単梁 90° で K がほぼ一様 → stiff DOF 検出ゼロ → 実質 β=1 → frac=0 発散（実装 bug ではなく selective が heterogeneous K を要求する性質）。7 本撚線で stiff DOF 112/714 検出 (15.7%) も、残り 84% の beam DOF が β=1 のまま dt 1.6μs 制約を支配し target β=8.8×10⁶（cap 1000 を超過）で frac<<1.0。**真の解**: 2 段階スケーリング（β_stiff=1000, β_beam=10）+ loading rate 縮小の組合せ。次候補は (z1c) per-DOF β 配列 API + (z1d) `t_cycle` 下限緩和 + (z2) Cosserat 梁プロトタイプ並行検討。回帰 726 passed 5 skipped（+17）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。35/N 完了）
-- ~~status-385（候補 (z1c) 2 段階質量スケーリング API（β_stiff + β_outside）実装 — API 完成、validation で β_stiff cap が支配的と確認、(z1d) loading rate 縮小が必須と判明）~~: 完了（status-384 §6.1 最有力候補 (z1c) として `ExplicitCentralDifferenceProcess` に `mass_scaling_beta_outside` 引数 + `set_mass_scaling_beta_outside()` API（KE 保存 v/a リスケール対応、mask=False の DOF のみ rescale）を追加。`_compute_scaled_mass()` で mask=False の DOF（梁）に β_outside² を、mask=True の DOF（stiff）に β² を適用。`_explicit_dynamic.py` の dt_c_beam 推定で mask 設定時は `β_outside` を乗じる（mask=None 時は従来通り `β`）。`ContactFrictionInputData` / `StrandBendingOscillationConfig` 各 1 field + 3 経路 plumb-through。**+11 単体テスト**（`TestTwoStageMassScaling`）全 pass。**`38_z1c_two_stage_validation.py` 8 ケース実機検証**: API は設計通り動作（log で post-cutback target β が β_outside=10 で 8.8e6 → 8.8e5 に **10x 縮小**）も、initial target β=4.7e4（β_stiff cap=1e3〜1e4 を超過）が支配的で全 explicit ケース frac=0 で divergence。aggressive scaling（β_outside=10, β_stiff_max=1e6, α=10）で frac=0.425 進むも max\|u\|=1.6e5mm で精度 gate 完全違反。**結論**: (z1c) infrastructure は完成、しかし MCDD 凍結解除条件 (5) 達成には **(z1d) `t_cycle` 下限緩和** で loading rate を物理 T1 ベースに縮小し target β 自体を下げる必要がある。次候補は (z1d) 最優先 / (z2) Cosserat 梁プロトタイプ並行検討。回帰 737 passed 5 skipped（+11）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。36/N 完了）
-- ~~status-386（候補 (z1d) `t_cycle` 下限緩和実装 — z1d は方向自体が逆と単梁実機で実証、explicit + UL 精度 gate 未達続行）~~: 完了（status-385 §6.1 最有力候補 (z1d) として `StrandBendingOscillationConfig.t_cycle_min_seconds: float = 1.0` field を追加、`t_cycle = max(10·T1, cfg.t_cycle_min_seconds)` で下限を外部制御可能化（default 1.0 で既存挙動完全保持）。**+6 単体テスト**（`TestTCycleMinSeconds`）全 pass。**`39_z1d_t_cycle_validation.py` 11 ケース単梁中心実機検証**: (a) z1d 自体は設計通り動作（initial target β 4.7e+04 → 3.1e+03 の **15x 縮小** ログ確認）/ (b) **implicit 側 regression なし**（t_cycle_min=0.0 で frac=1.0 完走、err 4.86%、baseline 3.90% との差 1pt 未満）/ (c) **explicit 側で逆効果**（selective+z1d 全 DIVERGED、non-selective uniform β² 完走するも max\|u\|=0.77mm vs 解析解 73.30mm で **err 99%**、大 β_outside=2000 でも 1.83mm/97.5%）/ (d) **逆方向対照実験 (#11) `n_inc=200, t_cycle 据え置き`** で max\|u\|=6.57mm（z1d 方向の **10x 改善**）— **z1d は方向自体が逆と定量実証**。**真の物理原因**: mass scaling β は波速を `c→c/β` に減速、β=3000 で波の梁長 100mm 横断時間 78ms が t_cycle=67ms（z1d 適用後）を超過し変形が伝播しないまま frac=1.0 到達。`t_cycle_min_seconds` field は default 1.0 で保持（implicit 完全保持、explicit opt-in）。**MCDD 凍結解除条件 (5) 未達続行**、(z1*) 全候補で精度 gate 達成不能と確定、次候補は **(z2) Cosserat 梁プロトタイプ最優先**。回帰 743 passed 5 skipped（+6）/ 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。37/N 完了）
-- ~~status-387〜389（status-387 sweet spot 偽陽性訂正経由 → 透明性ルール策定 → 系統的再検証 Phase 計画策定）~~: 完了（詳細は status-index.md / 各 status ファイル参照、CLAUDE.md 「現在の状態」§前 status エントリ参照。38〜40/N 完了）
-- ~~status-390（Phase α 完了 — CR Timoshenko 1 要素 implicit static 全 4 ケース PASS、foundation 健全確定）~~: 完了（status-389 §2 計画に従い `work/beam_element_validation/` 新設（共通ヘルパ + 4 検証スクリプト ~860 行）、3 指標 AND gate（status-388 透明性ルール）で 1 要素 implicit static 検証、**全 4 ケース PASS（機械精度 0.000〜0.001%）**: α-1 純軸引張 / α-2 純粋曲げ small κ / α-3 純粋曲げ large κ / α-4 cantilever 横荷重。**重要発見（α-3）**: 1 要素 CR は chord 長保存制約で chord rotation α=θ_R/2 の Hermite 解（u_x=L(cosα-1), u_z=L sinα）を出す → circular arc 解との 25% 差は 1 要素本質的離散化誤差で Phase γ で解消。実装本体無変更、回帰 743 passed 5 skipped。41/N 完了）
-- ~~status-391（Phase β 完了 — 1 要素 cantilever explicit central diff + lumped mass で β-1 自由振動 + β-2 explicit quasi-static 両 PASS、CR foundation explicit 健全確定）~~: 完了（status-390 Phase α 完了を踏まえ Phase β に移行、`work/beam_element_validation/` に共通ヘルパ `_beta_common.py`（`solve_explicit_central_diff` leap-frog Verlet + `compute_natural_frequencies_fe` + `compute_strain_energy_cr`、Rayleigh 質量比例減衰対応、~370 行）+ 検証スクリプト 2 本（45_β1 / 46_β2）を新設。**β-1 自由振動**（v_z(tip)=1 mm/s、5 周期、α=0、lumped）: T_period(FE 第 1 モード) **0.056%** / |u_z_max|(v_0/ω_1) **4.85%** / E_drift **0.016%** で 3 指標全 PASS、L_chord drift 7e-13 mm。連続体 Bernoulli ω_1 との 48% 差は 1 要素 lumped FE 離散化の本質（Phase γ で解消）。**β-2 explicit quasi-static**（α-3 と同 BC θ_y=0.15 rad、slow ramp 5T_1 + hold 5T_1、ζ=2 過減衰）: |u_x_tip| / |u_z_tip| / L_chord すべて **機械精度 0.000%** で α-3 implicit Hermite 解と完全一致、settle 残差 ||f_int_a||=2.13e-14 N。**重要含意**: status-381〜387 explicit + UL の精度問題は **CR 要素自体ではなく上位層**（assembler / UL formulation / mass scaling 戦略）に局在 — 1 要素直接駆動では explicit + 大回転で機械精度一致が成立。**(z2) Cosserat 路線は absolute necessity ではない**、主目的は explicit + 大回転 robust 化に絞れる。実装本体無変更、回帰 743 passed 5 skipped / 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass。42/N 完了）
-- ~~status-392（Phase γ 完了 — multi-element CR Timoshenko 梁の circular arc 収束を O(1/n²) で実証、4/5 PASS、log-log slope=-2.000）~~: 完了（status-391 §6.1 Phase γ 計画に従い、CR Timoshenko 3D 梁要素を **直線チェーン**で n_elements ∈ {1, 2, 4, 8, 16} に並べた系を α-3 と同じ BC（左端 fix、右端 θ_y=0.15 rad 処方）で **implicit static** に解き、circular arc 解への収束を 3 指標 AND gate で確認。`work/beam_element_validation/_gamma_common.py`（`ChainedBeamSection` + `assemble_internal_force/tangent` + `solve_static_nr_chain`、~280 行）+ `47_gamma_multi_element_convergence.py`（~270 行）新設。**4/5 ケース PASS**: n=1 のみ FAIL（u_x で 24.95% — α-3 既知 chord 長保存制約）、n=2,4,8,16 で 3 指標すべて PASS。**err(\|u_x\|): 24.95%(n=1) → 6.23%(n=2) → 1.56%(n=4) → 0.39%(n=8) → 0.10%(n=16)** で **log-log slope=-2.000**（理論値 O(1/n²) と完全一致）。**CR closed form 一致**（chord rotation φ_e=θ(e-1/2)/n の sum-to-product 解）は全 5 ケースで \|u_x\|/\|u_z\|/L_chord すべて **機械精度（10⁻¹³%〜10⁻¹²%）**。polyline 長 = Σ L_elem も全ケース機械精度で 10.000 mm を保存（各要素 chord 長保存）。**結論**: CR foundation の multi-element アセンブル健全性確定、「16 要素/ピッチ厳守」規範は典型 curvature レンジで十分なマージン。Phase α (1 要素 implicit static) → β (1 要素 explicit dynamic) → γ (multi-element implicit static) で **CR foundation の static / dynamic / multi-element 全領域での健全性が定量実証**。実装本体無変更、回帰 743 passed 5 skipped / 全 24 契約検査 OK / `test_helical_3d_hermite` rel_err=2.18e-07 維持 / ruff pass（10 files already formatted）。43/N 完了）
-- ~~status-393（達成確認マトリクス導入 — STA2 連鎖撤回の構造的予防、documentation status）~~: 完了（ユーザー指示「STA2 を警戒するなら達成確認条件をマトリクスとかにまとめて整理すべき」を受け、`docs/status/verification_matrix.md` を**永続ドキュメント**として新設（8 セクション初版）。status-379 / 381 / 387 の連鎖撤回事例を踏まえ、**達成 ✅ / 部分 🟡 / 未達 ❌ / 未検証 ⬜ / 凍結 ⏸ / 撤回 🔁** の独立な状態凡例で「実証されていない」と「未検証」を明確分離、status-379 系の偽陽性を記号レベルで構造的予防。**§5 STA2 撤回履歴**は削除禁止（透明性ルール）で「失敗の再演を防ぐ予防接種」として機能。CLAUDE.md「作業完了時の必須手順」§5「マトリクス該当行を更新」+「セッション開始時の必須確認」§3「マトリクス読込」追加で運用化。**現時点サマリ**: 凍結解除条件 ✅ 1 / 🟡 1 / ❌ 3 / Phase α 4 件 ✅ / Phase β 2 件 ✅ / Phase γ-1 6 件 ✅ + 1 件 ❌（n=1 既知）+ 2 件 ⬜（γ-2/γ-3）/ Phase δ ⬜ / 上位層改修対象 9 項目（⬜ 2 + ⏸ 1 + 🔁 6）/ 既存 validation gate 化 5 項目全 ⬜ / 凍結中 TODO 6 項目全 ⏸。実装本体（`xkep_cae/`）**無変更**、回帰 743 passed 5 skipped / 全 24 契約検査 OK / ruff pass。**次セッション最優先候補（変更なし）**: assembler / UL update_reference の 1 要素再現実験。44/N 完了）
+- **Phase A** (status-346/347): `MathematicalContract` 5 種 + `@verified_by` +
+  AST 検査による dummy/hollow VerifyProcess の構造的封じ込め
+- **Phase B** (status-348/349): 数理台帳 6 章 / 55 アンカー + `equation_index.py` + C15 拡張
+- **Phase C** (status-350-356): `KcNormal` / `KcGeo` / `KcHermiteNonlocal` /
+  `KcClosestPoint` 抽出、5 項 `TermExpansionContract`、Phase C-3' 仮説 A+B 同時導入で
+  `test_helical_3d_hermite` rel_err **1.795% → 2.18e-07** 達成
+- **Phase E** (status-357-364): C18〜C24 契約検査 = 全 24 項目稼働
+- **NR escape hatch 全候補 (a)〜(g)** (status-358-376): 19 本 Type D stall を NR 側で
+  解消する試行は全て却下、K_c x/z カップリング不整合が主因と確定 → explicit 路線へ移行
+- **explicit 時間積分** (status-377-399): `ExplicitCentralDifferenceProcess` 実装、
+  mass scaling auto-tune、selective scaling、2 段階 scaling、Phase α/β/γ で CR foundation
+  健全性確定、status-399 で sub-cycling 実装 → ε-1 で N=2000 で MCDD 凍結解除条件 (5) PASS
 
-**凍結中の TODO**（MCDD 完了まで再開禁止）: 詳細項目（被膜圧縮モデル / リスタート方式 / ファイバー梁キャリブレーション / 7本撚線ピッチ依存性 / 空間ブロック分離 / 19本 Type D stall K_mat x/z 単発対応）は status-345 までで列挙、status-373 で本ブロックから削除。
+**次セッション最優先**: ε-2 = 3 strand + 接触あり + N_sub=2000（status-400）。
+3 指標 AND gate + frac=1.0 完走、初の接触統合検証。
 
-**凍結解除条件**（status-381 で **解の精度 gate を追加**）:
+### セッション開始時の必須確認
 
-1. Phase E 完了
-2. 19 本 frac=1.0 完走（`load_history[-1] = 1.0`）
-3. **解の物理的妥当性 gate**: `max |u_trans| < L_strand × C`（C=10、撚線長 100mm に
-   対し最大変位 1m 以内）。status-380 で発覚した「frac=1.0 + E_kin/E_strain<5% は
-   両方とも数学的構造由来で発散時にも PASS する」盲点を塞ぐ。
-4. `KcNormalDirectionStiffness` FD rel_err < 1e-2
-5. **解の精度 gate（status-381 追加）**: `|u_explicit − u_implicit|/|u_implicit| < 0.1`
-   または `|u_explicit − u_analytical|/|u_analytical| < 0.1`。
-   status-381 で発覚した「形式 gate (1)〜(4) は under-relaxation 解でも PASS する」
-   盲点を塞ぐ。90° 曲げ単梁の解析解 73.3mm に対し implicit 70mm / explicit 40mm
-   と systematicalに 50% アンダーであった。
-
-status-379 の達成判定は条件 3 欠落、status-381 の判定は条件 5 欠落で誤判定。
-
-### セッション開始時の必須確認（MCDD 規範）
-
-次セッションを Claude Code / Codex で開始する際は、以下を**順に**実行:
-
-1. ~~`/root/.claude/plans/deep-wiggling-seal.md` を**全文読む**（要約禁止）~~
-   → **計画書は永久ロスト**（status-352 で記録）。代替として本 CLAUDE.md の
-   「やるべきこと」「MCDD 脱法実装禁止パターン」および最新 status を参照
-2. 最新 `docs/status/status-{N}.md` を読み、前セッションの停止点を確認
-3. **`docs/status/verification_matrix.md` を読む**（status-393 で運用化）。達成・
-   未達成・未検証を整理した永続マトリクス。「自分の作業がどの行を更新するか」を
-   先に把握することで、達成主張の独立性 / 3 指標 AND gate 必須を運用面で担保する
-4. 本ファイル「MCDD 脱法実装禁止パターン 10 項」を読み返し、本セッションで
+1. **`docs/status/status-index.md` で最新 status 番号 + 直近数件の見出しを確認**
+2. **最新 `docs/status/status-{N}.md` を読む** — 前セッションの停止点・引継ぎ
+3. **`docs/status/verification_matrix.md` を読む**（status-393 で運用化） —
+   達成 ✅ / 部分 🟡 / 未達 ❌ / 未検証 ⬜ / 凍結 ⏸ / 撤回 🔁 の状態凡例で
+   STA2 連鎖撤回を構造的予防。「自分の作業がどの行を更新するか」を先に把握
+4. **本ファイル「MCDD 脱法実装禁止パターン 10 項」を読み返し**、本セッションで
    陥りそうな項目を自己チェック
-5. その上で着手
+5. **`python contracts/validate_process_contracts.py` で全 24 検査 OK 確認**
 
 ## やってはいけないこと
 - 管理上processクラスとすべきロジックをあえてプライベート関数や迂回ロジックに替えること
@@ -376,8 +254,3 @@ SE は実装の `0.5 u^T f_int` が MPC 拘束 DOF 消去で信頼できない�
 - **再現手順の status 記載**: status ファイルに「再現手順」セクションを設け、別の担当者が同じ結果を得られるコマンド列を明記する。
 - **Process profiling の活用**: `ProcessMetaclass._profile_data` による自動計測結果を活用し、手動計測に頼らない仕組みを推進する。
 
-### セッション開始時の確認手順
-1. `docs/status/status-index.md` → 最新 status 番号を確認
-2. 最新 `docs/status/status-{N}.md` を読む
-3. `python contracts/validate_process_contracts.py` を実行し、エラー一覧を確認
-4. 上の「やるべきこと」に合致する作業のみ実施
