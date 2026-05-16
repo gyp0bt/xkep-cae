@@ -105,10 +105,6 @@ print(f"ParaView で {out.pvd_path} を開いてください")
 
 ## 引継ぎ
 
-- 接触力ノルム履歴（scalar per increment）は VtkExport には乗せず、既存
-  `ExportProcess` の CSV 経路で運用継続。per-pair 接触力場として
-  PointData に乗せたい場合は将来拡張（`contact_pair_history` から
-  per-node 集計が必要）。
 - バイナリ + Base64 encoded `<DataArray>` 形式は実装していない。
   ASCII format で 19 本撚線（〜数千ノード）規模なら十分実用範囲。1000 本撚線
   規模になったらバイナリ化を検討（status-400 では scope 外）。
@@ -116,3 +112,56 @@ print(f"ParaView で {out.pvd_path} を開いてください")
   は実装していない。必要が出たら frozen dataclass に
   `extra_point_fields: tuple[tuple[str, np.ndarray, int], ...] = ()`
   のような形で追加可能。
+
+## 事後追加 (応力・モーメント・パイプメッシュ)
+
+ユーザー指示「応力、曲率ベクトル、接触力も見たい + paraview の Tube filter
+依存なしで擬似ソリッド表示が欲しい」を受け、Phase 2 として以下を追加:
+
+### CellData フィールド (全 default ON)
+
+| Name | components | 式 |
+|------|---|---|
+| `axial_stress` | 1 | `E · ε_axial` (MPa) |
+| `curvature_vector` | 3 | `(θ_j − θ_i) / L = (κ_x, κ_y, κ_z)` |
+| `moment_vector` | 3 | `(G·J·κ_x, E·I·κ_y, E·I·κ_z)` (N·mm) |
+| `max_bending_stress` | 1 | `√(M_y² + M_z²) · r / I` (MPa) |
+| `torsion_shear_stress` | 1 | `\|M_x\| · r / J` (MPa) |
+| `von_mises_stress` | 1 | `√((σ_axial + σ_b_max)² + 3 τ²)` (MPa) — 最危険繊維 |
+| `contact_force` | 1 | `contact_pair_history` の \|p_n\| を要素別集計 |
+
+円形断面前提: `I = π r⁴ / 4`, `J = π r⁴ / 2`, `G = E / (2(1+ν))`、
+`r` は `mesh.radii` (もしくは `tube_radius_override`)。
+
+### 擬似ソリッド「パイプメッシュ」
+
+`tube_n_segments ≥ 3` で `<prefix>_pipe.pvd` + `_pipe_NNNNN.vtu` を並行
+出力。各 line 要素を `n_segments` 角形断面 (VTK_QUAD ring) に展開し、
+半径は `mesh.radii` を反映。ParaView の Tube filter に依存せず断面太さ
+込みの 3D ソリッド表示が即座に取れる。PointData / CellData は元 mesh の値を
+複製して replicated。
+
+### 単体テスト追加 (合計 19 件、+11 件追加)
+
+- `test_axial_stress_equals_E_times_strain`: σ = E·ε 検証
+- `test_curvature_vector_from_rotation_difference`: κ = (θ_j − θ_i)/L
+- `test_moment_vector_and_bending_torsion_stress`: M = E·I·κ / G·J·κ_x、
+  σ_b = M·r/I、τ = M_x·r/J、σ_vM = √(σ_b² + 3τ²)
+- `test_contact_force_aggregated_from_pair_history`: ペア両端要素に
+  `|p_n|` 加算
+- `TestVtkExportPipeMesh`: 4 件 (n_segments 設定で書き出し / default 無効 /
+  VTK_QUAD type=9 / `tube_radius_override` が半径として効く)
+
+### 実機検証 (3 本撚線 90° 曲げ)
+
+`work/visualization/01_strand_bending_vtk_demo.py --n-strands 3` を再走、
+全 9 種フィールド (PointData 2 + CellData 7) + パイプメッシュ (n=8 角形、
+n_cells=384) の `.vtu` 群 + `.pvd` を出力 (17.6s、frac=1.0、274 timestep)。
+ParaView で `strand_3_pipe.pvd` を開いて応力 / モーメント / 接触力の
+時系列可視化を確認。
+
+### 環境整備
+
+- `uv venv .venv --python 3.14` で `.venv` 新設、
+  `uv pip install -e ".[dev,plot]"` で依存解決
+- 以後の開発は `source .venv/bin/activate` で activate して進める運用

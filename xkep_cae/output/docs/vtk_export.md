@@ -47,7 +47,19 @@ ParaView で `.pvd` を開くと、各 timestep が `load_history` の値で
 
 | Name | components | 説明 |
 |------|---|------|
-| `axial_strain` | 1 | 軸方向ひずみ ε = (L_def − L_ref) / L_ref — `include_axial_strain=True` のみ |
+| `axial_strain` | 1 | 軸方向ひずみ ε = (L_def − L_ref) / L_ref |
+| `axial_stress` | 1 | σ_axial = E · ε_axial [MPa] |
+| `curvature_vector` | 3 | κ = (θ_j − θ_i) / L = (κ_x ねじり率, κ_y, κ_z) |
+| `moment_vector` | 3 | (M_torsion = G·J·κ_x, M_bend_y = E·I·κ_y, M_bend_z = E·I·κ_z)、円形断面前提 |
+| `max_bending_stress` | 1 | 最大曲げ繊維応力 √(M_y² + M_z²) · r / I [MPa] |
+| `torsion_shear_stress` | 1 | 表面ねじりせん断応力 \|M_x\| · r / J [MPa] |
+| `von_mises_stress` | 1 | 最危険繊維での換算応力 √((σ_axial + σ_b_max)² + 3 τ²) [MPa] |
+| `contact_force` | 1 | 要素別 \|p_n\| 集計 ( `contact_pair_history` 必須 ) |
+
+円形断面の前提:
+- `I = π r⁴ / 4` (二次モーメント), `J = π r⁴ / 2` (極二次モーメント)
+- `G = E / (2(1+ν))` ( `young_modulus` / `poisson_ratio` から)
+- `r` は `mesh.radii` ( `tube_radius_override` で上書き可)
 
 ## ParaView での開き方
 
