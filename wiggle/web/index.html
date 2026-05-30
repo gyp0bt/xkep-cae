@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>wiggle — strander studio</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; height: 100%; background: #0b0d10;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      color: #cbd0d6;
+    }
+    #hud {
+      position: fixed; top: 12px; left: 14px; pointer-events: none;
+      font-size: 12px; letter-spacing: 0.04em; opacity: 0.7;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+    }
+    #hud .title { font-size: 14px; font-weight: 600; opacity: 1; }
+    #hud .sub { font-size: 11px; opacity: 0.55; margin-top: 2px; }
+    #status {
+      position: fixed; bottom: 14px; left: 14px; pointer-events: none;
+      font-size: 11px; letter-spacing: 0.05em; opacity: 0.75;
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.6); line-height: 1.5;
+    }
+    #status .phase { color: #d8a878; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <div class="title">wiggle &middot; strander studio</div>
+    <div class="sub">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
+  </div>
+  <div id="status"></div>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/",
+      "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/+esm"
+    }
+  }
+  </script>
+  <script type="module" src="./main.js?v=6"></script>
+</body>
+</html>

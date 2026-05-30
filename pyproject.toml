@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
+    "imageio[ffmpeg]>=2.37.3",
     "numpy>=1.24",
+    "pyvista>=0.48.4",
     "scipy>=1.10",
 ]
 
