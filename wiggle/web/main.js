@@ -10,7 +10,10 @@ import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js"
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import GUI from "lil-gui";
 
-import {
+// 親 HTML が ?v=Date.now() を付けて main.js を呼んでくれる前提で、
+// import.meta.url の search を local module 動的 import に引き継ぎ全ファイル毎回 fresh
+const _ver = new URL(import.meta.url).search;
+const {
   StranderConfig,
   outerStrandCenterline,
   coreStrandCenterline,
@@ -24,8 +27,8 @@ import {
   computeBishopFrames,
   cumulativeArcLength,
   wrapPretensionSlack,
-} from "./kinematics.js?v=6";
-import { StrandChain } from "./physics.js?v=6";
+} = await import("./kinematics.js" + _ver);
+const { StrandChain } = await import("./physics.js" + _ver);
 
 // ---------- Copper palette ----------
 const COPPER_BASE = 0xb87333;
@@ -466,10 +469,91 @@ function estimateOuterWindRadius(L, R_core, R_outer, H_wind, wire_d) {
 
 const PHYSICS_SUBSTEPS = 4;
 
+// 払い出し端 (bobbin local) を spin → orbit で world 座標へ持ち上げる。
+// spinTheta は current frame の値を全 substep に適用（spin 速度は orbital ω より遥かに遅い）。
+// tau は orbital 位相のみ補間：bobbinTransform(cfg, i, tau)。
+const _tmpAxis = new THREE.Vector3();
+const _tmpQuat = new THREE.Quaternion();
+const _tmpVec = new THREE.Vector3();
+function bobbinHelixEndWorld(i, spinTheta, localEnd, tau) {
+  const c = Math.cos(spinTheta);
+  const s = Math.sin(spinTheta);
+  // spin around local +y
+  const sx = localEnd.x * c + localEnd.z * s;
+  const sy = localEnd.y;
+  const sz = -localEnd.x * s + localEnd.z * c;
+  // orbit quaternion + position（bobbinTransform.axis は -cos φ, -sin φ, 0）
+  const tf = bobbinTransform(cfg, i, tau);
+  _tmpAxis.set(tf.axis.x, tf.axis.y, tf.axis.z).normalize();
+  _tmpQuat.setFromUnitVectors(yHat, _tmpAxis);
+  _tmpVec.set(sx, sy, sz).applyQuaternion(_tmpQuat);
+  return [
+    _tmpVec.x + tf.position.x,
+    _tmpVec.y + tf.position.y,
+    _tmpVec.z + tf.position.z,
+  ];
+}
+
+// 局所接線（方向のみ）を spin → orbit で world に持ち上げる（並進なし）。
+// helix 末端での払い出し接線 → 鎖の起点接線 pin に使う。
+function bobbinDirWorld(i, spinTheta, localDir, tau) {
+  const c = Math.cos(spinTheta);
+  const s = Math.sin(spinTheta);
+  const sx = localDir.x * c + localDir.z * s;
+  const sy = localDir.y;
+  const sz = -localDir.x * s + localDir.z * c;
+  const tf = bobbinTransform(cfg, i, tau);
+  _tmpAxis.set(tf.axis.x, tf.axis.y, tf.axis.z).normalize();
+  _tmpQuat.setFromUnitVectors(yHat, _tmpAxis);
+  _tmpVec.set(sx, sy, sz).applyQuaternion(_tmpQuat);
+  return [_tmpVec.x, _tmpVec.y, _tmpVec.z];
+}
+
 function updateScene(t, frameDt) {
   const state = strandState(cfg, t);
   const dt = Math.max(0, t - prevT);
   prevT = t;
+
+  // ---- supply 側 multi-layer wind helix を物理より先に構築 ----
+  // すべての supply bobbin は L_supply を共有（material conservation の単純化）。
+  const wire_d_supply = 2 * cfg.outer_radius;
+  const R_w_outer = estimateOuterWindRadius(
+    state.L_supply, BOBBIN_WIND_R_INNER, BOBBIN_WIND_R_OUTER,
+    BOBBIN_WIND_H, wire_d_supply,
+  );
+  const omega_bobbin = (state.phase < 3 && R_w_outer > 1e-3)
+    ? state.v_strand / R_w_outer : 0;
+  const supplyPts = buildLevelWindHelix(
+    state.L_supply, BOBBIN_WIND_R_INNER, BOBBIN_WIND_R_OUTER,
+    BOBBIN_WIND_H, wire_d_supply,
+  );
+  // 全 bobbin の self-spin を frame-incremental に進める
+  for (const asm of bobbinAssemblies) {
+    asm.spinTheta += dt * omega_bobbin;
+  }
+  // 払い出し端の bobbin local 座標（wound mesh の y=BOBBIN_BODY_H/2 オフセット込み）
+  // 払い切り (supplyPts 空) 時は body 中央軸上に fallback
+  const supplyEndLocal = (supplyPts.length > 0)
+    ? {
+        x: supplyPts[supplyPts.length - 1].x,
+        y: supplyPts[supplyPts.length - 1].y + BOBBIN_BODY_H / 2,
+        z: supplyPts[supplyPts.length - 1].z,
+      }
+    : { x: 0, y: BOBBIN_BODY_H / 2, z: 0 };
+  // 払い出し接線（方向のみ。並進なし）: 末端と 1 つ手前の点から差分で近似。
+  // 長さ 2 未満なら接線情報なし → 起点 pin は 1 点のみ
+  let supplyTangentLocal = null;
+  if (supplyPts.length >= 2) {
+    const p_last = supplyPts[supplyPts.length - 1];
+    const p_prev = supplyPts[supplyPts.length - 2];
+    const tx = p_last.x - p_prev.x;
+    const ty = p_last.y - p_prev.y;
+    const tz = p_last.z - p_prev.z;
+    const tm = Math.hypot(tx, ty, tz);
+    if (tm > 1e-6) {
+      supplyTangentLocal = { x: tx / tm, y: ty / tm, z: tz / tm };
+    }
+  }
 
   if (params.physicsOn) {
     const subDt = Math.max(0, Math.min(1 / 60, frameDt)) / PHYSICS_SUBSTEPS;
@@ -528,18 +612,29 @@ function updateScene(t, frameDt) {
         bundlePts[0].y + cfg.R_layer * (ce0 * e1_0[1] + se0 * e2_0[1]),
         bundlePts[0].z + cfg.R_layer * (ce0 * e1_0[2] + se0 * e2_0[2]),
       ];
-      // chord 長（bobbin orbit で時々刻々変わる）から rest 再計算
-      const { start: bobbinAnchorNow } = strandPinEndpoints(cfg, i, t);
+      // chord 長（bobbin orbit + level-wind 払い出し端で時々刻々変わる）から rest 再計算
+      const asm = bobbinAssemblies[i];
+      const bobbinAnchorNow = bobbinHelixEndWorld(i, asm.spinTheta, supplyEndLocal, t);
       const chord = Math.hypot(
         layEntry[0] - bobbinAnchorNow[0],
         layEntry[1] - bobbinAnchorNow[1],
         layEntry[2] - bobbinAnchorNow[2],
       );
       chain.restLength = chord / (PARTICLES_PER_STRAND - 1) * slackOuter;
+      const tangentRest = chain.restLength;
       for (let s = 0; s < PHYSICS_SUBSTEPS; s++) {
         const tau = t - (PHYSICS_SUBSTEPS - 1 - s) * subDt;
-        const { start: bobbinAnchor } = strandPinEndpoints(cfg, i, tau);
-        chain.step(subDt, bobbinAnchor, layEntry);
+        const bobbinAnchor = bobbinHelixEndWorld(i, asm.spinTheta, supplyEndLocal, tau);
+        let pinStart1 = null;
+        if (supplyTangentLocal !== null) {
+          const tan = bobbinDirWorld(i, asm.spinTheta, supplyTangentLocal, tau);
+          pinStart1 = [
+            bobbinAnchor[0] + tan[0] * tangentRest,
+            bobbinAnchor[1] + tan[1] * tangentRest,
+            bobbinAnchor[2] + tan[2] * tangentRest,
+          ];
+        }
+        chain.step(subDt, bobbinAnchor, layEntry, { pinStart1 });
       }
       const chainPts = chain.toPoints();
       // downstream helix（bundle に沿った撚り offset、t_pass 整合）
@@ -557,7 +652,8 @@ function updateScene(t, frameDt) {
       }
       chainPts.pop();   // chain 終端 = downstream[0] と一致しているので間引く
       const combined = chainPts.concat(downstream);
-      const trimmed = trimCenterlineByArc(combined, state.s_trail);
+      // 抜けた鎖は弧長が path に沿わないので trim 無効化（whip 形をそのまま描画）
+      const trimmed = chain.detached ? combined : trimCenterlineByArc(combined, state.s_trail);
       if (trimmed.length < 2) {
         outerMeshes[i].visible = false;
       } else {
@@ -589,22 +685,10 @@ function updateScene(t, frameDt) {
     }
   }
 
-  // ---- 供給ボビン: 多層レベルワインドの wrap を再構築 + 自転 ----
-  const wire_d_supply = 2 * cfg.outer_radius;
-  const R_w_outer = estimateOuterWindRadius(
-    state.L_supply, BOBBIN_WIND_R_INNER, BOBBIN_WIND_R_OUTER,
-    BOBBIN_WIND_H, wire_d_supply,
-  );
-  const omega_bobbin = (state.phase < 3 && R_w_outer > 1e-3)
-    ? state.v_strand / R_w_outer : 0;
-  const supplyPts = buildLevelWindHelix(
-    state.L_supply, BOBBIN_WIND_R_INNER, BOBBIN_WIND_R_OUTER,
-    BOBBIN_WIND_H, wire_d_supply,
-  );
+  // ---- 供給ボビン描画: helix / spinTheta は updateScene 冒頭で計算済み ----
   for (let i = 0; i < cfg.n_outer; i++) {
     const asm = bobbinAssemblies[i];
     placeBobbin(asm, bobbinTransform(cfg, i, t));
-    asm.spinTheta += dt * omega_bobbin;
     asm.spin.rotation.y = asm.spinTheta;
     updateWoundTube(asm.wound, supplyPts, cfg.outer_radius, 8);
   }

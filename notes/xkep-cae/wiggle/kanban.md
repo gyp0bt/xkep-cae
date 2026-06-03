@@ -6,35 +6,35 @@
 
 ## 🔥 Next（次セッションでやる）
 
-### 0. ボビン端点 pin + 巻取り/繰り出し kinematics（最優先）
-- [ ] **接触アルゴリズム（衝突判定 / penalty / SDF）ではない**。kinematics 側
-- [ ] 素線端点がボビン面（level-wind 螺旋上）に pin され、ボビン自転 Ω で
-      巻取り（s_consumed +）/ 繰り出し（−）される
-- [ ] 現状: `strandPinEndpoints(cfg, i, t)` が bobbin 中心軸の 1 点を返すだけ
-- [ ] 目標: `buildLevelWindHelix(...)` の螺旋上の `helix(s_consumed(t))` 点を返す
-- [ ] s_consumed は `strandState(cfg, t).L_consumed` 由来で時刻に応じ進行
-- [ ] PBD chain の bobbin 側 pin は、回転に追従して胴体表面を滑る点になる
-- [ ] 同様に巻取りスプール側でも実装（chain ではなく helix の終端だが対称）
+### ★ 2ボビン巻取りの保存則 + kinematic 管理（第八航海の宿題・最優先）
+- [ ] **質量保存**: twobobbin.html は供給リール無しで slack 超過→伸び発散（slack=1 で 3 周 2.2×）。
+      恒久対策 = 供給リールから払い出し（巻取分の rest 長を供給して N を増やす）or XPBD。
+- [ ] **kinematic 管理**: `[KINEMATIC]` タグ + HUD 凡例は導入済み（①回転θ②軸トラバース③端クランプ）。
+      新規駆動を足すたび「機械駆動か?」を判定し、タグと凡例を更新する運用を維持。
+- [ ] **運動量保存**（未検証）: 手回し θ を止めた後の慣性・反動が物理的か（現状 Verlet + damping=0.99）。
+- [ ] **エネルギー保存**（未検証）: 摩擦散逸・PBD 数値減衰・bend relaxation のエネルギー収支を測る。
+- [ ] sim 側 +6% ドリフト: 距離拘束 GS iters=12 を増やす or XPBD compliance→0 で長鎖の伸びを締める。
+- [ ] 検証: `node wiggle/web/twobobbin_probe.mjs` / frames.bin の arc 全長を Python で実測（伸び＝質量）。
 
-### 1. トラバース巻き（左右往復）
-- [ ] 巻取りスプール上で、現在巻かれている位置が左右に往復する動きを実装
-- [ ] 「アクティブ巻き位置」を示す小さな torus / ring を巻線表面に追加
-- [ ] traverse_pos = triangleWave(t × traverse_speed) × (TAKEUP_H − margin)
-- [ ] traverse_speed は v_feed と pitch_count から決める（実機の比率調査）
+> 備考: 下記 0〜2（winding studio / cradle / lay plate）は第七航海の **2ボビン刷新**以前の
+> strander/winding 系レガシー。軸足が `twobobbin.*` に移ったため優先度低。
 
-### 2. クレードルの支持アーム
+### 0. winding studio: クリーン helix 化（flange スランプ残）（最優先）
+- [ ] **現状**: Coulomb 摩擦 + 固定着地点 + feedScale 0.7 で胴体に巻き上がる（bodyN:flangeN
+      ≈ 2.4、yMax まで climb）が、**下フランジ面への山積みが残る**（縦軸重力で
+      slack 鎖が grip 前に slump）。胴体巻が多数派だが視覚的にまだ messy
+- [ ] 案: ① 巻き始めの first-layer を tighter に（早期 supply を更に絞る ramp 延長）
+      ② feedScale を時間で可変（巻き始めだけ強 taut）③ flange 近傍の slump 抑制
+      （flange 面接触で radial 内向き nudge）④ 弱め gravity option
+- [ ] 真の解は「素線を tension で常に張る」= 実機の張力制御。slack PBD の限界
+- [ ] 検証: `node wiggle/web/winding_core.test.mjs`（5 gate: 安定/起動/巻取/capstan/半径分布）
+
+### 1. クレードルの支持アーム（strander 側）
 - [ ] cradle ring から各ボビンへの放射状の腕（CylinderGeometry 細棒 6 本）
 - [ ] ボビンを支持枠ごと回転させる group 構造に再編
 - [ ] cradle 全体が ω で回ると、ボビンが宙に浮いて見える違和感が消える
-- [ ] cradle 自身も装飾的に回転（torus は対称なので外見上は変わらないが構造として）
 
-### 3. 巻取り入口のガイド（フライヤー/カピストン風）
-- [ ] strand 端から巻取りへ「ガイドプーリー」を 1 つ挟む
-- [ ] 小さな円盤か torus を z=z1+15 あたりに配置、ケーブルがそこで曲がって
-      スプールに入る描写
-- [ ] リードチューブを 2 区間に分割（直線 → ガイド → 接線方向で接続）
-
-### 4. lay plate（撚りダイスの手前ガイド板）
+### 2. lay plate（撚りダイスの手前ガイド板）
 - [ ] ダイスの少し上流に薄い円盤（穴 6 つ）を置く
 - [ ] 各穴の中心が outerStrand の z_lay 直前の位置と一致するよう配置
 - [ ] 穴は ExtrudeGeometry か CSG（複雑なら省略可）
@@ -62,6 +62,67 @@
 - [ ] FEM のような厳密な接触解析（視覚的接触で十分、≠FEM のやばい接触）
 
 ## ✅ Done（直近セッション分）
+
+### 第八航海（2026-06-03）— 名づけと、破れを灯す
+
+- [x] **Ubuntu クラッシュ診断**: 30 周 replay 確認中の本体ハングは描画/GPU でなく
+      `iwlwifi` ファーム死（`cfg80211` soft lockup）と特定。43MB の WiFi 転送が引き金。
+      localhost 経路は WiFi を通らず安全。frames.bin は無傷（30.17 回転）。無線本復旧は tibby
+- [x] **kinematic 規約導入**: kinematic = 機械駆動のみ（①回転θ②軸トラバース③端クランプ）。
+      コードに `[KINEMATIC]` タグ、HUD に機械駆動凡例。`grep [KINEMATIC]` で台本/創発の境界が一目。
+      twobobbin.js / twobobbin_core.js / twobobbin_sim.mjs / replay.js に適用。travB の横ズレは
+      創発でなく処方トラバースと判明（マジックではなく台本）
+- [x] **質量保存の実測 + 明示**: 計測 → twobobbin.html は供給無しで slack 超過→伸び発散（3 周 2.2×）、
+      sim は GS 不足 + 摩擦ロックで +6% ドリフト（1.004→1.064）。誤コメント「stretch≈1.01 で保存」を
+      実測値に修正、HUD に質量保存インジケータ（緑/橙/赤）追加。**破れを隠さない**原則を確立
+- [x] **未記載航海の橋渡し**: 第六（capstan/conveyor 移植, 06-01）・第七（2ボビン刷新, 06-02）は
+      日誌未記載のまま走っていた旨を [[ポエム]] 第八航海に明記
+
+### 第五航海（2026-05-31）— Coulomb 摩擦と固定着地点
+
+- [x] **純物理コア `winding_core.js` 抽出**（THREE 非依存）: `estimateCapacity` /
+      `wrappedArcLength` / `bobbinContact`（接触+摩擦+flange+自己接触+eye+guide）/
+      `supplyStep` / `traverseStep`。winding.js（描画）と headless テストが**同一の真実**を
+      import → `/tmp/*.mjs` コピペによる数式ドリフトを撲滅
+- [x] **co-rotation stick → Coulomb 摩擦に置換**（ユーザ要望）: 接線補正を
+      `μ·(法線貫入 + seating)` でクランプ。滑り限界が生まれ **capstan 式 e^(μθ) が
+      emergent**（μ↑ で巻取り成立、μ=0 比 13×、μ0.8 sweet spot）。**軸方向 Coulomb** も
+      追加（縦軸重力での wrap 滑落を防止）
+- [x] **回転 hard-pin → 世界固定着地点モデル**: 「particle 0 をボビンと一緒に回す」と
+      敷き済み素線が摩擦で後落ち→constraint と綱引きで**半周テレポート**して裂ける問題を
+      解決。**ボビンが素線の下で回り、摩擦が敷き済みを引きずる**（実機の巻取り。Coulomb の
+      滑りと両立）。巻き始めは下フランジ際から build
+- [x] **起動バーストの真因 = flange clip テレポート**: ボビン上方を昇る free span が
+      `r<FLANGE_R` に入った瞬間 `|y|` を innerY_clip へ瞬間移動（速度6006mm/s）。フランジを
+      薄い円盤として `|y|<innerY+wr` だけブロックに修正 + smoothstep 供給ランプ + 供給上限を
+      `ω·R·dt`（旧 1.5× 撤廃）
+- [x] **feedScale 0.7（under-feed）で taut 化**: 巻取より3割少なく供給 → 鎖が張って胴体に
+      張り付き flange 山積み減（bodyN:flangeN 1.6→2.4）。負帰還で安定（張力サーボの正帰還
+      発散とは逆）
+- [x] **入口ガイドローラ**（カピストン風プーリー、軸 x の接触シリンダ + 視覚）+
+      **active-winding リング指示子** + **eye を巻線面近く(z=FLANGE_R+6)へ下げ** wander 低減
+- [x] **headless 物理検証 `winding_core.test.mjs` 常設**: 5 gate（安定 / 起動鎮静 /
+      巻取り / capstan / 半径分布）AND で ✅ ALL PASS。`node` 1 発で回帰検出
+- [x] **`?warmup=N` URL パラメータ**: 初回描画前に N step 空回し → 巻取り進行状態へ直リンク
+      （headless スクショ / デバッグ用。rAF が headless で激しく throttle される対策）
+- [x] **残課題**: 下フランジ面への山積みが残る（縦軸重力 × slack 鎖の限界、Next 0 へ）
+
+### 第四航海（2026-05-31）— 暴れ電線と摩擦という回答
+
+- [x] **暴れ電線の真因特定**: 数値振動ではなく「際限のないスラック」。両端 pin 間
+      距離一定 + `restLength` 単調成長 + 巻取退場機構なし → 60s で chord の 16 倍長
+      → 物理的にフロッピー。前航海の数値対策は二次的問題しか直していなかった
+- [x] **kinematic helix ハイブリッド → 撤回**（ユーザ却下、「なりゆき」精神に反する）
+- [x] **capstan 摩擦**を接触に実装: 接触帯の粒子をボビン表面と co-rotate
+      （前位置角 + ω·Δt へ stickK 寄せ）。保持と巻取り(take-up)を同時に生む
+- [x] `physics.js` `contactProject(pos,N,fixed,prev)` に prev 追加（後方互換、
+      main.js 無影響）
+- [x] **供給 = 巻取（demand-driven）**: `feedScale` 廃止。巻き付いた弧長の増分だけ
+      繰り出す。rate-limit（`ω·R·dt·1.5`）+ `maxStep:8` 絶対速度 cap で正帰還を断つ
+- [x] 張力サーボ / 巻付増分そのまま供給は**発散する**ことを実証（教訓として記録）
+- [x] GUI: 「摩擦 (capstan stick)」スライダ（既定 0.85）、`chain` iters 6→8
+- [x] ヘッドレス物理検証パターン確立（`node` で StrandChain を回し暴走/安定を数値判定）
+- [x] memory `wiggle-next-session` 更新、[[ポエム]] 第四航海 追記
 
 ### 第三航海（2026-05-28 〜 05-30）— パチもん物理三本柱
 
@@ -136,9 +197,15 @@ wiggle/
   render.py         # PyVista レンダラ
   demo.py           # 1+6 PNG/MP4 出力デモ
   web/
-    index.html      # importmap + HUD
-    main.js         # シーン構築 + 毎フレーム TubeGeometry 再構築 + 巻取り回転物理
-    kinematics.js   # Python 版と完全対応
+    index.html      # strander studio: importmap + HUD
+    main.js         # strander: シーン構築 + 毎フレーム TubeGeometry + 巻取り回転物理
+    kinematics.js   # Python 版と完全対応 + buildLevelWindHelix / Bishop frame 等
+    physics.js      # StrandChain（Verlet + 距離拘束 GS + bending + contactProject(…,prev)）
+    winding.html    # winding studio（サプライボビン製造工程）
+    winding.js      # winding: 描画 + GUI。物理は winding_core を import。?warmup=N 対応
+    winding_core.js # 純物理コア（THREE 非依存）: 接触+Coulomb摩擦+supply+traverse。
+                    #   winding.js とテストが共有する単一の真実
+    winding_core.test.mjs  # headless 物理検証（node 実行、5 gate AND）
 ```
 
 ```

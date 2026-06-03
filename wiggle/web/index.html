@@ -24,6 +24,8 @@
     }
     #status .phase { color: #d8a878; }
     canvas { display: block; }
+    a.nav { position: fixed; top: 12px; right: 18px; color: #88a8c5; opacity: 0.55; font-size: 11px; text-decoration: none; letter-spacing: 0.05em; }
+    a.nav:hover { opacity: 1; }
   </style>
 </head>
 <body>
@@ -32,6 +34,7 @@
     <div class="sub">drag to orbit &middot; scroll to zoom &middot; right-drag to pan</div>
   </div>
   <div id="status"></div>
+  <a class="nav" href="./winding.html">→ winding studio</a>
   <script type="importmap">
   {
     "imports": {
@@ -41,6 +44,17 @@
     }
   }
   </script>
-  <script type="module" src="./main.js?v=6"></script>
+  <script type="module">
+    // 自動 cache bust: ロードごとに ?v=Date.now() を付け、main.js 内も
+    // import.meta.url の search を local module に引き継ぐので全ファイル毎回 fresh
+    const v = Date.now();
+    import(`./main.js?v=${v}`).catch(e => {
+      console.error("module load failed:", e);
+      const div = document.createElement("div");
+      div.style.cssText = "color:#f88;padding:24px;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#1a1c20;border:1px solid #f88;border-radius:8px;font-family:ui-monospace,monospace;max-width:80vw;font-size:12px;line-height:1.5;white-space:pre-wrap";
+      div.textContent = "module load error:\n" + (e.stack || e.message);
+      document.body.appendChild(div);
+    });
+  </script>
 </body>
 </html>
